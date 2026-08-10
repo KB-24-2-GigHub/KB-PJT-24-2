@@ -6,11 +6,10 @@ import {
   emptyWorkCaseSummary
 } from '@/constants/workCaseStatus'
 
-// workCases 서비스는 #158부터 mockFlag(VITE_USE_MOCK) 기반 opt-in이라, Mock 데이터
-// 자체를 검증하는 아래 테스트는 mockFlag를 직접 주입해 실행 환경과 무관하게 고정한다.
+// RF-12부터 Mock 데이터는 operation selector로 명시 선택한다.
 async function importWithMock() {
   vi.resetModules()
-  vi.doMock('@/services/mockFlag', () => ({ USE_MOCK: true }))
+  vi.doMock('@/services/mockOperations', () => ({ isMockOperationEnabled: () => true }))
   return import('@/services/workCases')
 }
 
@@ -29,7 +28,7 @@ const PERSISTED_WORK_CASE_STATUSES = [
 describe('work-case status contract', () => {
   beforeEach(() => {
     vi.resetModules()
-    vi.doUnmock('@/services/mockFlag')
+    vi.doUnmock('@/services/mockOperations')
   })
 
   it('maps every persisted status without exposing INVITED', () => {

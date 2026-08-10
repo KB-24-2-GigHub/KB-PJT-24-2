@@ -39,6 +39,7 @@ const TABS = [
 
 const documents = ref([])
 const loading = ref(false)
+const loadError = ref(null)
 const activeTab = ref('ALL')
 const fileInput = ref(null)
 const uploading = ref(false)
@@ -55,9 +56,16 @@ const filteredDocuments = computed(() => {
 
 async function load() {
   loading.value = true
+  loadError.value = null
   try {
     const res = await listDocuments({ workplaceId: selectedId.value })
     documents.value = res.content
+  } catch (error) {
+    loadError.value = error
+    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
+    ui.toast(unavailable ? '문서함은 현재 준비 중인 기능입니다.' : '문서를 불러오지 못했어요.', {
+      type: unavailable ? 'info' : 'danger'
+    })
   } finally {
     loading.value = false
   }
@@ -175,7 +183,12 @@ async function confirmDelete() {
         </button>
       </div>
 
-      <button type="button" class="upload-btn" :disabled="uploading" @click="triggerUpload">
+      <button
+        type="button"
+        class="upload-btn"
+        :disabled="uploading || loadError?.code === 'FEATURE_UNAVAILABLE'"
+        @click="triggerUpload"
+      >
         <Plus :size="16" /> 계약서 직접 업로드
       </button>
       <input
@@ -187,7 +200,19 @@ async function confirmDelete() {
       />
     </div>
 
-    <EmptyState v-if="!loading && filteredDocuments.length === 0" message="표시할 문서가 없어요." />
+    <EmptyState
+      v-if="!loading && loadError"
+      :message="
+        loadError.code === 'FEATURE_UNAVAILABLE'
+          ? '문서함은 현재 준비 중인 기능입니다.'
+          : '문서를 불러오지 못했어요.'
+      "
+    />
+
+    <EmptyState
+      v-else-if="!loading && filteredDocuments.length === 0"
+      message="표시할 문서가 없어요."
+    />
 
     <ul v-else class="doc-list">
       <li v-for="doc in filteredDocuments" :key="doc.documentId" class="doc-card">

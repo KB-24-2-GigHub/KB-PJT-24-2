@@ -140,7 +140,13 @@ async function confirmEdit() {
     editOpen.value = false
     ui.toast('사업장 정보를 수정했어요.', { type: 'success' })
   } catch (err) {
-    ui.toast(err?.response?.data?.message || '수정에 실패했어요.', { type: 'danger' })
+    const unavailable = err?.code === 'FEATURE_UNAVAILABLE'
+    ui.toast(
+      unavailable
+        ? '사업장 수정은 현재 준비 중인 기능입니다.'
+        : err?.response?.data?.message || '수정에 실패했어요.',
+      { type: unavailable ? 'info' : 'danger' }
+    )
   } finally {
     saving.value = false
   }
@@ -171,6 +177,11 @@ async function confirmDelete() {
     deleteOpen.value = false
     ui.toast('사업장을 삭제했어요.', { type: 'success' })
   } catch (err) {
+    if (err?.code === 'FEATURE_UNAVAILABLE') {
+      deleteError.value = '사업장 삭제는 현재 준비 중인 기능입니다.'
+      ui.toast(deleteError.value, { type: 'info' })
+      return
+    }
     // 진행 중 근무가 있으면 서버가 409 — 메시지를 그대로 노출한다.
     deleteError.value = err?.response?.data?.message || '삭제할 수 없어요.'
   } finally {

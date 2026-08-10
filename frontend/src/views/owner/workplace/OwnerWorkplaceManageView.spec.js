@@ -127,6 +127,20 @@ describe('OwnerWorkplaceManageView', () => {
     )
   })
 
+  it('미구현 수정 Operation은 일반 실패가 아니라 준비 중 상태로 안내한다', async () => {
+    const wrapper = await openEditDialog()
+    const ui = useUiStore()
+    const toastSpy = vi.spyOn(ui, 'toast')
+    updateWorkplace.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+
+    await findByText(wrapper, 'button', '저장').trigger('click')
+    await flushPromises()
+
+    expect(toastSpy).toHaveBeenCalledWith('사업장 수정은 현재 준비 중인 기능입니다.', {
+      type: 'info'
+    })
+  })
+
   it('삭제 성공 후 목록 갱신이 실패해도 실패로 보고하지 않는다', async () => {
     const wrapper = mountView()
     await flushPromises()
@@ -145,6 +159,24 @@ describe('OwnerWorkplaceManageView', () => {
       expect.anything(),
       expect.objectContaining({ type: 'danger' })
     )
+  })
+
+  it('Deferred 삭제 Operation은 모달과 토스트에 준비 중 상태를 표시한다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+    const ui = useUiStore()
+    const toastSpy = vi.spyOn(ui, 'toast')
+    deleteWorkplace.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+
+    await findByText(wrapper, 'button', '삭제').trigger('click')
+    await flushPromises()
+    await findByText(wrapper, 'button', '삭제하기').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('사업장 삭제는 현재 준비 중인 기능입니다.')
+    expect(toastSpy).toHaveBeenCalledWith('사업장 삭제는 현재 준비 중인 기능입니다.', {
+      type: 'info'
+    })
   })
 
   // 실시간 검증(#238): AuthSignupForm 과 같은 패턴 — 필드를 떠나면 형식 오류가 뜨고

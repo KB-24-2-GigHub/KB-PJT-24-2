@@ -1,15 +1,14 @@
 /**
  * 고정 QR 은 mock 플래그와 무관하게 항상 실 API 를 호출해야 한다.
  *
- * USE_MOCK 은 테스트 환경에서 언제나 false 라(`import.meta.env.DEV && VITE_USE_MOCK`),
- * 일반 spec 에서는 mock 분기가 남아 있어도 그대로 통과한다. 이 파일만 플래그를 켜서
- * 그 구멍을 막는다.
+ * 일반 spec 은 API adapter 경로를 고정한다. 이 파일만 모든 operation의 Mock 선택을
+ * 강제해 QR이 그 선택을 우회하고 실제 API adapter를 쓰는지 확인한다.
  *
  * 같은 서비스의 다른 mock 은 아직 살아 있어야 하므로 여기서 건드리지 않는다.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('@/services/mockFlag', () => ({ USE_MOCK: true }))
+vi.mock('@/services/mockOperations', () => ({ isMockOperationEnabled: () => true }))
 
 vi.mock('@/services/http', () => ({
   default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() }
@@ -18,7 +17,7 @@ vi.mock('@/services/http', () => ({
 import http from '@/services/http'
 import { getWorkplaceQr, reissueWorkplaceQr } from '@/services/workplaces'
 
-describe('고정 QR 은 mock 플래그를 무시한다', () => {
+describe('고정 QR 은 operation mock 선택을 무시한다', () => {
   beforeEach(() => {
     http.get.mockReset()
     http.post.mockReset()
@@ -42,7 +41,7 @@ describe('고정 QR 은 mock 플래그를 무시한다', () => {
     expect(qr.qrToken).toBe('real-new-token')
   })
 
-  it('같은 서비스의 다른 mock 은 아직 살아 있다', async () => {
+  it('같은 서비스의 명시 선택된 operation mock 은 동작한다', async () => {
     const { listWorkplaces } = await import('@/services/workplaces')
 
     const page = await listWorkplaces()

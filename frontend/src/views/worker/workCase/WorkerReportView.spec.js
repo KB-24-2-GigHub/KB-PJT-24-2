@@ -13,6 +13,7 @@ vi.mock('vue-router', () => ({
 vi.mock('@/services/workCases', () => ({ createReport: vi.fn() }))
 
 import { createReport } from '@/services/workCases'
+import { useUiStore } from '@/stores/ui'
 
 describe('WorkerReportView', () => {
   beforeEach(() => {
@@ -53,5 +54,20 @@ describe('WorkerReportView', () => {
       content: '임금이 제때 지급되지 않았습니다.'
     })
     expect(back).toHaveBeenCalled()
+  })
+
+  it('미구현 신고 operation은 성공으로 가장하지 않고 준비 중으로 안내한다', async () => {
+    createReport.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+    const wrapper = mount(WorkerReportView)
+
+    await wrapper.find('textarea').setValue('임금이 제때 지급되지 않았습니다.')
+    await wrapper.find('button.submit').trigger('click')
+    await flushPromises()
+
+    expect(back).not.toHaveBeenCalled()
+    expect(useUiStore().toasts.at(-1)).toMatchObject({
+      message: '임금분쟁 신고는 현재 준비 중인 기능입니다.',
+      type: 'info'
+    })
   })
 })

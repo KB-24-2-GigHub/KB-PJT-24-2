@@ -21,19 +21,31 @@ const ui = useUiStore()
 
 const doc = ref(null)
 const loading = ref(true)
+const loadError = ref(null)
 
 const viewUrl = ref('')
 const downloadUrl = ref('')
 
 onMounted(async () => {
-  const documentId = Number(route.params.documentId)
-  const res = await listDocuments()
-  doc.value = res.content.find((d) => d.documentId === documentId) ?? null
-  if (doc.value) {
-    viewUrl.value = documentFileUrl(documentId, 'view')
-    downloadUrl.value = documentFileUrl(documentId, 'download')
+  try {
+    const documentId = Number(route.params.documentId)
+    const res = await listDocuments()
+    doc.value = res.content.find((d) => d.documentId === documentId) ?? null
+    if (doc.value) {
+      viewUrl.value = documentFileUrl(documentId, 'view')
+      downloadUrl.value = documentFileUrl(documentId, 'download')
+    }
+  } catch (error) {
+    loadError.value = error
+    ui.toast(
+      error?.code === 'FEATURE_UNAVAILABLE'
+        ? '문서 보기는 현재 준비 중인 기능입니다.'
+        : '문서를 불러오지 못했어요.',
+      { type: error?.code === 'FEATURE_UNAVAILABLE' ? 'info' : 'danger' }
+    )
+  } finally {
+    loading.value = false
   }
-  loading.value = false
 })
 
 function onDownload() {
@@ -56,7 +68,16 @@ function onDownload() {
     </AppBackHeader>
 
     <main class="screen-body">
-      <EmptyState v-if="!loading && !doc" message="문서를 찾을 수 없어요." />
+      <EmptyState
+        v-if="!loading && loadError"
+        :message="
+          loadError.code === 'FEATURE_UNAVAILABLE'
+            ? '문서 보기는 현재 준비 중인 기능입니다.'
+            : '문서를 불러오지 못했어요.'
+        "
+      />
+
+      <EmptyState v-else-if="!loading && !doc" message="문서를 찾을 수 없어요." />
 
       <template v-else-if="doc">
         <p class="meta-line">

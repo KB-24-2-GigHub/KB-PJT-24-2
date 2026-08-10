@@ -22,11 +22,11 @@ const ui = useUiStore()
 const documentId = Number(route.params.documentId)
 const doc = ref(null)
 const loading = ref(true)
+const loadError = ref(null)
 
 const docTypeLabel = computed(() => DOC_TYPE[doc.value?.docType]?.label ?? '문서')
 const isHealthCert = computed(() => doc.value?.docType === 'HEALTH_CERT')
 const isPdf = computed(() => (doc.value?.fileExt ?? '').toLowerCase() === 'pdf')
-// mock(USE_MOCK) 은 빈 문자열을 돌려준다 → 미리보기/다운로드는 서버 연동 후 동작.
 const fileUrl = computed(() => (doc.value ? documentFileUrl(documentId, 'view') : ''))
 const downloadUrl = computed(() => (doc.value ? documentFileUrl(documentId, 'download') : ''))
 
@@ -34,8 +34,14 @@ onMounted(async () => {
   try {
     const { content } = await listDocuments()
     doc.value = (content ?? []).find((d) => d.documentId === documentId) ?? null
-  } catch {
-    ui.toast('문서를 불러오지 못했어요.', { type: 'danger' })
+  } catch (error) {
+    loadError.value = error
+    ui.toast(
+      error?.code === 'FEATURE_UNAVAILABLE'
+        ? '문서 보기는 현재 준비 중인 기능입니다.'
+        : '문서를 불러오지 못했어요.',
+      { type: error?.code === 'FEATURE_UNAVAILABLE' ? 'info' : 'danger' }
+    )
   } finally {
     loading.value = false
   }
@@ -47,6 +53,15 @@ onMounted(async () => {
     <AppBackHeader title="문서 보기" />
     <main class="screen-body">
       <p v-if="loading" class="loading">불러오는 중…</p>
+
+      <EmptyState
+        v-else-if="loadError"
+        :message="
+          loadError.code === 'FEATURE_UNAVAILABLE'
+            ? '문서 보기는 현재 준비 중인 기능입니다.'
+            : '문서를 불러오지 못했어요.'
+        "
+      />
 
       <EmptyState v-else-if="!doc" message="문서를 찾을 수 없습니다." />
 

@@ -1,9 +1,8 @@
 /**
  * 지갑 Service 계약 테스트.
  *
- * 기본 경로는 실제 HTTP이므로 URL·Params·Body를 고정한다. Mock 분기는 mockFlag가
- * 개발 환경에서만 켜므로, Mock 동작을 검증할 때는 USE_MOCK을 명시적으로 주입해
- * 실행 환경의 VITE_USE_MOCK 값에 결과가 흔들리지 않게 한다.
+ * 기본 경로는 실제 HTTP이므로 URL·Params·Body를 고정한다. Mock 분기는 operation
+ * selector를 테스트에서 직접 주입해 실행 환경 설정에 결과가 흔들리지 않게 한다.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -12,13 +11,19 @@ vi.mock('@/services/http', () => ({
   idempotentPost: vi.fn()
 }))
 
+vi.mock('@/services/mockOperations', () => ({
+  isMockOperationEnabled: vi.fn(() => false)
+}))
+
 import http, { idempotentPost } from '@/services/http'
+import { isMockOperationEnabled } from '@/services/mockOperations'
 import { chargeWallet, fetchTransactions, fetchWallet, withdrawWallet } from '@/services/wallet'
 
 describe('wallet service', () => {
   beforeEach(() => {
     http.get.mockReset()
     idempotentPost.mockReset()
+    isMockOperationEnabled.mockReturnValue(false)
   })
 
   it('지갑 잔액을 GET /wallet으로 조회하고 data를 그대로 반환한다', async () => {
@@ -122,23 +127,13 @@ describe('wallet service', () => {
 })
 
 describe('wallet Mock service', () => {
-  // Mock 분기는 opt-in이므로 실행 환경 설정 대신 USE_MOCK을 직접 주입해 검증한다.
-  async function importWithMock() {
-    vi.resetModules()
-    vi.doMock('@/services/mockFlag', () => ({ USE_MOCK: true }))
-    return import('@/services/wallet')
-  }
-
   beforeEach(() => {
-    vi.resetModules()
-    vi.doUnmock('@/services/mockFlag')
+    isMockOperationEnabled.mockReturnValue(true)
   })
 
   it('잘못된 Demo PIN은 계좌 존재 여부를 구분하지 않는 승인 오류로 거부한다', async () => {
-    const walletService = await importWithMock()
-
     await expect(
-      walletService.chargeWallet({
+      chargeWallet({
         bankCode: '004',
         accountNo: '170000000001',
         pin: '1234',
@@ -154,9 +149,7 @@ describe('wallet Mock service', () => {
   })
 
   it('올바른 Demo PIN은 잔액 대신 승인 식별자와 상태만 반환한다', async () => {
-    const walletService = await importWithMock()
-
-    const result = await walletService.chargeWallet({
+    const result = await chargeWallet({
       bankCode: '004',
       accountNo: '170000000001',
       pin: '0000',

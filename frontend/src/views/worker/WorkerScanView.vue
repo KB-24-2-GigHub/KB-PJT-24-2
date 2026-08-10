@@ -4,8 +4,9 @@
  * 카메라 스캔 → GPS 검증 → 출근/퇴근 자동 판별·기록(단일 스캔 API).
  * 카메라·위치 권한 필요. 서버가 QR 유효성·GPS 반경·출퇴근 판별을 최종 검증한다.
  * QR 이 정적이라 시간 만료로 걸러지지 않는다 — 대리 출근 차단은 서버의 GPS 반경 검증이 전담한다.
- * 연계 API: POST /worker/scan  →  @/services/worker (scan)
- *   요청: { qrToken, latitude, longitude } / 응답: scanType(CHECK_IN/CHECK_OUT), isLate, ...
+ * 현재 #163~#169 구현 전에는 Production facade가 UNAVAILABLE이며 권한도 요청하지 않는다.
+ * Development에서 worker.scan Mock을 명시적으로 켠 경우에만 아래 카메라·위치 흐름을 연다.
+ * 목표 API: POST /attendance/scans → @/services/worker (scan)
  * QR 디코딩은 브라우저 내장 BarcodeDetector 사용(미지원·카메라 불가 시 토큰 직접 입력).
  */
 import { QrCode, ScanLine } from 'lucide-vue-next'
@@ -14,7 +15,7 @@ import { nextTick, onBeforeUnmount, ref } from 'vue'
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
-import { scan } from '@/services/worker'
+import { isWorkerScanAvailable, scan } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
 import { SCAN_TYPE } from '@/utils/constants'
 import { formatDateTime } from '@/utils/format'
@@ -25,7 +26,9 @@ const ui = useUiStore()
 const phase = ref('idle')
 const manualMode = ref(false)
 const manualToken = ref('')
-const errorMsg = ref('')
+const scanAvailable = isWorkerScanAvailable()
+const unavailableMessage = 'QR 출퇴근은 현재 준비 중인 기능입니다.'
+const errorMsg = ref(scanAvailable ? '' : unavailableMessage)
 const result = ref(null)
 
 const videoEl = ref(null)
@@ -43,7 +46,13 @@ function getLocation() {
       return
     }
     navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }),
+      (pos) =>
+        resolve({
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracyMeters: pos.coords.accuracy,
+          capturedAt: new Date(pos.timestamp).toISOString()
+        }),
       (err) => reject(err),
       { enableHighAccuracy: true, timeout: 10000 }
     )
@@ -51,6 +60,11 @@ function getLocation() {
 }
 
 async function startScan() {
+  if (!scanAvailable) {
+    errorMsg.value = unavailableMessage
+    ui.toast(unavailableMessage, { type: 'info' })
+    return
+  }
   errorMsg.value = ''
 
   // 1) 위치 권한(출퇴근 반경 검증에 필요)
@@ -113,6 +127,9 @@ async function runDetect() {
  * (400 등 그 외는 일반 안내) 상태는 서버가 최종 판단하므로 프론트는 문구만 분기한다.
  */
 function scanErrorInfo(error) {
+  if (error?.code === 'FEATURE_UNAVAILABLE') {
+    return { message: 'QR 출퇴근은 현재 준비 중인 기능입니다.', type: 'info' }
+  }
   const status = error?.response?.status
   if (status === 410) {
     return {
@@ -146,7 +163,10 @@ async function submitScan(qrToken) {
     const res = await scan({
       qrToken,
       latitude: coords.value?.latitude,
-      longitude: coords.value?.longitude
+      longitude: coords.value?.longitude,
+      accuracyMeters: coords.value?.accuracyMeters,
+      capturedAt: coords.value?.capturedAt,
+      confirmEarlyCheckout: false
     })
     result.value = res
     phase.value = 'result'
@@ -177,6 +197,11 @@ function cancelScan() {
 }
 
 async function enableManual() {
+  if (!scanAvailable) {
+    errorMsg.value = unavailableMessage
+    ui.toast(unavailableMessage, { type: 'info' })
+    return
+  }
   if (!coords.value) {
     try {
       coords.value = await getLocation()
@@ -222,11 +247,13 @@ onBeforeUnmount(stopCamera)
       </p>
       <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
 
-      <BaseButton variant="worker" size="lg" block @click="startScan">
+      <BaseButton variant="worker" size="lg" block :disabled="!scanAvailable" @click="startScan">
         <ScanLine :size="20" />
-        스캔 시작
+        {{ scanAvailable ? '스캔 시작' : '준비 중' }}
       </BaseButton>
-      <button type="button" class="manual-link" @click="enableManual">QR 토큰 직접 입력</button>
+      <button type="button" class="manual-link" :disabled="!scanAvailable" @click="enableManual">
+        QR 토큰 직접 입력
+      </button>
     </section>
 
     <!-- 토큰 직접 입력(폴백) -->
@@ -259,7 +286,7 @@ onBeforeUnmount(stopCamera)
     <BaseModal :open="phase === 'result'" :closable="false" title="인증 완료">
       <div v-if="result" class="result">
         <p class="result-type">{{ resultLabel() }} 처리되었습니다.</p>
-        <p class="result-time">{{ formatDateTime(result.scanTime) }}</p>
+        <p class="result-time">{{ formatDateTime(result.recordedAt) }}</p>
         <p v-if="result.isLate" class="result-late">지각 {{ result.lateMinutes }}분으로 기록됨</p>
       </div>
       <template #footer>
@@ -321,6 +348,10 @@ onBeforeUnmount(stopCamera)
   font-size: var(--text-sm);
   color: var(--color-text-sub);
   text-decoration: underline;
+}
+.manual-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
 }
 .scanning {
   display: flex;
