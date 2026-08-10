@@ -35,6 +35,11 @@ const showEarning = computed(
   () => !!earning.value && !!todayWorkCase.value && todayWorkCase.value.status !== 'NONE'
 )
 const hasError = computed(() => !!error.value || walletError.value)
+const errorMessage = computed(() =>
+  error.value?.code === 'FEATURE_UNAVAILABLE'
+    ? '알바생 홈은 현재 준비 중인 기능입니다.'
+    : '홈 정보를 불러오지 못했습니다.'
+)
 
 onMounted(() => {
   homeStore.loadHome()
@@ -49,7 +54,7 @@ const goWithdraw = () => router.push('/worker/wallet/withdraw')
 
 <template>
   <div class="worker-home">
-    <EmptyState v-if="hasError" message="홈 정보를 불러오지 못했습니다." />
+    <EmptyState v-if="hasError" :message="errorMessage" />
 
     <template v-else>
       <WorkerWalletCard :available-balance="availableBalance" @withdraw="goWithdraw" />

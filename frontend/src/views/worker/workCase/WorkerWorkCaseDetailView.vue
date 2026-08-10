@@ -52,15 +52,22 @@ onMounted(async () => {
 const contactOpen = ref(false)
 const contact = ref(null)
 const contactLoading = ref(false)
+const contactError = ref(null)
 
 async function openContact() {
   contact.value = null
+  contactError.value = null
   contactOpen.value = true
   contactLoading.value = true
   try {
     contact.value = await getOwnerContact(workCaseId)
-  } catch {
-    ui.toast('연락처를 불러오지 못했습니다.', { type: 'warning' })
+  } catch (error) {
+    contactError.value = error
+    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
+    ui.toast(
+      unavailable ? '사장님 연락처는 현재 준비 중인 기능입니다.' : '연락처를 불러오지 못했습니다.',
+      { type: unavailable ? 'info' : 'warning' }
+    )
   } finally {
     contactLoading.value = false
   }
@@ -149,7 +156,13 @@ function goReport() {
         <span>{{ contact.ownerName }}</span>
         <strong>{{ formatPhoneInput(contact.phone) }}</strong>
       </a>
-      <p v-else class="contact-loading">연락처를 불러오지 못했습니다.</p>
+      <p v-else class="contact-loading">
+        {{
+          contactError?.code === 'FEATURE_UNAVAILABLE'
+            ? '사장님 연락처는 현재 준비 중인 기능입니다.'
+            : '연락처를 불러오지 못했습니다.'
+        }}
+      </p>
     </BaseBottomSheet>
   </div>
 </template>

@@ -88,4 +88,13 @@ describe('WorkerHomeView', () => {
 
     process.off('unhandledRejection', unhandled)
   })
+
+  it('미구현 worker home은 fake content 대신 준비 중 상태를 표시한다', async () => {
+    getWorkerHome.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+    const wrapper = mount(WorkerHomeView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('알바생 홈은 현재 준비 중인 기능입니다.')
+    expect(wrapper.text()).not.toContain('주말 홀 서빙')
+  })
 })

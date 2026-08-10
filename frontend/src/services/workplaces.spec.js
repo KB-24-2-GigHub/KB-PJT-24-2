@@ -13,6 +13,7 @@ vi.mock('@/services/http', () => ({
 import http from '@/services/http'
 import {
   createWorkplace,
+  deleteWorkplace,
   getWorkplaceQr,
   listWorkplaces,
   reissueWorkplaceQr,
@@ -108,20 +109,29 @@ describe('createWorkplace', () => {
 describe('updateWorkplace', () => {
   beforeEach(() => {
     http.patch.mockReset().mockResolvedValue({ data: { workplaceId: 1 } })
+    http.delete.mockReset().mockResolvedValue({ data: undefined })
   })
 
-  it('전화번호를 구분 문자 없는 숫자로 정규화한다', async () => {
-    // 관리 화면(OwnerWorkplaceManageView)은 화면 표시용 하이픈 형식을 그대로 넘긴다.
-    // withNormalizedPhone 이 이를 벗겨내는 유일한 방어선이다.
-    await updateWorkplace(1, { name: '강남점', phone: '02-1234-5678' })
+  it('Backend Operation이 없는 수정 요청은 운영 API를 호출하지 않고 닫힌다', async () => {
+    await expect(
+      updateWorkplace(1, { name: '강남점', phone: '02-1234-5678' })
+    ).rejects.toMatchObject({
+      code: 'FEATURE_UNAVAILABLE',
+      operation: 'workplaces.updateWorkplace',
+      ownerIssue: 'WORKPLACE-002 (담당 구현 이슈 없음)'
+    })
 
-    expect(http.patch.mock.calls[0][1].phone).toBe('0212345678')
+    expect(http.patch).not.toHaveBeenCalled()
   })
 
-  it('phone 을 보내지 않는 부분 수정은 phone 키를 만들지 않는다', async () => {
-    await updateWorkplace(1, { name: '강남점' })
+  it('Deferred 삭제 요청도 운영 API를 호출하지 않고 닫힌다', async () => {
+    await expect(deleteWorkplace(1)).rejects.toMatchObject({
+      code: 'FEATURE_UNAVAILABLE',
+      operation: 'workplaces.deleteWorkplace',
+      ownerIssue: 'WORKPLACE-003 (Deferred)'
+    })
 
-    expect(http.patch.mock.calls[0][1]).not.toHaveProperty('phone')
+    expect(http.delete).not.toHaveBeenCalled()
   })
 })
 
