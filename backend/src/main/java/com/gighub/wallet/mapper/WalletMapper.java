@@ -59,6 +59,9 @@ public interface WalletMapper {
     WalletTransactionSnapshot findTransactionByIdempotencyKey(
             @Param("idempotencyKey") String idempotencyKey);
 
+    WalletTransactionSnapshot findSettlementTransactionByIdempotencyKeyForShare(
+            @Param("idempotencyKey") String idempotencyKey);
+
     WalletTransactionSnapshot findFundingTransactionSnapshot(
             @Param("fundingOrderId") Long fundingOrderId,
             @Param("employerId") Long employerId,

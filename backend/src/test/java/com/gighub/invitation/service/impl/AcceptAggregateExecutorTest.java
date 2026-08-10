@@ -18,10 +18,12 @@ import com.gighub.invitation.exception.InvitationTermsChangedException;
 import com.gighub.invitation.mapper.InvitationMapperTestDouble;
 import com.gighub.invitation.mapper.result.AcceptWorkCaseLockRow;
 import com.gighub.invitation.mapper.result.InvitationRow;
-import com.gighub.invitation.service.AcceptEscrowHold;
+import com.gighub.invitation.service.AcceptanceWorkParticipant;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
-import com.gighub.settlement.mapper.SettlementMapper;
+import com.gighub.settlement.service.SettlementReservationService;
+import com.gighub.wallet.service.AcceptEscrowHold;
+import com.gighub.work.mapper.WorkCaseMapper;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -162,11 +164,17 @@ class AcceptAggregateExecutorTest {
     }
 
     private void execute(LocalDateTime now) {
-        new AcceptAggregateExecutor(
+        WorkCaseMapper workCaseMapper = mock(WorkCaseMapper.class);
+        AcceptanceWorkParticipant workParticipant = new AcceptanceWorkParticipantImpl(
                 mapper,
+                workCaseMapper,
                 mock(WorkContractMapper.class),
-                mock(SettlementMapper.class),
+                mock(com.gighub.member.service.MemberIdentityQueryService.class),
+                new AcceptJson());
+        new AcceptAggregateExecutor(
+                workParticipant,
                 escrowHold,
+                mock(SettlementReservationService.class),
                 mock(IdempotencyClaimService.class),
                 new AcceptJson(),
                 new StubArtifactPort(),
@@ -239,11 +247,6 @@ class AcceptAggregateExecutorTest {
             return markExpiredResult;
         }
 
-        @Override
-        public int assignWorkerAndAccept(long workCaseId, long workerId) {
-            assigned.add(workCaseId);
-            return 1;
-        }
     }
 
     /** 예치가 호출됐는지만 관찰합니다. */

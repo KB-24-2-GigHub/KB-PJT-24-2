@@ -1,9 +1,10 @@
 package com.gighub.attendance.service;
 
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
-import com.gighub.attendance.mapper.result.AttendanceLifecycleWorkCaseRow;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
 import com.gighub.work.domain.WorkCaseStatus;
+import com.gighub.work.service.WorkLifecycleCommandService;
+import com.gighub.work.service.result.WorkLifecycleSnapshot;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -29,15 +30,18 @@ class AttendanceLifecycleTransitionExecutorTest {
     @Mock
     private SignedContractArtifactVerifier artifactVerifier;
 
+    @Mock
+    private WorkLifecycleCommandService workLifecycleCommandService;
+
     @Test
     void advancesAcceptedWorkAtReadyBoundaryWhenAggregateAndArtifactAreComplete() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.plusMinutes(30), NOW.plusHours(8)));
         when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(completeReadiness());
         when(artifactVerifier.isReadable(WORK_CASE_ID)).thenReturn(true);
-        when(lifecycleMapper.transitionStatus(
+        when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY))
-                .thenReturn(1);
+                .thenReturn(true);
 
         assertTrue(executor().advanceToReady(WORK_CASE_ID, NOW));
     }
@@ -46,32 +50,32 @@ class AttendanceLifecycleTransitionExecutorTest {
     void leavesAcceptedWorkBlockedWhenAggregateIsIncomplete() {
         AttendanceReadinessCheckRow readiness = completeReadiness();
         readiness.setEscrowHeld(false);
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW, NOW.plusHours(8)));
         when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(readiness);
 
         assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
 
         verify(artifactVerifier, never()).isReadable(WORK_CASE_ID);
-        verify(lifecycleMapper, never()).transitionStatus(
+        verify(workLifecycleCommandService, never()).transition(
                 WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY);
     }
 
     @Test
     void leavesAcceptedWorkBlockedWhenSignedArtifactIsUnreadable() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW, NOW.plusHours(8)));
         when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(completeReadiness());
 
         assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
 
-        verify(lifecycleMapper, never()).transitionStatus(
+        verify(workLifecycleCommandService, never()).transition(
                 WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY);
     }
 
     @Test
     void doesNotEnterReadyAtNoShowBoundary() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.minusHours(1), NOW.plusHours(7)));
 
         assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
@@ -81,49 +85,49 @@ class AttendanceLifecycleTransitionExecutorTest {
 
     @Test
     void advancesReadyWorkToNoShowAtOneHourBoundary() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.READY, NOW.minusHours(1), NOW.plusHours(7)));
-        when(lifecycleMapper.transitionStatus(
+        when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW))
-                .thenReturn(1);
+                .thenReturn(true);
 
         assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
     }
 
     @Test
     void preservesReadyWorkWhenSuccessfulCheckInExists() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.READY, NOW.minusHours(1), NOW.plusHours(7)));
         when(lifecycleMapper.hasSuccessfulAttendance(WORK_CASE_ID, "CHECK_IN"))
                 .thenReturn(true);
 
         assertFalse(executor().advanceToNoShow(WORK_CASE_ID, NOW));
 
-        verify(lifecycleMapper, never()).transitionStatus(
+        verify(workLifecycleCommandService, never()).transition(
                 WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW);
     }
 
     @Test
     void advancesInProgressWorkToCheckoutMissingAtTwoHourBoundary() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(
                         WorkCaseStatus.IN_PROGRESS,
                         NOW.minusHours(10),
                         NOW.minusHours(2)));
         when(lifecycleMapper.hasSuccessfulAttendance(WORK_CASE_ID, "CHECK_IN"))
                 .thenReturn(true);
-        when(lifecycleMapper.transitionStatus(
+        when(workLifecycleCommandService.transition(
                 WORK_CASE_ID,
                 WorkCaseStatus.IN_PROGRESS,
                 WorkCaseStatus.CHECK_OUT_MISSING))
-                .thenReturn(1);
+                .thenReturn(true);
 
         assertTrue(executor().advanceToCheckoutMissing(WORK_CASE_ID, NOW));
     }
 
     @Test
     void preservesInProgressWorkWhenSuccessfulCheckoutExists() {
-        when(lifecycleMapper.lockById(WORK_CASE_ID))
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(
                         WorkCaseStatus.IN_PROGRESS,
                         NOW.minusHours(10),
@@ -135,26 +139,22 @@ class AttendanceLifecycleTransitionExecutorTest {
 
         assertFalse(executor().advanceToCheckoutMissing(WORK_CASE_ID, NOW));
 
-        verify(lifecycleMapper, never()).transitionStatus(
+        verify(workLifecycleCommandService, never()).transition(
                 WORK_CASE_ID,
                 WorkCaseStatus.IN_PROGRESS,
                 WorkCaseStatus.CHECK_OUT_MISSING);
     }
 
     private AttendanceLifecycleTransitionExecutor executor() {
-        return new AttendanceLifecycleTransitionExecutor(lifecycleMapper, artifactVerifier);
+        return new AttendanceLifecycleTransitionExecutor(
+                lifecycleMapper, artifactVerifier, workLifecycleCommandService);
     }
 
-    private AttendanceLifecycleWorkCaseRow row(
+    private WorkLifecycleSnapshot row(
             WorkCaseStatus status,
             LocalDateTime startsAt,
             LocalDateTime endsAt) {
-        return AttendanceLifecycleWorkCaseRow.builder()
-                .workCaseId(WORK_CASE_ID)
-                .status(status)
-                .startsAt(startsAt)
-                .endsAt(endsAt)
-                .build();
+        return new WorkLifecycleSnapshot(WORK_CASE_ID, status, startsAt, endsAt);
     }
 
     private AttendanceReadinessCheckRow completeReadiness() {

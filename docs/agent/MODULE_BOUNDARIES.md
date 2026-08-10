@@ -123,35 +123,35 @@ sequenceDiagram
 ### 현재와 목표의 구분
 
 현재 코드도 요청 사이에 장기 Transaction을 유지하지 않고 `DRAFT/PENDING`을 저장한다.
-그러나 수락 구현은 `AcceptAggregateExecutor`가 여러 owner Mapper를 직접 조합하고, DB Lock을
-잡은 상태에서 PDF pending artifact를 준비한다. 이 안전성을 약화시키지 않으면서 공개 owner
-Service와 bounded I/O 계약으로 바꾸는 작업은 #287과 #288이 담당한다.
+#287에서 `AcceptAggregateExecutor`의 직접 Mapper 조합은 같은 Transaction에 참여하는 owner
+Service 호출로 바뀌었다. DB Lock을 잡은 상태에서 PDF pending artifact를 준비하는 현재 I/O와
+commit 이후 복구 계약은 #288이 담당하며, #287은 그 동작을 임의로 바꾸지 않는다.
 
 ## 테이블 쓰기 소유권
 
 모든 Migration과 DDL은 해당 owner module maintainer와 PM/Repository Administrator가 함께
-검토한다. 표의 “현재”는 `dev2@7e45ad3` 감사 결과이며, `writer 없음`은 목표 owner만 정했을 뿐
-기능을 구현했다는 뜻이 아니다.
+검토한다. 표의 “현재”는 #287 RF-06 적용 결과이며, 원래 감사 수치는 아래 RF-02 baseline에
+보존한다. `writer 없음`은 목표 owner만 정했을 뿐 기능을 구현했다는 뜻이 아니다.
 
 | Table                    | Owner              | 허용 Write Mapper/Adapter                     | 외부 Command 역할                         | 허용 Query/Read Model      | 상태 정책 owner    | Migration reviewer            | 현재                                            |
 | ------------------------ | ------------------ | --------------------------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ----------------------------- | ----------------------------------------------- |
 | `users`                  | Member/Auth        | `member.mapper.UserMapper`                    | 계정 생성·프로필 변경                     | 인증·당사자 최소 Query     | Member/Auth        | Member/Auth + PM/Admin        | 굵은 경계 안 단일 writer                        |
 | `password_reset_tokens`  | Member/Auth        | `auth.mapper.PasswordResetTokenMapper`        | reset token 발급·소비·폐기                | active token 확인          | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 기능 미구현                        |
 | `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 부여·회수                           | badge 목록 Projection      | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 조회만 존재                        |
-| `workplaces`             | Workplace          | `workplace.mapper.WorkplaceMapper`            | 사업장 생성·허용 변경                     | 소유권·좌표·표시 Snapshot  | Workplace          | Workplace + PM/Admin          | writer 단일; 외부 direct read Mapper 위반 존재  |
-| `work_cases`             | Work               | `work.mapper.WorkCaseMapper`                  | 생성·조건 변경·배정·의미 상태 전이        | Work 목록·상세 Projection  | Work               | Work + PM/Admin               | Mapper 4개가 DML; #287                          |
-| `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | Mapper 2개가 DML; #287                          |
+| `workplaces`             | Workplace          | `workplace.mapper.WorkplaceMapper`            | 사업장 생성·허용 변경                     | 소유권·좌표·표시 Snapshot  | Workplace          | Workplace + PM/Admin          | 단일 writer; 외부는 공개 Query/lock Service     |
+| `work_cases`             | Work               | `work.mapper.WorkCaseMapper`                  | 생성·조건 변경·배정·의미 상태 전이        | Work 목록·상세 Projection  | Work               | Work + PM/Admin               | 단일 writer; 외부는 Work Command participant    |
+| `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | 단일 writer                                     |
 | `work_contracts`         | Work               | `contract.mapper.WorkContractMapper`          | 수락 시 불변 Contract Snapshot 생성       | 당사자·계약 Snapshot       | Work               | Work + PM/Admin               | 논리 owner 내부 단일 writer                     |
 | `qr_tokens`              | Attendance         | `attendance.mapper.QrTokenMapper`             | 고정 QR 발급·재발급·폐기                  | 활성 QR 검증               | Attendance         | Attendance + PM/Admin         | 단일 writer                                     |
 | `attendance_records`     | Attendance         | `attendance.mapper.AttendanceRecordMapper`    | 출근·퇴근 시도 기록                       | 근태 이력·Work 판정 사실   | Attendance         | Attendance + PM/Admin         | writer 없음; #164 기능 공백                     |
-| `wallets`                | Wallet             | `wallet.mapper.WalletMapper`                  | 기본 지갑, 충전·출금, hold/release        | 잔액 Snapshot              | Wallet             | Wallet + PM/Admin             | 타 모듈 direct caller 존재; #287/#289           |
+| `wallets`                | Wallet             | `wallet.mapper.WalletMapper`                  | 기본 지갑, 충전·출금, hold/release        | 잔액 Snapshot              | Wallet             | Wallet + PM/Admin             | 단일 writer; 외부는 Wallet participant          |
 | `funding_orders`         | Wallet             | `wallet.mapper.FundingMapper`                 | 충전 주문 실행·완료                       | 충전 replay/result         | Wallet             | Wallet + PM/Admin             | 단일 writer                                     |
 | `withdrawal_requests`    | Wallet             | `wallet.mapper.WithdrawalMapper`              | 출금 요청 실행·완료                       | 출금 replay/result         | Wallet             | Wallet + PM/Admin             | 단일 writer                                     |
-| `wallet_transactions`    | Wallet             | `wallet.mapper.WalletMapper`                  | owner가 원자 자금 명령과 함께 ledger 기록 | 거래내역·replay Projection | Wallet             | Wallet + PM/Admin             | 외부 모듈이 owner Mapper로 직접 기록; #287/#289 |
-| `escrows`                | Wallet             | `wallet.mapper.WalletMapper`                  | 임금 hold·release·refund                  | Escrow 상태·금액 Snapshot  | Wallet             | Wallet + PM/Admin             | Work/Settlement direct caller; #287/#289        |
+| `wallet_transactions`    | Wallet             | `wallet.mapper.WalletMapper`                  | owner가 원자 자금 명령과 함께 ledger 기록 | 거래내역·replay Projection | Wallet             | Wallet + PM/Admin             | 단일 writer; hold/release participant 내부 기록 |
+| `escrows`                | Wallet             | `wallet.mapper.WalletMapper`                  | 임금 hold·release·refund                  | Escrow 상태·금액 Snapshot  | Wallet             | Wallet + PM/Admin             | 단일 writer; hold/release participant 내부 변경 |
 | `mock_bank_accounts`     | Bank Adapter       | `bank.mapper.MockBankMapper`                  | 계좌 lock·입출금 Adapter                  | 계좌 식별·잔액 Snapshot    | Bank Adapter       | Bank Adapter + PM/Admin       | 단일 writer                                     |
 | `mock_bank_transactions` | Bank Adapter       | `bank.mapper.MockBankMapper`                  | transfer 결과 ledger                      | bank transfer 조회         | Bank Adapter       | Bank Adapter + PM/Admin       | 단일 writer                                     |
-| `settlements`            | Settlement         | `settlement.mapper.SettlementMapper`          | 예약·선점·완료·환불 종료                  | Settlement 상태 Projection | Settlement         | Settlement + PM/Admin         | Work가 Mapper 직접 호출; #287/#288              |
+| `settlements`            | Settlement         | `settlement.mapper.SettlementMapper`          | 예약·선점·완료·환불 종료                  | Settlement 상태 Projection | Settlement         | Settlement + PM/Admin         | 단일 writer; 수락은 예약 participant 호출       |
 | `disputes`               | Settlement         | `settlement.mapper.DisputeMapper`             | Deferred 분쟁 생성·처리                   | 당사자 분쟁 Projection     | Settlement         | Settlement + PM/Admin         | writer 없음; Deferred 기능 미구현               |
 | `documents`              | Document           | `document.mapper.ContractDocumentWriteMapper` | 문서 Metadata 생성·상태 변경              | 문서 목록·접근 Projection  | Document           | Document + PM/Admin           | 단일 writer                                     |
 | `document_versions`      | Document           | `document.mapper.ContractDocumentWriteMapper` | Version 생성·Artifact 연결                | 허용 Version Projection    | Document           | Document + PM/Admin           | 단일 writer                                     |
@@ -183,11 +183,26 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | Workplace          | 사업장 생성·허용 변경, 소유권/좌표 Snapshot → workplace ID·검증 값                                     | 없음, 비소유, 비활성, 좌표 미확정                 | 단일 명령 owner; Work/Attendance에는 Query만 제공                           |
 | Work               | Work 생성·조건 변경, Invitation 발급/수락 part, Contract Snapshot, 의미 상태 전이 → IDs·version·status | 만료, 폐기, version 충돌, 잘못된 상태, 이미 배정  | 단일 명령 owner; acceptance에서는 participant, Work Case를 먼저 lock        |
 | Attendance         | QR 발급/재발급, scan fact 기록, 근태 Query → attendance fact/status                                    | QR 무효, 위치 실패, 중복 성공, 적용 근무 불명확   | Attendance 명령 owner; Work 상태는 Work Command participant에 요청          |
-| Wallet             | 지갑 생성, funding/withdrawal, Escrow hold/release/refund와 ledger → wallet/escrow ID·금액 Snapshot    | 잔액 부족, currency/actor 불일치, ledger conflict | 금융 명령 owner 또는 Orchestrator participant; Wallet ID 오름차순 lock      |
+| Wallet             | 지갑 생성, funding/withdrawal, Escrow hold/release/refund와 ledger → wallet/escrow ID·금액 Snapshot    | 잔액 부족, currency/actor 불일치, ledger conflict | 금융 명령 owner 또는 Orchestrator participant; 현행 user ID 오름차순 조회 lock (#289에서 wallet ID 경계 정규화) |
 | Bank Adapter       | 계좌 resolve/lock, debit/credit → adapter result/reference                                             | 계좌 없음, PIN 실패, 잔액 부족, adapter 실패      | Wallet Transaction에 참여하는 Adapter; 내부 table만 write                   |
 | Settlement         | 예약, payout/refund 선점·완료, 상태 Query → settlement ID·status·amount                                | 지급 불가 상태, 이미 처리, replay 불일치          | 예약은 acceptance participant; payout Orchestrator가 outer owner            |
 | Document           | Contract artifact prepare, metadata/version/share/signature, access audit → document/version handle    | 접근 거부, checksum/storage 실패                  | acceptance participant; commit 전 pending, commit 후 promotion              |
 | Idempotency/Common | claim, complete, abandon, replay → claim ID 또는 저장 응답                                             | key/fingerprint 충돌, 처리 중, 만료               | claim/abandon은 별도 짧은 Tx; complete는 업무 outer Tx의 마지막 participant |
+
+### RF-06 실제 공개 경계
+
+| Provider     | 공개 interface                                                                                         | 적용된 호출자와 책임 |
+| ------------ | ------------------------------------------------------------------------------------------------------ | -------------------- |
+| Member/Auth  | `MemberIdentityQueryService`                                                                           | Work 계약 Snapshot에 필요한 최소 `userId/name` Query |
+| Workplace    | `WorkplaceOwnershipService`의 active/owner Query와 owner lock                                          | Auth onboarding, Attendance QR 검증·재발급 |
+| Work         | `AcceptanceWorkParticipant`, `WorkLifecycleCommandService`, `WorkSettlementService`                    | 수락 확정, Attendance 상태 전이, Settlement Work lock·완료 전환 |
+| Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`                                 | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger |
+| Settlement   | `SettlementReservationService`                                                                         | 수락 Transaction 안의 WAITING 예약 |
+| Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                                           | Attendance artifact 검증과 Controller 조회 경계 |
+| Member/Badge | `BadgeQueryService`                                                                                     | Controller의 badge Projection 조회 경계 |
+
+쓰기 participant는 모두 호출자의 outer Transaction에 `MANDATORY`로 참여하고 독립 commit하지
+않는다. Query Service는 persistence Row/Param을 외부 interface에 노출하지 않는다.
 
 외부 caller가 rollback, retry, 응답을 구분할 수 있을 때만 의미 오류를 나눈다. SQL 예외,
 DuplicateKey, storage key, 내부 status string은 공개 결과가 아니다.
@@ -236,8 +251,8 @@ read projection으로 끝나는 요청에 Orchestrator를 만들지 않는다.
 | --------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Signup                | Member/Auth Application        | Member uniqueness/insert → Wallet provision participant                                                            | 사용자와 기본 Wallet을 한 짧은 Tx로 commit                                       |
 | Workplace creation    | Workplace Application          | Workplace 검증·insert → Attendance initial QR participant                                                          | 사업장과 최초 고정 QR을 한 짧은 Tx로 commit                                      |
-| Invitation acceptance | Work Acceptance Orchestrator   | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → 필요한 Wallet ID 오름차순 → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 Tx |
-| Settlement payout     | Settlement Payout Orchestrator | `work_cases` → `settlements` → `escrows` → 필요한 Wallet ID 오름차순 → expected-state·자금·양측 ledger             | 지급 관련 상태와 금액을 한 Tx; Work 완료 상태를 새로 만들지 않음                 |
+| Invitation acceptance | Work Acceptance Orchestrator   | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → 현행 user ID 오름차순 지갑 조회 → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 Tx |
+| Settlement payout     | Settlement Payout Orchestrator | `work_cases` → `settlements` → `escrows` → 현행 user ID 오름차순 지갑 조회 → expected-state·자금·양측 ledger             | 지급 관련 상태와 금액을 한 Tx; Work 완료 상태를 새로 만들지 않음                 |
 
 participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데이터를 `REQUIRES_NEW`로
 독립 commit하면 안 된다. Claim 선점·abandon처럼 별도 commit이 계약상 필요한 예외만 역할
@@ -272,26 +287,21 @@ participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데
 | `QX-002` | `wallet.mapper.WalletQueryMapper`          | work_cases, workplaces                                                 | Wallet 거래내역 표시     | 유지 가능한 Read Model          |
 | `QX-003` | `document.mapper.DocumentQueryMapper`      | users                                                                  | 문서 목록·공유자 표시    | #132의 권한/비공개 값 계약 유지 |
 | `QX-004` | `document.mapper.DocumentAccessMapper`     | work_contracts                                                         | 계약 당사자 접근 판정    | Document Query Port로 캡슐화    |
-| `QX-005` | `settlement.mapper.SettlementLedgerMapper` | wallet_transactions, wallets                                           | payout replay Projection | persistence 타입 누출은 #291    |
+| `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
 
-`AttendanceLifecycleMapper`의 Work/Invitation/Contract/Escrow/Settlement/Document 다중 조회와
-`WorkContractMapper`의 사용자 이름 조회는 화면 Projection이 아니라 Command 선행조건이다.
-따라서 위 예외로 숨기지 않고 #287에서 public Query/Command 경계로 이동한다.
+`AttendanceLifecycleMapper`는 Scheduler batch와 READY 선행조건을 한 번에 읽는 consumer-owned
+Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전이는
+`WorkLifecycleCommandService`만 수행한다. `WorkContractMapper`의 `users` JOIN은 제거하고
+`MemberIdentityQueryService`로 이동했다. QX-005에 DML을 다시 추가하면 즉시 위반이다.
 
-## 현재 위반과 단일 후속 소유자
+## 남은 위반과 단일 후속 소유자
 
-위반은 현재 구현 상태를 숨기지 않기 위한 baseline이다. 이 표는 #283에서 코드로 고치지 않는다.
+#287에서 TV-001~TV-007을 제거했다. 아래 항목은 기능 공백을 임의 구현하지 않고 각 후속 이슈가
+소유한다.
 
 | ID       | 현재 근거                                                                             | 위반                                               | Primary 후속 이슈         |
 | -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
-| `TV-001` | `WorkCaseMapper`, `InvitationMapper`, `AttendanceLifecycleMapper`, `WorkMapper`       | `work_cases` DML이 4개 Mapper에 분산               | #287, 상태 정책 선행 #286 |
-| `TV-002` | `InvitationMapper`, `WorkCaseMapper`                                                  | `work_invitations` DML이 2개 Mapper에 분산         | #287                      |
-| `TV-003` | `AuthServiceImpl`, `AcceptEscrowHoldImpl`, `SettlementServiceImpl`                    | Wallet/Escrow/Ledger owner Mapper 외부 직접 호출   | #287, 금융 모델 #289      |
-| `TV-004` | `AcceptAggregateExecutor`                                                             | Work Contract와 Settlement Mapper 직접 조정        | #287 후 #288              |
-| `TV-005` | `WorkplaceQrServiceImpl`, `SignedContractArtifactVerifier`, `PdfContractArtifactPort` | Workplace/Document/Work Mapper의 타 모듈 직접 조회 | #287                      |
-| `TV-006` | `BadgeController`, `DocumentController`                                               | Controller → Mapper 직접 호출                      | #287                      |
-| `TV-007` | `SettlementServiceImpl`                                                               | Work/Wallet Mapper와 상태·금액 정책 직접 조정      | #287/#289 후 #290         |
-| `TV-008` | `SettlementLedgerMapper`, Attendance/Work Row imports                                 | 타 모듈 persistence DTO/Row 의미 누출              | #291                      |
+| `TV-008` | Attendance/Work persistence DTO/Row imports                                             | 타 모듈 persistence DTO/Row 의미 누출              | #291                      |
 | `TV-009` | Work/Invitation Service와 SQL의 상태 문자열                                           | 장기 생명주기 정책 분산                            | #286                      |
 | `TV-010` | acceptance Claim·pending file·client key                                              | process crash와 새로고침 exact replay 경계 불명확  | #288, FE adapter #293     |
 | `TV-011` | lifecycle별 nullable/timestamp 조합                                                   | Application 정책과 DB 구조 방어 간 공백            | #292                      |
@@ -337,7 +347,8 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
 - **Decision:** 9개 굵은 논리 모듈, 24개 테이블의 단일 write owner, 공개 Application 경계,
   read-only JOIN 예외, use-case Orchestrator가 소유하는 outer Transaction을 채택한다.
 - **Consequences:** `work`/`invitation`/`contract`와 `auth`/`member`/`badge`의 물리 package는
-  유지할 수 있다. 후속 #287과 #288에서 직접 Mapper 호출을 owner Service로 옮겨야 한다.
+  유지할 수 있다. #287에서 직접 Mapper 호출을 owner Service로 옮겼고, #288은 수락 복구 계약을
+  이어서 명시한다.
   Query를 무의미하게 여러 Service 호출로 분해하지 않는다. 새 Framework, Saga, Outbox,
   generic Repository는 도입하지 않는다.
 - **Alternatives rejected:** package 하나당 독립 module, Work 전체 장기 Transaction, 모든

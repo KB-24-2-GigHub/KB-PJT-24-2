@@ -32,6 +32,7 @@ import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.service.WorkCaseService;
 import com.gighub.work.service.command.WorkCaseCreateCommand;
 import com.gighub.work.service.command.WorkCaseUpdateCommand;
+import com.gighub.invitation.mapper.InvitationMapper;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,9 +42,13 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
+    private final InvitationMapper invitationMapper;
 
-    public WorkCaseServiceImpl(WorkCaseMapper workCaseMapper) {
+    public WorkCaseServiceImpl(
+            WorkCaseMapper workCaseMapper,
+            InvitationMapper invitationMapper) {
         this.workCaseMapper = workCaseMapper;
+        this.invitationMapper = invitationMapper;
     }
 
     @Override
@@ -114,7 +119,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
         // 조건이 바뀌면 이전 조건으로 발급된 PENDING 초대는 더 이상 유효하지 않습니다.
         // 활성 PENDING은 근무당 하나뿐이라 Version별 조건 없이 그대로 철회합니다.
-        workCaseMapper.revokePendingInvitations(command.getWorkCaseId());
+        invitationMapper.revokePendingByWorkCaseIdNow(command.getWorkCaseId());
     }
 
     @Override
@@ -131,7 +136,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
             return;
         }
 
-        workCaseMapper.revokePendingInvitations(workCaseId);
+        invitationMapper.revokePendingByWorkCaseIdNow(workCaseId);
         // CANCELED 전이는 status 등 일부 컬럼만 바꾸는 UPDATE라 자식 테이블의 FK RESTRICT를
         // 건드리지 않습니다. 행 자체를 지우는 DELETE만 참조 무결성 위반 가능성이 있습니다.
         if (workCaseMapper.cancelDraft(workCaseId) != 1) {

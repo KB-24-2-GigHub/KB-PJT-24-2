@@ -19,6 +19,8 @@ import com.gighub.document.storage.Sha256;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -70,6 +72,7 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
     }
 
     @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public ContractArtifactHandle prepare(ContractArtifactCommand command) {
         ContractTermsSnapshot terms = command.getTerms();
 

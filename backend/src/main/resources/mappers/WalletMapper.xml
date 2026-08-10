@@ -189,6 +189,16 @@
         FOR SHARE
     </select>
 
+    <!-- Settlement replay는 최신 committed 원장만 잠그고 wallets 행의 잠금 순서를 건드리지 않습니다. -->
+    <select id="findSettlementTransactionByIdempotencyKeyForShare"
+            resultMap="walletTransactionSnapshotResult">
+        SELECT <include refid="transactionSnapshotColumns"/>
+        FROM wallet_transactions wt
+        JOIN wallets w ON w.id = wt.wallet_id
+        WHERE wt.idempotency_key = #{idempotencyKey}
+        FOR SHARE OF wt
+    </select>
+
     <select id="findFundingTransactionSnapshot"
             resultMap="walletTransactionSnapshotResult">
         SELECT <include refid="transactionSnapshotColumns"/>

@@ -17,7 +17,7 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.member.domain.UserRole;
-import com.gighub.workplace.mapper.WorkplaceMapper;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.springframework.dao.DuplicateKeyException;
@@ -28,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -39,13 +40,14 @@ class WorkplaceQrServiceImplTest {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
     };
 
-    private final WorkplaceMapper workplaceMapper = mock(WorkplaceMapper.class);
+    private final WorkplaceOwnershipService workplaceService =
+            mock(WorkplaceOwnershipService.class);
     private final QrTokenMapper qrTokenMapper = mock(QrTokenMapper.class);
     private final QrTokenCodec codec = new QrTokenCodec(new QrHmacKeys("k1",
             Map.of("k1", "01234567890123456789012345678901".getBytes(StandardCharsets.US_ASCII))));
     private final WorkplaceQrIssuer qrIssuer = mock(WorkplaceQrIssuer.class);
     private final WorkplaceQrServiceImpl service =
-            new WorkplaceQrServiceImpl(workplaceMapper, qrTokenMapper, codec, qrIssuer);
+            new WorkplaceQrServiceImpl(workplaceService, qrTokenMapper, codec, qrIssuer);
 
     private static final byte[] NEW_NONCE = {
         16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1
@@ -53,7 +55,6 @@ class WorkplaceQrServiceImplTest {
 
     @Test
     void reissueRevokesTheCurrentQrBeforeIssuingTheNewOne() {
-        when(workplaceMapper.findOwnedActiveIdForUpdate(42L, 7L)).thenReturn(42L);
         when(qrTokenMapper.revokeActiveByWorkplaceId(42L)).thenReturn(1);
         when(qrIssuer.issueActive(42L, 7L)).thenReturn(NEW_NONCE);
 
@@ -74,7 +75,6 @@ class WorkplaceQrServiceImplTest {
     /** 활성 QR이 없어도 재발급은 성공해야 합니다. 조회 500 상태에서 유일한 복구 경로입니다. */
     @Test
     void reissueSucceedsWhenNoActiveQrExists() {
-        when(workplaceMapper.findOwnedActiveIdForUpdate(42L, 7L)).thenReturn(42L);
         when(qrTokenMapper.revokeActiveByWorkplaceId(42L)).thenReturn(0);
         when(qrIssuer.issueActive(42L, 7L)).thenReturn(NEW_NONCE);
 
@@ -87,14 +87,15 @@ class WorkplaceQrServiceImplTest {
 
         assertThrows(RoleMismatchException.class, () -> service.reissue(worker, 42L));
 
-        verifyNoInteractions(workplaceMapper);
+        verifyNoInteractions(workplaceService);
         verifyNoInteractions(qrTokenMapper);
         verifyNoInteractions(qrIssuer);
     }
 
     @Test
     void reissueReportsNotFoundForAWorkplaceTheCallerDoesNotOwn() {
-        when(workplaceMapper.findOwnedActiveIdForUpdate(anyLong(), anyLong())).thenReturn(null);
+        doThrow(new ResourceNotFoundException("사업장을 찾을 수 없습니다."))
+                .when(workplaceService).lockOwnedActiveWorkplace(anyLong(), anyLong());
 
         assertThrows(ResourceNotFoundException.class, () -> service.reissue(owner(7L), 42L));
 
@@ -105,7 +106,6 @@ class WorkplaceQrServiceImplTest {
     /** 동시 재발급 경쟁의 패자는 Unique 위반을 승인된 충돌 응답으로 받습니다. */
     @Test
     void reissueTranslatesDuplicateActiveQrIntoConflict() {
-        when(workplaceMapper.findOwnedActiveIdForUpdate(42L, 7L)).thenReturn(42L);
         when(qrTokenMapper.revokeActiveByWorkplaceId(42L)).thenReturn(1);
         when(qrIssuer.issueActive(42L, 7L)).thenThrow(new DuplicateKeyException("duplicate"));
 
@@ -114,7 +114,6 @@ class WorkplaceQrServiceImplTest {
 
     @Test
     void returnsTokenSignedFromTheStoredNonce() {
-        when(workplaceMapper.countOwnedActiveById(42L, 7L)).thenReturn(1);
         when(qrTokenMapper.findActiveByWorkplaceId(42L)).thenReturn(row());
 
         WorkplaceQrResponse response = service.findQr(owner(7L), 42L);
@@ -126,7 +125,6 @@ class WorkplaceQrServiceImplTest {
 
     @Test
     void repeatedLookupsReturnTheSameToken() {
-        when(workplaceMapper.countOwnedActiveById(42L, 7L)).thenReturn(1);
         when(qrTokenMapper.findActiveByWorkplaceId(42L)).thenReturn(row());
 
         assertEquals(
@@ -140,14 +138,15 @@ class WorkplaceQrServiceImplTest {
 
         assertThrows(RoleMismatchException.class, () -> service.findQr(worker, 42L));
 
-        verifyNoInteractions(workplaceMapper);
+        verifyNoInteractions(workplaceService);
         verifyNoInteractions(qrTokenMapper);
     }
 
     /** 남의 사업장과 없는 사업장을 구분하면 식별자의 존재가 드러납니다. 둘 다 404입니다. */
     @Test
     void reportsNotFoundForAWorkplaceTheCallerDoesNotOwn() {
-        when(workplaceMapper.countOwnedActiveById(anyLong(), anyLong())).thenReturn(0);
+        doThrow(new ResourceNotFoundException("사업장을 찾을 수 없습니다."))
+                .when(workplaceService).requireOwnedActiveWorkplace(anyLong(), anyLong());
 
         assertThrows(ResourceNotFoundException.class, () -> service.findQr(owner(7L), 42L));
 
@@ -157,7 +156,6 @@ class WorkplaceQrServiceImplTest {
     /** 활성 QR 없는 ACTIVE 사업장은 정상 상태가 아니므로 빈 응답으로 감추지 않습니다. */
     @Test
     void reportsIntegrityFailureWhenTheActiveWorkplaceHasNoQr() {
-        when(workplaceMapper.countOwnedActiveById(42L, 7L)).thenReturn(1);
         when(qrTokenMapper.findActiveByWorkplaceId(42L)).thenReturn(null);
 
         assertThrows(WorkplaceQrIntegrityException.class, () -> service.findQr(owner(7L), 42L));

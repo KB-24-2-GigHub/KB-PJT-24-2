@@ -2,6 +2,7 @@ package com.gighub.document.contract.impl;
 
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
+import com.gighub.contract.ContractArtifactPort;
 import com.gighub.contract.domain.AcceptedContract;
 import com.gighub.contract.domain.ContractTermsSnapshot;
 import com.gighub.document.contract.ContractPdfRenderer;
@@ -16,17 +17,25 @@ import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.aop.framework.ProxyFactory;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.IllegalTransactionStateException;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 
+import javax.sql.DataSource;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -49,6 +58,23 @@ class PdfContractArtifactPortTest {
 
     private final PdfContractArtifactPort port = new PdfContractArtifactPort(
             documentMapper, renderer, storageAdapter);
+
+    @Test
+    void prepareRejectsCallsWithoutTheAcceptanceOuterTransaction() {
+        DataSourceTransactionManager transactionManager =
+                new DataSourceTransactionManager(mock(DataSource.class));
+        TransactionInterceptor interceptor = new TransactionInterceptor(
+                transactionManager, new AnnotationTransactionAttributeSource());
+        ProxyFactory factory = new ProxyFactory(port);
+        factory.addAdvice(interceptor);
+        ContractArtifactPort proxy = (ContractArtifactPort) factory.getProxy();
+
+        assertThrows(
+                IllegalTransactionStateException.class,
+                () -> proxy.prepare(mock(ContractArtifactCommand.class)));
+
+        verifyNoInteractions(documentMapper, renderer, storageAdapter);
+    }
 
     @Test
     void prepareWritesBothVersionsAndSharesWithTheWorker() {

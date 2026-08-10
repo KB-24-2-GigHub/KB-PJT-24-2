@@ -119,20 +119,6 @@
     </update>
 
     <!--
-        ck_work_cases_matched_worker 가 ACCEPTED에 worker_id를 요구하므로 매칭과 상태 전이를
-        한 문장에서 함께 적용합니다. worker_id IS NULL 조건은 이미 매칭된 근무를 다른 WORKER가
-        덮어쓰지 못하게 합니다.
-    -->
-    <update id="assignWorkerAndAccept">
-        UPDATE work_cases
-        SET worker_id = #{workerId},
-            status    = 'ACCEPTED'
-        WHERE id = #{workCaseId}
-          AND status = 'DRAFT'
-          AND worker_id IS NULL
-    </update>
-
-    <!--
         uk_work_invitations_active 가 Work Case당 활성 PENDING을 하나로 제한하므로 결과는
         최대 한 건입니다. LIMIT 로 건수를 맞추는 대신 제약을 그대로 신뢰하면, 제약이 깨진
         경우가 조용히 넘어가지 않고 드러납니다.
@@ -215,6 +201,14 @@
         UPDATE work_invitations
         SET status = 'REVOKED',
             revoked_at = #{revokedAt}
+        WHERE work_case_id = #{workCaseId}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="revokePendingByWorkCaseIdNow">
+        UPDATE work_invitations
+        SET status     = 'REVOKED',
+            revoked_at = CURRENT_TIMESTAMP(6)
         WHERE work_case_id = #{workCaseId}
           AND status = 'PENDING'
     </update>

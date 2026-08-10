@@ -4,6 +4,7 @@ import com.gighub.document.mapper.ContractDocumentWriteMapper;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
+import com.gighub.document.service.SignedContractArtifactQueryServiceImpl;
 import com.gighub.document.storage.DocumentStorageIntegrityException;
 import com.gighub.document.storage.Sha256;
 import org.junit.jupiter.api.Test;
@@ -86,6 +87,7 @@ class SignedContractArtifactVerifierTest {
     }
 
     private SignedContractArtifactVerifier verifier() {
-        return new SignedContractArtifactVerifier(documentMapper, storageAdapter);
+        return new SignedContractArtifactVerifier(
+                new SignedContractArtifactQueryServiceImpl(documentMapper, storageAdapter));
     }
 }

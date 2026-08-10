@@ -10,6 +10,7 @@ import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.Sha256;
 import com.gighub.idempotency.exception.IdempotencyClaimKeyReusedException;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
+import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.service.InvitationIssueService;
@@ -141,6 +142,70 @@ class InvitationAcceptDatabaseIntegrationTest {
                 );
             } finally {
                 executor.shutdownNow();
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void expiredAcceptCommitsExpiryAcrossMandatoryParticipantBoundary() throws Exception {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            InvitationIssueService issueService = context.getBean(InvitationIssueService.class);
+            InvitationAcceptService acceptService = context.getBean(InvitationAcceptService.class);
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+
+            String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            Fixture fixture = insertFixture(jdbcTemplate, suffix, INITIAL_AVAILABLE);
+            String token = issueToken(issueService, fixture);
+
+            try {
+                jdbcTemplate.update(
+                        "UPDATE work_invitations SET expires_at = ?"
+                                + " WHERE work_case_id = ? AND status = 'PENDING'",
+                        LocalDateTime.now().minusMinutes(1L),
+                        fixture.workCaseId);
+                Long expiredInvitationId = jdbcTemplate.queryForObject(
+                        "SELECT id FROM work_invitations"
+                                + " WHERE work_case_id = ? AND status = 'PENDING'",
+                        Long.class,
+                        fixture.workCaseId);
+
+                assertThrows(
+                        InvitationExpiredException.class,
+                        () -> acceptService.accept(
+                                fixture.worker(), token, "expired-" + fixture.suffix)
+                );
+
+                assertEquals(
+                        "EXPIRED",
+                        jdbcTemplate.queryForObject(
+                                "SELECT status FROM work_invitations WHERE id = ?",
+                                String.class,
+                                expiredInvitationId)
+                );
+                assertEquals("DRAFT", workCaseStatus(jdbcTemplate, fixture));
+                assertEquals(0, countRows(jdbcTemplate, "work_contracts", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "escrows", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "settlements", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "wallet_transactions", fixture));
+                assertEquals(0, countClaims(jdbcTemplate, fixture.workerUserId));
+                assertEquals(INITIAL_AVAILABLE,
+                        availableBalance(jdbcTemplate, fixture.ownerUserId));
+                assertEquals(0L, lockedBalance(jdbcTemplate, fixture.ownerUserId));
+
+                assertNotNull(issueToken(issueService, fixture));
+                assertEquals(
+                        1,
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM work_invitations"
+                                        + " WHERE work_case_id = ? AND status = 'PENDING'",
+                                Integer.class,
+                                fixture.workCaseId)
+                );
+            } finally {
                 cleanUp(jdbcTemplate, fixture, storageBasePath);
             }
         }

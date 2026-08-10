@@ -1,11 +1,10 @@
 package com.gighub.attendance.service;
 
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
-import com.gighub.attendance.mapper.result.AttendanceLifecycleWorkCaseRow;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
-import com.gighub.work.domain.WorkCaseDecision;
-import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.work.domain.WorkCaseStatus;
+import com.gighub.work.service.WorkLifecycleCommandService;
+import com.gighub.work.service.result.WorkLifecycleSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -25,21 +24,24 @@ public class AttendanceLifecycleTransitionExecutor {
 
     private final AttendanceLifecycleMapper lifecycleMapper;
     private final SignedContractArtifactVerifier artifactVerifier;
+    private final WorkLifecycleCommandService workLifecycleCommandService;
 
     public AttendanceLifecycleTransitionExecutor(
             AttendanceLifecycleMapper lifecycleMapper,
-            SignedContractArtifactVerifier artifactVerifier) {
+            SignedContractArtifactVerifier artifactVerifier,
+            WorkLifecycleCommandService workLifecycleCommandService) {
         this.lifecycleMapper = lifecycleMapper;
         this.artifactVerifier = artifactVerifier;
+        this.workLifecycleCommandService = workLifecycleCommandService;
     }
 
     @Transactional
     public boolean advanceToReady(long workCaseId, LocalDateTime now) {
-        AttendanceLifecycleWorkCaseRow row = lifecycleMapper.lockById(workCaseId);
+        WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
-                || row.getStatus() != WorkCaseStatus.ACCEPTED
-                || row.getStartsAt().isAfter(now.plusMinutes(30))
-                || !now.isBefore(row.getStartsAt().plusHours(1))) {
+                || row.status() != WorkCaseStatus.ACCEPTED
+                || row.startsAt().isAfter(now.plusMinutes(30))
+                || !now.isBefore(row.startsAt().plusHours(1))) {
             return false;
         }
 
@@ -59,10 +61,10 @@ public class AttendanceLifecycleTransitionExecutor {
 
     @Transactional
     public boolean advanceToNoShow(long workCaseId, LocalDateTime now) {
-        AttendanceLifecycleWorkCaseRow row = lifecycleMapper.lockById(workCaseId);
+        WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
-                || row.getStatus() != WorkCaseStatus.READY
-                || row.getStartsAt().plusHours(1).isAfter(now)
+                || row.status() != WorkCaseStatus.READY
+                || row.startsAt().plusHours(1).isAfter(now)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)) {
             return false;
         }
@@ -71,10 +73,10 @@ public class AttendanceLifecycleTransitionExecutor {
 
     @Transactional
     public boolean advanceToCheckoutMissing(long workCaseId, LocalDateTime now) {
-        AttendanceLifecycleWorkCaseRow row = lifecycleMapper.lockById(workCaseId);
+        WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
-                || row.getStatus() != WorkCaseStatus.IN_PROGRESS
-                || row.getEndsAt().plusHours(2).isAfter(now)
+                || row.status() != WorkCaseStatus.IN_PROGRESS
+                || row.endsAt().plusHours(2).isAfter(now)
                 || !lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_OUT)) {
             return false;
@@ -83,14 +85,10 @@ public class AttendanceLifecycleTransitionExecutor {
     }
 
     private boolean transition(
-            AttendanceLifecycleWorkCaseRow row,
+            WorkLifecycleSnapshot row,
             WorkCaseStatus target) {
-        if (WorkCasePolicy.decideTransition(
-                row.getStatus(), target) != WorkCaseDecision.ALLOWED) {
-            return false;
-        }
-        return lifecycleMapper.transitionStatus(
-                row.getWorkCaseId(), row.getStatus(), target) == 1;
+        return workLifecycleCommandService.transition(
+                row.workCaseId(), row.status(), target);
     }
 
     private void auditReadyBlocked(
