@@ -15,9 +15,11 @@
     "lint": "node scripts/run-lint.js all",
     "lint:fe": "node scripts/run-lint.js frontend",
     "lint:be": "node scripts/run-lint.js backend",
+    "test:fe": "npm --prefix frontend run test:run",
+    "build:fe": "npm --prefix frontend run build",
     "format:staged": "lint-staged",
     "test:harness": "node --test scripts/check-project-guardrails.test.js scripts/run-precommit.test.js",
-    "check": "npm run check:guardrails && npm run test:harness && npm run lint"
+    "check": "npm run check:guardrails && npm run test:harness && npm run test:fe && npm run build:fe && npm run lint"
   },
   "devDependencies": {
     "husky": "^9.1.7",

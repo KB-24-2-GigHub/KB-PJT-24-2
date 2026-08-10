@@ -93,6 +93,7 @@ replay_pid*.log
 !/docs/agent/ARCHITECTURE_OVERVIEW.md
 !/docs/agent/IMPLEMENTATION_GUIDE.md
 !/docs/agent/SCHEMA_OVERVIEW.md
+!/docs/agent/VERIFICATION_GUIDE.md
 !/docs/specs/
 !/docs/specs/SPEC_LOCK.json
 !/docs/specs/*.md
