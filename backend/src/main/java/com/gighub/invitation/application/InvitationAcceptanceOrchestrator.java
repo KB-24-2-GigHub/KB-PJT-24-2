@@ -1,108 +1,112 @@
-package com.gighub.invitation.service.impl;
+package com.gighub.invitation.application;
 
-import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
 import com.gighub.contract.ContractArtifactPort;
 import com.gighub.contract.domain.AcceptedContract;
 import com.gighub.idempotency.IdempotencyClaimService;
-import com.gighub.invitation.dto.InvitationAcceptResponse;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.service.AcceptanceWorkParticipant;
 import com.gighub.invitation.service.result.AcceptanceWorkContext;
 import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.wallet.service.AcceptEscrowHold;
-import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 /**
- * 수락의 outer Transaction과 participant 호출 순서를 소유합니다.
+ * 초대 수락에 참여하는 owner Service를 하나의 짧은 Application Transaction으로 조정합니다.
  *
- * <p>잠금·변경 순서는 Claim → Work → Invitation → Wallet → Contract/Document → Settlement →
- * Claim complete입니다. 각 participant는 같은 Transaction에 MANDATORY로 참여하고 자기 owner
- * Mapper만 사용합니다.</p>
+ * <p>잠금 순서는 Work → Invitation → Wallet입니다. Work participant가 앞의 두 잠금과
+ * expected-state 전이를 소유하고, Wallet·Document·Settlement·Idempotency participant는
+ * 이 Transaction에 MANDATORY로 참여합니다. 교착/잠금 시간 초과가 발생하면 facade가 이
+ * 명령 전체를 새 Transaction에서 다시 실행하며 participant 하나만 따로 재시도하지 않습니다.</p>
  */
-@Component
-public class AcceptAggregateExecutor {
+@Service
+public class InvitationAcceptanceOrchestrator {
 
-    private static final java.time.ZoneId DATABASE_ZONE = java.time.ZoneId.of("Asia/Seoul");
+    private static final ZoneId DATABASE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final AcceptanceWorkParticipant workParticipant;
     private final AcceptEscrowHold escrowHold;
     private final SettlementReservationService settlementReservationService;
     private final IdempotencyClaimService claimService;
-    private final AcceptJson acceptJson;
+    private final InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec;
     private final ContractArtifactPort contractArtifactPort;
     private final Clock clock;
 
-    @org.springframework.beans.factory.annotation.Autowired
-    public AcceptAggregateExecutor(
+    @Autowired
+    public InvitationAcceptanceOrchestrator(
             AcceptanceWorkParticipant workParticipant,
             AcceptEscrowHold escrowHold,
             SettlementReservationService settlementReservationService,
             IdempotencyClaimService claimService,
-            AcceptJson acceptJson,
+            InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec,
             ContractArtifactPort contractArtifactPort) {
         this(
                 workParticipant,
                 escrowHold,
                 settlementReservationService,
                 claimService,
-                acceptJson,
+                replaySnapshotCodec,
                 contractArtifactPort,
                 Clock.system(DATABASE_ZONE));
     }
 
-    /** 만료·시작 시각 경계 테스트에서만 고정 Clock을 주입합니다. */
-    AcceptAggregateExecutor(
+    /** 만료·시작 시각 경계 테스트만 고정 Clock을 주입합니다. */
+    public InvitationAcceptanceOrchestrator(
             AcceptanceWorkParticipant workParticipant,
             AcceptEscrowHold escrowHold,
             SettlementReservationService settlementReservationService,
             IdempotencyClaimService claimService,
-            AcceptJson acceptJson,
+            InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec,
             ContractArtifactPort contractArtifactPort,
             Clock clock) {
         this.workParticipant = workParticipant;
         this.escrowHold = escrowHold;
         this.settlementReservationService = settlementReservationService;
         this.claimService = claimService;
-        this.acceptJson = acceptJson;
+        this.replaySnapshotCodec = replaySnapshotCodec;
         this.contractArtifactPort = contractArtifactPort;
         this.clock = clock;
     }
 
-    @Transactional(noRollbackFor = InvitationExpiredException.class)
-    public AcceptAggregateOutcome execute(
-            AuthPrincipal principal,
-            long invitationId,
-            long workCaseId,
-            byte[] tokenHash,
-            long claimId) {
+    @Transactional(
+            propagation = Propagation.REQUIRES_NEW,
+            noRollbackFor = InvitationExpiredException.class)
+    public InvitationAcceptanceOutcome execute(InvitationAcceptanceCommand command) {
         LocalDateTime acceptedAt = LocalDateTime.now(clock);
         AcceptanceWorkContext context = workParticipant.lockAndValidate(
-                principal, invitationId, workCaseId, tokenHash, acceptedAt);
+                command.getWorkerId(),
+                command.getInvitationId(),
+                command.getWorkCaseId(),
+                command.getTokenHash(),
+                acceptedAt);
 
-        workParticipant.confirm(context, principal.getUserId(), acceptedAt);
+        workParticipant.confirm(context, command.getWorkerId(), acceptedAt);
         escrowHold.hold(
                 context.getEmployerId(),
                 context.getWorkCaseId(),
                 context.getDailyWage(),
-                claimId,
+                command.getClaimId(),
                 acceptedAt);
 
         AcceptedContract contract = workParticipant.createContract(
-                context, principal.getUserId(), acceptedAt);
+                context, command.getWorkerId(), acceptedAt);
         ContractArtifactHandle artifact = contractArtifactPort.prepare(
                 ContractArtifactCommand.from(contract));
         settlementReservationService.reserveWaiting(
                 context.getWorkCaseId(), context.getDailyWage());
 
-        InvitationAcceptResponse response = InvitationAcceptResponse.held(
+        InvitationAcceptanceResult result = InvitationAcceptanceResult.held(
                 context.getWorkCaseId());
-        claimService.complete(claimId, 200, acceptJson.writeResponseBody(response));
-        return new AcceptAggregateOutcome(response, artifact);
+        claimService.complete(
+                command.getClaimId(), 200, replaySnapshotCodec.writeResponseBody(result));
+        return new InvitationAcceptanceOutcome(result, artifact);
     }
 }

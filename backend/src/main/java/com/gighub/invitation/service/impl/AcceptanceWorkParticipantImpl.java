@@ -1,6 +1,5 @@
 package com.gighub.invitation.service.impl;
 
-import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ForbiddenException;
@@ -65,7 +64,7 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
             propagation = Propagation.MANDATORY,
             noRollbackFor = InvitationExpiredException.class)
     public AcceptanceWorkContext lockAndValidate(
-            AuthPrincipal principal,
+            long workerId,
             long invitationId,
             long workCaseId,
             byte[] tokenHash,
@@ -74,7 +73,7 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
         if (workCase == null) {
             throw new IllegalStateException("초대가 가리키는 근무를 찾을 수 없습니다.");
         }
-        if (workCase.getEmployerId().equals(principal.getUserId())) {
+        if (workCase.getEmployerId().equals(workerId)) {
             throw new ForbiddenException("본인이 등록한 근무는 수락할 수 없습니다.");
         }
 

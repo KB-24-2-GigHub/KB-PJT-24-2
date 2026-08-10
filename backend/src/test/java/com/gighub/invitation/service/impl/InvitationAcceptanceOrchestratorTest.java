@@ -2,14 +2,17 @@ package com.gighub.invitation.service.impl;
 
 import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ForbiddenException;
 import com.gighub.common.exception.WorkCaseLockedException;
+import com.gighub.contract.domain.AcceptedContract;
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
 import com.gighub.contract.ContractArtifactPort;
 import com.gighub.contract.mapper.WorkContractMapper;
 import com.gighub.idempotency.IdempotencyClaimService;
+import com.gighub.invitation.application.InvitationAcceptanceCommand;
+import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.invitation.application.InvitationAcceptanceOutcome;
 import com.gighub.invitation.config.InvitationProperties;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
@@ -19,24 +22,33 @@ import com.gighub.invitation.mapper.InvitationMapperTestDouble;
 import com.gighub.invitation.mapper.result.AcceptWorkCaseLockRow;
 import com.gighub.invitation.mapper.result.InvitationRow;
 import com.gighub.invitation.service.AcceptanceWorkParticipant;
+import com.gighub.invitation.service.result.AcceptanceWorkContext;
 import com.gighub.invitation.token.InvitationTokenCodec;
-import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.wallet.service.AcceptEscrowHold;
 import com.gighub.work.mapper.WorkCaseMapper;
 import org.junit.jupiter.api.Test;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * 잠금 뒤 재검증 순서와, 실패 시 아무 것도 쓰지 않는지 확인합니다.
@@ -44,7 +56,7 @@ import static org.mockito.Mockito.mock;
  * <p>DB 통합 테스트가 도달할 수 없는 방어선도 여기서 확인합니다. 역할이 WORKER인데 같은
  * 근무의 OWNER이기도 한 어긋난 데이터가 그런 경우입니다.</p>
  */
-class AcceptAggregateExecutorTest {
+class InvitationAcceptanceOrchestratorTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final long INVITATION_ID = 41L;
@@ -61,6 +73,73 @@ class AcceptAggregateExecutorTest {
     private final byte[] tokenHash = codec.hash(codec.deriveToken(INVITATION_ID));
     private final StubInvitationMapper mapper = new StubInvitationMapper();
     private final StubEscrowHold escrowHold = new StubEscrowHold();
+
+    @Test
+    void ownsOneNewOuterTransactionAndPreservesExpiryCommit() throws Exception {
+        Transactional transactional = InvitationAcceptanceOrchestrator.class
+                .getMethod("execute", InvitationAcceptanceCommand.class)
+                .getAnnotation(Transactional.class);
+
+        assertNotNull(transactional);
+        assertEquals(Propagation.REQUIRES_NEW, transactional.propagation());
+        assertTrue(Arrays.asList(transactional.noRollbackFor())
+                .contains(InvitationExpiredException.class));
+    }
+
+    @Test
+    void callsOwnerParticipantsInTheFixedAcceptanceOrder() {
+        AcceptanceWorkParticipant workParticipant = mock(AcceptanceWorkParticipant.class);
+        AcceptEscrowHold walletParticipant = mock(AcceptEscrowHold.class);
+        SettlementReservationService settlementParticipant =
+                mock(SettlementReservationService.class);
+        IdempotencyClaimService claimParticipant = mock(IdempotencyClaimService.class);
+        ContractArtifactPort documentParticipant = mock(ContractArtifactPort.class);
+        AcceptanceWorkContext context = AcceptanceWorkContext.builder()
+                .invitationId(INVITATION_ID)
+                .workCaseId(WORK_CASE_ID)
+                .employerId(OWNER_ID)
+                .dailyWage(120_000L)
+                .build();
+        AcceptedContract contract = mock(AcceptedContract.class);
+        ContractArtifactHandle artifact = ContractArtifactHandle.of(WORK_CASE_ID, 900L);
+        when(workParticipant.lockAndValidate(
+                anyLong(), anyLong(), anyLong(), any(byte[].class), any()))
+                .thenReturn(context);
+        when(workParticipant.createContract(any(), anyLong(), any())).thenReturn(contract);
+        when(contract.getWorkCaseId()).thenReturn(WORK_CASE_ID);
+        when(contract.getContractId()).thenReturn(900L);
+        when(contract.getAcceptedAt()).thenReturn(STARTS_AT.minusDays(1L));
+        when(documentParticipant.prepare(any())).thenReturn(artifact);
+
+        InvitationAcceptanceOutcome outcome = new InvitationAcceptanceOrchestrator(
+                workParticipant,
+                walletParticipant,
+                settlementParticipant,
+                claimParticipant,
+                new AcceptJson(),
+                documentParticipant,
+                Clock.fixed(STARTS_AT.minusDays(1L).atZone(SEOUL).toInstant(), SEOUL))
+                .execute(InvitationAcceptanceCommand.of(
+                        WORKER_ID, INVITATION_ID, WORK_CASE_ID, tokenHash, CLAIM_ID));
+
+        org.mockito.InOrder order = inOrder(
+                workParticipant,
+                walletParticipant,
+                documentParticipant,
+                settlementParticipant,
+                claimParticipant);
+        order.verify(workParticipant).lockAndValidate(
+                anyLong(), anyLong(), anyLong(), any(byte[].class), any());
+        order.verify(workParticipant).confirm(any(), anyLong(), any());
+        order.verify(walletParticipant).hold(
+                anyLong(), anyLong(), anyLong(), anyLong(), any());
+        order.verify(workParticipant).createContract(any(), anyLong(), any());
+        order.verify(documentParticipant).prepare(any());
+        order.verify(settlementParticipant).reserveWaiting(WORK_CASE_ID, 120_000L);
+        order.verify(claimParticipant).complete(anyLong(), eq(200), any());
+        assertEquals(WORK_CASE_ID, outcome.getResult().getWorkCaseId());
+        assertEquals(artifact, outcome.getArtifact());
+    }
 
     @Test
     void sameUserOnBothSidesIsRejectedAsAPartyProblem() {
@@ -171,7 +250,7 @@ class AcceptAggregateExecutorTest {
                 mock(WorkContractMapper.class),
                 mock(com.gighub.member.service.MemberIdentityQueryService.class),
                 new AcceptJson());
-        new AcceptAggregateExecutor(
+        new InvitationAcceptanceOrchestrator(
                 workParticipant,
                 escrowHold,
                 mock(SettlementReservationService.class),
@@ -179,7 +258,8 @@ class AcceptAggregateExecutorTest {
                 new AcceptJson(),
                 new StubArtifactPort(),
                 Clock.fixed(now.atZone(SEOUL).toInstant(), SEOUL))
-                .execute(worker(), INVITATION_ID, WORK_CASE_ID, tokenHash, CLAIM_ID);
+                .execute(InvitationAcceptanceCommand.of(
+                        WORKER_ID, INVITATION_ID, WORK_CASE_ID, tokenHash, CLAIM_ID));
     }
 
     private static AcceptWorkCaseLockRow draftWorkCase(int termsVersion) {
@@ -210,10 +290,6 @@ class AcceptAggregateExecutorTest {
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(STARTS_AT)
                 .build();
-    }
-
-    private static AuthPrincipal worker() {
-        return new AuthPrincipal(WORKER_ID, UserRole.WORKER, "김알바");
     }
 
     /** 호출 순서와 쓰기 여부를 관찰합니다. */

@@ -1,6 +1,5 @@
 package com.gighub.invitation.service;
 
-import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.contract.domain.AcceptedContract;
 import com.gighub.invitation.service.result.AcceptanceWorkContext;
 
@@ -11,7 +10,7 @@ public interface AcceptanceWorkParticipant {
 
     /** Work→Invitation 순서로 잠그고 권한·상태·조건 Version·만료를 다시 검증합니다. */
     AcceptanceWorkContext lockAndValidate(
-            AuthPrincipal principal,
+            long workerId,
             long invitationId,
             long workCaseId,
             byte[] tokenHash,

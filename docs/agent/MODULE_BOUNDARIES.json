@@ -392,9 +392,9 @@
     },
     {
       "id": "TV-010",
-      "kind": "acceptance-recovery-contract-gap",
-      "target": "claim, pending artifact and client replay key",
-      "ownerIssues": [288, 293]
+      "kind": "acceptance-client-replay-recovery-gap",
+      "target": "client reload and response-loss replay key recovery; implementation issue missing",
+      "ownerIssues": [160, 267]
     },
     {
       "id": "TV-011",

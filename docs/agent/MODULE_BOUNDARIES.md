@@ -123,9 +123,11 @@ sequenceDiagram
 ### 현재와 목표의 구분
 
 현재 코드도 요청 사이에 장기 Transaction을 유지하지 않고 `DRAFT/PENDING`을 저장한다.
-#287에서 `AcceptAggregateExecutor`의 직접 Mapper 조합은 같은 Transaction에 참여하는 owner
-Service 호출로 바뀌었다. DB Lock을 잡은 상태에서 PDF pending artifact를 준비하는 현재 I/O와
-commit 이후 복구 계약은 #288이 담당하며, #287은 그 동작을 임의로 바꾸지 않는다.
+#287에서 직접 Mapper 조합은 같은 Transaction에 참여하는 owner Service 호출로 바뀌었고,
+#288에서 이를 `invitation.application.InvitationAcceptanceOrchestrator`라는 명시적 Application
+조정 경계로 승격했다. API DTO나 `AuthPrincipal`은 Orchestrator로 전달하지 않고 서버가 유도한
+최소 Command와 Result만 사용한다. 저장 Response JSON도 Application의
+`InvitationAcceptanceReplaySnapshotCodec` Port 뒤에서 직렬화한다.
 
 ## 테이블 쓰기 소유권
 
@@ -251,20 +253,24 @@ read projection으로 끝나는 요청에 Orchestrator를 만들지 않는다.
 | --------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Signup                | Member/Auth Application        | Member uniqueness/insert → Wallet provision participant                                                            | 사용자와 기본 Wallet을 한 짧은 Tx로 commit                                       |
 | Workplace creation    | Workplace Application          | Workplace 검증·insert → Attendance initial QR participant                                                          | 사업장과 최초 고정 QR을 한 짧은 Tx로 commit                                      |
-| Invitation acceptance | Work Acceptance Orchestrator   | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → 현행 user ID 오름차순 지갑 조회 → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 Tx |
+| Invitation acceptance | `InvitationAcceptanceOrchestrator` | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → 현행 user ID 오름차순 지갑 조회 → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 `REQUIRES_NEW` Tx |
 | Settlement payout     | Settlement Payout Orchestrator | `work_cases` → `settlements` → `escrows` → 현행 user ID 오름차순 지갑 조회 → expected-state·자금·양측 ledger             | 지급 관련 상태와 금액을 한 Tx; Work 완료 상태를 새로 만들지 않음                 |
 
 participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데이터를 `REQUIRES_NEW`로
 독립 commit하면 안 된다. Claim 선점·abandon처럼 별도 commit이 계약상 필요한 예외만 역할
 이름과 crash window를 문서화한다.
 
-- Idempotency Claim을 먼저 commit해도 Work/Invitation/Wallet Lock과 함께 수시간 보유하지
-  않는다. Claim의 stale 판단, expiry, `Retry-After`, process crash recovery는 #288에서 명시한다.
+- Idempotency Claim은 별도 `REQUIRES_NEW`로 먼저 commit하지만 Work/Invitation/Wallet Lock과
+  함께 수시간 보유하지 않는다. `PROCESSING` Claim은 `expires_at` 전에는 탈취하지 않고 즉시
+  409로 끝나며 현재 보존 기간은 24시간이다. 외부 `Retry-After` Header는 추가하지 않는다.
 - deadlock/lock-timeout 재시도 단위는 participant 한 단계가 아니라 같은 idempotency context를
-  사용하는 전체 Orchestrator 명령의 새 Transaction이다.
-- 외부 네트워크 또는 무제한 I/O를 DB Lock 보유 중 실행하면 안 된다. 현재 PDF 렌더링과
-  pending write를 Transaction 안에 유지하려면 크기·timeout·실패 주입·Lock 시간 근거가
-  필요하며 #288이 결정한다.
+  사용하는 전체 Orchestrator 명령의 새 `REQUIRES_NEW` Transaction이다. 최대 세 번 시도하며
+  중간 실패에서는 Claim을 유지하고 최종 소진 또는 비재시도 실패에서만 abandon한다.
+- DB Lock 보유 중 외부 네트워크나 무제한 I/O를 실행하면 안 된다. 현재 계약 artifact 준비는
+  DB Snapshot의 제한된 필드로 고정된 두 개의 단일 페이지 PDF를 로컬 Storage에 쓰는 경계만
+  허용한다. prepare 실패는 전체 Rollback, commit 후 promotion 실패는 pending fallback으로
+  복구하며 별도 participant Transaction을 만들지 않는다. 다만 동기 `Files.write` 자체를
+  중단하는 wall-clock timeout은 현재 강제하지 않으므로 느린 로컬 디스크는 잔여 운영 위험이다.
 - commit 후 artifact promotion 실패는 이미 commit된 수락을 되돌리지 않는다. 검증된 pending
   artifact fallback과 운영 재시도 책임을 보존한다.
 
@@ -303,7 +309,7 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 | -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
 | `TV-008` | Attendance/Work persistence DTO/Row imports                                             | 타 모듈 persistence DTO/Row 의미 누출              | #291                      |
 | `TV-009` | Work/Invitation Service와 SQL의 상태 문자열                                           | 장기 생명주기 정책 분산                            | #286                      |
-| `TV-010` | acceptance Claim·pending file·client key                                              | process crash와 새로고침 exact replay 경계 불명확  | #288, FE adapter #293     |
+| `TV-010` | 새로고침·재로그인 뒤 client replay key                                               | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 | `TV-011` | lifecycle별 nullable/timestamp 조합                                                   | Application 정책과 DB 구조 방어 간 공백            | #292                      |
 
 `attendance_records`, `disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의
@@ -347,8 +353,8 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
 - **Decision:** 9개 굵은 논리 모듈, 24개 테이블의 단일 write owner, 공개 Application 경계,
   read-only JOIN 예외, use-case Orchestrator가 소유하는 outer Transaction을 채택한다.
 - **Consequences:** `work`/`invitation`/`contract`와 `auth`/`member`/`badge`의 물리 package는
-  유지할 수 있다. #287에서 직접 Mapper 호출을 owner Service로 옮겼고, #288은 수락 복구 계약을
-  이어서 명시한다.
+  유지할 수 있다. #287에서 직접 Mapper 호출을 owner Service로 옮겼고, #288에서 수락 조정을
+  명시적 Orchestrator와 전체 Transaction 재시도 계약으로 고정했다.
   Query를 무의미하게 여러 Service 호출로 분해하지 않는다. 새 Framework, Saga, Outbox,
   generic Repository는 도입하지 않는다.
 - **Alternatives rejected:** package 하나당 독립 module, Work 전체 장기 Transaction, 모든

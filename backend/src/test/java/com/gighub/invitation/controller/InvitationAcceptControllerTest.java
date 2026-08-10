@@ -9,7 +9,7 @@ import com.gighub.common.exception.WorkCaseLockedException;
 import com.gighub.common.trace.TraceIdFilter;
 import com.gighub.config.ApiJsonMapper;
 import com.gighub.idempotency.exception.IdempotencyClaimKeyReusedException;
-import com.gighub.invitation.dto.InvitationAcceptResponse;
+import com.gighub.invitation.application.InvitationAcceptanceResult;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.exception.InvitationNotFoundException;
@@ -26,6 +26,7 @@ import org.springframework.http.converter.json.MappingJackson2HttpMessageConvert
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
@@ -70,7 +71,7 @@ class InvitationAcceptControllerTest {
     @Test
     void firstSuccessReturnsHeldWithoutTheReplayHeader() throws Exception {
         when(invitationAcceptService.accept(any(), eq(TOKEN), eq(KEY)))
-                .thenReturn(InvitationAcceptResult.first(InvitationAcceptResponse.held(123L)));
+                .thenReturn(InvitationAcceptResult.first(InvitationAcceptanceResult.held(123L)));
 
         mockMvc.perform(post(PATH, TOKEN)
                         .principal(workerAuthentication())
@@ -86,7 +87,7 @@ class InvitationAcceptControllerTest {
     @Test
     void replayReturnsTheSameBodyWithTheReplayHeader() throws Exception {
         when(invitationAcceptService.accept(any(), eq(TOKEN), eq(KEY)))
-                .thenReturn(InvitationAcceptResult.replayed(InvitationAcceptResponse.held(123L)));
+                .thenReturn(InvitationAcceptResult.replayed(InvitationAcceptanceResult.held(123L)));
 
         mockMvc.perform(post(PATH, TOKEN)
                         .principal(workerAuthentication())
@@ -95,6 +96,33 @@ class InvitationAcceptControllerTest {
                 .andExpect(header().string("Idempotency-Replayed", "true"))
                 .andExpect(jsonPath("$.data.workCaseId").value(123))
                 .andExpect(jsonPath("$.data.escrowStatus").value("HELD"));
+    }
+
+    @Test
+    void firstAndReplayResponsesAreByteIdenticalExceptForTheReplayHeader() throws Exception {
+        when(invitationAcceptService.accept(any(), eq(TOKEN), eq(KEY)))
+                .thenReturn(InvitationAcceptResult.first(
+                        InvitationAcceptanceResult.held(123L)));
+        MvcResult first = mockMvc.perform(post(PATH, TOKEN)
+                        .principal(workerAuthentication())
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("Idempotency-Replayed"))
+                .andReturn();
+
+        when(invitationAcceptService.accept(any(), eq(TOKEN), eq(KEY)))
+                .thenReturn(InvitationAcceptResult.replayed(
+                        InvitationAcceptanceResult.held(123L)));
+        MvcResult replay = mockMvc.perform(post(PATH, TOKEN)
+                        .principal(workerAuthentication())
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotency-Replayed", "true"))
+                .andReturn();
+
+        org.junit.jupiter.api.Assertions.assertEquals(
+                first.getResponse().getContentAsString(),
+                replay.getResponse().getContentAsString());
     }
 
     @Test

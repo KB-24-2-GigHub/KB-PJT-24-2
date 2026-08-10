@@ -87,6 +87,8 @@ public class InvitationController {
         if (result.isReplayed()) {
             response.header(REPLAYED_HEADER, "true");
         }
-        return response.body(ApiResponse.of(result.getResponse()));
+        return response.body(ApiResponse.of(InvitationAcceptResponse.of(
+                result.getResult().getWorkCaseId(),
+                result.getResult().getEscrowStatus())));
     }
 }

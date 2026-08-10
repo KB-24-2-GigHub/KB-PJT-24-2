@@ -126,6 +126,35 @@ class PdfContractArtifactPortTest {
     }
 
     @Test
+    void secondPendingWriteFailureEscapesSoTheOuterAcceptanceCanRollback() {
+        when(renderer.render(org.mockito.ArgumentMatchers.any(ContractSnapshot.class)))
+                .thenReturn("original".getBytes());
+        when(renderer.render(
+                org.mockito.ArgumentMatchers.any(ContractSnapshot.class),
+                org.mockito.ArgumentMatchers.any(ContractSnapshot.Signature.class)))
+                .thenReturn("signed".getBytes());
+        stubGeneratedIds();
+        org.mockito.Mockito.doThrow(new RuntimeException("second pending write failed"))
+                .when(storageAdapter)
+                .writePending(
+                        eq(ContractStorageKeys.pendingKey(WORK_CASE_ID, 9L, 2)),
+                        eq("signed".getBytes()));
+
+        assertThrows(
+                RuntimeException.class,
+                () -> port.prepare(ContractArtifactCommand.from(AcceptedContract.of(
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms()))));
+
+        verify(storageAdapter).writePending(
+                ContractStorageKeys.pendingKey(WORK_CASE_ID, 9L, 1),
+                "original".getBytes());
+        verify(documentMapper, never()).updateDocumentStatus(
+                anyLong(),
+                org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
     void promotesEachVersionFromItsDeterministicPendingKey() {
         when(documentMapper.findPromotionRowsByWorkCaseId(WORK_CASE_ID)).thenReturn(List.of(
                 ContractVersionPromotionRow.builder()

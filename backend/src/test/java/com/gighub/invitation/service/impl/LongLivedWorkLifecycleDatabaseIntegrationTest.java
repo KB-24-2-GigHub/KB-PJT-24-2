@@ -5,6 +5,8 @@ import com.gighub.config.RootConfig;
 import com.gighub.contract.ContractArtifactPort;
 import com.gighub.document.storage.DocumentStorageProperties;
 import com.gighub.idempotency.IdempotencyClaimService;
+import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec;
 import com.gighub.invitation.config.InvitationLinkFactory;
 import com.gighub.invitation.dto.InvitationDetailResponse;
 import com.gighub.invitation.mapper.InvitationMapper;
@@ -159,8 +161,8 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                     .getBean(InvitationAcceptService.class)
                     .accept(reconstructedWorker, fixture.token, fixture.acceptKey());
             assertFalse(accepted.isReplayed());
-            assertEquals(fixture.workCaseId, accepted.getResponse().getWorkCaseId());
-            assertEquals("HELD", accepted.getResponse().getEscrowStatus());
+            assertEquals(fixture.workCaseId, accepted.getResult().getWorkCaseId());
+            assertEquals("HELD", accepted.getResult().getEscrowStatus());
         }
     }
 
@@ -172,7 +174,7 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                     .getBean(InvitationAcceptService.class)
                     .accept(reconstructedWorker, fixture.token, fixture.acceptKey());
             assertTrue(replay.isReplayed());
-            assertEquals(fixture.workCaseId, replay.getResponse().getWorkCaseId());
+            assertEquals(fixture.workCaseId, replay.getResult().getWorkCaseId());
 
             WorkCaseDetailResponse detail = context.getBean(WorkCaseService.class)
                     .detail(reconstructedWorker, fixture.workCaseId);
@@ -228,14 +230,14 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                         clock),
                 definition -> definition.setPrimary(true));
         context.registerBean(
-                "characterizationAcceptAggregateExecutor",
-                AcceptAggregateExecutor.class,
-                () -> new AcceptAggregateExecutor(
+                "characterizationInvitationAcceptanceOrchestrator",
+                InvitationAcceptanceOrchestrator.class,
+                () -> new InvitationAcceptanceOrchestrator(
                         context.getBean(AcceptanceWorkParticipant.class),
                         context.getBean(AcceptEscrowHold.class),
                         context.getBean(SettlementReservationService.class),
                         context.getBean(IdempotencyClaimService.class),
-                        context.getBean(AcceptJson.class),
+                        context.getBean(InvitationAcceptanceReplaySnapshotCodec.class),
                         context.getBean(ContractArtifactPort.class),
                         clock),
                 definition -> definition.setPrimary(true));
