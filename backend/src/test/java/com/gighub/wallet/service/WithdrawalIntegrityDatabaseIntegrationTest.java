@@ -5,6 +5,7 @@ import com.gighub.bank.service.BankTransferGateway;
 import com.gighub.config.RootConfig;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WithdrawalOrder;
+import com.gighub.wallet.exception.InsufficientAvailableBalanceException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.WithdrawalMapper;
@@ -38,6 +39,52 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 @Tag("database")
 public class WithdrawalIntegrityDatabaseIntegrationTest {
+    @Test
+    @Timeout(15)
+    void insufficientAvailableBalanceRollsBackClaimAndMoneyMovement() {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            WithdrawalService withdrawalService = context.getBean(WithdrawalService.class);
+            WithdrawalFixture fixture = createWithdrawalFixture(jdbcTemplate);
+            WithdrawalCommand command = WithdrawalCommand.builder()
+                    .userId(fixture.userId())
+                    .bankCode(FIXTURE_BANK_CODE)
+                    .accountNo(fixture.accountNo())
+                    .amount(1_000L)
+                    .idempotencyKey(fixture.idempotencyKey())
+                    .build();
+
+            try {
+                jdbcTemplate.update(
+                        "UPDATE wallets SET available_balance = 500 WHERE id = ?",
+                        fixture.walletId());
+
+                assertThrows(
+                        InsufficientAvailableBalanceException.class,
+                        () -> withdrawalService.withdraw(command));
+
+                assertEquals(500L, value(jdbcTemplate,
+                        "SELECT available_balance FROM wallets WHERE id = ?",
+                        fixture.walletId()));
+                assertEquals(1_000_000L, value(jdbcTemplate,
+                        "SELECT balance FROM mock_bank_accounts WHERE id = ?",
+                        fixture.accountId()));
+                assertEquals(0, count(jdbcTemplate,
+                        "SELECT COUNT(*) FROM withdrawal_requests WHERE user_id = ?",
+                        fixture.userId()));
+                assertEquals(0, count(jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions WHERE wallet_id = ?",
+                        fixture.walletId()));
+                assertEquals(0, count(jdbcTemplate,
+                        "SELECT COUNT(*) FROM mock_bank_transactions WHERE account_id = ?",
+                        fixture.accountId()));
+            } finally {
+                deleteWithdrawalFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
     @Test
     @Timeout(15)
     void concurrentWithdrawalMovesMoneyOnceAndReplaysOriginalSnapshot() throws Exception {

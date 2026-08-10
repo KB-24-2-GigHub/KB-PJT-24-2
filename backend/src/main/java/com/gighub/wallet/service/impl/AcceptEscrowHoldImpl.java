@@ -1,8 +1,11 @@
 package com.gighub.wallet.service.impl;
 
 import com.gighub.common.exception.ConflictException;
+import com.gighub.wallet.domain.Money;
+import com.gighub.wallet.domain.WalletBalance;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.mapper.WalletMapper;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.service.AcceptEscrowHold;
 import org.springframework.stereotype.Service;
@@ -41,17 +44,34 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
             long amount,
             long claimId,
             LocalDateTime acceptedAt) {
-        WalletBalanceSnapshot wallet = walletMapper.getWalletSnapshotForUpdate(employerId);
+        Long walletId = walletMapper.resolveWalletId(employerId, Money.KRW);
+        if (walletId == null || walletId <= 0) {
+            throw new IllegalStateException("OWNER 지갑을 찾을 수 없습니다.");
+        }
+        WalletBalanceSnapshot wallet =
+                walletMapper.getWalletSnapshotForUpdateByWalletId(walletId);
         if (wallet == null) {
             throw new IllegalStateException("OWNER 지갑을 찾을 수 없습니다.");
         }
-        if (wallet.getAvailableBalance() < amount) {
-            throw new ConflictException(INSUFFICIENT_BALANCE);
+        if (!walletId.equals(wallet.getWalletId())
+                || !Objects.equals(wallet.getUserId(), employerId)) {
+            throw new IllegalStateException("OWNER 지갑 식별자가 일치하지 않습니다.");
         }
 
-        long availableAfter = Math.subtractExact(wallet.getAvailableBalance(), amount);
-        long lockedAfter = Math.addExact(wallet.getLockedBalance(), amount);
-        if (walletMapper.lockEmployerFunds(employerId, amount) != 1) {
+        WalletBalance balance;
+        WalletBalance balanceAfter;
+        try {
+            balance = WalletBalance.krw(
+                    wallet.getAvailableBalance(), wallet.getLockedBalance());
+            balanceAfter = balance.hold(Money.krw(amount));
+        } catch (WalletBalance.InsufficientBalanceException insufficient) {
+            throw new ConflictException(INSUFFICIENT_BALANCE);
+        } catch (RuntimeException invalidBalance) {
+            throw new IllegalStateException("OWNER 지갑 잔액이 올바르지 않습니다.", invalidBalance);
+        }
+
+        if (walletMapper.updateWalletBalanceByWalletId(
+                WalletBalanceUpdateParam.of(walletId, balance, balanceAfter)) != 1) {
             throw new IllegalStateException("예치 반영 결과가 예상과 다릅니다.");
         }
         if (walletMapper.insertHeldEscrowAt(workCaseId, amount, acceptedAt) != 1) {
@@ -61,14 +81,14 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
         long escrowId = Objects.requireNonNull(
                 walletMapper.getEscrowIdByWorkCaseId(workCaseId), "생성된 에스크로 식별자");
         int recorded = walletMapper.insertWalletTransaction(WalletTransactionParam.builder()
-                .walletId(wallet.getWalletId())
+                .walletId(walletId)
                 .workCaseId(workCaseId)
                 .transactionType(TRANSACTION_TYPE)
                 .amount(amount)
-                .availableBefore(wallet.getAvailableBalance())
-                .availableAfter(availableAfter)
-                .lockedBefore(wallet.getLockedBalance())
-                .lockedAfter(lockedAfter)
+                .availableBefore(balance.available())
+                .availableAfter(balanceAfter.available())
+                .lockedBefore(balance.locked())
+                .lockedAfter(balanceAfter.locked())
                 .referenceType(REFERENCE_TYPE)
                 .referenceId(escrowId)
                 .idempotencyKey(ledgerKey(claimId))
