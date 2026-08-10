@@ -52,10 +52,11 @@
         WHERE user_id = #{userId}
     </select>
 
-    <select id="getWalletIdByUserId" resultType="java.lang.Long">
+    <select id="resolveWalletId" resultType="java.lang.Long">
         SELECT id
         FROM wallets
         WHERE user_id = #{userId}
+          AND currency = #{currency}
     </select>
 
     <!-- FOR UPDATE: 조회부터 수정까지 다른 트랜잭션을 대기시킨다 (따닥 방지) -->
@@ -77,6 +78,29 @@
         WHERE user_id = #{userId}
         FOR UPDATE
     </select>
+
+    <select id="getWalletSnapshotForUpdateByWalletId"
+            resultMap="walletBalanceSnapshotResult">
+        SELECT id                AS walletId,
+               user_id           AS userId,
+               available_balance AS availableBalance,
+               locked_balance    AS lockedBalance
+        FROM wallets
+        WHERE id = #{walletId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateWalletBalanceByWalletId"
+            parameterType="com.gighub.wallet.mapper.param.WalletBalanceUpdateParam">
+        UPDATE wallets
+        SET available_balance = #{availableAfter},
+            locked_balance    = #{lockedAfter},
+            updated_at        = NOW(6)
+        WHERE id = #{walletId}
+          AND currency = #{currency}
+          AND available_balance = #{availableBefore}
+          AND locked_balance = #{lockedBefore}
+    </update>
 
     <update id="addAvailableBalance">
         UPDATE wallets
@@ -209,7 +233,7 @@
           AND wt.work_case_id IS NULL
           AND wt.reference_type = 'FUNDING_ORDER'
           AND wt.reference_id = #{fundingOrderId}
-          AND w.user_id = #{employerId}
+          AND wt.wallet_id = #{walletId}
         FOR SHARE OF wt
     </select>
 

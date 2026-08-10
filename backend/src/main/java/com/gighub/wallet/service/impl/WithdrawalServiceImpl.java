@@ -5,6 +5,8 @@ import com.gighub.bank.service.BankAccountPreflightCommand;
 import com.gighub.bank.service.BankTransferCommand;
 import com.gighub.bank.service.BankTransferGateway;
 import com.gighub.bank.service.BankTransferResult;
+import com.gighub.wallet.domain.Money;
+import com.gighub.wallet.domain.WalletBalance;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
 import com.gighub.wallet.dto.WithdrawalOrder;
@@ -16,6 +18,7 @@ import com.gighub.wallet.exception.WithdrawalIntegrityException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.WithdrawalMapper;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.mapper.param.WithdrawalOrderParam;
 import com.gighub.wallet.service.WithdrawalService;
@@ -69,18 +72,20 @@ public class WithdrawalServiceImpl implements WithdrawalService {
             WithdrawalCommand command, String rawKey, String ledgerKey) {
         // wallet_id는 NOT NULL FK이므로 먼저 식별자만 조회한다.
         // 잔액 판단은 이 조회값이 아니라 아래 FOR UPDATE 스냅샷을 기준으로 한다.
-        Long walletId = walletMapper.getWalletIdByUserId(command.getUserId());
+        Long walletId = walletMapper.resolveWalletId(command.getUserId(), Money.KRW);
         if (walletId == null || walletId <= 0) {
             throw new InvalidWalletStateException("지갑을 찾을 수 없습니다.");
         }
 
         // Funding과 동일하게 지갑 → 계좌 순서로 잠가 교차 데드락을 예방한다.
         WalletBalanceSnapshot wallet =
-                walletMapper.getWalletSnapshotForUpdate(command.getUserId());
+                walletMapper.getWalletSnapshotForUpdateByWalletId(walletId);
         if (wallet == null) {
             throw new InvalidWalletStateException("지갑을 찾을 수 없습니다.");
         }
-        validateWalletSnapshot(wallet, command.getUserId(), walletId);
+        WalletBalance balance = validateWalletSnapshot(
+                wallet, command.getUserId(), walletId);
+        Money amount = Money.krw(command.getAmount());
 
         // bankCode+accountNo로 비귀속 Mock 계좌를 식별한다(Client가 보낸 내부 ID는 없다).
         // 상태는 여기서 검사하지 않는다 - Replay가 현재 계좌 상태와 무관하게 재응답해야 하므로
@@ -112,14 +117,12 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         }
 
         // 완료 요청의 replay는 당시 원장 스냅샷을 사용하므로 현재 상태 검증은 신규 claim에만 적용한다.
-        if (wallet.getAvailableBalance() < command.getAmount()) {
+        WalletBalance balanceAfter;
+        try {
+            balanceAfter = balance.withdraw(amount);
+        } catch (WalletBalance.InsufficientBalanceException insufficient) {
             throw new InsufficientAvailableBalanceException("지갑의 가용 잔액이 부족합니다.");
         }
-        Long availableAfter = subtractExactly(
-                wallet.getAvailableBalance(),
-                command.getAmount(),
-                "지갑 출금 후 잔액이 허용 범위를 벗어났습니다."
-        );
 
         // 출금 방향은 PIN을 검사하지 않는다(DEC-WITHDRAWAL-DESTINATION).
         bankTransferGateway.preflight(BankAccountPreflightCommand.builder()
@@ -140,21 +143,21 @@ public class WithdrawalServiceImpl implements WithdrawalService {
             throw new WithdrawalIntegrityException("출금 요청 완료 상태를 기록하지 못했습니다.");
         }
 
-        if (walletMapper.subtractAvailableBalance(
-                command.getUserId(), command.getAmount()) != 1) {
+        if (walletMapper.updateWalletBalanceByWalletId(
+                WalletBalanceUpdateParam.of(walletId, balance, balanceAfter)) != 1) {
             throw new WithdrawalIntegrityException("지갑 출금 잔액을 반영하지 못했습니다.");
         }
 
         // 출금: available만 감소, locked 불변, work_case_id는 NULL
         WalletTransactionParam transaction = WalletTransactionParam.builder()
-                .walletId(wallet.getWalletId())
+                .walletId(walletId)
                 .workCaseId(null)
                 .transactionType(TX_WITHDRAWAL)
                 .amount(command.getAmount())
-                .availableBefore(wallet.getAvailableBalance())
-                .availableAfter(availableAfter)
-                .lockedBefore(wallet.getLockedBalance())
-                .lockedAfter(wallet.getLockedBalance())
+                .availableBefore(balance.available())
+                .availableAfter(balanceAfter.available())
+                .lockedBefore(balance.locked())
+                .lockedAfter(balanceAfter.locked())
                 .referenceType(REF_WITHDRAWAL_REQUEST)
                 .referenceId(order.getId())
                 .idempotencyKey(ledgerKey)
@@ -266,25 +269,17 @@ public class WithdrawalServiceImpl implements WithdrawalService {
                 || !TX_WITHDRAWAL.equals(snapshot.getTransactionType())
                 || !REF_WITHDRAWAL_REQUEST.equals(snapshot.getReferenceType())
                 || !Objects.equals(snapshot.getReferenceId(), order.getId())
-                || !order.getAmount().equals(snapshot.getAmount())
-                || snapshot.getAvailableBefore() == null
-                || snapshot.getAvailableBefore() < 0
-                || snapshot.getAvailableAfter() == null
-                || snapshot.getAvailableAfter() < 0
-                || snapshot.getLockedBefore() == null
-                || snapshot.getLockedBefore() < 0
-                || snapshot.getLockedAfter() == null
-                || snapshot.getLockedAfter() < 0
-                || !snapshot.getLockedBefore().equals(snapshot.getLockedAfter())) {
+                || !order.getAmount().equals(snapshot.getAmount())) {
             return false;
         }
 
         try {
-            long expectedAfter = Math.subtractExact(
-                    snapshot.getAvailableBefore(), order.getAmount()
-            );
-            return expectedAfter == snapshot.getAvailableAfter().longValue();
-        } catch (ArithmeticException overflow) {
+            WalletBalance before = WalletBalance.krw(
+                    snapshot.getAvailableBefore(), snapshot.getLockedBefore());
+            WalletBalance after = before.withdraw(Money.krw(order.getAmount()));
+            return after.available() == snapshot.getAvailableAfter()
+                    && after.locked() == snapshot.getLockedAfter();
+        } catch (RuntimeException invalidSnapshot) {
             return false;
         }
     }
@@ -300,25 +295,20 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         );
     }
 
-    private void validateWalletSnapshot(
+    private WalletBalance validateWalletSnapshot(
             WalletBalanceSnapshot wallet, Long expectedUserId, Long claimedWalletId) {
         if (wallet.getWalletId() == null
                 || wallet.getWalletId() <= 0
                 || !claimedWalletId.equals(wallet.getWalletId())
-                || !expectedUserId.equals(wallet.getUserId())
-                || wallet.getAvailableBalance() == null
-                || wallet.getAvailableBalance() < 0
-                || wallet.getLockedBalance() == null
-                || wallet.getLockedBalance() < 0) {
+                || !expectedUserId.equals(wallet.getUserId())) {
             throw new WithdrawalIntegrityException("조회된 지갑 잔액 스냅샷이 올바르지 않습니다.");
         }
-    }
-
-    private Long subtractExactly(Long left, Long right, String failureMessage) {
         try {
-            return Math.subtractExact(left, right);
-        } catch (ArithmeticException overflow) {
-            throw new WithdrawalIntegrityException(failureMessage, overflow);
+            return WalletBalance.krw(
+                    wallet.getAvailableBalance(), wallet.getLockedBalance());
+        } catch (RuntimeException invalidBalance) {
+            throw new WithdrawalIntegrityException(
+                    "조회된 지갑 잔액 스냅샷이 올바르지 않습니다.", invalidBalance);
         }
     }
 
