@@ -571,6 +571,10 @@ test("blocks only architecture violations added beyond the frozen baseline", () 
       "package com.gighub.document.controller;\nimport com.gighub.document.mapper.DocumentQueryMapper;\n",
     ],
     ["frontend/src/services/documents.js", "const USE_MOCK = true;\n"],
+    [
+      "backend/src/main/resources/mappers/AttendanceMapper.xml",
+      '<mapper namespace="attendance"><select id="find" resultType="com.gighub.attendance.mapper.result.AttendanceRow" /></mapper>\n',
+    ],
   ]);
   const candidateFiles = new Map([
     ...baselineFiles,
@@ -591,6 +595,17 @@ test("blocks only architecture violations added beyond the frozen baseline", () 
       "package com.gighub.attendance.controller;\nimport com.gighub.attendance.mapper.QrTokenMapper;\n",
     ],
     ["frontend/src/services/worker.js", "const FORCE_MOCK = true;\n"],
+    [
+      "backend/src/main/resources/mappers/AttendanceMapper.xml",
+      '<mapper namespace="attendance"><resultMap id="response" type="com.gighub.attendance.dto.AttendanceView" /></mapper>\n',
+    ],
+    [
+      "backend/src/main/java/com/gighub/attendance/controller/AttendanceController.java",
+      "package com.gighub.attendance.controller;\n" +
+        "import com.gighub.attendance.dto.AttendanceView;\n" +
+        "import com.gighub.attendance.mapper.QrTokenMapper;\n" +
+        "public class AttendanceController {}\n",
+    ],
   ]);
 
   const baseline = findArchitectureViolations(
@@ -614,6 +629,7 @@ test("blocks only architecture violations added beyond the frozen baseline", () 
       "cross-module-mapper-import",
       "domain-forbidden-import",
       "hardcoded-production-mock",
+      "mapper-api-response-dto-result",
     ],
   );
 });
@@ -639,6 +655,94 @@ test("fails closed for unmapped package roots and lowercase Mock flags", () => {
     "unmapped-mapper-package-root",
     "unmapped-source-package-root",
   ]);
+});
+
+test("freezes Mapper XML API DTO coupling without flagging persistence-only DTOs", () => {
+  const files = new Map([
+    [
+      "backend/src/main/java/com/gighub/document/controller/DocumentController.java",
+      "package com.gighub.document.controller;\n" +
+        "import com.gighub.document.dto.Document;\n" +
+        "import com.gighub.document.dto.DocumentListItem;\n" +
+        "public class DocumentController {}\n",
+    ],
+    [
+      "backend/src/main/resources/mappers/DocumentQueryMapper.xml",
+      '<mapper namespace="document">' +
+        '<resultMap id="document" type="com.gighub.document.dto.Document" />' +
+        '<select id="list" resultType="com.gighub.document.dto.DocumentListItem" />' +
+        "</mapper>\n",
+    ],
+    [
+      "backend/src/main/resources/mappers/WalletMapper.xml",
+      '<mapper namespace="wallet">' +
+        '<resultMap id="snapshot" type="com.gighub.wallet.dto.WalletBalanceSnapshot" />' +
+        "</mapper>\n",
+    ],
+  ]);
+
+  const baseline = findArchitectureViolations(files, ARCHITECTURE_MANIFEST);
+  assert.deepEqual(
+    [...baseline.values()]
+      .filter(({ kind }) => kind === "mapper-api-response-dto-result")
+      .map(({ target }) => target.split("#")[0])
+      .sort(),
+    [
+      "com.gighub.document.dto.Document",
+      "com.gighub.document.dto.DocumentListItem",
+    ],
+  );
+
+  const withoutControllerImports = new Map(files);
+  withoutControllerImports.delete(
+    "backend/src/main/java/com/gighub/document/controller/DocumentController.java",
+  );
+  assert.deepEqual(
+    [
+      ...findArchitectureViolations(
+        withoutControllerImports,
+        ARCHITECTURE_MANIFEST,
+      ).values(),
+    ]
+      .filter(({ kind }) => kind === "mapper-api-response-dto-result")
+      .map(({ target }) => target.split("#")[0])
+      .sort(),
+    [
+      "com.gighub.document.dto.Document",
+      "com.gighub.document.dto.DocumentListItem",
+    ],
+  );
+
+  const candidate = new Map(files);
+  candidate.set(
+    "backend/src/main/resources/mappers/NewMapper.xml",
+    '<mapper namespace="new"><select id="find" resultType="com.gighub.newfeature.dto.NewResponse" /></mapper>\n',
+  );
+  assert.deepEqual(
+    compareArchitectureViolations(
+      baseline,
+      findArchitectureViolations(candidate, ARCHITECTURE_MANIFEST),
+    ).map(({ kind }) => kind),
+    ["mapper-api-response-dto-result"],
+  );
+
+  const duplicateTypeCandidate = new Map(files);
+  duplicateTypeCandidate.set(
+    "backend/src/main/resources/mappers/DocumentQueryMapper.xml",
+    files
+      .get("backend/src/main/resources/mappers/DocumentQueryMapper.xml")
+      .replace(
+        "</mapper>",
+        '<select id="secondList" resultType="com.gighub.document.dto.DocumentListItem" /></mapper>',
+      ),
+  );
+  assert.deepEqual(
+    compareArchitectureViolations(
+      baseline,
+      findArchitectureViolations(duplicateTypeCandidate, ARCHITECTURE_MANIFEST),
+    ).map(({ target }) => target),
+    ["com.gighub.document.dto.DocumentListItem#select:secondList"],
+  );
 });
 
 test("keeps file, LOC, and new type thresholds as review warnings", () => {
@@ -1487,6 +1591,12 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
     "package com.gighub.attendance.service;\npublic class AttendanceService {}\n";
   const violatingSource =
     "package com.gighub.attendance.service;\nimport com.gighub.work.mapper.WorkCaseMapper;\npublic class AttendanceService {}\n";
+  const mapperFile =
+    "backend/src/main/resources/mappers/AttendanceCharacterizationMapper.xml";
+  const safeMapper =
+    '<mapper namespace="attendance"><select id="find" resultType="com.gighub.attendance.mapper.result.AttendanceRow" /></mapper>\n';
+  const violatingMapper =
+    '<mapper namespace="attendance"><select id="find" resultType="com.gighub.attendance.dto.AttendanceResponse" /></mapper>\n';
   const environment = guardrailEnvironment({
     GIGHUB_GUARDRAIL_BASE_REF: "dev2",
   });
@@ -1516,6 +1626,7 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
       `${JSON.stringify(ARCHITECTURE_MANIFEST, null, 2)}\n`,
     );
     writeRepositoryFile(temporaryRepository, sourceFile, safeSource);
+    writeRepositoryFile(temporaryRepository, mapperFile, safeMapper);
     execFileSync("git", ["add", "."], {
       cwd: temporaryRepository,
       stdio: "ignore",
@@ -1554,6 +1665,36 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
     assert.equal(staged.status, 1);
     assert.match(staged.stderr, /cross-module-mapper-import/);
     assert.equal(working.status, 0);
+
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", sourceFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, mapperFile, violatingMapper);
+    execFileSync("git", ["add", mapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, mapperFile, safeMapper);
+
+    const stagedMapper = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    const workingMapper = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(stagedMapper.status, 1);
+    assert.match(stagedMapper.stderr, /mapper-api-response-dto-result/);
+    assert.equal(workingMapper.status, 0);
+
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", mapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
 
     const untrackedSource =
       "backend/src/main/java/com/gighub/newmodule/service/NewService.java";

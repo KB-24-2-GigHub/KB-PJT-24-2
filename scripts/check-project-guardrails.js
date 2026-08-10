@@ -51,7 +51,15 @@ const PATCH_TARGET_SPEC_PATHS = new Map([
 ]);
 const ARCHITECTURE_MANIFEST_PATH = "docs/agent/MODULE_BOUNDARIES.json";
 const BACKEND_PRODUCTION_ROOT = "backend/src/main/java/";
+const BACKEND_MAPPER_ROOT = "backend/src/main/resources/mappers/";
 const FRONTEND_PRODUCTION_ROOT = "frontend/src/";
+const FROZEN_MAPPER_API_DTO_TYPES = new Set([
+  "com.gighub.badge.dto.UserBadge",
+  "com.gighub.document.dto.Document",
+  "com.gighub.document.dto.DocumentListItem",
+  "com.gighub.document.dto.DocumentShare",
+  "com.gighub.document.dto.DocumentVersion",
+]);
 const MIGRATION_ROOT = "backend/src/main/resources/db/migration/";
 const REVIEW_FILE_WARNING_THRESHOLD = 10;
 const REVIEW_LOC_WARNING_THRESHOLD = 500;
@@ -284,8 +292,20 @@ function isBackendProductionJava(file) {
   return file.startsWith(BACKEND_PRODUCTION_ROOT) && file.endsWith(".java");
 }
 
+function isBackendControllerJava(file) {
+  return isBackendProductionJava(file) && file.includes("/controller/");
+}
+
+function isBackendMapperXml(file) {
+  return file.startsWith(BACKEND_MAPPER_ROOT) && file.endsWith(".xml");
+}
+
 function isArchitectureSource(file) {
-  return isBackendProductionJava(file) || isFrontendProductionSource(file);
+  return (
+    isBackendProductionJava(file) ||
+    isBackendMapperXml(file) ||
+    isFrontendProductionSource(file)
+  );
 }
 
 function parseArchitectureManifest(content) {
@@ -454,6 +474,19 @@ function javaImports(content) {
   ].map((match) => match[1]);
 }
 
+function controllerDtoImports(files) {
+  const result = new Set();
+  for (const [file, content] of files) {
+    if (!isBackendControllerJava(file)) continue;
+    for (const imported of javaImports(content)) {
+      if (/^com\.gighub\..*\.dto\./.test(imported)) {
+        result.add(imported);
+      }
+    }
+  }
+  return result;
+}
+
 function addArchitectureViolation(violations, kind, file, target, message) {
   const id = `${kind}:${file}:${target}`;
   violations.set(id, { id, kind, file, target, message });
@@ -462,6 +495,10 @@ function addArchitectureViolation(violations, kind, file, target, message) {
 function findArchitectureViolations(files, manifest) {
   const violations = new Map();
   const modules = moduleByPackageRoot(manifest);
+  const apiBoundaryDtoTypes = new Set([
+    ...FROZEN_MAPPER_API_DTO_TYPES,
+    ...controllerDtoImports(files),
+  ]);
   const forbiddenPrefixes = manifest.guardRules.domainForbiddenImportPrefixes;
   const forbiddenRegexes = manifest.guardRules.domainForbiddenImportRegexes.map(
     (pattern) => new RegExp(pattern),
@@ -554,6 +591,35 @@ function findArchitectureViolations(files, manifest) {
         );
       }
     }
+
+    if (isBackendMapperXml(file)) {
+      const resultTagPattern = /<(select|resultMap)\b[^>]*>/g;
+      for (const tagMatch of String(content).matchAll(resultTagPattern)) {
+        const tag = tagMatch[0];
+        const typeMatch =
+          /\b(?:resultType|type)\s*=\s*["'](com\.gighub\.[^"']*\.dto\.[^"']+)["']/.exec(
+            tag,
+          );
+        if (!typeMatch) continue;
+        if (
+          !apiBoundaryDtoTypes.has(typeMatch[1]) &&
+          !typeMatch[1].endsWith("Response")
+        ) {
+          continue;
+        }
+        const idMatch = /\bid\s*=\s*["']([^"']+)["']/.exec(tag);
+        const mappingId = idMatch
+          ? `${tagMatch[1]}:${idMatch[1]}`
+          : `${tagMatch[1]}:offset-${tagMatch.index}`;
+        addArchitectureViolation(
+          violations,
+          "mapper-api-response-dto-result",
+          file,
+          `${typeMatch[1]}#${mappingId}`,
+          "Mapper XML must map persistence rows to Mapper result or read-model types, not an API Response DTO.",
+        );
+      }
+    }
   }
 
   return violations;
@@ -578,6 +644,7 @@ function collectGitSourceSnapshot(ref, selectedFiles = null) {
     ref,
     "--",
     BACKEND_PRODUCTION_ROOT,
+    BACKEND_MAPPER_ROOT,
     FRONTEND_PRODUCTION_ROOT,
   ]);
   if (output === null) return files;
@@ -606,6 +673,7 @@ function collectStagedSourceSnapshot(selectedFiles = null) {
     "-z",
     "--",
     BACKEND_PRODUCTION_ROOT,
+    BACKEND_MAPPER_ROOT,
     FRONTEND_PRODUCTION_ROOT,
   ]);
   for (const file of splitNullSeparated(output)) {
@@ -696,7 +764,13 @@ function validateArchitectureGovernance(mode) {
     if (architectureSourceChanges.length === 0 && !manifestChanged) {
       return { errors: [], warnings: [] };
     }
-    const selectedFiles = manifestChanged ? null : architectureSourceChanges;
+    const responseBoundaryChanged = architectureSourceChanges.some(
+      (file) => isBackendMapperXml(file) || isBackendControllerJava(file),
+    );
+    const selectedFiles =
+      manifestChanged || responseBoundaryChanged
+        ? null
+        : architectureSourceChanges;
     const baselineFiles = collectGitSourceSnapshot(baselineRef, selectedFiles);
     const candidateFiles =
       mode === "staged"
@@ -2285,7 +2359,7 @@ function printArchitectureGovernanceErrors(errors) {
     console.error(`- ${error}`);
   }
   console.error(
-    "\nExisting RF-02 violations are a frozen baseline; new Mapper, Domain, Controller, or production Mock violations are not allowed.\n",
+    "\nExisting RF-02 violations are a frozen baseline; new Mapper, Mapper-to-API-Response, Domain, Controller, or production Mock violations are not allowed.\n",
   );
 }
 
