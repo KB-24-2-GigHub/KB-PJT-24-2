@@ -154,6 +154,7 @@ class WorkCaseServiceImplTest {
     void updateBumpsVersionAndRevokesPendingInvitations() {
         when(workCaseMapper.lockById(WORK_CASE_ID))
                 .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
+        when(workCaseMapper.updateDraftTerms(any())).thenReturn(1);
 
         service.update(owner(), validUpdateCommand());
 
@@ -165,6 +166,19 @@ class WorkCaseServiceImplTest {
         assertEquals(WORK_CASE_ID, captor.getValue().getWorkCaseId());
     }
 
+    @Test
+    void updateFailsClosedWhenExpectedStateUpdateAffectsNoRow() {
+        when(workCaseMapper.lockById(WORK_CASE_ID))
+                .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
+        when(workCaseMapper.updateDraftTerms(any())).thenReturn(0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.update(owner(), validUpdateCommand()));
+
+        verify(workCaseMapper, never()).revokePendingInvitations(anyLong());
+    }
+
     // ---------- delete ----------
 
     @Test
@@ -172,6 +186,7 @@ class WorkCaseServiceImplTest {
         when(workCaseMapper.lockById(WORK_CASE_ID))
                 .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
         when(workCaseMapper.countInvitations(WORK_CASE_ID)).thenReturn(0);
+        when(workCaseMapper.deleteDraft(WORK_CASE_ID)).thenReturn(1);
 
         service.delete(owner(), WORK_CASE_ID);
 
@@ -185,12 +200,33 @@ class WorkCaseServiceImplTest {
         when(workCaseMapper.lockById(WORK_CASE_ID))
                 .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
         when(workCaseMapper.countInvitations(WORK_CASE_ID)).thenReturn(2);
+        when(workCaseMapper.cancelDraft(WORK_CASE_ID)).thenReturn(1);
 
         service.delete(owner(), WORK_CASE_ID);
 
         verify(workCaseMapper).revokePendingInvitations(WORK_CASE_ID);
         verify(workCaseMapper).cancelDraft(WORK_CASE_ID);
         verify(workCaseMapper, never()).deleteDraft(anyLong());
+    }
+
+    @Test
+    void deleteFailsClosedWhenExpectedStateDeleteAffectsNoRow() {
+        when(workCaseMapper.lockById(WORK_CASE_ID))
+                .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
+        when(workCaseMapper.countInvitations(WORK_CASE_ID)).thenReturn(0);
+        when(workCaseMapper.deleteDraft(WORK_CASE_ID)).thenReturn(0);
+
+        assertThrows(IllegalStateException.class, () -> service.delete(owner(), WORK_CASE_ID));
+    }
+
+    @Test
+    void cancelFailsClosedWhenExpectedStateUpdateAffectsNoRow() {
+        when(workCaseMapper.lockById(WORK_CASE_ID))
+                .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
+        when(workCaseMapper.countInvitations(WORK_CASE_ID)).thenReturn(1);
+        when(workCaseMapper.cancelDraft(WORK_CASE_ID)).thenReturn(0);
+
+        assertThrows(IllegalStateException.class, () -> service.delete(owner(), WORK_CASE_ID));
     }
 
     @Test

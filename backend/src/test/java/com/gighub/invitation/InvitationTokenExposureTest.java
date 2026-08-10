@@ -1,5 +1,7 @@
 package com.gighub.invitation;
 
+import com.gighub.invitation.domain.InvitationStatus;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.common.trace.TraceIdFilter;
@@ -199,7 +201,7 @@ class InvitationTokenExposureTest {
                 .id(INVITATION_ID)
                 .workCaseId(7L)
                 .tokenHash(codec.hash(token))
-                .status(status)
+                .status(InvitationStatus.valueOf(status))
                 // 만료 시각을 과거로 두면 PENDING 경로에서 만료 전이가 먼저 일어납니다.
                 .expiresAt(status.equals("PENDING") ? LocalDateTime.now().plusDays(1L) : STARTS_AT)
                 .expectedTermsVersion(1)
@@ -219,7 +221,7 @@ class InvitationTokenExposureTest {
                 .breakPaid(false)
                 .dailyWage(120_000L)
                 .termsVersion(1)
-                .status("DRAFT")
+                .status(WorkCaseStatus.DRAFT)
                 .build();
     }
 

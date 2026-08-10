@@ -1,5 +1,6 @@
 package com.gighub.invitation;
 
+import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ApiException;
 import com.gighub.common.exception.ConflictException;
@@ -164,7 +165,7 @@ class AcceptExposureTest {
                 .id(INVITATION_ID)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash(token))
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(1)
                 .expiresAt(LocalDateTime.now().plusDays(1L))
                 .build();

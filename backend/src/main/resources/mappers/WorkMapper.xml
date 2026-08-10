@@ -4,14 +4,15 @@
 
 <mapper namespace="com.gighub.work.mapper.WorkMapper">
 
-    <!-- DTO가 setter를 갖지 않으므로 생성자 인자로 매핑한다. 인자 순서는 필드 선언 순서를 따른다 -->
-    <resultMap id="workCaseEscrowContextResult" type="com.gighub.work.dto.WorkCaseEscrowContext">
+    <!-- Write 판단 Row가 setter를 갖지 않으므로 생성자 인자로 매핑합니다. -->
+    <resultMap id="workCaseEscrowContextResult"
+               type="com.gighub.work.contract.WorkCaseEscrowSnapshot">
         <constructor>
             <idArg column="workCaseId" javaType="java.lang.Long"/>
             <arg column="employerId" javaType="java.lang.Long"/>
             <arg column="workerId" javaType="java.lang.Long"/>
             <arg column="agreedWage" javaType="java.lang.Long"/>
-            <arg column="status" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
         </constructor>
     </resultMap>
 

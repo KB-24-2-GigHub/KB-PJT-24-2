@@ -16,8 +16,11 @@ import com.gighub.wallet.exception.InvalidEscrowStateException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
-import com.gighub.work.dto.WorkCaseEscrowContext;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.mapper.WorkMapper;
+import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -33,9 +36,6 @@ public class SettlementServiceImpl implements SettlementService {
 
     private static final String ESCROW_HELD = "HELD";
     private static final String ESCROW_RELEASED = "RELEASED";
-    private static final String WORK_COMPLETED = "COMPLETED";
-    private static final List<String> RELEASABLE_WORK_STATUSES =
-            List.of("ACCEPTED", "READY", "IN_PROGRESS");
     private static final String TX_ESCROW_HOLD = "ESCROW_HOLD";
     private static final String TX_ESCROW_RELEASE = "ESCROW_RELEASE";
     private static final String REF_ESCROW = "ESCROW";
@@ -54,7 +54,7 @@ public class SettlementServiceImpl implements SettlementService {
         String workerLedgerKey =
                 WalletIdempotencyKeys.escrowReleaseWorker(command.getIdempotencyKey());
 
-        WorkCaseEscrowContext context =
+        WorkCaseEscrowSnapshot context =
                 workMapper.getEscrowContextForUpdate(command.getWorkCaseId());
         validateContext(context, command);
 
@@ -199,7 +199,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     private SettlementResult replay(
             SettlementSnapshot settlement,
-            WorkCaseEscrowContext context,
+            WorkCaseEscrowSnapshot context,
             WalletTransactionSnapshot employerLedger,
             WalletTransactionSnapshot workerLedger) {
         if (employerLedger == null || workerLedger == null) {
@@ -213,7 +213,7 @@ public class SettlementServiceImpl implements SettlementService {
                 context
         );
         validateCompletedSettlement(settlement, context);
-        if (!WORK_COMPLETED.equals(context.getStatus())) {
+        if (context.getStatus() != WorkCaseStatus.COMPLETED) {
             throw new EscrowIntegrityException(
                     "완료된 정산과 근무 건 상태가 일치하지 않습니다."
             );
@@ -229,7 +229,7 @@ public class SettlementServiceImpl implements SettlementService {
         return toResult(settlement, true);
     }
 
-    private void releaseFunds(WorkCaseEscrowContext context, Long amount) {
+    private void releaseFunds(WorkCaseEscrowSnapshot context, Long amount) {
         if (walletMapper.releaseEscrow(context.getWorkCaseId()) != 1) {
             throw new EscrowIntegrityException(
                     "에스크로 지급 상태를 반영하지 못했습니다."
@@ -245,15 +245,18 @@ public class SettlementServiceImpl implements SettlementService {
                     "근로자 지갑에 정산금을 반영하지 못했습니다."
             );
         }
-        if (!WORK_COMPLETED.equals(context.getStatus())
-                && workMapper.updateWorkStatus(
-                        context.getWorkCaseId(),
-                        RELEASABLE_WORK_STATUSES,
-                        WORK_COMPLETED
-                ) != 1) {
-            throw new EscrowIntegrityException(
-                    "근무 건 완료 상태를 반영하지 못했습니다."
-            );
+        if (context.getStatus() != WorkCaseStatus.COMPLETED) {
+            WorkCaseDecision decision = WorkCasePolicy.decideTransition(
+                    context.getStatus(), WorkCaseStatus.COMPLETED);
+            if (decision != WorkCaseDecision.ALLOWED
+                    || workMapper.updateWorkStatus(
+                            context.getWorkCaseId(),
+                            List.of(context.getStatus()),
+                            WorkCaseStatus.COMPLETED) != 1) {
+                throw new EscrowIntegrityException(
+                        "근무 건 완료 상태를 반영하지 못했습니다."
+                );
+            }
         }
     }
 
@@ -270,7 +273,7 @@ public class SettlementServiceImpl implements SettlementService {
     }
 
     private void validateContext(
-            WorkCaseEscrowContext context,
+            WorkCaseEscrowSnapshot context,
             SettlementApproveCommand command) {
         if (context == null
                 || context.getWorkCaseId() == null
@@ -299,7 +302,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     private void validateSettlementIdentity(
             SettlementSnapshot settlement,
-            WorkCaseEscrowContext context) {
+            WorkCaseEscrowSnapshot context) {
         if (settlement == null) {
             throw new EscrowIntegrityException(
                     "근무 건의 정산 원장을 찾을 수 없습니다."
@@ -325,7 +328,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     private void validateNewSettlementState(
             SettlementSnapshot settlement,
-            WorkCaseEscrowContext context) {
+            WorkCaseEscrowSnapshot context) {
         if (SettlementStatus.COMPLETED == settlement.getStatus()) {
             throw new InvalidEscrowStateException(
                     "이미 다른 요청으로 완료된 정산입니다."
@@ -349,8 +352,10 @@ public class SettlementServiceImpl implements SettlementService {
                     "대기 중 정산 원장의 상태 스냅샷이 올바르지 않습니다."
             );
         }
-        if (!WORK_COMPLETED.equals(context.getStatus())
-                && !RELEASABLE_WORK_STATUSES.contains(context.getStatus())) {
+        if (context.getStatus() != WorkCaseStatus.COMPLETED
+                && WorkCasePolicy.decideTransition(
+                        context.getStatus(),
+                        WorkCaseStatus.COMPLETED) != WorkCaseDecision.ALLOWED) {
             throw new InvalidEscrowStateException(
                     "정산할 수 없는 근무 건 상태입니다."
             );
@@ -359,7 +364,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     private void validateCompletedSettlement(
             SettlementSnapshot settlement,
-            WorkCaseEscrowContext context) {
+            WorkCaseEscrowSnapshot context) {
         validateSettlementIdentity(settlement, context);
         if (SettlementStatus.COMPLETED != settlement.getStatus()
                 || !context.getEmployerId().equals(settlement.getApprovedByUserId())
@@ -375,7 +380,7 @@ public class SettlementServiceImpl implements SettlementService {
     private void validateReleaseLedgerPair(
             WalletTransactionSnapshot employerLedger,
             WalletTransactionSnapshot workerLedger,
-            WorkCaseEscrowContext context) {
+            WorkCaseEscrowSnapshot context) {
         validateReplayLedger(
                 employerLedger,
                 context.getEmployerId(),
@@ -404,7 +409,7 @@ public class SettlementServiceImpl implements SettlementService {
     private void validateReplayLedger(
             WalletTransactionSnapshot snapshot,
             Long expectedWalletUserId,
-            WorkCaseEscrowContext context) {
+            WorkCaseEscrowSnapshot context) {
         if (snapshot.getId() == null
                 || snapshot.getId() <= 0
                 || snapshot.getWalletId() == null
@@ -464,7 +469,7 @@ public class SettlementServiceImpl implements SettlementService {
 
     private void validateHeldEscrowOwnership(
             WalletTransactionSnapshot snapshot,
-            WorkCaseEscrowContext context,
+            WorkCaseEscrowSnapshot context,
             Long escrowId) {
         if (snapshot == null
                 || snapshot.getId() == null

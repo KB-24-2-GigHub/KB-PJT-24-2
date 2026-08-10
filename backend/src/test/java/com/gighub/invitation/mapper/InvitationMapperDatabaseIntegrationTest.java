@@ -1,5 +1,6 @@
 package com.gighub.invitation.mapper;
 
+import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.config.RootConfig;
 import com.gighub.invitation.config.InvitationProperties;
 import com.gighub.invitation.mapper.param.InvitationInsertParam;
@@ -126,7 +127,7 @@ class InvitationMapperDatabaseIntegrationTest {
         InvitationRow found = invitationMapper.findByTokenHashForUpdate(codec.hash(token));
         assertNotNull(found, "저장된 Hash로 초대를 찾을 수 있어야 합니다.");
         assertEquals(param.getId(), found.getId());
-        assertEquals("PENDING", found.getStatus());
+        assertEquals(InvitationStatus.PENDING, found.getStatus());
         assertTrue(codec.matches(token, found.getTokenHash()));
 
         assertNull(

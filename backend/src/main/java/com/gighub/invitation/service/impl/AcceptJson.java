@@ -5,7 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gighub.common.api.ApiResponse;
 import com.gighub.config.ApiJsonMapper;
-import com.gighub.contract.dto.ContractTermsSnapshot;
+import com.gighub.contract.domain.ContractTermsSnapshot;
 import com.gighub.invitation.dto.InvitationAcceptResponse;
 import org.springframework.stereotype.Component;
 

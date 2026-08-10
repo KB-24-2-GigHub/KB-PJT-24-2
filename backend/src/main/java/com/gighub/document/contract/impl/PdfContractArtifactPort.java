@@ -4,9 +4,7 @@ import com.gighub.common.api.ApiTimes;
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
 import com.gighub.contract.ContractArtifactPort;
-import com.gighub.contract.dto.ContractTermsSnapshot;
-import com.gighub.contract.mapper.WorkContractMapper;
-import com.gighub.contract.mapper.result.ContractSnapshotRow;
+import com.gighub.contract.domain.ContractTermsSnapshot;
 import com.gighub.document.contract.ContractPdfRenderer;
 import com.gighub.document.contract.ContractSnapshot;
 import com.gighub.document.mapper.ContractDocumentWriteMapper;
@@ -18,7 +16,6 @@ import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
-import com.gighub.invitation.service.impl.AcceptJson;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -59,31 +56,22 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
     private static final int VERSION_NO_ORIGINAL = 1;
     private static final int VERSION_NO_SIGNED = 2;
 
-    private final WorkContractMapper workContractMapper;
     private final ContractDocumentWriteMapper documentMapper;
-    private final AcceptJson acceptJson;
     private final ContractPdfRenderer renderer;
     private final DocumentStorageAdapter storageAdapter;
 
     public PdfContractArtifactPort(
-            WorkContractMapper workContractMapper,
             ContractDocumentWriteMapper documentMapper,
-            AcceptJson acceptJson,
             ContractPdfRenderer renderer,
             DocumentStorageAdapter storageAdapter) {
-        this.workContractMapper = workContractMapper;
         this.documentMapper = documentMapper;
-        this.acceptJson = acceptJson;
         this.renderer = renderer;
         this.storageAdapter = storageAdapter;
     }
 
     @Override
     public ContractArtifactHandle prepare(ContractArtifactCommand command) {
-        ContractSnapshotRow row = Objects.requireNonNull(
-                workContractMapper.findSnapshotById(command.getContractId()),
-                "계약 Snapshot 행");
-        ContractTermsSnapshot terms = acceptJson.readSnapshot(row.getTermsSnapshotJson());
+        ContractTermsSnapshot terms = command.getTerms();
 
         ContractSnapshot snapshot = toRenderSnapshot(command, terms);
         byte[] originalBytes = renderer.render(snapshot);

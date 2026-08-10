@@ -1,5 +1,7 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.invitation.domain.InvitationStatus;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ForbiddenException;
 import com.gighub.common.exception.WorkCaseLockedException;
@@ -85,12 +87,14 @@ class AcceptAggregateExecutorTest {
     void terminalInvitationStatesStopBeforeAnyWrite() {
         mapper.workCase = draftWorkCase(1);
 
-        mapper.invitation = pendingInvitation(1).toBuilder().status("ACCEPTED").build();
+        mapper.invitation = pendingInvitation(1).toBuilder()
+                .status(InvitationStatus.ACCEPTED).build();
         assertThrows(
                 InvitationAlreadyAcceptedException.class,
                 () -> execute(STARTS_AT.minusDays(1L)));
 
-        mapper.invitation = pendingInvitation(1).toBuilder().status("EXPIRED").build();
+        mapper.invitation = pendingInvitation(1).toBuilder()
+                .status(InvitationStatus.EXPIRED).build();
         assertThrows(InvitationExpiredException.class, () -> execute(STARTS_AT.minusDays(1L)));
 
         assertTrue(mapper.assigned.isEmpty(), "검증 실패 뒤에는 매칭을 남기지 않습니다.");
@@ -106,6 +110,16 @@ class AcceptAggregateExecutorTest {
 
         // 이 전이는 410과 함께 보존돼야 활성 초대 Slot이 풀립니다.
         assertEquals(List.of(INVITATION_ID), mapper.expired);
+    }
+
+    @Test
+    void overdueInvitationStopsWhenTheLockedPendingRowWasNotUpdated() {
+        mapper.workCase = draftWorkCase(1);
+        mapper.invitation = pendingInvitation(1);
+        mapper.markExpiredResult = 0;
+
+        assertThrows(IllegalStateException.class, () -> execute(STARTS_AT));
+        assertTrue(mapper.assigned.isEmpty());
     }
 
     @Test
@@ -138,7 +152,8 @@ class AcceptAggregateExecutorTest {
     @Test
     void lockOrderIsWorkCaseThenInvitation() {
         mapper.workCase = draftWorkCase(1);
-        mapper.invitation = pendingInvitation(1).toBuilder().status("REVOKED").build();
+        mapper.invitation = pendingInvitation(1).toBuilder()
+                .status(InvitationStatus.REVOKED).build();
 
         assertThrows(RuntimeException.class, () -> execute(STARTS_AT.minusDays(1L)));
 
@@ -164,7 +179,7 @@ class AcceptAggregateExecutorTest {
                 .workCaseId(WORK_CASE_ID)
                 .employerId(OWNER_ID)
                 .workerId(null)
-                .status("DRAFT")
+                .status(WorkCaseStatus.DRAFT)
                 .termsVersion(termsVersion)
                 .title("주말 홀 서빙")
                 .startsAt(STARTS_AT)
@@ -183,7 +198,7 @@ class AcceptAggregateExecutorTest {
                 .id(INVITATION_ID)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(tokenHash)
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(STARTS_AT)
                 .build();
@@ -202,6 +217,7 @@ class AcceptAggregateExecutorTest {
 
         private AcceptWorkCaseLockRow workCase;
         private InvitationRow invitation;
+        private int markExpiredResult = 1;
 
         @Override
         public AcceptWorkCaseLockRow lockWorkCaseForAccept(long workCaseId) {
@@ -217,8 +233,10 @@ class AcceptAggregateExecutorTest {
 
         @Override
         public int markExpired(long invitationId) {
-            expired.add(invitationId);
-            return 1;
+            if (markExpiredResult == 1) {
+                expired.add(invitationId);
+            }
+            return markExpiredResult;
         }
 
         @Override

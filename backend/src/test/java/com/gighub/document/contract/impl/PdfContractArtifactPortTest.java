@@ -2,9 +2,8 @@ package com.gighub.document.contract.impl;
 
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
-import com.gighub.contract.dto.ContractTermsSnapshot;
-import com.gighub.contract.mapper.WorkContractMapper;
-import com.gighub.contract.mapper.result.ContractSnapshotRow;
+import com.gighub.contract.domain.AcceptedContract;
+import com.gighub.contract.domain.ContractTermsSnapshot;
 import com.gighub.document.contract.ContractPdfRenderer;
 import com.gighub.document.contract.ContractSnapshot;
 import com.gighub.document.mapper.ContractDocumentWriteMapper;
@@ -15,7 +14,6 @@ import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
-import com.gighub.invitation.service.impl.AcceptJson;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -45,18 +43,15 @@ class PdfContractArtifactPortTest {
     private static final long WORKER_ID = 2L;
     private static final LocalDateTime ACCEPTED_AT = LocalDateTime.of(2026, 8, 7, 10, 0);
 
-    private final WorkContractMapper workContractMapper = mock(WorkContractMapper.class);
     private final ContractDocumentWriteMapper documentMapper = mock(ContractDocumentWriteMapper.class);
-    private final AcceptJson acceptJson = mock(AcceptJson.class);
     private final ContractPdfRenderer renderer = mock(ContractPdfRenderer.class);
     private final DocumentStorageAdapter storageAdapter = mock(DocumentStorageAdapter.class);
 
     private final PdfContractArtifactPort port = new PdfContractArtifactPort(
-            workContractMapper, documentMapper, acceptJson, renderer, storageAdapter);
+            documentMapper, renderer, storageAdapter);
 
     @Test
     void prepareWritesBothVersionsAndSharesWithTheWorker() {
-        givenSnapshot();
         when(renderer.render(org.mockito.ArgumentMatchers.any(ContractSnapshot.class)))
                 .thenReturn("original".getBytes());
         when(renderer.render(
@@ -66,7 +61,8 @@ class PdfContractArtifactPortTest {
         stubGeneratedIds();
 
         ContractArtifactHandle handle = port.prepare(
-                ContractArtifactCommand.of(WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT));
+                ContractArtifactCommand.from(AcceptedContract.of(
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms())));
 
         assertEquals(WORK_CASE_ID, handle.getWorkCaseId());
         assertEquals(CONTRACT_ID, handle.getContractId());
@@ -172,16 +168,8 @@ class PdfContractArtifactPortTest {
         verify(storageAdapter).deletePendingByWorkCaseId(WORK_CASE_ID, Set.of(77L));
     }
 
-    private void givenSnapshot() {
-        ContractSnapshotRow row = ContractSnapshotRow.builder()
-                .workCaseId(WORK_CASE_ID)
-                .employerId(OWNER_ID)
-                .workerId(WORKER_ID)
-                .termsSnapshotJson("{}")
-                .build();
-        when(workContractMapper.findSnapshotById(CONTRACT_ID)).thenReturn(row);
-
-        ContractTermsSnapshot terms = ContractTermsSnapshot.builder()
+    private ContractTermsSnapshot terms() {
+        return ContractTermsSnapshot.builder()
                 .termsVersion(1)
                 .title("주말 홀 서빙")
                 .startsAt(Instant.parse("2026-08-07T01:00:00Z"))
@@ -194,7 +182,6 @@ class PdfContractArtifactPortTest {
                 .owner(OWNER_ID, "사장")
                 .worker(WORKER_ID, "근로자")
                 .build();
-        when(acceptJson.readSnapshot("{}")).thenReturn(terms);
     }
 
     private void stubGeneratedIds() {
