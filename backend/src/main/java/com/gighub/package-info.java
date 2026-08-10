@@ -1,11 +1,13 @@
 /**
  * Gig Hub 백엔드의 최상위 패키지입니다.
  *
- * <p>도메인 기능은 하위 패키지로 분리하며, 각 도메인은 Controller → Service → Mapper 순서의
- * 계층을 따릅니다. 공통 기능은 {@code common}, 애플리케이션 설정은 {@code config}에서
- * 관리합니다.</p>
+ * <p>하위 패키지는 물리 배치이고 논리 모듈 경계는 {@code docs/agent/MODULE_BOUNDARIES.md}를
+ * 따릅니다. {@code work}/{@code invitation}/{@code contract}는 하나의 Work 모듈이고,
+ * {@code auth}/{@code member}/{@code badge}는 하나의 Member/Auth 모듈입니다.</p>
  *
- * <p>TODO: 기능 구현이 시작되면 도메인 간 직접 참조 규칙과 공통 DTO 사용 범위를 확정합니다.</p>
+ * <p>Controller는 Application Service 또는 Orchestrator만 호출하고, 쓰기 Service는 자기 논리
+ * 모듈의 Mapper만 호출합니다. 타 모듈에는 공개 Command/Query 경계와 최소 Result만 노출하며
+ * Mapper Row/Param과 내부 Domain 객체를 전달하지 않습니다.</p>
  */
 package com.gighub;
 
