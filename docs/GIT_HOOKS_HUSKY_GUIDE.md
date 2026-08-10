@@ -104,6 +104,20 @@ Guardrail은 현재 프로젝트에서 금지된 기술이 실수로 추가되�
 
 Guardrail이 모든 ORM 문자열을 포괄하는 것은 아니며 최종 기술 제약은 `docs/DEPENDENCY_SPECIFICATION.md`를 따른다. 문서와 GitHub Template은 금지 기술을 설명할 수 있어야 하므로 애플리케이션 검사 대상에서 제외한다. staged 검사는 작업 트리가 아니라 Git index 내용을 읽어 부분 staging에서도 실제 커밋 대상만 검사한다.
 
+RF-02 Architecture manifest가 존재하는 저장소에서는 비교 기준선에 이미 있던 위반의 안정적인
+signature를 고정하고 다음 신규 증가를 hard failure로 차단한다.
+
+- 논리 모듈 간 Mapper import
+- Controller의 Mapper 직접 import
+- Domain의 Spring, MyBatis, Web DTO 또는 persistence 타입 import
+- Production source의 `USE_MOCK* = true` 형태 hardcoded Mock
+- 비교 기준선에 이미 적용된 Flyway Migration의 수정·삭제
+
+Issue Form·PR template의 경량 작업 카드와 CODEOWNERS 경로도 staged/working snapshot에서
+검증한다. 반면 변경 파일 10개, 애플리케이션 구현 500 LOC, 신규 Java abstraction·Exception·type은
+리뷰 경고만 출력하며 종료 코드를 실패로 바꾸지 않는다. 경고는 이슈 분리와 타입 필요성을
+검토하라는 신호이지 자동 거절 기준이 아니다.
+
 `--all`과 `--release`는 PR 전체 범위를 실제 승인된 통합 브랜치와 비교한다.
 
 - GitHub Actions에서는 `GITHUB_BASE_REF`를 실제 PR base로 사용한다.
@@ -140,6 +154,7 @@ npm run check:precommit
 | staged 변경                                                                                         | 실행                                                             |
 | --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
 | 문서 전용 경로(`docs/**`, 루트 `*.md`, 모든 `README.md`)·GitHub Template·허용된 저장소 메타데이터만 | staged Guardrail, 일치하는 staged Format; 애플리케이션 Lint 생략 |
+| `docs/agent/MODULE_BOUNDARIES.json`                                                                 | staged Guardrail, staged Format, 하네스 테스트, 두 영역 Lint     |
 | Frontend 애플리케이션 파일만                                                                        | staged Guardrail, 일치하는 staged Format, Frontend ESLint        |
 | Backend 애플리케이션 파일만                                                                         | staged Guardrail, 일치하는 staged Format, Backend Gradle `check` |
 | Frontend와 Backend 애플리케이션 파일                                                                | staged Guardrail, staged Format, 하네스 테스트, 두 영역 Lint     |

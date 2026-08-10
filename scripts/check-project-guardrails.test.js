@@ -6,19 +6,108 @@ const path = require("node:path");
 const test = require("node:test");
 
 const {
+  buildReviewScopeWarnings,
+  compareArchitectureViolations,
   extractReadmeReleaseRows,
   extractSpecReleaseVersion,
+  findArchitectureViolations,
   findViolations,
   hashNormalizedSpecContent,
   normalizeSpecContent,
+  parseArchitectureManifest,
+  parseNumstat,
   parsePatchDocument,
   parseMode,
   parseSpecManifest,
   selectIntegrationBaseBranch,
   splitNullSeparated,
   verifyPatchSnapshot,
+  verifyArchitectureManifestEvolution,
+  verifyGovernanceTemplateSnapshot,
+  verifyMigrationImmutability,
   verifySpecReleaseMetadata,
 } = require("./check-project-guardrails");
+
+const ARCHITECTURE_MANIFEST = {
+  schemaVersion: 1,
+  logicalModules: [
+    { id: "work", packageRoots: ["work", "invitation", "contract"] },
+    { id: "attendance", packageRoots: ["attendance"] },
+    { id: "document", packageRoots: ["document"] },
+  ],
+  guardRules: {
+    controllerMayImportMapper: false,
+    crossModuleMapperImport: false,
+    queryExceptionMayWrite: false,
+    domainForbiddenImportPrefixes: ["org.springframework", "org.apache.ibatis"],
+    domainForbiddenImportRegexes: [
+      "^com\\.gighub\\..*\\.controller\\.",
+      "^com\\.gighub\\..*\\.dto\\.",
+      "^com\\.gighub\\..*\\.mapper\\.",
+    ],
+  },
+};
+
+function createIssueFormFixture() {
+  return [
+    "name: Fixture",
+    "description: Fixture",
+    "body:",
+    "  - type: textarea",
+    "    id: goal",
+    "  - type: textarea",
+    "    id: acceptance",
+    "    attributes:",
+    "      description: 3~7개 완료 조건",
+    "  - type: textarea",
+    "    id: non_goals",
+    "  - type: dropdown",
+    "    id: risk",
+    "    attributes:",
+    "      options:",
+    "        - R0",
+    "        - R1",
+    "        - R2",
+    "        - R3",
+    "  - type: input",
+    "    id: primary_module",
+    "  - type: textarea",
+    "    id: affected_modules",
+    "  - type: textarea",
+    "    id: required_operations",
+    "  - type: textarea",
+    "    id: migration_scope",
+    "  - type: textarea",
+    "    id: verification",
+    "  - type: textarea",
+    "    id: depends_on",
+    "",
+  ].join("\n");
+}
+
+function createGovernanceTemplateFixture() {
+  const pullRequestHeadings = [
+    "관련 이슈와 통합",
+    "실제 Diff",
+    "계약 대비 차이",
+    "검증 결과",
+    "잔여 위험",
+    "리뷰와 Migration",
+    "종료 상태",
+  ]
+    .map((heading) => `## ${heading}\n`)
+    .join("\n");
+  return new Map([
+    [".github/ISSUE_TEMPLATE/feature_request.yml", createIssueFormFixture()],
+    [".github/ISSUE_TEMPLATE/bug_report.yml", createIssueFormFixture()],
+    [".github/ISSUE_TEMPLATE/task.yml", createIssueFormFixture()],
+    [".github/pull_request_template.md", pullRequestHeadings],
+    [
+      ".github/CODEOWNERS",
+      "/.github/ISSUE_TEMPLATE/ @owner\n/docs/GITHUB_PROJECTS_PANEL_GUIDE.md @owner\n",
+    ],
+  ]);
+}
 
 const PATCH_SCAFFOLD = {
   "docs/spec-patches/README.md": "# Specification Patch governance\n",
@@ -238,14 +327,10 @@ test("all mode compares against the selected dev or dev2 remote base", () => {
       cwd: temporaryRepository,
       stdio: "ignore",
     });
-    execFileSync(
-      "git",
-      ["config", "user.email", "guardrail@example.com"],
-      {
-        cwd: temporaryRepository,
-        stdio: "ignore",
-      },
-    );
+    execFileSync("git", ["config", "user.email", "guardrail@example.com"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
     execFileSync(
       "git",
       ["remote", "add", "origin", "https://example.invalid/repository.git"],
@@ -374,6 +459,237 @@ test("splits NUL-delimited Git output without losing unusual paths", () => {
   assert.deepEqual(
     splitNullSeparated("frontend/src/한글 파일.js\0backend/line\nbreak.java\0"),
     ["frontend/src/한글 파일.js", "backend/line\nbreak.java"],
+  );
+});
+
+test("validates the RF-02 module manifest used by architecture guardrails", () => {
+  assert.deepEqual(
+    parseArchitectureManifest(JSON.stringify(ARCHITECTURE_MANIFEST)).errors,
+    [],
+  );
+
+  const invalid = structuredClone(ARCHITECTURE_MANIFEST);
+  invalid.logicalModules.push({
+    id: "duplicate",
+    packageRoots: ["attendance"],
+  });
+  invalid.guardRules.controllerMayImportMapper = true;
+  invalid.guardRules.queryExceptionMayWrite = true;
+  invalid.guardRules.domainForbiddenImportRegexes.push("[");
+  const errors = parseArchitectureManifest(JSON.stringify(invalid)).errors.join(
+    "\n",
+  );
+  assert.match(errors, /maps package root attendance more than once/);
+  assert.match(errors, /controllerMayImportMapper must be false/);
+  assert.match(errors, /queryExceptionMayWrite must be false/);
+  assert.match(errors, /invalid domain import regex/);
+
+  const weakened = structuredClone(ARCHITECTURE_MANIFEST);
+  weakened.logicalModules[0].packageRoots = ["work", "contract"];
+  weakened.guardRules.domainForbiddenImportPrefixes = ["org.springframework"];
+  const evolutionErrors = verifyArchitectureManifestEvolution(
+    ARCHITECTURE_MANIFEST,
+    weakened,
+  ).join("\n");
+  assert.match(
+    evolutionErrors,
+    /must not remove governed package root invitation/,
+  );
+  assert.match(
+    evolutionErrors,
+    /domainForbiddenImportPrefixes must not remove baseline rule org.apache.ibatis/,
+  );
+});
+
+test("keeps issue forms and PR metadata aligned with the RF-03 workflow", () => {
+  const valid = createGovernanceTemplateFixture();
+  assert.deepEqual(verifyGovernanceTemplateSnapshot(valid), []);
+
+  const invalid = createGovernanceTemplateFixture();
+  invalid.set(
+    ".github/ISSUE_TEMPLATE/task.yml",
+    invalid
+      .get(".github/ISSUE_TEMPLATE/task.yml")
+      .replace("    id: migration_scope\n", "    id: goal\n"),
+  );
+  invalid.set(
+    ".github/pull_request_template.md",
+    invalid
+      .get(".github/pull_request_template.md")
+      .replace("## 잔여 위험\n", ""),
+  );
+  const errors = verifyGovernanceTemplateSnapshot(invalid).join("\n");
+  assert.match(errors, /duplicates field ids: goal/);
+  assert.match(errors, /missing required workflow field id: migration_scope/);
+  assert.match(errors, /missing heading: 잔여 위험/);
+});
+
+test("allows new forward-only migrations but never rewrites applied files", () => {
+  const baselineFiles = new Map([
+    [
+      "backend/src/main/resources/db/migration/V1__baseline.sql",
+      "CREATE TABLE sample;\n",
+    ],
+  ]);
+  const forwardOnly = verifyMigrationImmutability({
+    baselineFiles,
+    candidateFiles: new Map([
+      ...baselineFiles,
+      [
+        "backend/src/main/resources/db/migration/V2__add_index.sql",
+        "CREATE INDEX ix;\n",
+      ],
+    ]),
+  });
+  assert.deepEqual(forwardOnly, []);
+
+  assert.match(
+    verifyMigrationImmutability({
+      baselineFiles,
+      candidateFiles: new Map([
+        [
+          "backend/src/main/resources/db/migration/V1__baseline.sql",
+          "ALTER TABLE sample;\n",
+        ],
+      ]),
+    }).join("\n"),
+    /must remain immutable/,
+  );
+  assert.match(
+    verifyMigrationImmutability({
+      baselineFiles,
+      candidateFiles: new Map(),
+    }).join("\n"),
+    /must not be deleted/,
+  );
+});
+
+test("blocks only architecture violations added beyond the frozen baseline", () => {
+  const baselineFiles = new Map([
+    [
+      "backend/src/main/java/com/gighub/document/controller/DocumentController.java",
+      "package com.gighub.document.controller;\nimport com.gighub.document.mapper.DocumentQueryMapper;\n",
+    ],
+    ["frontend/src/services/documents.js", "const USE_MOCK = true;\n"],
+  ]);
+  const candidateFiles = new Map([
+    ...baselineFiles,
+    [
+      "backend/src/main/java/com/gighub/work/service/WorkService.java",
+      "package com.gighub.work.service;\nimport com.gighub.invitation.mapper.InvitationMapper;\n",
+    ],
+    [
+      "backend/src/main/java/com/gighub/attendance/service/AttendanceService.java",
+      "package com.gighub.attendance.service;\nimport com.gighub.work.mapper.WorkCaseMapper;\n",
+    ],
+    [
+      "backend/src/main/java/com/gighub/attendance/domain/AttendancePolicy.java",
+      "package com.gighub.attendance.domain;\nimport org.springframework.stereotype.Component;\n",
+    ],
+    [
+      "backend/src/main/java/com/gighub/attendance/controller/AttendanceController.java",
+      "package com.gighub.attendance.controller;\nimport com.gighub.attendance.mapper.QrTokenMapper;\n",
+    ],
+    ["frontend/src/services/worker.js", "const FORCE_MOCK = true;\n"],
+  ]);
+
+  const baseline = findArchitectureViolations(
+    baselineFiles,
+    ARCHITECTURE_MANIFEST,
+  );
+  const candidate = findArchitectureViolations(
+    candidateFiles,
+    ARCHITECTURE_MANIFEST,
+  );
+  assert.deepEqual([...baseline.values()].map(({ kind }) => kind).sort(), [
+    "controller-mapper-import",
+    "hardcoded-production-mock",
+  ]);
+  assert.deepEqual(
+    compareArchitectureViolations(baseline, candidate)
+      .map(({ kind }) => kind)
+      .sort(),
+    [
+      "controller-mapper-import",
+      "cross-module-mapper-import",
+      "domain-forbidden-import",
+      "hardcoded-production-mock",
+    ],
+  );
+});
+
+test("fails closed for unmapped package roots and lowercase Mock flags", () => {
+  const violations = findArchitectureViolations(
+    new Map([
+      [
+        "backend/src/main/java/com/gighub/newmodule/service/NewService.java",
+        "package com.gighub.newmodule.service;\nimport com.gighub.work.mapper.WorkCaseMapper;\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/service/AttendanceService.java",
+        "package com.gighub.attendance.service;\nimport com.gighub.unknown.mapper.UnknownMapper;\n",
+      ],
+      ["frontend/src/services/worker.js", "const useMockWorker = true;\n"],
+    ]),
+    ARCHITECTURE_MANIFEST,
+  );
+
+  assert.deepEqual([...violations.values()].map(({ kind }) => kind).sort(), [
+    "hardcoded-production-mock",
+    "unmapped-mapper-package-root",
+    "unmapped-source-package-root",
+  ]);
+});
+
+test("keeps file, LOC, and new type thresholds as review warnings", () => {
+  const changedFiles = new Set(
+    Array.from(
+      { length: 10 },
+      (_, index) => `frontend/src/feature-${index}.js`,
+    ),
+  );
+  const warnings = buildReviewScopeWarnings({
+    changedFiles,
+    lineStats: [
+      { file: "frontend/src/large-feature.js", added: 450, deleted: 50 },
+    ],
+    addedEntries: [
+      {
+        file: "backend/src/main/java/com/gighub/work/domain/WorkPolicy.java",
+        content:
+          "public interface WorkPolicy {}\nclass WorkPolicyException extends RuntimeException {}\n",
+      },
+    ],
+  });
+
+  assert.equal(warnings.length, 3);
+  assert.match(warnings.join("\n"), /10 changed files/);
+  assert.match(warnings.join("\n"), /changes 500 lines/);
+  assert.match(warnings.join("\n"), /WorkPolicy/);
+  assert.match(warnings.join("\n"), /WorkPolicyException/);
+  assert.deepEqual(
+    parseNumstat("12\t3\tfrontend/src/a.js\n-\t-\tasset.bin\n"),
+    [{ file: "frontend/src/a.js", added: 12, deleted: 3 }],
+  );
+  assert.deepEqual(
+    parseNumstat("12\t3\tfrontend/src/한글\t줄\n파일.js\0-\t-\tasset.bin\0"),
+    [{ file: "frontend/src/한글\t줄\n파일.js", added: 12, deleted: 3 }],
+  );
+
+  assert.deepEqual(
+    buildReviewScopeWarnings({
+      changedFiles: new Set(
+        Array.from(
+          { length: 9 },
+          (_, index) => `frontend/src/small-${index}.js`,
+        ),
+      ),
+      lineStats: [
+        { file: "frontend/src/small-feature.js", added: 450, deleted: 49 },
+      ],
+      addedEntries: [],
+    }),
+    [],
   );
 });
 
@@ -602,7 +918,7 @@ test("requires the Patch governance scaffold even when every file is deleted", (
   }
 });
 
-test("allows draft with application code but isolates DDL and protected specs", () => {
+test("allows separately approved DDL scope but still isolates protected specs", () => {
   const draftPath = patchPath("wallet-contract");
   const applicationPath = "frontend/src/services/wallet.js";
   const currentFiles = createPatchSnapshot({
@@ -627,8 +943,8 @@ test("allows draft with application code but isolates DDL and protected specs", 
     previousFiles: createPatchSnapshot(),
   });
   assert.match(
-    forbidden.errors.join("\n"),
-    /must not include Migration or DDL/,
+    forbidden.warnings.join("\n"),
+    /includes protected Migration or DDL/,
   );
   assert.match(
     forbidden.errors.join("\n"),
@@ -1155,6 +1471,120 @@ test("staged mode reads index content while all mode reads the working tree", ()
 
     assert.equal(stagedViolation.status, 1);
     assert.match(stagedViolation.stderr, /React dependency/);
+  } finally {
+    fs.rmSync(temporaryRepository, { recursive: true, force: true });
+  }
+});
+
+test("architecture CLI separates staged index, working tree, and untracked sources", () => {
+  const temporaryRepository = fs.mkdtempSync(
+    path.join(os.tmpdir(), "gighub-architecture-guardrails-"),
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+  const sourceFile =
+    "backend/src/main/java/com/gighub/attendance/service/AttendanceService.java";
+  const safeSource =
+    "package com.gighub.attendance.service;\npublic class AttendanceService {}\n";
+  const violatingSource =
+    "package com.gighub.attendance.service;\nimport com.gighub.work.mapper.WorkCaseMapper;\npublic class AttendanceService {}\n";
+  const environment = guardrailEnvironment({
+    GIGHUB_GUARDRAIL_BASE_REF: "dev2",
+  });
+
+  try {
+    execFileSync("git", ["init", "--quiet"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.name", "Guardrail Test"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.email", "guardrail@example.com"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync(
+      "git",
+      ["remote", "add", "origin", "https://example.invalid/repository.git"],
+      { cwd: temporaryRepository, stdio: "ignore" },
+    );
+    writeSpecFixture(temporaryRepository);
+    writeRepositoryFile(
+      temporaryRepository,
+      "docs/agent/MODULE_BOUNDARIES.json",
+      `${JSON.stringify(ARCHITECTURE_MANIFEST, null, 2)}\n`,
+    );
+    writeRepositoryFile(temporaryRepository, sourceFile, safeSource);
+    execFileSync("git", ["add", "."], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const baseCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+    }).trim();
+    execFileSync(
+      "git",
+      ["update-ref", "refs/remotes/origin/dev2", baseCommit],
+      { cwd: temporaryRepository, stdio: "ignore" },
+    );
+
+    writeRepositoryFile(temporaryRepository, sourceFile, violatingSource);
+    execFileSync("git", ["add", sourceFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, sourceFile, safeSource);
+
+    const staged = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    const working = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(staged.status, 1);
+    assert.match(staged.stderr, /cross-module-mapper-import/);
+    assert.equal(working.status, 0);
+
+    const untrackedSource =
+      "backend/src/main/java/com/gighub/newmodule/service/NewService.java";
+    writeRepositoryFile(
+      temporaryRepository,
+      untrackedSource,
+      "package com.gighub.newmodule.service;\nimport com.gighub.work.mapper.WorkCaseMapper;\n",
+    );
+    const untracked = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(untracked.status, 1);
+    assert.match(untracked.stderr, /unmapped-source-package-root/);
+    fs.rmSync(path.join(temporaryRepository, ...untrackedSource.split("/")));
+
+    for (let index = 0; index < 10; index += 1) {
+      writeRepositoryFile(
+        temporaryRepository,
+        `notes/review-${index}.md`,
+        `# Review ${index}\n`,
+      );
+    }
+    const warningOnly = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(warningOnly.status, 0);
+    assert.match(warningOnly.stderr, /Review scope warnings/);
   } finally {
     fs.rmSync(temporaryRepository, { recursive: true, force: true });
   }

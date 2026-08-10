@@ -74,16 +74,16 @@ Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시
 
 ## 애플리케이션과 협업 문서
 
-| 영역                     | 문서                                                               |
-| ------------------------ | ------------------------------------------------------------------ |
-| Frontend 설치·실행·검증  | [`../frontend/README.md`](../frontend/README.md)                   |
-| Backend WAR·DB 연결·검증 | [`../backend/README.md`](../backend/README.md)                     |
-| 최초 환경 준비           | [`GETTING_STARTED.md`](GETTING_STARTED.md)                         |
-| Issue·Branch·PR          | [`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)       |
-| Commit 규약              | [`COMMIT_CONVENTION.md`](COMMIT_CONVENTION.md)                     |
-| Git Hook·Guardrail       | [`GIT_HOOKS_HUSKY_GUIDE.md`](GIT_HOOKS_HUSKY_GUIDE.md)             |
-| GitHub Projects 운영     | [`GITHUB_PROJECTS_PANEL_GUIDE.md`](GITHUB_PROJECTS_PANEL_GUIDE.md) |
-| Claude Code 어댑터       | [`../CLAUDE.md`](../CLAUDE.md)                                     |
+| 영역                      | 문서                                                               |
+| ------------------------- | ------------------------------------------------------------------ |
+| Frontend 설치·실행·검증   | [`../frontend/README.md`](../frontend/README.md)                   |
+| Backend WAR·DB 연결·검증  | [`../backend/README.md`](../backend/README.md)                     |
+| 최초 환경 준비            | [`GETTING_STARTED.md`](GETTING_STARTED.md)                         |
+| Issue·Branch·PR·종료      | [`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)       |
+| Commit 규약               | [`COMMIT_CONVENTION.md`](COMMIT_CONVENTION.md)                     |
+| Git Hook·Guardrail 책임   | [`GIT_HOOKS_HUSKY_GUIDE.md`](GIT_HOOKS_HUSKY_GUIDE.md)             |
+| GitHub Projects 상태 의미 | [`GITHUB_PROJECTS_PANEL_GUIDE.md`](GITHUB_PROJECTS_PANEL_GUIDE.md) |
+| Claude Code 어댑터        | [`../CLAUDE.md`](../CLAUDE.md)                                     |
 
 루트 `AGENTS.md`, `docs/memory/`, `docs/reports/`, `NOTICE.md`는 현재 Codex 사용자의 개인 운영
 파일입니다. 플러그인, 권한, 모델과 개인 설정도 공유 계약에 넣지 않습니다.

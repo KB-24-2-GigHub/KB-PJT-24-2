@@ -90,10 +90,10 @@ API, 데이터·Migration, 보안, 화면 등 별도 설명이 실제로 필요�
 draft ── 정식 SPEC 반영 ──> accepted
 ```
 
-| 상태       | 의미                                                     | 위치       | 수정 가능 여부 |
-| ---------- | -------------------------------------------------------- | ---------- | -------------- |
+| 상태       | 의미                                                                  | 위치       | 수정 가능 여부 |
+| ---------- | --------------------------------------------------------------------- | ---------- | -------------- |
 | `draft`    | 승인된 통합 브랜치에서 해당 기능의 구현과 테스트에 사용하는 개발 계약 | `draft/`   | 가능           |
-| `accepted` | 내용이 정식 SPEC에 반영된 보관 기록                      | `archive/` | 불가           |
+| `accepted` | 내용이 정식 SPEC에 반영된 보관 기록                                   | `archive/` | 불가           |
 
 `accepted`는 단순 리뷰 승인 상태가 아니다. 정식 SPEC 반영이 끝난 상태만 뜻한다. 기존의
 `proposed`, `rejected`, `superseded`, `applied` 상태는 사용하지 않는다.
@@ -107,9 +107,12 @@ draft ── 정식 SPEC 반영 ──> accepted
 5. 개발 중 계약이 바뀌면 관련 코드·테스트와 같은 변경에서 `draft`를 수정한다.
 6. 기능을 철회하면 구현과 `draft`를 함께 제거한다. 이력은 Git과 PR에 남는다.
 
-Patch와 함께 Flyway Migration, DDL 또는 통합 Schema를 변경하지 않는다. 그런 변경은 사용자의
-명시적인 관리자 승인 범위에서 별도 작업으로 처리한다. `draft`와 정식 SPEC 파일도 같은 기능
-PR에서 함께 바꾸지 않는다.
+Patch 자체는 Flyway Migration, DDL 또는 통합 Schema 변경 권한을 부여하지 않는다. 그런 변경은
+대상 table·invariant·신규 Migration·검증을 식별한 사용자의 명시적 관리자 승인 범위가 별도로
+필요하다. 여기서 별도란 권한과 리뷰 범위를 뜻하며 반드시 별도 PR을 뜻하지 않는다. 승인된
+`migration_scope`가 있으면 새 immutable Migration, 파생 Schema, 호환 코드와 테스트를 같은
+구현 PR에서 원자적으로 검토할 수 있다. `draft`와 정식 SPEC 파일은 같은 기능 PR에서 함께
+바꾸지 않으며 보호 SPEC의 `accepted` 전환은 일반 코드·Migration과 분리한다.
 
 ## Controller 수락
 
@@ -136,7 +139,7 @@ Guardrail은 문서 분량이나 모든 영향 영역을 강제하지 않는다.
 - Placeholder와 중복 Patch ID·대상
 - `draft/`와 `archive/`의 상태 일치
 - 새 Patch가 `draft`로 시작하고 `accepted` 기록이 변경·삭제되지 않는지 여부
-- `draft`와 구현 코드의 동반 허용, Migration·DDL·정식 SPEC 혼합 금지
+- `draft`와 구현 코드의 동반 허용, Migration·DDL은 별도 관리자 승인과 `migration_scope` 검토 경고, 정식 SPEC 혼합 금지
 - `accepted` 전환 시 정식 SPEC, 릴리스 버전과 Lock의 원자 갱신
 - 승인·운영 릴리스에 `draft`가 남아 있지 않은지 여부
 

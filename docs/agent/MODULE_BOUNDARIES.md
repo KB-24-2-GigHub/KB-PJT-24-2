@@ -358,9 +358,11 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
    Manifest, 관련 package documentation을 원자적으로 갱신한다.
 7. 실제 Migration/DDL 변경은 별도 권한과 해당 이슈 범위에서만 수행한다.
 
-후속 guardrail은 [`MODULE_BOUNDARIES.json`](MODULE_BOUNDARIES.json)을 읽어 module package,
-table owner, Query 예외와 temporary violation을 구분해야 한다. temporary violation 수를 새
-baseline으로 고정해 증가를 허용하면 안 되며, 해당 owner 이슈가 끝날 때 항목을 제거해야 한다.
+RF-03 Guardrail은 [`MODULE_BOUNDARIES.json`](MODULE_BOUNDARIES.json)을 읽어 module package,
+금지 import와 production Mock 경계를 검사한다. 비교 기준과 후보의 위반을 `rule + file + import
+target/mock symbol` signature로 비교하므로 기존 위반을 다른 파일로 옮기거나 같은 수의 신규
+위반으로 교체할 수 없다. temporary violation은 해당 owner 이슈에서 제거해야 하며 신규
+signature는 허용하지 않는다.
 
 ### RF-02 감사 baseline
 
@@ -370,5 +372,6 @@ baseline으로 고정해 증가를 허용하면 안 되며, 해당 owner 이슈�
 | Production 타 논리 모듈 `.mapper.` import    | 13 statements / 7 files | #287 완료 시 0                           |
 | Production Controller `.mapper.` import      | 2 statements / 2 files  | #287 완료 시 0                           |
 | Domain Framework/Web/Persistence 금지 import | 0                       | 0 유지                                   |
+| Production hardcoded Mock flag               | 4                       | #293 완료 시 0                           |
 | 현재 writer가 없는 table                     | 4                       | 기능 이슈 상태를 유지하고 거짓 완료 금지 |
 | 명시된 cross-table Query 예외                | 5                       | Manifest allowlist 밖 신규 예외 0        |

@@ -10,6 +10,9 @@ const DOC_ONLY_FILES = new Set([
   "LICENSE.txt",
   ".github/CODEOWNERS",
 ]);
+const SHARED_GUARDRAIL_CONFIGURATION = new Set([
+  "docs/agent/MODULE_BOUNDARIES.json",
+]);
 
 function normalizePath(file) {
   return file.replace(/\\/g, "/");
@@ -35,6 +38,7 @@ function getStagedPaths(cwd = process.cwd()) {
 
 function isDocumentationOnly(file) {
   const normalized = normalizePath(file);
+  if (SHARED_GUARDRAIL_CONFIGURATION.has(normalized)) return false;
   const rootMarkdown = !normalized.includes("/") && normalized.endsWith(".md");
   const areaReadme = /(^|\/)README\.md$/.test(normalized);
 
