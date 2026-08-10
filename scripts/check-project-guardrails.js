@@ -49,6 +49,36 @@ const PATCH_TARGET_SPEC_PATHS = new Map([
   ["decision", `${SPEC_ROOT}/DECISIONS.md`],
   ["traceability", `${SPEC_ROOT}/SPEC_TRACEABILITY.md`],
 ]);
+const ARCHITECTURE_MANIFEST_PATH = "docs/agent/MODULE_BOUNDARIES.json";
+const BACKEND_PRODUCTION_ROOT = "backend/src/main/java/";
+const FRONTEND_PRODUCTION_ROOT = "frontend/src/";
+const MIGRATION_ROOT = "backend/src/main/resources/db/migration/";
+const REVIEW_FILE_WARNING_THRESHOLD = 10;
+const REVIEW_LOC_WARNING_THRESHOLD = 500;
+const ISSUE_FORM_PATHS = [
+  ".github/ISSUE_TEMPLATE/feature_request.yml",
+  ".github/ISSUE_TEMPLATE/bug_report.yml",
+  ".github/ISSUE_TEMPLATE/task.yml",
+];
+const PULL_REQUEST_TEMPLATE_PATH = ".github/pull_request_template.md";
+const CODEOWNERS_PATH = ".github/CODEOWNERS";
+const GOVERNANCE_TEMPLATE_PATHS = [
+  ...ISSUE_FORM_PATHS,
+  PULL_REQUEST_TEMPLATE_PATH,
+  CODEOWNERS_PATH,
+];
+const REQUIRED_ISSUE_FORM_IDS = [
+  "goal",
+  "acceptance",
+  "non_goals",
+  "risk",
+  "primary_module",
+  "affected_modules",
+  "required_operations",
+  "migration_scope",
+  "verification",
+  "depends_on",
+];
 const PATCH_FILE_PATTERN = new RegExp(
   `^${PATCH_ROOT}/(draft|archive)/` +
     "([a-z0-9]+(?:-[a-z0-9]+)*)_" +
@@ -116,8 +146,7 @@ function selectIntegrationBaseBranch({
   localBaseRef,
   hasOriginRemote,
 }) {
-  const normalize = (value) =>
-    typeof value === "string" ? value.trim() : "";
+  const normalize = (value) => (typeof value === "string" ? value.trim() : "");
   const githubBase = hasOriginRemote ? normalize(githubBaseRef) : "";
   const localBase = hasOriginRemote ? normalize(localBaseRef) : "";
 
@@ -137,8 +166,7 @@ function selectIntegrationBaseBranch({
 }
 
 function getIntegrationBaseBranch() {
-  const hasOriginRemote =
-    gitOptional(["remote", "get-url", "origin"]) !== null;
+  const hasOriginRemote = gitOptional(["remote", "get-url", "origin"]) !== null;
   return selectIntegrationBaseBranch({
     githubBaseRef: process.env.GITHUB_BASE_REF,
     localBaseRef: process.env[LOCAL_BASE_ENVIRONMENT_VARIABLE],
@@ -241,6 +269,815 @@ function isBackendSourceOrBuild(file) {
       file,
     )
   );
+}
+
+function isFrontendProductionSource(file) {
+  return (
+    file.startsWith(FRONTEND_PRODUCTION_ROOT) &&
+    /\.(?:js|mjs|cjs|ts|tsx|vue)$/.test(file) &&
+    !/(?:^|\/)(?:__tests__|test|tests)(?:\/|$)/.test(file) &&
+    !/\.(?:spec|test)\.[^.]+$/.test(file)
+  );
+}
+
+function isBackendProductionJava(file) {
+  return file.startsWith(BACKEND_PRODUCTION_ROOT) && file.endsWith(".java");
+}
+
+function isArchitectureSource(file) {
+  return isBackendProductionJava(file) || isFrontendProductionSource(file);
+}
+
+function parseArchitectureManifest(content) {
+  let manifest;
+  try {
+    manifest = JSON.parse(String(content));
+  } catch (error) {
+    return {
+      manifest: null,
+      errors: [
+        `${ARCHITECTURE_MANIFEST_PATH} is not valid JSON: ${error.message}`,
+      ],
+    };
+  }
+
+  const errors = [];
+  if (!isPlainObject(manifest)) {
+    return {
+      manifest: null,
+      errors: [`${ARCHITECTURE_MANIFEST_PATH} root must be a JSON object.`],
+    };
+  }
+  if (manifest.schemaVersion !== 1) {
+    errors.push(`${ARCHITECTURE_MANIFEST_PATH} schemaVersion must be 1.`);
+  }
+  if (
+    !Array.isArray(manifest.logicalModules) ||
+    manifest.logicalModules.length === 0
+  ) {
+    errors.push(
+      `${ARCHITECTURE_MANIFEST_PATH} logicalModules must be a non-empty array.`,
+    );
+  }
+
+  const moduleIds = new Set();
+  const packageRoots = new Set();
+  for (const module of manifest.logicalModules ?? []) {
+    if (
+      !isPlainObject(module) ||
+      typeof module.id !== "string" ||
+      !/^[a-z][a-z0-9-]*$/.test(module.id) ||
+      !Array.isArray(module.packageRoots) ||
+      module.packageRoots.length === 0
+    ) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} each logical module must declare id and packageRoots.`,
+      );
+      continue;
+    }
+    if (moduleIds.has(module.id)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} duplicates logical module ${module.id}.`,
+      );
+    }
+    moduleIds.add(module.id);
+    for (const packageRoot of module.packageRoots) {
+      if (
+        typeof packageRoot !== "string" ||
+        !/^[a-z][a-z0-9]*$/.test(packageRoot)
+      ) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} has invalid package root ${String(packageRoot)}.`,
+        );
+      } else if (packageRoots.has(packageRoot)) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} maps package root ${packageRoot} more than once.`,
+        );
+      }
+      packageRoots.add(packageRoot);
+    }
+  }
+
+  const guardRules = manifest.guardRules;
+  if (!isPlainObject(guardRules)) {
+    errors.push(`${ARCHITECTURE_MANIFEST_PATH} guardRules must be an object.`);
+  } else {
+    for (const rule of [
+      "controllerMayImportMapper",
+      "crossModuleMapperImport",
+      "queryExceptionMayWrite",
+    ]) {
+      if (guardRules[rule] !== false) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} guardRules.${rule} must be false.`,
+        );
+      }
+    }
+    for (const rule of [
+      "domainForbiddenImportPrefixes",
+      "domainForbiddenImportRegexes",
+    ]) {
+      if (!Array.isArray(guardRules[rule]) || guardRules[rule].length === 0) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} guardRules.${rule} must be a non-empty array.`,
+        );
+      }
+      for (const entry of guardRules[rule] ?? []) {
+        if (typeof entry !== "string" || entry.trim() === "") {
+          errors.push(
+            `${ARCHITECTURE_MANIFEST_PATH} guardRules.${rule} entries must be non-empty strings.`,
+          );
+        }
+      }
+    }
+    for (const pattern of guardRules.domainForbiddenImportRegexes ?? []) {
+      try {
+        new RegExp(pattern);
+      } catch (error) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} has invalid domain import regex ${String(pattern)}: ${error.message}`,
+        );
+      }
+    }
+  }
+
+  return { manifest, errors };
+}
+
+function verifyArchitectureManifestEvolution(baseline, candidate) {
+  if (!baseline) return [];
+  const errors = [];
+  const baselineModules = moduleByPackageRoot(baseline);
+  const candidateModules = moduleByPackageRoot(candidate);
+
+  for (const [packageRoot, moduleId] of baselineModules) {
+    if (!candidateModules.has(packageRoot)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} must not remove governed package root ${packageRoot}.`,
+      );
+    } else if (candidateModules.get(packageRoot) !== moduleId) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} must not reassign package root ${packageRoot} from ${moduleId} to ${candidateModules.get(packageRoot)}.`,
+      );
+    }
+  }
+
+  for (const rule of [
+    "domainForbiddenImportPrefixes",
+    "domainForbiddenImportRegexes",
+  ]) {
+    const candidateEntries = new Set(candidate.guardRules[rule]);
+    for (const entry of baseline.guardRules[rule]) {
+      if (!candidateEntries.has(entry)) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} guardRules.${rule} must not remove baseline rule ${entry}.`,
+        );
+      }
+    }
+  }
+  return errors;
+}
+
+function moduleByPackageRoot(manifest) {
+  const result = new Map();
+  for (const module of manifest.logicalModules ?? []) {
+    for (const packageRoot of module.packageRoots ?? []) {
+      result.set(packageRoot, module.id);
+    }
+  }
+  return result;
+}
+
+function javaImports(content) {
+  return [
+    ...String(content).matchAll(/^\s*import\s+(?:static\s+)?([^;\s]+)\s*;/gm),
+  ].map((match) => match[1]);
+}
+
+function addArchitectureViolation(violations, kind, file, target, message) {
+  const id = `${kind}:${file}:${target}`;
+  violations.set(id, { id, kind, file, target, message });
+}
+
+function findArchitectureViolations(files, manifest) {
+  const violations = new Map();
+  const modules = moduleByPackageRoot(manifest);
+  const forbiddenPrefixes = manifest.guardRules.domainForbiddenImportPrefixes;
+  const forbiddenRegexes = manifest.guardRules.domainForbiddenImportRegexes.map(
+    (pattern) => new RegExp(pattern),
+  );
+
+  for (const [file, content] of files) {
+    if (isBackendProductionJava(file)) {
+      const sourceRoot = file
+        .slice(BACKEND_PRODUCTION_ROOT.length)
+        .split("/")[2];
+      const sourceModule = modules.get(sourceRoot);
+      const imports = javaImports(content);
+
+      if (!sourceModule) {
+        addArchitectureViolation(
+          violations,
+          "unmapped-source-package-root",
+          file,
+          sourceRoot || "<missing>",
+          "Every production Java package root must belong to one logical module.",
+        );
+      }
+
+      for (const imported of imports) {
+        const mapperMatch =
+          /^com\.gighub\.([a-z][a-z0-9]*)\..*\.mapper\.|^com\.gighub\.([a-z][a-z0-9]*)\.mapper\./.exec(
+            imported,
+          );
+        if (mapperMatch) {
+          const targetRoot = mapperMatch[1] ?? mapperMatch[2];
+          const targetModule = modules.get(targetRoot);
+          if (!targetModule) {
+            addArchitectureViolation(
+              violations,
+              "unmapped-mapper-package-root",
+              file,
+              targetRoot,
+              "Every imported Mapper package root must belong to one logical module.",
+            );
+          }
+          if (file.includes("/controller/")) {
+            addArchitectureViolation(
+              violations,
+              "controller-mapper-import",
+              file,
+              imported,
+              "Controller must call an Application Service or Orchestrator instead of a Mapper.",
+            );
+          }
+          if (sourceModule && targetModule && sourceModule !== targetModule) {
+            addArchitectureViolation(
+              violations,
+              "cross-module-mapper-import",
+              file,
+              imported,
+              `Logical module ${sourceModule} must use ${targetModule}'s public Command/Query boundary.`,
+            );
+          }
+        }
+
+        if (
+          file.includes("/domain/") &&
+          (forbiddenPrefixes.some(
+            (prefix) =>
+              imported === prefix || imported.startsWith(`${prefix}.`),
+          ) ||
+            forbiddenRegexes.some((pattern) => pattern.test(imported)))
+        ) {
+          addArchitectureViolation(
+            violations,
+            "domain-forbidden-import",
+            file,
+            imported,
+            "Domain code must not depend on Spring, MyBatis, Web DTO, or persistence types.",
+          );
+        }
+      }
+    }
+
+    if (isFrontendProductionSource(file)) {
+      const hardcodedMockPattern =
+        /\b([A-Za-z_$][\w$]*mock[\w$]*)\s*=\s*true\b/gi;
+      for (const match of String(content).matchAll(hardcodedMockPattern)) {
+        addArchitectureViolation(
+          violations,
+          "hardcoded-production-mock",
+          file,
+          match[1],
+          "Production source must gate Mock behavior behind an explicit DEV/test-only adapter boundary.",
+        );
+      }
+    }
+  }
+
+  return violations;
+}
+
+function collectGitSourceSnapshot(ref, selectedFiles = null) {
+  const files = new Map();
+  if (!ref) return files;
+  if (selectedFiles !== null) {
+    for (const file of selectedFiles) {
+      if (!isArchitectureSource(file)) continue;
+      const content = gitOptional(["show", `${ref}:${file}`]);
+      if (content !== null) files.set(file, content);
+    }
+    return files;
+  }
+  const output = gitOptional([
+    "ls-tree",
+    "-r",
+    "--name-only",
+    "-z",
+    ref,
+    "--",
+    BACKEND_PRODUCTION_ROOT,
+    FRONTEND_PRODUCTION_ROOT,
+  ]);
+  if (output === null) return files;
+
+  for (const file of splitNullSeparated(output)) {
+    if (!isArchitectureSource(file)) continue;
+    const content = gitOptional(["show", `${ref}:${file}`]);
+    if (content !== null) files.set(file, content);
+  }
+  return files;
+}
+
+function collectStagedSourceSnapshot(selectedFiles = null) {
+  const files = new Map();
+  if (selectedFiles !== null) {
+    for (const file of selectedFiles) {
+      if (!isArchitectureSource(file)) continue;
+      const content = gitOptional(["show", `:${file}`]);
+      if (content !== null) files.set(file, content);
+    }
+    return files;
+  }
+  const output = git([
+    "ls-files",
+    "--cached",
+    "-z",
+    "--",
+    BACKEND_PRODUCTION_ROOT,
+    FRONTEND_PRODUCTION_ROOT,
+  ]);
+  for (const file of splitNullSeparated(output)) {
+    if (!isArchitectureSource(file)) continue;
+    files.set(file, git(["show", `:${file}`]));
+  }
+  return files;
+}
+
+function collectWorkingTreeSourceSnapshot(selectedFiles = null) {
+  const files = new Map();
+  if (selectedFiles !== null) {
+    for (const file of selectedFiles) {
+      if (!isArchitectureSource(file) || !fs.existsSync(file)) continue;
+      files.set(file, fs.readFileSync(file, "utf8"));
+    }
+    return files;
+  }
+  for (const file of getWorkingTreeFiles()) {
+    if (!isArchitectureSource(file) || !fs.existsSync(file)) continue;
+    files.set(file, fs.readFileSync(file, "utf8"));
+  }
+  return files;
+}
+
+function getCandidateArchitectureManifest(mode) {
+  if (mode === "staged") {
+    return gitOptional(["show", `:${ARCHITECTURE_MANIFEST_PATH}`]);
+  }
+  if (!fs.existsSync(ARCHITECTURE_MANIFEST_PATH)) return null;
+  return fs.readFileSync(ARCHITECTURE_MANIFEST_PATH, "utf8");
+}
+
+function compareArchitectureViolations(baseline, candidate) {
+  return [...candidate.values()].filter(
+    (violation) => !baseline.has(violation.id),
+  );
+}
+
+function validateArchitectureGovernance(mode) {
+  try {
+    const baselineRef = mode === "staged" ? "HEAD" : getAllComparisonBase();
+    const baselineManifestContent = baselineRef
+      ? gitOptional(["show", `${baselineRef}:${ARCHITECTURE_MANIFEST_PATH}`])
+      : null;
+    const candidateManifestContent = getCandidateArchitectureManifest(mode);
+
+    // Older standalone fixtures and repositories without RF-02 remain compatible.
+    // Once the manifest exists in the comparison base, deleting it fails closed.
+    if (baselineManifestContent === null && candidateManifestContent === null) {
+      return { errors: [], warnings: [] };
+    }
+    if (candidateManifestContent === null) {
+      return {
+        errors: [
+          `Required architecture manifest is missing: ${ARCHITECTURE_MANIFEST_PATH}`,
+        ],
+        warnings: [],
+      };
+    }
+
+    const candidateManifest = parseArchitectureManifest(
+      candidateManifestContent,
+    );
+    if (candidateManifest.errors.length > 0) {
+      return { errors: candidateManifest.errors, warnings: [] };
+    }
+
+    const baselineManifest = baselineManifestContent
+      ? parseArchitectureManifest(baselineManifestContent)
+      : candidateManifest;
+    if (baselineManifest.errors.length > 0) {
+      return { errors: baselineManifest.errors, warnings: [] };
+    }
+    const manifestEvolutionErrors = verifyArchitectureManifestEvolution(
+      baselineManifest.manifest,
+      candidateManifest.manifest,
+    );
+    if (manifestEvolutionErrors.length > 0) {
+      return { errors: manifestEvolutionErrors, warnings: [] };
+    }
+
+    const changedFiles = getChangedFiles(mode);
+    const architectureSourceChanges = [...changedFiles].filter(
+      isArchitectureSource,
+    );
+    const manifestChanged = changedFiles.has(ARCHITECTURE_MANIFEST_PATH);
+    if (architectureSourceChanges.length === 0 && !manifestChanged) {
+      return { errors: [], warnings: [] };
+    }
+    const selectedFiles = manifestChanged ? null : architectureSourceChanges;
+    const baselineFiles = collectGitSourceSnapshot(baselineRef, selectedFiles);
+    const candidateFiles =
+      mode === "staged"
+        ? collectStagedSourceSnapshot(selectedFiles)
+        : collectWorkingTreeSourceSnapshot(selectedFiles);
+    const baselineViolations = findArchitectureViolations(
+      baselineFiles,
+      candidateManifest.manifest,
+    );
+    const candidateViolations = findArchitectureViolations(
+      candidateFiles,
+      candidateManifest.manifest,
+    );
+    const newViolations = compareArchitectureViolations(
+      baselineViolations,
+      candidateViolations,
+    );
+
+    return {
+      errors: newViolations.map(
+        (violation) =>
+          `${violation.kind}: ${violation.file} -> ${violation.target}. ${violation.message}`,
+      ),
+      warnings: [],
+    };
+  } catch (error) {
+    return { errors: [error.message], warnings: [] };
+  }
+}
+
+function isApplicationImplementationPath(file) {
+  return (
+    isBackendProductionJava(file) ||
+    isFrontendProductionSource(file) ||
+    file.startsWith("backend/src/main/resources/")
+  );
+}
+
+function parseNumstat(output) {
+  const stats = [];
+  const raw = String(output);
+  const records = raw.includes("\0") ? raw.split("\0") : raw.split(/\r?\n/);
+  for (const record of records) {
+    if (!record) continue;
+    const firstTab = record.indexOf("\t");
+    const secondTab = record.indexOf("\t", firstTab + 1);
+    if (firstTab < 0 || secondTab < 0) continue;
+    const added = record.slice(0, firstTab);
+    const deleted = record.slice(firstTab + 1, secondTab);
+    const file = normalizePath(record.slice(secondTab + 1));
+    if (!file || added === "-" || deleted === "-") continue;
+    stats.push({ file, added: Number(added), deleted: Number(deleted) });
+  }
+  return stats;
+}
+
+function findJavaTypeDeclarations(files) {
+  const declarations = new Map();
+  const pattern =
+    /\b(?:public\s+)?(?:abstract\s+)?(class|interface|record|enum)\s+([A-Za-z_$][\w$]*)/g;
+  for (const [file, content] of files) {
+    if (!isBackendProductionJava(file)) continue;
+    for (const match of String(content).matchAll(pattern)) {
+      const id = `${file}:${match[1]}:${match[2]}`;
+      declarations.set(id, `${file}:${match[2]}`);
+    }
+  }
+  return declarations;
+}
+
+function buildReviewScopeWarnings({
+  changedFiles,
+  lineStats,
+  addedEntries = [],
+  addedTypes = null,
+}) {
+  const warnings = [];
+  if (changedFiles.size >= REVIEW_FILE_WARNING_THRESHOLD) {
+    warnings.push(
+      `Review scope contains ${changedFiles.size} changed files (review threshold: ${REVIEW_FILE_WARNING_THRESHOLD}). Confirm that one issue still owns the whole diff.`,
+    );
+  }
+
+  const implementationLines = lineStats
+    .filter(({ file }) => isApplicationImplementationPath(file))
+    .reduce((total, { added, deleted }) => total + added + deleted, 0);
+  if (implementationLines >= REVIEW_LOC_WARNING_THRESHOLD) {
+    warnings.push(
+      `Application implementation scope changes ${implementationLines} lines (review threshold: ${REVIEW_LOC_WARNING_THRESHOLD}). Record why the change remains reviewable.`,
+    );
+  }
+
+  let newTypes = addedTypes;
+  if (newTypes === null) {
+    newTypes = [
+      ...findJavaTypeDeclarations(
+        new Map(addedEntries.map(({ file, content }) => [file, content])),
+      ).values(),
+    ];
+  }
+  if (newTypes.length > 0) {
+    warnings.push(
+      `New Java abstractions, exceptions, or types require necessity review: ${newTypes.join(", ")}.`,
+    );
+  }
+
+  return warnings;
+}
+
+function collectReviewScopeWarnings(mode) {
+  try {
+    const changedFiles = getChangedFiles(mode);
+    const baseArguments =
+      mode === "staged"
+        ? ["diff", "--cached"]
+        : ["diff", getAllComparisonBase()];
+    const numstatOutput =
+      gitOptional([...baseArguments, "--numstat", "-z", "--no-renames"]) ?? "";
+    const lineStats = parseNumstat(numstatOutput);
+    const addedOutput =
+      gitOptional([
+        ...baseArguments,
+        "--name-only",
+        "-z",
+        "--diff-filter=A",
+        "--no-renames",
+      ]) ?? "";
+    const addedFiles = new Set(splitNullSeparated(addedOutput));
+
+    if (mode !== "staged") {
+      for (const file of splitNullSeparated(
+        gitOptional(["ls-files", "--others", "--exclude-standard", "-z"]) ?? "",
+      )) {
+        addedFiles.add(file);
+        if (fs.existsSync(file)) {
+          const content = fs.readFileSync(file, "utf8");
+          lineStats.push({
+            file,
+            added: content.split(/\r?\n/).length,
+            deleted: 0,
+          });
+        }
+      }
+    }
+
+    const addedEntries = [];
+    for (const file of addedFiles) {
+      let content = null;
+      if (mode === "staged") {
+        content = gitOptional(["show", `:${file}`]);
+      } else if (fs.existsSync(file)) {
+        content = fs.readFileSync(file, "utf8");
+      }
+      if (content !== null) addedEntries.push({ file, content });
+    }
+    const baselineRef = mode === "staged" ? "HEAD" : getAllComparisonBase();
+    const changedJavaFiles = [...changedFiles].filter(isBackendProductionJava);
+    const baselineTypes = findJavaTypeDeclarations(
+      collectGitSourceSnapshot(baselineRef, changedJavaFiles),
+    );
+    const candidateTypes = findJavaTypeDeclarations(
+      mode === "staged"
+        ? collectStagedSourceSnapshot(changedJavaFiles)
+        : collectWorkingTreeSourceSnapshot(changedJavaFiles),
+    );
+    const addedTypes = [...candidateTypes]
+      .filter(([id]) => !baselineTypes.has(id))
+      .map(([, display]) => display);
+    return buildReviewScopeWarnings({
+      changedFiles,
+      lineStats,
+      addedEntries,
+      addedTypes,
+    });
+  } catch (error) {
+    return [`Review scope warning calculation failed: ${error.message}`];
+  }
+}
+
+function verifyGovernanceTemplateSnapshot(files) {
+  const errors = [];
+  for (const file of GOVERNANCE_TEMPLATE_PATHS) {
+    if (!files.has(file)) {
+      errors.push(`Required governance template is missing: ${file}`);
+    }
+  }
+  if (errors.length > 0) return errors;
+
+  for (const file of ISSUE_FORM_PATHS) {
+    const content = String(files.get(file));
+    const ids = [...content.matchAll(/^\s+id:\s*([a-z][a-z0-9_-]*)\s*$/gm)].map(
+      (match) => match[1],
+    );
+    const duplicateIds = ids.filter((id, index) => ids.indexOf(id) !== index);
+    if (duplicateIds.length > 0) {
+      errors.push(
+        `${file} duplicates field ids: ${[...new Set(duplicateIds)].join(", ")}.`,
+      );
+    }
+    for (const requiredId of REQUIRED_ISSUE_FORM_IDS) {
+      if (!ids.includes(requiredId)) {
+        errors.push(
+          `${file} is missing required workflow field id: ${requiredId}.`,
+        );
+      }
+    }
+    for (const risk of ["R0", "R1", "R2", "R3"]) {
+      if (!new RegExp(`^\\s+- ${risk}(?:\\s|$)`, "m").test(content)) {
+        errors.push(`${file} risk options must include ${risk}.`);
+      }
+    }
+    if (!/3\s*[~～-]\s*7/.test(content)) {
+      errors.push(`${file} acceptance guidance must request 3~7 checks.`);
+    }
+
+    for (const optionalId of ["required_operations", "migration_scope"]) {
+      const start = content.search(
+        new RegExp(`^\\s+id:\\s*${optionalId}\\s*$`, "m"),
+      );
+      const remainder = start < 0 ? "" : content.slice(start);
+      const nextField = remainder.slice(1).search(/^\s*- type:\s*/m);
+      const block =
+        nextField < 0 ? remainder : remainder.slice(0, nextField + 1);
+      if (/^\s+required:\s*true\s*$/m.test(block)) {
+        errors.push(`${file} ${optionalId} must remain optional.`);
+      }
+    }
+  }
+
+  const pullRequestTemplate = String(files.get(PULL_REQUEST_TEMPLATE_PATH));
+  for (const heading of [
+    "관련 이슈와 통합",
+    "실제 Diff",
+    "계약 대비 차이",
+    "검증 결과",
+    "잔여 위험",
+    "리뷰와 Migration",
+    "종료 상태",
+  ]) {
+    if (!new RegExp(`^## ${heading}$`, "m").test(pullRequestTemplate)) {
+      errors.push(
+        `${PULL_REQUEST_TEMPLATE_PATH} is missing heading: ${heading}.`,
+      );
+    }
+  }
+
+  const codeowners = String(files.get(CODEOWNERS_PATH));
+  for (const ownedPath of [
+    "/.github/ISSUE_TEMPLATE/",
+    "/docs/GITHUB_PROJECTS_PANEL_GUIDE.md",
+  ]) {
+    if (!codeowners.includes(ownedPath)) {
+      errors.push(`${CODEOWNERS_PATH} must protect ${ownedPath}.`);
+    }
+  }
+
+  return errors;
+}
+
+function validateGovernanceTemplates(mode) {
+  try {
+    const changedFiles = getChangedFiles(mode);
+    if (!GOVERNANCE_TEMPLATE_PATHS.some((file) => changedFiles.has(file))) {
+      return [];
+    }
+    const baselineRef = mode === "staged" ? "HEAD" : getAllComparisonBase();
+    const baselineHasGovernance = baselineRef
+      ? GOVERNANCE_TEMPLATE_PATHS.some(
+          (file) => gitOptional(["show", `${baselineRef}:${file}`]) !== null,
+        )
+      : false;
+    if (!baselineHasGovernance) return [];
+
+    const files = new Map();
+    for (const file of GOVERNANCE_TEMPLATE_PATHS) {
+      const content =
+        mode === "staged"
+          ? gitOptional(["show", `:${file}`])
+          : fs.existsSync(file)
+            ? fs.readFileSync(file, "utf8")
+            : null;
+      if (content !== null) files.set(file, content);
+    }
+    return verifyGovernanceTemplateSnapshot(files);
+  } catch (error) {
+    return [error.message];
+  }
+}
+
+function collectGitMigrationSnapshot(ref, selectedFiles = null) {
+  const files = new Map();
+  if (!ref) return files;
+  if (selectedFiles !== null) {
+    for (const file of selectedFiles) {
+      if (!file.startsWith(MIGRATION_ROOT)) continue;
+      const content = gitOptional(["show", `${ref}:${file}`]);
+      if (content !== null) files.set(file, content);
+    }
+    return files;
+  }
+  const output = gitOptional([
+    "ls-tree",
+    "-r",
+    "--name-only",
+    "-z",
+    ref,
+    "--",
+    MIGRATION_ROOT,
+  ]);
+  if (output === null) return files;
+  for (const file of splitNullSeparated(output)) {
+    const content = gitOptional(["show", `${ref}:${file}`]);
+    if (content !== null) files.set(file, content);
+  }
+  return files;
+}
+
+function collectCandidateMigrationSnapshot(mode, selectedFiles = null) {
+  const files = new Map();
+  if (selectedFiles !== null) {
+    for (const file of selectedFiles) {
+      if (!file.startsWith(MIGRATION_ROOT)) continue;
+      const content =
+        mode === "staged"
+          ? gitOptional(["show", `:${file}`])
+          : fs.existsSync(file)
+            ? fs.readFileSync(file, "utf8")
+            : null;
+      if (content !== null) files.set(file, content);
+    }
+    return files;
+  }
+  if (mode === "staged") {
+    const output = git(["ls-files", "--cached", "-z", "--", MIGRATION_ROOT]);
+    for (const file of splitNullSeparated(output)) {
+      files.set(file, git(["show", `:${file}`]));
+    }
+    return files;
+  }
+  for (const file of getWorkingTreeFiles()) {
+    if (!file.startsWith(MIGRATION_ROOT) || !fs.existsSync(file)) continue;
+    files.set(file, fs.readFileSync(file, "utf8"));
+  }
+  return files;
+}
+
+function verifyMigrationImmutability({ baselineFiles, candidateFiles }) {
+  const errors = [];
+  for (const [file, baselineContent] of baselineFiles) {
+    if (!candidateFiles.has(file)) {
+      errors.push(`Applied Flyway Migration must not be deleted: ${file}`);
+    } else if (
+      normalizeSpecContent(candidateFiles.get(file)) !==
+      normalizeSpecContent(baselineContent)
+    ) {
+      errors.push(`Applied Flyway Migration must remain immutable: ${file}`);
+    }
+  }
+  return errors;
+}
+
+function validateMigrationImmutability(mode) {
+  try {
+    const changedMigrations = [...getChangedFiles(mode)].filter((file) =>
+      file.startsWith(MIGRATION_ROOT),
+    );
+    if (changedMigrations.length === 0) return [];
+    const baselineRef = mode === "staged" ? "HEAD" : getAllComparisonBase();
+    return verifyMigrationImmutability({
+      baselineFiles: collectGitMigrationSnapshot(
+        baselineRef,
+        changedMigrations,
+      ),
+      candidateFiles: collectCandidateMigrationSnapshot(
+        mode,
+        changedMigrations,
+      ),
+    });
+  } catch (error) {
+    return [error.message];
+  }
 }
 
 const rules = [
@@ -1245,7 +2082,9 @@ function verifyPatchSnapshot({
     );
     const mixedDdl = [...changedFiles].filter(isDdlPath);
     for (const file of new Set(mixedDdl)) {
-      errors.push(`Patch change must not include Migration or DDL: ${file}`);
+      warnings.push(
+        `Patch change includes protected Migration or DDL: ${file}. The Patch does not grant schema authority; the pull request must link a separately scoped PM/Repository Administrator approval and migration_scope.`,
+      );
     }
 
     if (mixedApplication.length > 0) {
@@ -1440,12 +2279,56 @@ function printPatchGovernanceWarnings(warnings) {
   );
 }
 
+function printArchitectureGovernanceErrors(errors) {
+  console.error("\nArchitecture boundary guardrail check failed.\n");
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  console.error(
+    "\nExisting RF-02 violations are a frozen baseline; new Mapper, Domain, Controller, or production Mock violations are not allowed.\n",
+  );
+}
+
+function printReviewScopeWarnings(warnings) {
+  console.warn("\nReview scope warnings (non-blocking).\n");
+  for (const warning of warnings) {
+    console.warn(`- ${warning}`);
+  }
+  console.warn(
+    "\nThese thresholds request human review and never replace issue scope or acceptance criteria.\n",
+  );
+}
+
+function printGovernanceTemplateErrors(errors) {
+  console.error("\nIssue and pull request workflow template check failed.\n");
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  console.error(
+    "\nWorkflow templates must preserve the lightweight issue card, review evidence, and protected ownership contract.\n",
+  );
+}
+
+function printMigrationImmutabilityErrors(errors) {
+  console.error("\nFlyway Migration immutability check failed.\n");
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  console.error(
+    "\nA scoped approval may add a new forward-only Migration but never rewrite or delete an applied one.\n",
+  );
+}
+
 function runGuardrails(mode) {
   const entries =
     mode === "staged" ? readStagedEntries() : readWorkingTreeEntries();
   const violations = findViolations(entries);
   const specLockErrors = validateSpecLock(mode);
   const patchGovernance = validatePatchGovernance(mode);
+  const architectureGovernance = validateArchitectureGovernance(mode);
+  const governanceTemplateErrors = validateGovernanceTemplates(mode);
+  const migrationImmutabilityErrors = validateMigrationImmutability(mode);
+  const reviewScopeWarnings = collectReviewScopeWarnings(mode);
 
   if (violations.length > 0) {
     printViolations(violations);
@@ -1459,10 +2342,25 @@ function runGuardrails(mode) {
   if (patchGovernance.warnings.length > 0) {
     printPatchGovernanceWarnings(patchGovernance.warnings);
   }
+  if (architectureGovernance.errors.length > 0) {
+    printArchitectureGovernanceErrors(architectureGovernance.errors);
+  }
+  if (governanceTemplateErrors.length > 0) {
+    printGovernanceTemplateErrors(governanceTemplateErrors);
+  }
+  if (migrationImmutabilityErrors.length > 0) {
+    printMigrationImmutabilityErrors(migrationImmutabilityErrors);
+  }
+  if (reviewScopeWarnings.length > 0) {
+    printReviewScopeWarnings(reviewScopeWarnings);
+  }
   if (
     violations.length > 0 ||
     specLockErrors.length > 0 ||
-    patchGovernance.errors.length > 0
+    patchGovernance.errors.length > 0 ||
+    architectureGovernance.errors.length > 0 ||
+    governanceTemplateErrors.length > 0 ||
+    migrationImmutabilityErrors.length > 0
   ) {
     return 1;
   }
@@ -1491,6 +2389,7 @@ if (require.main === module) {
 }
 
 module.exports = {
+  ARCHITECTURE_MANIFEST_PATH,
   CANONICAL_SPEC_MARKDOWN_PATHS,
   PATCH_FILE_PATTERN,
   PATCH_ID_PATTERN,
@@ -1501,10 +2400,13 @@ module.exports = {
   SPEC_MANIFEST_VERSION,
   SPEC_NORMALIZATION,
   SPEC_ROOT,
+  buildReviewScopeWarnings,
+  compareArchitectureViolations,
   collectStagedSpecSnapshot,
   collectWorkingTreeSpecSnapshot,
   extractReadmeReleaseRows,
   extractSpecReleaseVersion,
+  findArchitectureViolations,
   findViolations,
   hashNormalizedSpecContent,
   isBackendSourceOrBuild,
@@ -1513,6 +2415,8 @@ module.exports = {
   isPackageManifest,
   normalizePath,
   normalizeSpecContent,
+  parseArchitectureManifest,
+  parseNumstat,
   parsePatchDocument,
   parseMode,
   parseSpecManifest,
@@ -1521,6 +2425,9 @@ module.exports = {
   validatePatchGovernance,
   validateSpecLock,
   verifyPatchSnapshot,
+  verifyGovernanceTemplateSnapshot,
+  verifyArchitectureManifestEvolution,
+  verifyMigrationImmutability,
   verifySpecReleaseMetadata,
   verifySpecSnapshot,
 };

@@ -76,10 +76,21 @@ test("uses fail-closed all checks for shared or unknown paths", () => {
     ".husky/pre-commit",
     "scripts/run-lint.js",
     ".github/workflows/check.yml",
+    "docs/agent/MODULE_BOUNDARIES.json",
     "new-top-level/config.json",
   ]) {
     assert.equal(classifyStagedPaths([path]), "all", path);
   }
+});
+
+test("runs the harness when the architecture guard configuration changes", () => {
+  const plan = createPlan(["docs/agent/MODULE_BOUNDARIES.json"], "linux");
+
+  assert.equal(plan.lintTarget, "all");
+  assert.deepEqual(
+    plan.steps.map(({ label }) => label),
+    ["guardrails:staged", "format:staged", "test:harness", "lint:all"],
+  );
 });
 
 test("normalizes Windows paths and de-duplicates staged entries", () => {
