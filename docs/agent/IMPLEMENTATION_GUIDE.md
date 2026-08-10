@@ -4,11 +4,13 @@ Use this guide to locate implementation evidence in a stable order. It intention
 
 ## Start every implementation task
 
-1. Read `PROJECT_RULES.md` and the relevant protected requirement or API contract under `docs/specs/`.
-2. Define one reviewable feature or endpoint boundary and its focused verification.
-3. Inspect `git status` and preserve unrelated or human-owned changes.
-4. Follow the exploration order for the affected area below.
-5. Treat code, configuration, focused tests, current verification, and runtime Swagger as implementation evidence. Never infer completion from a filename, package, route overview, or specification status label.
+1. Read `PROJECT_RULES.md`.
+2. Read the current issue, its Parent, directly blocking native dependencies, scoped approvals, and declared target integration branch.
+3. Read the relevant protected requirement or API contract under `docs/specs/` and only the current issue's related `draft` Patch.
+4. Define one reviewable feature or endpoint boundary and its focused verification.
+5. Inspect `git status`, confirm the branch derives from the approved integration branch, and preserve unrelated or human-owned changes.
+6. Follow the exploration order for the affected area below.
+7. Treat code, configuration, focused tests, current verification, and runtime Swagger as implementation evidence. Never infer completion from a filename, package, route overview, or specification status label.
 
 ## Frontend page or navigation work
 

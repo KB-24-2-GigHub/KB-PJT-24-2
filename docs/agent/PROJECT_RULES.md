@@ -4,20 +4,22 @@
 
 1. Read this contract completely for the first repository task in a new agent conversation, after a context reset or agent handoff, after switching branches, or when this file changes.
 2. Reuse the unchanged contract within the same conversation instead of reopening it on every turn.
-3. Read `docs/agent/ARCHITECTURE_OVERVIEW.md` once in each agent conversation before material implementation for an issue or branch. Read it again after a context reset or agent handoff, when it changes, or when the work crosses an architecture boundary.
-4. Use `docs/README.md` only when the relevant task-specific document is not already known or when the task moves to a different area.
-5. Load detailed domain, runbook, schema, API, and testing documents only when the current change touches that subject. Do not preload the documentation tree.
-6. Read `docs/DEPENDENCY_SPECIFICATION.md` before changing a language, runtime, build tool, container image, or direct dependency. Do not load it for unrelated work.
-7. For current-state facts, treat executable code, configuration, owner-controlled migrations, focused tests, and runtime Swagger as authoritative. Protected product specifications remain normative until an authorized human publishes a new administrative spec release.
-8. General questions, status checks, and narrow read-only inspection do not require the architecture overview or unrelated task documents.
+3. When work is tied to a GitHub issue, read that issue before architecture or detailed repository documents. Confirm its Parent, directly blocking native dependencies, risk, scoped approvals, and declared target integration branch. Do not preload unrelated milestone issues.
+4. Read `docs/agent/ARCHITECTURE_OVERVIEW.md` once in each agent conversation before material implementation for an issue or branch. Read it again after a context reset or agent handoff, when it changes, or when the work crosses an architecture boundary.
+5. Use `docs/README.md` only when the relevant task-specific document is not already known or when the task moves to a different area.
+6. Load the active protected product contract and only the current issue's related `draft` Patch before implementation. Load detailed domain, runbook, schema, API, and testing documents only when the current change touches that subject. Do not preload the documentation tree.
+7. Read `docs/DEPENDENCY_SPECIFICATION.md` before changing a language, runtime, build tool, container image, or direct dependency. Do not load it for unrelated work.
+8. For current-state facts, treat executable code, configuration, owner-controlled migrations, focused tests, and runtime Swagger as authoritative. Protected product specifications remain normative until an authorized human publishes a new administrative spec release.
+9. General questions, status checks, and narrow read-only inspection do not require the architecture overview or unrelated task documents.
 
 ## Task startup
 
-1. Inspect `git status` and the files relevant to the request before editing.
-2. Preserve unrelated user changes.
-3. Treat Vue.js, Spring Framework 5 non-Boot, MyBatis, MySQL, Java 17, and Tomcat 9 as fixed constraints.
-4. Treat JavaScript as the default frontend language. TypeScript is conditional, not prohibited, and requires the decision process in `docs/DEPENDENCY_SPECIFICATION.md`.
-5. Define the smallest reviewable task boundary and its verification before editing.
+1. Inspect `git status`, the current branch, the declared target integration branch, and the files relevant to the request before editing.
+2. Use `dev` as the default integration branch. When an issue or its approved parent program explicitly declares another integration branch, use that branch; stop and report a missing branch or conflicting declaration instead of guessing.
+3. Preserve unrelated user changes.
+4. Treat Vue.js, Spring Framework 5 non-Boot, MyBatis, MySQL, Java 17, and Tomcat 9 as fixed constraints.
+5. Treat JavaScript as the default frontend language. TypeScript is conditional, not prohibited, and requires the decision process in `docs/DEPENDENCY_SPECIFICATION.md`.
+6. Define the smallest reviewable task boundary and its verification before editing.
 
 ## Implementation rules
 
@@ -38,11 +40,11 @@
 4. Outside a scoped administrative release, agents may inspect protected specifications, migrations, and DDL; identify exact contract or schema gaps; and report the required human decision, table, column, constraint, transition, or backfill. Do not hide a gap with an application workaround or present proposed protected content as an applied repository change.
 5. Treat an existing protected-file modification as human-owned unless the current task contains the scoped administrative authorization described above. Do not format, stage, amend, restore, or otherwise alter that modification.
 6. Agents may run existing owner-controlled migrations in a disposable verification database or an explicitly scoped local development database when the task requires it. Never apply schema changes to a shared, staging, production, or otherwise team-managed database on an agent's own initiative.
-7. Treat `docs/spec-patches/` as the lightweight development-contract layer described in its `README.md`. For work on `dev`, combine the canonical specification only with the `draft` Patch directly related to the current issue or target. Never combine unrelated drafts to infer a broader product contract.
+7. Treat `docs/spec-patches/` as the lightweight development-contract layer described in its `README.md`. For work on the approved integration branch, combine the canonical specification only with the `draft` Patch directly related to the current issue or target. Never combine unrelated drafts to infer a broader product contract.
 8. Create one Patch per smallest independently reviewable functional change. A Patch requires only stable targets, the added or changed behavior, and observable completion conditions. Document API, data, security, frontend, backend, or test details only when that area is actually affected; never require blanket “no impact” sections.
-9. Use only `draft` and `accepted` states. A complete `draft` in `docs/spec-patches/draft/` may be edited with its implementation and is the temporary contract for that feature on `dev`. `accepted` means the Patch has already been integrated into canonical `docs/specs/**`; move it to `docs/spec-patches/archive/` and never rewrite or delete that record.
+9. Use only `draft` and `accepted` states. A complete `draft` in `docs/spec-patches/draft/` may be edited with its implementation and is the temporary contract for that feature on the approved integration branch. `accepted` means the Patch has already been integrated into canonical `docs/specs/**`; move it to `docs/spec-patches/archive/` and never rewrite or delete that record.
 10. A feature pull request may include its own `draft` Patch and application code. It must not include Flyway migrations, DDL, integrated schema artifacts, or protected `docs/specs/**` changes; those retain their explicit administrative ownership boundaries. Remove or correct the draft together with its implementation when the feature is abandoned or materially changed.
-11. In a Controller-owned acceptance release, start from current `origin/dev`; recheck the Patch base specification version and overlapping draft targets; then update all affected canonical documents, release metadata, changelog, any required compatibility baseline, `SPEC_LOCK.json`, and the Patch's `accepted` archive state atomically. The acceptance transition changes only lifecycle status and location, not the reviewed Patch content. An approved or production release must not contain a feature whose Patch remains `draft`.
+11. In a Controller-owned acceptance release, start from the current remote-tracking ref for the issue's approved integration branch; recheck the Patch base specification version and overlapping draft targets; then update all affected canonical documents, release metadata, changelog, any required compatibility baseline, `SPEC_LOCK.json`, and the Patch's `accepted` archive state atomically. The acceptance transition changes only lifecycle status and location, not the reviewed Patch content. An approved or production release must not contain a feature whose Patch remains `draft`.
 12. Reverse or change an accepted contract only through a new `draft` Patch and a new Controller-owned canonical spec release. Never restore an older protected file directly, rewrite an accepted record, or infer rollback authority from an implementation request.
 13. Do not maintain current feature inventory, endpoint status, mock status, or implementation progress in `docs/specs/` or in another central status document. Determine current behavior from executable code, configuration, focused tests, verification results, and runtime Swagger. Use `IMPLEMENTATION_GUIDE.md` only for stable exploration order and entrypoints.
 14. Update unprotected derived documentation only when its stable architecture, operating procedure, or schema explanation changes. Do not create or treat a generated route or endpoint inventory as canonical current behavior; inspect `frontend/src/router/index.js` and the affected code.

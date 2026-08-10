@@ -1,6 +1,6 @@
 # Architecture Overview
 
-Read this short overview once before material implementation for an issue or branch. Use `docs/README.md` only when deeper task-specific guidance is needed.
+Read this short overview after the current issue, its Parent, direct native dependencies, and target integration branch are confirmed. Use `docs/README.md` only when deeper task-specific guidance is needed.
 
 ## Runtime shape
 
@@ -33,5 +33,14 @@ Read this short overview once before material implementation for an issue or bra
 - Protected product requirements and target API contracts: `docs/specs/`. Read them for intent and acceptance criteria, but derive current implementation only from code, configuration, focused tests, verification results, and runtime Swagger.
 - Database structure: owner-controlled Flyway migrations first, then `docs/agent/SCHEMA_OVERVIEW.md` for compact context and `docs/DATABASE_SCHEMA_ERD.md` for the detailed relationship map. Migration and DDL ownership follows the scoped administrative-release rule.
 - Task-specific guides and runbooks: `docs/README.md`.
+
+## Active documentation responsibilities
+
+- `docs/README.md` is the single human and agent router. It links only tracked, active shared documents.
+- `PROJECT_RULES.md` owns repository-wide agent hard rules; `IMPLEMENTATION_GUIDE.md` owns stable exploration order, not current feature status.
+- `docs/specs/` owns protected product behavior, `docs/spec-patches/` owns the temporary development-contract lifecycle, and `docs/runbooks/` owns executable operating and recovery procedures.
+- `docs/archive/` and accepted Patch records are historical evidence, not active contracts.
+- `MODULE_BOUNDARIES.md`, `VERIFICATION_GUIDE.md`, and `JAVA_MODELING_GUIDE.md` become active only when their owning follow-up issues create, route, protect, and verify them. Do not create empty placeholders.
+- Ignored local references, personal agent files, memories, and reports are not canonical sources and must not be linked from the shared router.
 
 Follow the documentation ownership and maintenance rules in [`PROJECT_RULES.md`](PROJECT_RULES.md). Update this overview only when a top-level runtime, default language, directory responsibility, request path, persistence boundary, or authoritative source changes. Keep feature details in task-specific documents.
