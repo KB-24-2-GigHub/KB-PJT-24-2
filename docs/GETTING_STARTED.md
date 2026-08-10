@@ -18,7 +18,9 @@ git clone https://github.com/Flamingo7562/KB-PJT-24-2.git
 cd KB-PJT-24-2
 ```
 
-일반 개발의 통합 기준은 `dev`다. 작업 브랜치를 만들기 전 [`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)의 현재 브랜치 전략을 확인한다.
+일반 개발의 기본 통합 기준은 `dev`다. 작업 브랜치를 만들기 전 현재 Issue, Parent와 직접
+Native dependency가 별도 통합 브랜치를 선언하는지 확인하고,
+[`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)의 현재 브랜치 전략을 따른다.
 
 ## 2. 공통·Frontend 의존성 설치
 

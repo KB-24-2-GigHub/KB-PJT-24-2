@@ -4,13 +4,17 @@
 변경분만 짧게 기록하는 개발 계약 영역이다. Patch는 전체 명세를 다시 작성하지 않는다.
 
 - **정식 SPEC**: Controller가 릴리스하고 `SPEC_LOCK.json`으로 잠근 `docs/specs/**`
-- **draft Patch**: `dev`에서 해당 기능의 구현과 테스트에 사용하는 임시 개발 계약
+- **draft Patch**: 승인된 통합 브랜치에서 해당 기능의 구현과 테스트에 사용하는 임시 개발 계약
 - **accepted Patch**: 내용이 정식 SPEC에 반영되어 보관된 기록
 - **Controller**: 정식 SPEC 반영과 Patch 수락을 담당하는 PM/Repository Admin
 
 개발할 때는 정식 SPEC에 현재 작업과 직접 관련된 `draft` Patch만 더해 계약을 해석한다.
 다른 기능의 Patch를 임의로 합성하거나 하나의 새 제품 계약처럼 추론하지 않는다. 같은 대상에서
-정식 SPEC과 관련 `draft`가 다르면 `draft`에 명시된 변경분을 해당 기능의 `dev` 구현에 적용한다.
+정식 SPEC과 관련 `draft`가 다르면 `draft`에 명시된 변경분을 해당 기능의 승인된 통합 브랜치 구현에 적용한다.
+
+일반 작업의 승인된 통합 브랜치는 `dev`다. 현재 Issue 또는 승인된 Parent 프로그램이 별도
+통합 브랜치를 선언하면 그 원격 추적 브랜치를 사용하며, 충돌하거나 존재하지 않는 선언을
+임의로 보정하지 않는다.
 
 ## 디렉터리
 
@@ -19,7 +23,7 @@ docs/specs/                  # 정식 SPEC: PM/Admin 전용
 docs/spec-patches/
   README.md                  # 이 운영 가이드
   TEMPLATE.md                # 경량 Patch 템플릿
-  draft/                     # dev에서 사용하는 draft Patch
+  draft/                     # 승인된 통합 브랜치에서 사용하는 draft Patch
   archive/                   # 정식 SPEC에 반영된 accepted Patch
 ```
 
@@ -76,7 +80,7 @@ API, 데이터·Migration, 보안, 화면 등 별도 설명이 실제로 필요�
 추가한다. `영향 없음`을 채우기 위한 빈 섹션은 만들지 않는다.
 
 `draft`는 실제 구현 기준이므로 Placeholder, `TODO`, `TBD`, `미정`처럼 구현을 막는 핵심
-미결정 사항을 포함할 수 없다. 결정이 끝나지 않았다면 Patch를 `dev`에 병합하지 않는다.
+미결정 사항을 포함할 수 없다. 결정이 끝나지 않았다면 Patch를 승인된 통합 브랜치에 병합하지 않는다.
 
 ## 상태
 
@@ -88,7 +92,7 @@ draft ── 정식 SPEC 반영 ──> accepted
 
 | 상태       | 의미                                                     | 위치       | 수정 가능 여부 |
 | ---------- | -------------------------------------------------------- | ---------- | -------------- |
-| `draft`    | `dev`에서 해당 기능의 구현과 테스트에 사용하는 개발 계약 | `draft/`   | 가능           |
+| `draft`    | 승인된 통합 브랜치에서 해당 기능의 구현과 테스트에 사용하는 개발 계약 | `draft/`   | 가능           |
 | `accepted` | 내용이 정식 SPEC에 반영된 보관 기록                      | `archive/` | 불가           |
 
 `accepted`는 단순 리뷰 승인 상태가 아니다. 정식 SPEC 반영이 끝난 상태만 뜻한다. 기존의
@@ -99,7 +103,7 @@ draft ── 정식 SPEC 반영 ──> accepted
 1. 최신 정식 SPEC 버전을 확인한다.
 2. `TEMPLATE.md`를 `draft/`에 올바른 파일명으로 복사한다.
 3. 최소 메타데이터, 추가 사항과 완료 조건을 작성한다.
-4. 기능 코드와 관련 `draft` Patch를 같은 PR로 `dev`에 병합한다.
+4. 기능 코드와 관련 `draft` Patch를 같은 PR로 승인된 통합 브랜치에 병합한다.
 5. 개발 중 계약이 바뀌면 관련 코드·테스트와 같은 변경에서 `draft`를 수정한다.
 6. 기능을 철회하면 구현과 `draft`를 함께 제거한다. 이력은 Git과 PR에 남는다.
 
@@ -111,7 +115,7 @@ PR에서 함께 바꾸지 않는다.
 
 Controller가 Patch를 정식 SPEC에 반영할 때 다음을 한 변경으로 처리한다.
 
-1. 최신 `origin/dev`, `base_spec_version`, 대상이 겹치는 다른 `draft`를 확인한다.
+1. 승인된 통합 브랜치의 최신 원격 추적 ref, `base_spec_version`, 대상이 겹치는 다른 `draft`를 확인한다.
 2. Patch 변경분을 영향받는 정식 요구사항·API·결정·추적 문서에 편집 통합한다.
 3. 정식 SPEC SemVer와 릴리스 기록을 갱신한다.
 4. `SPEC_LOCK.json`을 갱신한다.
