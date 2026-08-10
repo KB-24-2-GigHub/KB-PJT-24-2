@@ -1,5 +1,6 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
@@ -194,7 +195,7 @@ class InvitationAcceptServiceImplTest {
                 .id(INVITATION_ID)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash(token))
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(LocalDateTime.now().plusDays(1L))
                 .build();

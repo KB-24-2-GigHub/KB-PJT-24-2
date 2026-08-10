@@ -8,11 +8,14 @@ import com.gighub.common.exception.WorkCaseLockedException;
 import com.gighub.contract.ContractArtifactCommand;
 import com.gighub.contract.ContractArtifactHandle;
 import com.gighub.contract.ContractArtifactPort;
-import com.gighub.contract.dto.ContractTermsSnapshot;
+import com.gighub.contract.domain.AcceptedContract;
+import com.gighub.contract.domain.ContractTermsSnapshot;
 import com.gighub.contract.mapper.WorkContractMapper;
 import com.gighub.contract.mapper.param.WorkContractInsertParam;
 import com.gighub.contract.mapper.result.ContractPartyNamesRow;
 import com.gighub.idempotency.IdempotencyClaimService;
+import com.gighub.invitation.domain.InvitationDecision;
+import com.gighub.invitation.domain.InvitationPolicy;
 import com.gighub.invitation.dto.InvitationAcceptResponse;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
@@ -24,6 +27,8 @@ import com.gighub.invitation.mapper.result.AcceptWorkCaseLockRow;
 import com.gighub.invitation.mapper.result.InvitationRow;
 import com.gighub.invitation.service.AcceptEscrowHold;
 import com.gighub.settlement.mapper.SettlementMapper;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,12 +55,6 @@ import java.util.Objects;
  */
 @Component
 public class AcceptAggregateExecutor {
-
-    private static final String INVITATION_PENDING = "PENDING";
-    private static final String INVITATION_ACCEPTED = "ACCEPTED";
-    private static final String INVITATION_REVOKED = "REVOKED";
-    private static final String INVITATION_EXPIRED = "EXPIRED";
-    private static final String WORK_CASE_DRAFT = "DRAFT";
 
     private static final String NOT_ACCEPTABLE = "확정할 수 없는 근무입니다.";
     private static final String UNUSABLE_INVITATION = "초대 상태를 다시 확인해 주세요.";
@@ -158,11 +157,11 @@ public class AcceptAggregateExecutor {
                 claimId,
                 acceptedAt);
 
-        long contractId = insertContract(workCase, principal, acceptedAt);
+        AcceptedContract contract = insertContract(workCase, principal, acceptedAt);
         // 파일은 Commit 전에 임시 Key까지만 씁니다. 여기서 실패하면 수락 전체가 Rollback되고,
         // 최종 위치로 옮기는 것은 Commit 뒤입니다.
         ContractArtifactHandle artifact = contractArtifactPort.prepare(
-                ContractArtifactCommand.of(workCaseId, contractId, acceptedAt));
+                ContractArtifactCommand.from(contract));
 
         if (settlementMapper.insertWaiting(workCaseId, workCase.getDailyWage()) != 1) {
             throw new IllegalStateException("정산 예약을 생성하지 못했습니다.");
@@ -212,37 +211,42 @@ public class AcceptAggregateExecutor {
     }
 
     private void requireUsableInvitation(InvitationRow invitation, LocalDateTime now) {
-        String status = invitation.getStatus();
-        if (INVITATION_ACCEPTED.equals(status)) {
-            throw new InvitationAlreadyAcceptedException();
-        }
-        if (INVITATION_REVOKED.equals(status)) {
-            throw new InvitationRevokedException();
-        }
-        if (INVITATION_EXPIRED.equals(status)) {
-            throw new InvitationExpiredException();
-        }
-        if (!INVITATION_PENDING.equals(status)) {
-            throw new ConflictException(UNUSABLE_INVITATION);
-        }
-        if (!now.isBefore(invitation.getExpiresAt())) {
-            // 이 전이는 410과 함께 보존해야 활성 초대 Slot이 풀립니다.
-            invitationMapper.markExpired(invitation.getId());
-            throw new InvitationExpiredException();
+        InvitationDecision decision = InvitationPolicy.decideUse(
+                invitation.getStatus(), invitation.getExpiresAt(), now);
+        switch (decision) {
+            case USABLE -> {
+                return;
+            }
+            case ALREADY_ACCEPTED -> throw new InvitationAlreadyAcceptedException();
+            case REVOKED -> throw new InvitationRevokedException();
+            case EXPIRED -> throw new InvitationExpiredException();
+            case EXPIRE_NOW -> {
+                // 이 전이는 410과 함께 보존해야 활성 초대 Slot이 풀립니다.
+                if (invitationMapper.markExpired(invitation.getId()) != 1) {
+                    throw new IllegalStateException("잠근 PENDING 초대를 만료시키지 못했습니다.");
+                }
+                throw new InvitationExpiredException();
+            }
+            case TERMS_CHANGED, UNSUPPORTED_STATUS ->
+                    throw new ConflictException(UNUSABLE_INVITATION);
         }
     }
 
     private void requireUnchangedTerms(InvitationRow invitation, AcceptWorkCaseLockRow workCase) {
-        if (!workCase.getTermsVersion().equals(invitation.getExpectedTermsVersion())) {
+        InvitationDecision decision = InvitationPolicy.decideTerms(
+                invitation.getExpectedTermsVersion(), workCase.getTermsVersion());
+        if (decision == InvitationDecision.TERMS_CHANGED) {
             throw new InvitationTermsChangedException();
         }
     }
 
     private void requireAcceptableWorkCase(AcceptWorkCaseLockRow workCase) {
-        boolean acceptable = WORK_CASE_DRAFT.equals(workCase.getStatus())
-                && workCase.getWorkerId() == null
-                && LocalDateTime.now(clock).isBefore(workCase.getStartsAt());
-        if (!acceptable) {
+        WorkCaseDecision decision = WorkCasePolicy.decideInvitationAccept(
+                workCase.getStatus(),
+                workCase.getWorkerId(),
+                workCase.getStartsAt(),
+                LocalDateTime.now(clock));
+        if (decision != WorkCaseDecision.ALLOWED) {
             // 상태·매칭·시각을 하나의 오류로 합칩니다. 어느 조건에서 걸렸는지 알려 주면
             // 아직 확정되지 않은 근무인지 같은 정보가 새어 나갑니다.
             throw new WorkCaseLockedException(NOT_ACCEPTABLE);
@@ -252,9 +256,9 @@ public class AcceptAggregateExecutor {
     /**
      * 확정 순간의 조건을 계약 Snapshot으로 굳힙니다.
      *
-     * @return 생성된 계약 식별자
+     * @return 저장한 계약 식별자와 같은 Snapshot을 소유하는 명시적 Contract 결과
      */
-    private long insertContract(
+    private AcceptedContract insertContract(
             AcceptWorkCaseLockRow workCase,
             AuthPrincipal principal,
             LocalDateTime acceptedAt) {
@@ -280,29 +284,17 @@ public class AcceptAggregateExecutor {
                 .worker(principal.getUserId(), names.getWorkerName())
                 .build();
 
-        WorkContractInsertParam contract = WorkContractInsertParam.builder()
-                .workCaseId(workCase.getWorkCaseId())
-                .employerId(workCase.getEmployerId())
-                .workerId(principal.getUserId())
-                .title(workCase.getTitle())
-                .startsAt(workCase.getStartsAt())
-                .endsAt(workCase.getEndsAt())
-                .breakMinutes(workCase.getBreakMinutes())
-                .breakPaid(workCase.getBreakPaid())
-                .workplaceName(workCase.getWorkplaceName())
-                .workplaceAddress(workCase.getWorkplaceAddress())
-                .workplaceLatitude(workCase.getWorkplaceLatitude())
-                .workplaceLongitude(workCase.getWorkplaceLongitude())
-                .allowedRadiusMeters(workCase.getAllowedRadiusMeters())
-                .dailyWage(workCase.getDailyWage())
-                .sourceTermsVersion(workCase.getTermsVersion())
-                .termsSnapshotJson(acceptJson.writeSnapshot(snapshot))
-                .acceptedAt(acceptedAt)
-                .build();
+        WorkContractInsertParam contract = WorkContractInsertParam.from(
+                workCase.getWorkCaseId(),
+                snapshot,
+                acceptJson.writeSnapshot(snapshot),
+                acceptedAt);
 
         if (workContractMapper.insert(contract) != 1) {
             throw new IllegalStateException("계약 Snapshot을 저장하지 못했습니다.");
         }
-        return Objects.requireNonNull(contract.getId(), "생성된 계약 식별자");
+        long contractId = Objects.requireNonNull(contract.getId(), "생성된 계약 식별자");
+        return AcceptedContract.of(
+                workCase.getWorkCaseId(), contractId, acceptedAt, snapshot);
     }
 }

@@ -1,5 +1,7 @@
 package com.gighub.invitation.mapper.result;
 
+import com.gighub.work.domain.WorkCaseStatus;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -27,7 +29,7 @@ public class AcceptWorkCaseLockRow {
     private Long workCaseId;
     private Long employerId;
     private Long workerId;
-    private String status;
+    private WorkCaseStatus status;
     private Integer termsVersion;
     private String title;
     private LocalDateTime startsAt;

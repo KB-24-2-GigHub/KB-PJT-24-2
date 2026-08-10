@@ -14,6 +14,8 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.common.exception.WorkCaseLockedException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.work.domain.WorkCaseAddress;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.domain.WorkCaseTimes;
 import com.gighub.work.dto.WorkCaseDetailResponse;
@@ -107,7 +109,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
         // 행을 이미 잠그고 DRAFT임을 확인했으므로 이 UPDATE는 반드시 1행을 바꿉니다. 0이면
         // 잠금과 갱신 사이의 가정이 깨진 것이라 방어적으로 다루지 않고 그대로 드러냅니다.
-        workCaseMapper.updateDraftTerms(param);
+        if (workCaseMapper.updateDraftTerms(param) != 1) {
+            throw new IllegalStateException("잠근 DRAFT 근무 조건을 갱신하지 못했습니다.");
+        }
         // 조건이 바뀌면 이전 조건으로 발급된 PENDING 초대는 더 이상 유효하지 않습니다.
         // 활성 PENDING은 근무당 하나뿐이라 Version별 조건 없이 그대로 철회합니다.
         workCaseMapper.revokePendingInvitations(command.getWorkCaseId());
@@ -130,7 +134,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         workCaseMapper.revokePendingInvitations(workCaseId);
         // CANCELED 전이는 status 등 일부 컬럼만 바꾸는 UPDATE라 자식 테이블의 FK RESTRICT를
         // 건드리지 않습니다. 행 자체를 지우는 DELETE만 참조 무결성 위반 가능성이 있습니다.
-        workCaseMapper.cancelDraft(workCaseId);
+        if (workCaseMapper.cancelDraft(workCaseId) != 1) {
+            throw new IllegalStateException("잠근 DRAFT 근무를 취소하지 못했습니다.");
+        }
     }
 
     @Override
@@ -260,7 +266,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
      */
     private void deleteOrReportLocked(Long workCaseId) {
         try {
-            workCaseMapper.deleteDraft(workCaseId);
+            if (workCaseMapper.deleteDraft(workCaseId) != 1) {
+                throw new IllegalStateException("잠근 DRAFT 근무를 삭제하지 못했습니다.");
+            }
         } catch (DataIntegrityViolationException referenced) {
             throw new WorkCaseLockedException("참조 중인 근무는 삭제할 수 없습니다.");
         }
@@ -292,7 +300,8 @@ public class WorkCaseServiceImpl implements WorkCaseService {
     }
 
     private void requireDraft(WorkCaseLockRow lock) {
-        if (lock.getStatus() != WorkCaseStatus.DRAFT) {
+        WorkCaseDecision decision = WorkCasePolicy.decideDraftMutation(lock.getStatus());
+        if (decision != WorkCaseDecision.ALLOWED) {
             throw new WorkCaseLockedException("DRAFT 상태의 근무만 처리할 수 있습니다.");
         }
     }

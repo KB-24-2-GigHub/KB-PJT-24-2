@@ -3,6 +3,8 @@ package com.gighub.attendance.service;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import com.gighub.attendance.mapper.result.AttendanceLifecycleWorkCaseRow;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.work.domain.WorkCaseStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,8 +54,7 @@ public class AttendanceLifecycleTransitionExecutor {
             return false;
         }
 
-        return lifecycleMapper.transitionStatus(
-                workCaseId, WorkCaseStatus.ACCEPTED.name(), WorkCaseStatus.READY.name()) == 1;
+        return transition(row, WorkCaseStatus.READY);
     }
 
     @Transactional
@@ -65,8 +66,7 @@ public class AttendanceLifecycleTransitionExecutor {
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)) {
             return false;
         }
-        return lifecycleMapper.transitionStatus(
-                workCaseId, WorkCaseStatus.READY.name(), WorkCaseStatus.NO_SHOW.name()) == 1;
+        return transition(row, WorkCaseStatus.NO_SHOW);
     }
 
     @Transactional
@@ -79,10 +79,18 @@ public class AttendanceLifecycleTransitionExecutor {
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_OUT)) {
             return false;
         }
+        return transition(row, WorkCaseStatus.CHECK_OUT_MISSING);
+    }
+
+    private boolean transition(
+            AttendanceLifecycleWorkCaseRow row,
+            WorkCaseStatus target) {
+        if (WorkCasePolicy.decideTransition(
+                row.getStatus(), target) != WorkCaseDecision.ALLOWED) {
+            return false;
+        }
         return lifecycleMapper.transitionStatus(
-                workCaseId,
-                WorkCaseStatus.IN_PROGRESS.name(),
-                WorkCaseStatus.CHECK_OUT_MISSING.name()) == 1;
+                row.getWorkCaseId(), row.getStatus(), target) == 1;
     }
 
     private void auditReadyBlocked(

@@ -1,19 +1,20 @@
 package com.gighub.work.mapper;
 
-import com.gighub.work.dto.WorkCaseEscrowContext;
+import com.gighub.work.domain.WorkCaseStatus;
+import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 @Mapper
 public interface WorkMapper {
-    WorkCaseEscrowContext getEscrowContextForUpdate(
+    WorkCaseEscrowSnapshot getEscrowContextForUpdate(
             @Param("workCaseId") Long workCaseId);
 
-    // 근무 건의 상태(status)를 업데이트
+    /** 잠근 Work Case를 Domain이 승인한 expected-state에서 목표 상태로 전이합니다. */
     int updateWorkStatus(@Param("workCaseId") Long workCaseId,
-                         @Param("fromStatuses") List<String> fromStatuses,
-                         @Param("toStatus") String toStatus);
+                         @Param("fromStatuses") List<WorkCaseStatus> fromStatuses,
+                         @Param("toStatus") WorkCaseStatus toStatus);
 
     Long getWorkerIdByWorkCaseId(@Param("workCaseId") Long workCaseId);
 

@@ -1,31 +1,35 @@
 package com.gighub.contract;
 
+import com.gighub.contract.domain.AcceptedContract;
+import com.gighub.contract.domain.ContractTermsSnapshot;
+
 import java.time.LocalDateTime;
 import java.util.Objects;
 
 /**
  * 계약서 파일을 만들기 위해 수락 Aggregate가 넘기는 최소 정보입니다.
  *
- * <p>조건 값을 그대로 넘기지 않습니다. 계약 Snapshot은 이미
- * {@code work_contracts}에 저장돼 있으므로 구현이 그 행을 읽으면 됩니다. 같은 값을 두 경로로
- * 전달하면 어느 쪽이 진짜 계약 내용인지 흐려집니다.</p>
+ * <p>계약 INSERT와 문서 생성은 수락 Transaction의 같은 {@link AcceptedContract} 결과를
+ * 사용합니다. Document Adapter가 Contract Mapper를 다시 호출하지 않으므로, 두 모듈이 서로
+ * 다른 Snapshot 조립 규칙을 소유하지 않습니다.</p>
  */
 public final class ContractArtifactCommand {
 
     private final long workCaseId;
     private final long contractId;
     private final LocalDateTime acceptedAt;
+    private final ContractTermsSnapshot terms;
 
-    private ContractArtifactCommand(
-            long workCaseId, long contractId, LocalDateTime acceptedAt) {
-        this.workCaseId = workCaseId;
-        this.contractId = contractId;
-        this.acceptedAt = Objects.requireNonNull(acceptedAt, "acceptedAt");
+    private ContractArtifactCommand(AcceptedContract contract) {
+        Objects.requireNonNull(contract, "contract");
+        this.workCaseId = contract.getWorkCaseId();
+        this.contractId = contract.getContractId();
+        this.acceptedAt = contract.getAcceptedAt();
+        this.terms = contract.getTerms();
     }
 
-    public static ContractArtifactCommand of(
-            long workCaseId, long contractId, LocalDateTime acceptedAt) {
-        return new ContractArtifactCommand(workCaseId, contractId, acceptedAt);
+    public static ContractArtifactCommand from(AcceptedContract contract) {
+        return new ContractArtifactCommand(contract);
     }
 
     public long getWorkCaseId() {
@@ -39,5 +43,9 @@ public final class ContractArtifactCommand {
     /** Aggregate 전체가 공유하는 수락 시각입니다. 문서·서명 시각도 이 값을 씁니다. */
     public LocalDateTime getAcceptedAt() {
         return acceptedAt;
+    }
+
+    public ContractTermsSnapshot getTerms() {
+        return terms;
     }
 }

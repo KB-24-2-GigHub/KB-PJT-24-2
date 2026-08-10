@@ -39,13 +39,4 @@
              #{termsSnapshotJson}, #{acceptedAt})
     </insert>
 
-    <select id="findSnapshotById" resultType="com.gighub.contract.mapper.result.ContractSnapshotRow">
-        SELECT work_case_id       AS workCaseId,
-               employer_id        AS employerId,
-               worker_id          AS workerId,
-               terms_snapshot     AS termsSnapshotJson
-        FROM work_contracts
-        WHERE id = #{contractId}
-    </select>
-
 </mapper>

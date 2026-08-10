@@ -2,6 +2,7 @@ package com.gighub.attendance.mapper;
 
 import com.gighub.attendance.mapper.result.AttendanceLifecycleWorkCaseRow;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.work.domain.WorkCaseStatus;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -36,6 +37,6 @@ public interface AttendanceLifecycleMapper {
 
     int transitionStatus(
             @Param("workCaseId") long workCaseId,
-            @Param("expectedStatus") String expectedStatus,
-            @Param("status") String status);
+            @Param("expectedStatus") WorkCaseStatus expectedStatus,
+            @Param("status") WorkCaseStatus status);
 }

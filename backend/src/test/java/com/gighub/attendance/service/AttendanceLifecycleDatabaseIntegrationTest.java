@@ -237,8 +237,8 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                             insertAttendance(jdbcTemplate, fixture, "CHECK_IN");
                             return mapper.transitionStatus(
                                     fixture.workCaseId(),
-                                    WorkCaseStatus.READY.name(),
-                                    WorkCaseStatus.IN_PROGRESS.name()) == 1;
+                                    WorkCaseStatus.READY,
+                                    WorkCaseStatus.IN_PROGRESS) == 1;
                         })),
                         () -> executor.advanceToNoShow(fixture.workCaseId(), NOW));
 

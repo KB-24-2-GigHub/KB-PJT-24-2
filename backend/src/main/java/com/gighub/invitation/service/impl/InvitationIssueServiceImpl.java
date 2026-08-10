@@ -7,6 +7,8 @@ import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.WorkCaseLockedException;
 import com.gighub.invitation.config.InvitationLinkFactory;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.invitation.dto.InvitationIssueResponse;
 import com.gighub.invitation.mapper.InvitationMapper;
 import com.gighub.invitation.mapper.param.InvitationInsertParam;
@@ -39,7 +41,6 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
     /** DB의 DATETIME은 Asia/Seoul 벽시계 값이므로 비교 기준 시각도 같은 지역으로 만듭니다. */
     private static final ZoneId DATABASE_ZONE = ZoneId.of("Asia/Seoul");
 
-    private static final String WORK_CASE_DRAFT = "DRAFT";
     private static final String NOT_ISSUABLE = "초대를 발급할 수 없는 근무입니다.";
     private static final String UNUSABLE_INVITATION = "초대 상태를 다시 확인해 주세요.";
     private static final String WORK_CASE_NOT_FOUND = "근무 Case를 찾을 수 없습니다.";
@@ -86,7 +87,7 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
             }
             // 조건이 바뀌었는데도 이전 Version의 PENDING이 남아 있으면 그 Link는 더 이상
             // 사용할 수 없습니다. 활성 Slot을 비워야 현재 조건의 초대를 만들 수 있습니다.
-            invitationMapper.revokePendingByWorkCaseId(workCaseId, now);
+            revokeActiveInvitation(workCaseId, now);
         }
 
         return InvitationIssueResult.created(createInvitation(workCase));
@@ -111,8 +112,15 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
         }
 
         // 철회와 새 발급이 한 Transaction에 있어야 두 Link가 동시에 유효한 순간이 없습니다.
-        invitationMapper.revokePendingByWorkCaseId(workCaseId, now);
+        revokeActiveInvitation(workCaseId, now);
         return createInvitation(workCase);
+    }
+
+    /** 잠근 활성 초대가 사라졌다면 새 Link를 만들지 않고 Transaction을 중단합니다. */
+    private void revokeActiveInvitation(long workCaseId, LocalDateTime now) {
+        if (invitationMapper.revokePendingByWorkCaseId(workCaseId, now) != 1) {
+            throw new IllegalStateException("잠근 PENDING 초대를 철회하지 못했습니다.");
+        }
     }
 
     /**
@@ -133,10 +141,12 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
             throw new ResourceNotFoundException(WORK_CASE_NOT_FOUND);
         }
 
-        boolean issuable = WORK_CASE_DRAFT.equals(workCase.getStatus())
-                && workCase.getWorkerId() == null
-                && LocalDateTime.now(clock).isBefore(workCase.getStartsAt());
-        if (!issuable) {
+        WorkCaseDecision decision = WorkCasePolicy.decideInvitationIssue(
+                workCase.getStatus(),
+                workCase.getWorkerId(),
+                workCase.getStartsAt(),
+                LocalDateTime.now(clock));
+        if (decision != WorkCaseDecision.ALLOWED) {
             // 세 조건을 하나의 오류로 합칩니다. 어느 조건에서 걸렸는지 알려 주면 아직
             // 수락되지 않은 근무인지 같은 정보가 호출자에게 새어 나갑니다.
             throw new WorkCaseLockedException(NOT_ISSUABLE);
@@ -167,7 +177,9 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
 
         Long invitationId = Objects.requireNonNull(param.getId(), "생성된 초대 식별자");
         String token = tokenCodec.deriveToken(invitationId);
-        invitationMapper.updateTokenHash(invitationId, tokenCodec.hash(token));
+        if (invitationMapper.updateTokenHash(invitationId, tokenCodec.hash(token)) != 1) {
+            throw new IllegalStateException("생성한 PENDING 초대의 Token Hash를 확정하지 못했습니다.");
+        }
 
         return InvitationIssueResponse.of(
                 linkFactory.toInviteUrl(token),

@@ -36,7 +36,7 @@ class AttendanceLifecycleTransitionExecutorTest {
         when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(completeReadiness());
         when(artifactVerifier.isReadable(WORK_CASE_ID)).thenReturn(true);
         when(lifecycleMapper.transitionStatus(
-                WORK_CASE_ID, WorkCaseStatus.ACCEPTED.name(), WorkCaseStatus.READY.name()))
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY))
                 .thenReturn(1);
 
         assertTrue(executor().advanceToReady(WORK_CASE_ID, NOW));
@@ -54,7 +54,7 @@ class AttendanceLifecycleTransitionExecutorTest {
 
         verify(artifactVerifier, never()).isReadable(WORK_CASE_ID);
         verify(lifecycleMapper, never()).transitionStatus(
-                WORK_CASE_ID, WorkCaseStatus.ACCEPTED.name(), WorkCaseStatus.READY.name());
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY);
     }
 
     @Test
@@ -66,7 +66,7 @@ class AttendanceLifecycleTransitionExecutorTest {
         assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
 
         verify(lifecycleMapper, never()).transitionStatus(
-                WORK_CASE_ID, WorkCaseStatus.ACCEPTED.name(), WorkCaseStatus.READY.name());
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY);
     }
 
     @Test
@@ -84,7 +84,7 @@ class AttendanceLifecycleTransitionExecutorTest {
         when(lifecycleMapper.lockById(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.READY, NOW.minusHours(1), NOW.plusHours(7)));
         when(lifecycleMapper.transitionStatus(
-                WORK_CASE_ID, WorkCaseStatus.READY.name(), WorkCaseStatus.NO_SHOW.name()))
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW))
                 .thenReturn(1);
 
         assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
@@ -100,7 +100,7 @@ class AttendanceLifecycleTransitionExecutorTest {
         assertFalse(executor().advanceToNoShow(WORK_CASE_ID, NOW));
 
         verify(lifecycleMapper, never()).transitionStatus(
-                WORK_CASE_ID, WorkCaseStatus.READY.name(), WorkCaseStatus.NO_SHOW.name());
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW);
     }
 
     @Test
@@ -114,8 +114,8 @@ class AttendanceLifecycleTransitionExecutorTest {
                 .thenReturn(true);
         when(lifecycleMapper.transitionStatus(
                 WORK_CASE_ID,
-                WorkCaseStatus.IN_PROGRESS.name(),
-                WorkCaseStatus.CHECK_OUT_MISSING.name()))
+                WorkCaseStatus.IN_PROGRESS,
+                WorkCaseStatus.CHECK_OUT_MISSING))
                 .thenReturn(1);
 
         assertTrue(executor().advanceToCheckoutMissing(WORK_CASE_ID, NOW));
@@ -137,8 +137,8 @@ class AttendanceLifecycleTransitionExecutorTest {
 
         verify(lifecycleMapper, never()).transitionStatus(
                 WORK_CASE_ID,
-                WorkCaseStatus.IN_PROGRESS.name(),
-                WorkCaseStatus.CHECK_OUT_MISSING.name());
+                WorkCaseStatus.IN_PROGRESS,
+                WorkCaseStatus.CHECK_OUT_MISSING);
     }
 
     private AttendanceLifecycleTransitionExecutor executor() {

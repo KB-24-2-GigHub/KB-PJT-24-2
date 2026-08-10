@@ -1,5 +1,7 @@
 package com.gighub.invitation.mapper.result;
 
+import com.gighub.work.domain.WorkCaseStatus;
+
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -33,5 +35,5 @@ public class InvitationWorkCaseRow {
     private Boolean breakPaid;
     private Long dailyWage;
     private Integer termsVersion;
-    private String status;
+    private WorkCaseStatus status;
 }

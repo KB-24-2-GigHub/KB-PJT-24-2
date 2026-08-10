@@ -2,7 +2,6 @@ package com.gighub.contract.mapper;
 
 import com.gighub.contract.mapper.param.WorkContractInsertParam;
 import com.gighub.contract.mapper.result.ContractPartyNamesRow;
-import com.gighub.contract.mapper.result.ContractSnapshotRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -33,12 +32,4 @@ public interface WorkContractMapper {
      * 상태 검증을 모두 통과하더라도 이 제약이 마지막 방어선이 됩니다.</p>
      */
     int insert(WorkContractInsertParam param);
-
-    /**
-     * 계약서 파일을 만드는 데 필요한 최소 값을 읽는다.
-     *
-     * <p>{@link com.gighub.contract.ContractArtifactPort#prepare}가 조건 값을 다시 받지 않고
-     * 이 조회로 {@code work_contracts}를 직접 읽는다.</p>
-     */
-    ContractSnapshotRow findSnapshotById(@Param("contractId") long contractId);
 }

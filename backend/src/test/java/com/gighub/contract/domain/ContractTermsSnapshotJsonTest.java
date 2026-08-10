@@ -1,4 +1,4 @@
-package com.gighub.contract.dto;
+package com.gighub.contract.domain;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
