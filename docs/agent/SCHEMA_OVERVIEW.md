@@ -7,7 +7,7 @@ This is the compact database context for repository agents. Read it before chang
 | Item                   | Current baseline                                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Status                 | Current                                                                                                        |
-| Last verified          | 2026-08-06                                                                                                     |
+| Last verified          | 2026-08-10                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
 | Migration head         | `202608061428`                                                                                                 |
@@ -133,28 +133,35 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 
 ## Approved workflow and enforcement gaps
 
-The table separates current DDL facts from product behavior or stronger enforcement that remains
-unresolved. Outside a scoped administrative release, agents must route schema changes to the human
-Project Manager or Repository Administrator and must not edit Flyway or a DDL snapshot themselves.
+The table separates current DDL facts, approved product behavior, and stronger database enforcement.
+An approved application policy remains authoritative even when the DDL does not encode the whole rule;
+that gap alone does not make the product decision unresolved. Outside a scoped administrative release,
+agents must route schema changes to the human Project Manager or Repository Administrator and must not
+edit Flyway or a DDL snapshot themselves.
 
-| Requirement area                  | Current schema fact                                                                                                            | Approved target and owner handoff                                                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Missing checkout (`ATT-006`)      | `CHECK_OUT_MISSING` is allowed and requires a worker; no attendance fact, transition, timestamp, or scheduler index is encoded | Keep detection timing and actor, late checkout, correction evidence, settlement behavior, old-row handling, and any scheduler index on hold until the workflow is approved |
-| Fixed workplace radius            | `workplaces.radius_meters` defaults to 100, while it and `work_cases.allowed_radius_meters` accept every positive value        | The application always writes and checks 100m in both current and snapshot data. The owner decides whether DB checks should also require exactly 100                       |
-| System-generated contracts        | `documents.work_case_id` may be null even for `EMPLOYMENT_CONTRACT`                                                            | The service permits only system-generated, work-case-linked contracts. The owner decides whether DB enforcement is needed                                                  |
-| Three-year contract auto-deletion | `documents.status=DELETED` exists, but there is no dedicated retention or deletion tracking/index                              | First decide start/end reference date and deletion scope across storage, metadata, checksum, and audit; then the owner decides the required schema                         |
-| Idempotency request handling      | User, operation, and key Claims are unique; fingerprints, completed 2xx snapshots, and expiry can be stored                    | The application owns Claim acquisition, fingerprint comparison, immediate conflict handling, replay, interruption recovery, and expiry cleanup                             |
-| Non-owned Mock account execution  | Account rows have a four-digit PIN and no user FK; existing order, withdrawal, and bank-ledger references remain               | A compatible backend must resolve ACTIVE accounts by bank/account, verify PIN only for new funding, and treat withdrawal accounts as PIN-free destinations                 |
+| Requirement area                  | Current schema fact                                                                                                            | Product status and schema handoff                                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Missing checkout (`ATT-006`)      | `CHECK_OUT_MISSING` is allowed and requires a worker; no attendance fact, transition, timestamp, or scheduler index is encoded | The approved contract uses an end-plus-two-hour Scheduler rule, no late/manual M5 correction, and `WAITING/due_at=null`; application behavior and any later DDL reinforcement remain separate work |
+| Fixed workplace radius            | `workplaces.radius_meters` defaults to 100, while it and `work_cases.allowed_radius_meters` accept every positive value        | The approved application policy always writes and checks 100m in current and snapshot data; the owner decides whether DB checks must also require exactly 100             |
+| System-generated contracts        | `documents.work_case_id` may be null even for `EMPLOYMENT_CONTRACT`                                                            | The approved service policy permits only system-generated, work-case-linked contracts; the owner decides whether stronger DB enforcement is required                      |
+| Three-year contract auto-deletion | `documents.status=DELETED` exists, but there is no dedicated retention or deletion tracking/index                              | Three-year server deletion and no user deletion are approved; the open reference-date and deletion-scope decision must precede any required schema                         |
+| Idempotency request handling      | User, operation, and key Claims are unique; fingerprints, completed 2xx snapshots, and expiry can be stored                    | The application owns Claim acquisition, fingerprint comparison, immediate conflict handling, replay, interruption recovery, and expiry cleanup                           |
+| Non-owned Mock account execution  | Account rows have a four-digit PIN and no user FK; existing order, withdrawal, and bank-ledger references remain               | A compatible backend must resolve ACTIVE accounts by bank/account, verify PIN only for new funding, and treat withdrawal accounts as PIN-free destinations                |
 
 `CHECK_OUT_MISSING` is an approved persisted state distinct from `NO_SHOW`. The DDL only permits the
-state and requires an assigned worker. Detection time and actor, late checkout, correction
-authority/evidence, escrow/settlement behavior, unresolved wage policy, scheduler indexing, and
-old-row handling are still unresolved product decisions and must not be inferred from the DDL.
+state and requires an assigned worker. The approved product contract places the transition in a server
+Scheduler at the end-plus-two-hour boundary for an assigned `IN_PROGRESS` case with a successful
+check-in and no successful check-out. It provides no late QR or manual M5 correction and keeps Settlement
+at `WAITING/due_at=null`. The DDL does not prove those facts or implement the Scheduler.
 
 The team approved no user deletion and backend automatic deletion after three years, but not yet
 the overnight-work reference date or whether deletion covers only storage content or also
 metadata, checksums, and audit rows. Storage-object purge plus `documents.status=DELETED` while
 retaining audit metadata is a safe schema-compatible proposal, not yet an approved contract.
+
+Within the RF program, product-scope reclassification belongs to #282, module ownership belongs to #283,
+and lifecycle DDL reinforcement belongs to #292. This summary records the current approved contract and
+schema gap without pre-deciding those follow-up issues.
 
 ## Application-enforced responsibilities
 
@@ -182,14 +189,18 @@ Do not infer an application guarantee merely because related columns each have f
 ## MyBatis and transaction configuration
 
 - The application uses non-Boot Java configuration in `DatabaseConfig`.
-- Mapper scanning currently covers `com.gighub.wallet.mapper` and `com.gighub.work.mapper`.
+- Explicit `@MapperScan` packages are `attendance`, `auth`, `member`, `wallet`, `work`, `contract`,
+  `document`, `idempotency`, `invitation`, `badge`, `bank`, `settlement`, and `workplace` under
+  `com.gighub.<domain>.mapper`.
 - Mapper XML files are loaded from `classpath*:mappers/**/*.xml`.
 - `mapUnderscoreToCamelCase` is enabled.
 - SQL belongs in MyBatis mapper XML; Java interfaces declare parameters explicitly.
 - Transactions use Spring `DataSourceTransactionManager` with `@EnableTransactionManagement`.
 - Spring `@PropertySource` reads the external file selected by JVM property `gighub.database.config`; `DatabaseConfig` applies those values to a `HikariDataSource`.
 - The application does not run Flyway at startup. Schema evolution belongs to the Flyway container workflow in [`../runbooks/DATABASE_RUNBOOK.md`](../runbooks/DATABASE_RUNBOOK.md).
-- The opt-in `databaseTest` verifies configured connectivity and the `users` table only; it is not a full-schema constraint test.
+- The opt-in `databaseTest` runs every JUnit test tagged `database`, including configured connectivity,
+  schema constraints, Mapper integration, and Service transaction flows. The default `test` task excludes
+  that tag, and the exact selected coverage remains the tagged test sources rather than this summary.
 
 ## Required update triggers
 
