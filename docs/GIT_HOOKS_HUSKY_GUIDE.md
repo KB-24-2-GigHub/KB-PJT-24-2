@@ -32,7 +32,7 @@ Hook shim이 없거나 실행되지 않을 때만 `npm run prepare`로 `.husky/_
 | `npm run lint:be`                 | Backend Gradle `check`만 실행                             |
 | `npm run format:staged`           | 현재 staged Frontend 대상만 Prettier로 수정               |
 | `npm run test:harness`            | Guardrail과 pre-commit 분류 스크립트 테스트               |
-| `npm run check:guardrails`        | 추적 파일과 무시되지 않은 작업 트리의 기술 제약 검사      |
+| `npm run check:guardrails`        | 실제 통합 base 대비 PR 범위와 작업 트리의 Guardrail 검사  |
 | `npm run check:guardrails:staged` | Git index의 staged 내용만 기술 제약 검사                  |
 | `npm run check:precommit`         | 실제 pre-commit 실행 계획 수행                            |
 | `npm run check`                   | 전체 Guardrail, 하네스 테스트, Frontend·Backend Lint 실행 |
@@ -104,6 +104,29 @@ Guardrail은 현재 프로젝트에서 금지된 기술이 실수로 추가되�
 
 Guardrail이 모든 ORM 문자열을 포괄하는 것은 아니며 최종 기술 제약은 `docs/DEPENDENCY_SPECIFICATION.md`를 따른다. 문서와 GitHub Template은 금지 기술을 설명할 수 있어야 하므로 애플리케이션 검사 대상에서 제외한다. staged 검사는 작업 트리가 아니라 Git index 내용을 읽어 부분 staging에서도 실제 커밋 대상만 검사한다.
 
+`--all`과 `--release`는 PR 전체 범위를 실제 승인된 통합 브랜치와 비교한다.
+
+- GitHub Actions에서는 `GITHUB_BASE_REF`를 실제 PR base로 사용한다.
+- 로컬 기본값은 `dev`다. 이슈 또는 승인된 Parent가 `dev2`나 `main`을 선언하면
+  `GIGHUB_GUARDRAIL_BASE_REF`에 그 이름을 지정한다.
+- 허용 값은 `main`, `dev`, `dev2`뿐이다. SHA, 로컬 ref, 작업 브랜치와 임의 경로는 거부한다.
+- 두 환경변수가 함께 존재하면서 값이 다르면 실패한다.
+- 선택된 값은 항상 `refs/remotes/origin/<base>`로 해석하므로 먼저 최신 원격 ref를 fetch한다.
+
+```sh
+git fetch origin dev2
+GIGHUB_GUARDRAIL_BASE_REF=dev2 npm run check
+```
+
+Windows PowerShell에서는 현재 명령 범위에 환경변수를 지정한다.
+
+```powershell
+git fetch origin dev2
+$env:GIGHUB_GUARDRAIL_BASE_REF = "dev2"
+npm.cmd run check
+Remove-Item Env:GIGHUB_GUARDRAIL_BASE_REF
+```
+
 ## 변경 경로별 pre-commit 검사
 
 `.husky/pre-commit`은 다음 명령을 실행한다.
@@ -148,15 +171,11 @@ npm run check
 
 성공한 전체 검사는 이후 코드나 검증 설정이 결과를 무효화할 때만 반복한다. Markdown-only 변경은 Format, 상대 링크와 Git 추적 상태를 확인하고 전체 애플리케이션 검사를 생략할 수 있으며, 생략 사유를 PR에 남긴다.
 
-## Hook 우회
+## Hook 장애 처리
 
-긴급하거나 Hook 자체를 복구하는 경우에만 한 커밋에서 우회할 수 있다.
-
-```sh
-git commit --no-verify
-```
-
-우회한 이유와 대신 수행한 검증은 PR 본문에 남긴다.
+보호 명세, Patch lifecycle과 소유권 Guardrail은 `--no-verify`, 환경 override 또는 다른 Git
+명령으로 우회하지 않는다. Hook 자체가 고장 나면 작업을 중단하고 `npm run check:precommit`
+및 실패한 하위 명령을 직접 재현해 원인을 고친 뒤 정상 Hook으로 커밋한다.
 
 ## 참고
 
