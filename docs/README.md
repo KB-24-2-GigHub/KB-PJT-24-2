@@ -20,6 +20,10 @@
 
 ## 에이전트 진입점
 
+이슈 작업은 공유 계약을 읽은 뒤 현재 Issue, Parent, 직접 Native dependency, 위험도, 승인 기록과
+대상 통합 브랜치를 먼저 확인합니다. 그 다음 현재 Issue에 필요한 보호 계약과 `draft` Patch,
+Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한 이슈를 미리 읽지 않습니다.
+
 | 작업               | 먼저 읽을 문서                                                     | 역할                                              |
 | ------------------ | ------------------------------------------------------------------ | ------------------------------------------------- |
 | 모든 저장소 작업   | [`agent/PROJECT_RULES.md`](agent/PROJECT_RULES.md)                 | 공통 기술·소유권·검증 계약                        |
@@ -60,7 +64,7 @@
 | 로컬 실행·검증·장애 대응 | [`runbooks/DATABASE_RUNBOOK.md`](runbooks/DATABASE_RUNBOOK.md)                               |
 | 핵심 테이블·제약 요약    | [`agent/SCHEMA_OVERVIEW.md`](agent/SCHEMA_OVERVIEW.md)                                       |
 | 전체 관계·기능별 ERD     | [`DATABASE_SCHEMA_ERD.md`](DATABASE_SCHEMA_ERD.md)                                           |
-| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608051337.sql`](database/schema-snapshot-202608051337.sql)     |
+| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608061428.sql`](database/schema-snapshot-202608061428.sql)     |
 
 Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시된 Flyway Head를 새 빈 DB에
 재현하기 위한 참고 산출물이며 기존 DB 업그레이드에 사용하지 않습니다. Migration과
@@ -82,6 +86,7 @@ Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시
 
 루트 `AGENTS.md`, `docs/memory/`, `docs/reports/`, `NOTICE.md`는 현재 Codex 사용자의 개인 운영
 파일입니다. 플러그인, 권한, 모델과 개인 설정도 공유 계약에 넣지 않습니다.
+Git에서 무시되는 로컬 참고 문서도 공유 원본이 아니며 이 Router에서 링크하지 않습니다.
 
 ## 아카이브
 

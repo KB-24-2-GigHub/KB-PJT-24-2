@@ -57,6 +57,9 @@ const PATCH_FILE_PATTERN = new RegExp(
 );
 const PATCH_ID_PATTERN = /^SPEC-([1-9][0-9]*)-(?!00$)([0-9]{2})$/;
 const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
+const DEFAULT_INTEGRATION_BASE = "dev";
+const ALLOWED_INTEGRATION_BASES = new Set(["main", "dev", "dev2"]);
+const LOCAL_BASE_ENVIRONMENT_VARIABLE = "GIGHUB_GUARDRAIL_BASE_REF";
 
 function git(args, options = {}) {
   return execFileSync("git", args, {
@@ -108,29 +111,58 @@ function getStagedFiles() {
   );
 }
 
+function selectIntegrationBaseBranch({
+  githubBaseRef,
+  localBaseRef,
+  hasOriginRemote,
+}) {
+  const normalize = (value) =>
+    typeof value === "string" ? value.trim() : "";
+  const githubBase = hasOriginRemote ? normalize(githubBaseRef) : "";
+  const localBase = hasOriginRemote ? normalize(localBaseRef) : "";
+
+  if (githubBase && localBase && githubBase !== localBase) {
+    throw new Error(
+      `Guardrail comparison base mismatch: GITHUB_BASE_REF=${githubBase}, ${LOCAL_BASE_ENVIRONMENT_VARIABLE}=${localBase}.`,
+    );
+  }
+
+  const selectedBase = githubBase || localBase || DEFAULT_INTEGRATION_BASE;
+  if (!ALLOWED_INTEGRATION_BASES.has(selectedBase)) {
+    throw new Error(
+      `Guardrail comparison base must be one of ${[...ALLOWED_INTEGRATION_BASES].join(", ")}; received ${selectedBase}.`,
+    );
+  }
+  return selectedBase;
+}
+
+function getIntegrationBaseBranch() {
+  const hasOriginRemote =
+    gitOptional(["remote", "get-url", "origin"]) !== null;
+  return selectIntegrationBaseBranch({
+    githubBaseRef: process.env.GITHUB_BASE_REF,
+    localBaseRef: process.env[LOCAL_BASE_ENVIRONMENT_VARIABLE],
+    hasOriginRemote,
+  });
+}
+
 function getAllComparisonBase() {
   const head = gitOptional(["rev-parse", "--verify", "HEAD"]);
   if (head === null) return null;
 
-  const originDev = gitOptional([
-    "rev-parse",
-    "--verify",
-    "refs/remotes/origin/dev",
-  ]);
-  if (originDev === null) {
+  const integrationBase = getIntegrationBaseBranch();
+  const remoteBaseRef = `refs/remotes/origin/${integrationBase}`;
+  const remoteBase = gitOptional(["rev-parse", "--verify", remoteBaseRef]);
+  if (remoteBase === null) {
     throw new Error(
-      "Specification Patch --all validation requires refs/remotes/origin/dev; fetch latest origin/dev before continuing.",
+      `Guardrail full-scope validation requires ${remoteBaseRef}; fetch latest origin/${integrationBase} before continuing.`,
     );
   }
 
-  const mergeBase = gitOptional([
-    "merge-base",
-    "HEAD",
-    "refs/remotes/origin/dev",
-  ])?.trim();
+  const mergeBase = gitOptional(["merge-base", "HEAD", remoteBaseRef])?.trim();
   if (!mergeBase) {
     throw new Error(
-      "Specification Patch --all validation requires a merge base with origin/dev; fetch full history before continuing.",
+      `Guardrail full-scope validation requires a merge base with origin/${integrationBase}; fetch full history before continuing.`,
     );
   }
   return mergeBase;
@@ -1484,6 +1516,7 @@ module.exports = {
   parsePatchDocument,
   parseMode,
   parseSpecManifest,
+  selectIntegrationBaseBranch,
   splitNullSeparated,
   validatePatchGovernance,
   validateSpecLock,

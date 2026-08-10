@@ -14,6 +14,7 @@ const {
   parsePatchDocument,
   parseMode,
   parseSpecManifest,
+  selectIntegrationBaseBranch,
   splitNullSeparated,
   verifyPatchSnapshot,
   verifySpecReleaseMetadata,
@@ -144,11 +145,229 @@ function patchPath(summary, directory = "draft", revision = 1) {
   return `docs/spec-patches/${directory}/flamingo7562_issue-205_${summary}_patch_v${revision}.md`;
 }
 
+function guardrailEnvironment(overrides = {}) {
+  const environment = { ...process.env };
+  delete environment.GITHUB_BASE_REF;
+  delete environment.GIGHUB_GUARDRAIL_BASE_REF;
+  return { ...environment, ...overrides };
+}
+
 test("parses explicit staged and all modes", () => {
   assert.equal(parseMode(["--staged"]), "staged");
   assert.equal(parseMode(["--all"]), "all");
   assert.equal(parseMode(["--release"]), "release");
   assert.throws(() => parseMode([]), /Use one mode/);
+});
+
+test("selects only approved integration base branch names", () => {
+  assert.equal(
+    selectIntegrationBaseBranch({
+      githubBaseRef: "",
+      localBaseRef: "",
+      hasOriginRemote: true,
+    }),
+    "dev",
+  );
+  assert.equal(
+    selectIntegrationBaseBranch({
+      githubBaseRef: "dev2",
+      localBaseRef: "",
+      hasOriginRemote: true,
+    }),
+    "dev2",
+  );
+  assert.equal(
+    selectIntegrationBaseBranch({
+      githubBaseRef: "",
+      localBaseRef: "main",
+      hasOriginRemote: true,
+    }),
+    "main",
+  );
+  assert.equal(
+    selectIntegrationBaseBranch({
+      githubBaseRef: "dev2",
+      localBaseRef: "dev2",
+      hasOriginRemote: true,
+    }),
+    "dev2",
+  );
+  assert.equal(
+    selectIntegrationBaseBranch({
+      githubBaseRef: "dev2",
+      localBaseRef: "dev2",
+      hasOriginRemote: false,
+    }),
+    "dev",
+  );
+
+  assert.throws(
+    () =>
+      selectIntegrationBaseBranch({
+        githubBaseRef: "dev2",
+        localBaseRef: "dev",
+        hasOriginRemote: true,
+      }),
+    /comparison base mismatch/,
+  );
+  for (const invalid of ["feature/example", "refs/heads/dev2", "HEAD"]) {
+    assert.throws(
+      () =>
+        selectIntegrationBaseBranch({
+          githubBaseRef: "",
+          localBaseRef: invalid,
+          hasOriginRemote: true,
+        }),
+      /must be one of main, dev, dev2/,
+    );
+  }
+});
+
+test("all mode compares against the selected dev or dev2 remote base", () => {
+  const temporaryRepository = fs.mkdtempSync(
+    path.join(os.tmpdir(), "gighub-integration-base-"),
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+
+  try {
+    execFileSync("git", ["init", "--quiet"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["config", "user.name", "Guardrail Test"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync(
+      "git",
+      ["config", "user.email", "guardrail@example.com"],
+      {
+        cwd: temporaryRepository,
+        stdio: "ignore",
+      },
+    );
+    execFileSync(
+      "git",
+      ["remote", "add", "origin", "https://example.invalid/repository.git"],
+      {
+        cwd: temporaryRepository,
+        stdio: "ignore",
+      },
+    );
+    writeSpecFixture(temporaryRepository);
+    for (const [file, content] of Object.entries(PATCH_SCAFFOLD)) {
+      writeRepositoryFile(temporaryRepository, file, content);
+    }
+    execFileSync("git", ["add", "."], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["commit", "--quiet", "-m", "dev baseline"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const devCommit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+    }).trim();
+    execFileSync("git", ["update-ref", "refs/remotes/origin/dev", devCommit], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+
+    const missingDev2 = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment({ GIGHUB_GUARDRAIL_BASE_REF: "dev2" }),
+    });
+    assert.equal(missingDev2.status, 1);
+    assert.match(missingDev2.stderr, /refs\/remotes\/origin\/dev2/);
+
+    writeRepositoryFile(
+      temporaryRepository,
+      patchPath("dev2-baseline", "archive"),
+      createPatchDocument({ status: "accepted" }),
+    );
+    execFileSync("git", ["add", "."], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["commit", "--quiet", "-m", "dev2 baseline"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const dev2Commit = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+    }).trim();
+    execFileSync(
+      "git",
+      ["update-ref", "refs/remotes/origin/dev2", dev2Commit],
+      {
+        cwd: temporaryRepository,
+        stdio: "ignore",
+      },
+    );
+
+    writeRepositoryFile(
+      temporaryRepository,
+      "docs/change.md",
+      "# Current change\n",
+    );
+    execFileSync("git", ["add", "."], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    execFileSync("git", ["commit", "--quiet", "-m", "current change"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+
+    const defaultDev = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment(),
+    });
+    assert.equal(defaultDev.status, 1);
+    assert.match(defaultDev.stderr, /new Patch must start in draft/);
+
+    const localDev2 = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment({ GIGHUB_GUARDRAIL_BASE_REF: "dev2" }),
+    });
+    assert.equal(localDev2.status, 0, localDev2.stderr);
+
+    const githubDev2 = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment({ GITHUB_BASE_REF: "dev2" }),
+    });
+    assert.equal(githubDev2.status, 0, githubDev2.stderr);
+
+    const mismatch = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment({
+        GITHUB_BASE_REF: "dev2",
+        GIGHUB_GUARDRAIL_BASE_REF: "dev",
+      }),
+    });
+    assert.equal(mismatch.status, 1);
+    assert.match(mismatch.stderr, /comparison base mismatch/);
+
+    const arbitraryBase = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: guardrailEnvironment({
+        GIGHUB_GUARDRAIL_BASE_REF: "feature/example",
+      }),
+    });
+    assert.equal(arbitraryBase.status, 1);
+    assert.match(arbitraryBase.stderr, /must be one of main, dev, dev2/);
+  } finally {
+    fs.rmSync(temporaryRepository, { recursive: true, force: true });
+  }
 });
 
 test("splits NUL-delimited Git output without losing unusual paths", () => {

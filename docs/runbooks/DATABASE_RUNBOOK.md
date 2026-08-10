@@ -182,7 +182,7 @@ npm.cmd run db:migrate
 
 QR Migration은 기존 근무·동작별 QR을 사업장 고정 QR 구조로 전환합니다.
 
-- 기존 QR 발급자가 해당 근무 사업장의 소유자와 다른 행이 하나라도 있으면 Migration이 중단됩니다. 먼저 읽기 전용 점검 SQL로 불일치를 확인하고 원인을 소유자에게 보고합니다. 보정 여부와 후속 Migration은 소유자가 결정하고 작성합니다.
+- 기존 QR 발급자가 해당 근무 사업장의 소유자와 다른 행이 하나라도 있으면 Migration이 중단됩니다. 먼저 읽기 전용 점검 SQL로 불일치를 확인하고 원인을 소유자에게 보고합니다. 보정 여부와 후속 Migration 범위는 소유자가 승인하며, 작성은 그 범위에 명시적으로 지정된 관리자 또는 현재 에이전트만 수행합니다.
 - 기존 `ACTIVE` QR은 모두 `REVOKED` 처리되고, 적용 시점의 `ACTIVE` 사업장마다 새 nonce 기반 QR이 하나 생성됩니다.
 - 기존 행은 `legacy_*` 컬럼으로 보존되며 새 고정 QR로 다시 활성화할 수 없습니다.
 - 새 QR 문자열은 DB nonce 원문만 노출하지 않고, 애플리케이션이 외부 설정 HMAC Key로 nonce와 사업장 ID를 서명해야 합니다. 이 Migration은 QR API나 HMAC 설정을 구현하지 않습니다.
@@ -334,14 +334,16 @@ docker compose --profile tools run --rm flyway info
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest
 ```
 
-예제의 기본 DB 이름을 사용한 정상 출력 형식은 다음과 같습니다. DB 이름을 변경했다면 첫 줄의 이름도 달라지며, `users` 행 수는 로컬 데이터에 따라 달라집니다.
+연결 확인 테스트에서 예제의 기본 DB 이름을 사용한 정상 출력 형식은 다음과 같습니다. DB 이름을 변경했다면 첫 줄의 이름도 달라지며, `users` 행 수는 로컬 데이터에 따라 달라집니다.
 
 ```text
 Connected database: kb_pjt, users table rows: N
 BUILD SUCCESSFUL
 ```
 
-일반 `npm run check`와 백엔드 기본 `test`는 `@Tag("database")` 테스트를 제외하므로 DB 연결 확인에는 `databaseTest`를 별도로 실행해야 합니다.
+일반 `npm run check`와 백엔드 기본 `test`는 `@Tag("database")` 테스트를 제외합니다.
+`databaseTest`는 연결 확인 하나만이 아니라 현재 `database` Tag가 붙은 스키마, Mapper와 Service
+통합 테스트 전체를 실행하므로 로컬 DB 상태와 필요한 합성 Fixture를 먼저 확인합니다.
 
 ### 실제 Tomcat 실행
 
@@ -421,11 +423,13 @@ docker compose down
 
 ## 스키마 변경 절차
 
-Flyway Migration과 모든 DDL SQL은 프로젝트 소유자만 생성·수정·삭제합니다. 에이전트는 필요한
-테이블·컬럼·제약·데이터 전환을 분석해 소유자에게 보고하며, Migration이나 통합 DDL을 직접
-작성하거나 재생성하지 않습니다.
+Flyway Migration과 모든 DDL SQL은 PM·Repository Administrator가 관리합니다. 일반 구현
+에이전트는 필요한 테이블·컬럼·제약·데이터 전환을 분석해 소유자에게 보고하고 직접 작성하거나
+재생성하지 않습니다. 예외는 현재 개인 에이전트에게 대상 Migration 또는 DDL 릴리스와 범위를
+명시한 관리자 요청이 있을 때뿐입니다. 이 예외도 공유·Staging·Production DB 실행 권한으로
+확대되지 않으며, 적용된 기존 Migration을 수정하는 권한을 포함하지 않습니다.
 
-소유자가 스키마를 변경할 때는 다음 절차를 따릅니다.
+승인된 스키마 릴리스는 다음 절차를 따릅니다.
 
 1. 현재 Migration Head보다 큰 새 Version의 `V<version>__<description>.sql`을 추가합니다.
 2. 이미 공유되었거나 적용된 Versioned Migration은 수정하거나 삭제하지 않습니다.
@@ -438,7 +442,8 @@ Flyway Migration과 모든 DDL SQL은 프로젝트 소유자만 생성·수정·
 공유·팀·사용자 DB에는 에이전트가 임의로 스키마 변경을 적용하지 않습니다.
 
 Checksum 불일치가 발생해도 `repair`를 먼저 실행하지 않습니다. 적용된 SQL이 변경되었는지
-확인하고 소유자에게 보고합니다. 원본 복구나 후속 Migration 작성도 소유자가 수행합니다.
+확인하고 소유자에게 보고합니다. 원본 복구나 후속 Migration 작성은 소유자 또는 해당 범위를
+명시적으로 받은 관리자 작업자가 수행합니다.
 
 ## 문제 해결
 

@@ -50,8 +50,8 @@
 3. [DECISIONS.md](DECISIONS.md)의 승인 결정
 4. [SPEC_TRACEABILITY.md](SPEC_TRACEABILITY.md)의 연결 정보
 
-동일 순위에서 문장이 충돌하면 더 최근에 승인된 명세 릴리스를 따릅니다. `dev`의 기능
-개발에서는 이 정식 SPEC에 현재 Issue와 직접 관련된 `draft` Patch만 더해 임시 계약으로
+동일 순위에서 문장이 충돌하면 더 최근에 승인된 명세 릴리스를 따릅니다. 승인된 통합
+브랜치의 기능 개발에서는 이 정식 SPEC에 현재 Issue와 직접 관련된 `draft` Patch만 더해 임시 계약으로
 사용합니다. 관련 `draft`가 명시한 변경분은 해당 기능 범위에서 우선하지만, 다른 Patch까지
 합성해 새 계약을 추론하지 않습니다. 명세와 코드 또는 Swagger가 충돌하면 코드를 기준으로
 명세를 고치지 않고 [명세 Patch](../spec-patches/README.md)에 변경분을 기록합니다. DB의 물리 구조는
@@ -75,10 +75,10 @@
 1. 개발자는 최신 정식 SPEC 버전을 기준으로 독립적인 최소 기능마다 짧은
    [명세 Patch](../spec-patches/README.md)를 `draft`로 작성합니다.
 2. `draft`에는 안정적인 대상, 추가·변경 사항과 검증 가능한 완료 조건만 기록하며, 관련 기능
-   코드와 같은 PR로 `dev`에 병합할 수 있습니다.
+   코드와 같은 PR로 승인된 통합 브랜치에 병합할 수 있습니다.
 3. 개발팀은 정식 SPEC과 현재 기능의 관련 `draft`를 함께 구현 계약으로 사용합니다. 기능이
    바뀌거나 철회되면 코드·테스트와 `draft`를 함께 고칩니다.
-4. Controller는 필요한 시점에 최신 `origin/dev`와 대상 중복을 확인하고, Patch 변경분을
+4. Controller는 필요한 시점에 이슈가 승인한 통합 브랜치의 최신 원격 추적 ref와 대상 중복을 확인하고, Patch 변경분을
    영향받는 정식 문서에 편집 통합합니다. 정식 SPEC 버전·릴리스 기록, `SPEC_LOCK.json`,
    Patch의 `accepted` 전환과 아카이브 이동을 하나의 원자적 릴리스로 처리합니다.
 5. `accepted`는 정식 SPEC 반영이 끝난 상태이며 보관 Patch는 수정하지 않습니다. 후속 변경과

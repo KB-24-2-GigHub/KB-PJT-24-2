@@ -67,6 +67,7 @@ replay_pid*.log
 
 # Local Markdown documents
 # Existing tracked Markdown remains tracked. New docs stay local unless a shared area below explicitly allows them.
+# A new shared document must add its exact allowlist entry together with the docs router and CODEOWNERS update.
 /docs/*.md
 /docs/**/*.md
 /docs/memory/
