@@ -8,6 +8,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - The frontend is currently a JavaScript-based Vue 3 and Vite application. Vue Router owns navigation, Pinia owns client state, and `src/services/` owns HTTP access through Axios. TypeScript adoption is conditional under `docs/DEPENDENCY_SPECIFICATION.md`.
 - The backend is a Java 17 WAR for Tomcat 9 using Spring Framework 5 without Spring Boot. Annotation-based configuration separates the Root Context from the Spring MVC Servlet Context.
 - Backend domain and business flows follow `controller -> service -> mapper`; MyBatis mapper interfaces call SQL in `backend/src/main/resources/mappers/`.
+- Backend 업무 경계는 현재 package 수가 아니라 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)의 9개 논리 모듈과 24개 table write owner로 판단한다. `work`/`invitation`/`contract`는 하나의 Work 모듈이고 `auth`/`member`/`badge`는 하나의 Member/Auth 모듈이다.
 - MySQL 8.4 runs through Docker Compose. Flyway SQL under `backend/src/main/resources/db/migration/` is the schema source of truth.
 - Docker Compose provides MySQL and opt-in Flyway or seed tools only; run the Vue application and Tomcat WAR separately.
 
@@ -30,6 +31,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - Stable task exploration order and code entrypoints: [`IMPLEMENTATION_GUIDE.md`](IMPLEMENTATION_GUIDE.md).
 - Frontend routes and request behavior: `frontend/src/router/index.js`, `frontend/src/services/http.js`, and the affected `frontend/src/services/*.js`.
 - Backend wiring and layer boundaries: `backend/src/main/java/com/gighub/config/` and current domain packages.
+- Logical module ownership, public application calls, query exceptions, and transaction orchestrators: [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md) and its machine-readable manifest.
 - Protected product requirements and target API contracts: `docs/specs/`. Read them for intent and acceptance criteria, but derive current implementation only from code, configuration, focused tests, verification results, and runtime Swagger.
 - Database structure: owner-controlled Flyway migrations first, then `docs/agent/SCHEMA_OVERVIEW.md` for compact context and `docs/DATABASE_SCHEMA_ERD.md` for the detailed relationship map. Migration and DDL ownership follows the scoped administrative-release rule.
 - Task-specific guides and runbooks: `docs/README.md`.
@@ -40,7 +42,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - `PROJECT_RULES.md` owns repository-wide agent hard rules; `IMPLEMENTATION_GUIDE.md` owns stable exploration order, not current feature status.
 - `docs/specs/` owns protected product behavior, `docs/spec-patches/` owns the temporary development-contract lifecycle, and `docs/runbooks/` owns executable operating and recovery procedures.
 - `docs/archive/` and accepted Patch records are historical evidence, not active contracts.
-- `MODULE_BOUNDARIES.md`, `VERIFICATION_GUIDE.md`, and `JAVA_MODELING_GUIDE.md` become active only when their owning follow-up issues create, route, protect, and verify them. Do not create empty placeholders.
+- `MODULE_BOUNDARIES.md` is the active module/write-ownership contract created by RF-02. `VERIFICATION_GUIDE.md` and `JAVA_MODELING_GUIDE.md` become active only when their owning follow-up issues create, route, protect, and verify them. Do not create empty placeholders.
 - Ignored local references, personal agent files, memories, and reports are not canonical sources and must not be linked from the shared router.
 
 Follow the documentation ownership and maintenance rules in [`PROJECT_RULES.md`](PROJECT_RULES.md). Update this overview only when a top-level runtime, default language, directory responsibility, request path, persistence boundary, or authoritative source changes. Keep feature details in task-specific documents.
