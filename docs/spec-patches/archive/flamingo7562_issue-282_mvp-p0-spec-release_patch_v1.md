@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-282-01
-status: draft
+status: accepted
 issue: 282
 base_spec_version: 5.0.0
 targets:
