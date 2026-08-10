@@ -3,13 +3,13 @@ package com.gighub.invitation.service.impl;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.config.RootConfig;
 import com.gighub.contract.ContractArtifactPort;
-import com.gighub.contract.mapper.WorkContractMapper;
 import com.gighub.document.storage.DocumentStorageProperties;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.invitation.config.InvitationLinkFactory;
 import com.gighub.invitation.dto.InvitationDetailResponse;
 import com.gighub.invitation.mapper.InvitationMapper;
-import com.gighub.invitation.service.AcceptEscrowHold;
+import com.gighub.invitation.service.AcceptanceWorkParticipant;
+import com.gighub.wallet.service.AcceptEscrowHold;
 import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.service.InvitationIssueResult;
@@ -17,7 +17,7 @@ import com.gighub.invitation.service.InvitationIssueService;
 import com.gighub.invitation.service.InvitationQueryService;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
-import com.gighub.settlement.mapper.SettlementMapper;
+import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.dto.WorkCaseDetailResponse;
 import com.gighub.work.service.WorkCaseService;
@@ -231,10 +231,9 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                 "characterizationAcceptAggregateExecutor",
                 AcceptAggregateExecutor.class,
                 () -> new AcceptAggregateExecutor(
-                        context.getBean(InvitationMapper.class),
-                        context.getBean(WorkContractMapper.class),
-                        context.getBean(SettlementMapper.class),
+                        context.getBean(AcceptanceWorkParticipant.class),
                         context.getBean(AcceptEscrowHold.class),
+                        context.getBean(SettlementReservationService.class),
                         context.getBean(IdempotencyClaimService.class),
                         context.getBean(AcceptJson.class),
                         context.getBean(ContractArtifactPort.class),

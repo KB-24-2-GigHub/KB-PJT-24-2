@@ -31,9 +31,38 @@ const {
 const ARCHITECTURE_MANIFEST = {
   schemaVersion: 1,
   logicalModules: [
-    { id: "work", packageRoots: ["work", "invitation", "contract"] },
-    { id: "attendance", packageRoots: ["attendance"] },
-    { id: "document", packageRoots: ["document"] },
+    {
+      id: "work",
+      packageRoots: ["work", "invitation", "contract"],
+      ownedTables: ["work_cases"],
+    },
+    {
+      id: "attendance",
+      packageRoots: ["attendance"],
+      ownedTables: ["attendance_records"],
+    },
+    {
+      id: "document",
+      packageRoots: ["document"],
+      ownedTables: ["documents"],
+    },
+  ],
+  tableOwnership: [
+    {
+      table: "work_cases",
+      owner: "work",
+      allowedWriterType: "com.gighub.work.mapper.WorkCaseMapper",
+    },
+    {
+      table: "attendance_records",
+      owner: "attendance",
+      allowedWriterType: "com.gighub.attendance.mapper.AttendanceRecordMapper",
+    },
+    {
+      table: "documents",
+      owner: "document",
+      allowedWriterType: "com.gighub.document.mapper.DocumentWriteMapper",
+    },
   ],
   guardRules: {
     controllerMayImportMapper: false,
@@ -476,6 +505,8 @@ test("validates the RF-02 module manifest used by architecture guardrails", () =
   invalid.guardRules.controllerMayImportMapper = true;
   invalid.guardRules.queryExceptionMayWrite = true;
   invalid.guardRules.domainForbiddenImportRegexes.push("[");
+  invalid.tableOwnership[0].allowedWriterType =
+    "com.gighub.attendance.mapper.AttendanceWorkCaseMapper";
   const errors = parseArchitectureManifest(JSON.stringify(invalid)).errors.join(
     "\n",
   );
@@ -483,9 +514,13 @@ test("validates the RF-02 module manifest used by architecture guardrails", () =
   assert.match(errors, /controllerMayImportMapper must be false/);
   assert.match(errors, /queryExceptionMayWrite must be false/);
   assert.match(errors, /invalid domain import regex/);
+  assert.match(errors, /allowed writer .* must belong to owner work/);
 
   const weakened = structuredClone(ARCHITECTURE_MANIFEST);
   weakened.logicalModules[0].packageRoots = ["work", "contract"];
+  weakened.tableOwnership[0].owner = "attendance";
+  weakened.tableOwnership[1].allowedWriterType =
+    "com.gighub.attendance.mapper.LegacyAttendanceMapper";
   weakened.guardRules.domainForbiddenImportPrefixes = ["org.springframework"];
   const evolutionErrors = verifyArchitectureManifestEvolution(
     ARCHITECTURE_MANIFEST,
@@ -498,6 +533,11 @@ test("validates the RF-02 module manifest used by architecture guardrails", () =
   assert.match(
     evolutionErrors,
     /domainForbiddenImportPrefixes must not remove baseline rule org.apache.ibatis/,
+  );
+  assert.match(evolutionErrors, /must not reassign table work_cases/);
+  assert.match(
+    evolutionErrors,
+    /must not replace the allowed writer for attendance_records/,
   );
 });
 
@@ -742,6 +782,58 @@ test("freezes Mapper XML API DTO coupling without flagging persistence-only DTOs
       findArchitectureViolations(duplicateTypeCandidate, ARCHITECTURE_MANIFEST),
     ).map(({ target }) => target),
     ["com.gighub.document.dto.DocumentListItem#select:secondList"],
+  );
+});
+
+test("enforces Mapper XML DML table ownership while allowing owner SELECT projections", () => {
+  const files = new Map([
+    [
+      "backend/src/main/java/com/gighub/work/mapper/AnnotatedWorkMapper.java",
+      "package com.gighub.work.mapper;\n" +
+        "import org.apache.ibatis.annotations.Update;\n" +
+        "public interface AnnotatedWorkMapper {\n" +
+        '  @Update("UPDATE work_cases SET status = \'READY\'") int update();\n' +
+        "}\n",
+    ],
+    [
+      "backend/src/main/resources/mappers/WorkCaseMapper.xml",
+      '<mapper namespace="com.gighub.work.mapper.WorkCaseMapper">' +
+        '<update id="transition">UPDATE work_cases SET status = #{status}</update>' +
+        '<update id="commentBypass">/* UPDATE work_cases SET status = 1 */ UPDATE documents SET status = 1</update>' +
+        '<update id="multiTable">UPDATE work_cases wc JOIN work_invitations wi ON wi.work_case_id = wc.id SET wc.status = 1, wi.status = 1</update>' +
+        '<select id="detail" resultType="java.lang.Long">SELECT id FROM documents</select>' +
+        "</mapper>",
+    ],
+    [
+      "backend/src/main/resources/mappers/AttendanceLifecycleMapper.xml",
+      '<mapper namespace="com.gighub.attendance.mapper.AttendanceLifecycleMapper">' +
+        '<update id="wrongOwner">UPDATE work_cases SET status = #{status}</update>' +
+        "</mapper>",
+    ],
+    [
+      "backend/src/main/resources/mappers/UnknownMapper.xml",
+      '<mapper namespace="com.gighub.attendance.mapper.UnknownMapper">' +
+        '<insert id="unknown">INSERT INTO unknown_events(id) VALUES (1)</insert>' +
+        "</mapper>",
+    ],
+  ]);
+
+  assert.deepEqual(
+    [...findArchitectureViolations(files, ARCHITECTURE_MANIFEST).values()]
+      .filter(
+        ({ kind }) =>
+          kind.startsWith("mapper-dml") ||
+          kind === "mapper-annotation-dml-forbidden",
+      )
+      .map(({ kind }) => kind)
+      .sort(),
+    [
+      "mapper-annotation-dml-forbidden",
+      "mapper-dml-owner-mismatch",
+      "mapper-dml-owner-mismatch",
+      "mapper-dml-table-unowned",
+      "mapper-dml-target-unresolved",
+    ],
   );
 });
 
@@ -1719,6 +1811,10 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
         `# Review ${index}\n`,
       );
     }
+    execFileSync("git", ["init", "--quiet", "notes/isolated-worktree"], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
     const warningOnly = spawnSync(process.execPath, [script, "--all"], {
       cwd: temporaryRepository,
       encoding: "utf8",
@@ -1726,6 +1822,7 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
     });
     assert.equal(warningOnly.status, 0);
     assert.match(warningOnly.stderr, /Review scope warnings/);
+    assert.doesNotMatch(warningOnly.stderr, /warning calculation failed/);
   } finally {
     fs.rmSync(temporaryRepository, { recursive: true, force: true });
   }

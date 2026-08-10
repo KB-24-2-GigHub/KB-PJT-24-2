@@ -126,10 +126,6 @@ public interface InvitationMapper {
      *
      * @return 전이된 행 수. 상태나 매칭이 어긋나면 0
      */
-    int assignWorkerAndAccept(
-            @Param("workCaseId") long workCaseId,
-            @Param("workerId") long workerId);
-
     /**
      * 발급 대상 근무 행을 잠그고 발급 가능 여부의 판단 근거를 읽습니다.
      *
@@ -199,4 +195,7 @@ public interface InvitationMapper {
     int revokePendingByWorkCaseId(
             @Param("workCaseId") long workCaseId,
             @Param("revokedAt") LocalDateTime revokedAt);
+
+    /** Work 조건 수정·취소가 현재 DB 시각으로 활성 초대를 철회할 때 사용합니다. */
+    int revokePendingByWorkCaseIdNow(@Param("workCaseId") long workCaseId);
 }

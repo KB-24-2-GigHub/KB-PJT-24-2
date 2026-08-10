@@ -12,8 +12,8 @@ import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
 import com.gighub.member.domain.UserStatus;
 import com.gighub.member.mapper.UserMapper;
-import com.gighub.wallet.mapper.WalletMapper;
-import com.gighub.workplace.mapper.WorkplaceMapper;
+import com.gighub.wallet.service.WalletProvisionService;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -26,19 +26,19 @@ public class AuthServiceImpl implements AuthService {
     private static final String DUMMY_PASSWORD_HASH =
             "$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
 
-    private final WorkplaceMapper workplaceMapper;
+    private final WorkplaceOwnershipService workplaceOwnershipService;
     private final UserMapper userMapper;
-    private final WalletMapper walletMapper;
+    private final WalletProvisionService walletProvisionService;
     private final PasswordEncoder passwordEncoder;
 
     public AuthServiceImpl(
-            WorkplaceMapper workplaceMapper,
+            WorkplaceOwnershipService workplaceOwnershipService,
             UserMapper userMapper,
-            WalletMapper walletMapper,
+            WalletProvisionService walletProvisionService,
             PasswordEncoder passwordEncoder) {
-        this.workplaceMapper = workplaceMapper;
+        this.workplaceOwnershipService = workplaceOwnershipService;
         this.userMapper = userMapper;
-        this.walletMapper = walletMapper;
+        this.walletProvisionService = walletProvisionService;
         this.passwordEncoder = passwordEncoder;
     }
 
@@ -74,9 +74,7 @@ public class AuthServiceImpl implements AuthService {
                 throw new IllegalStateException("가입 사용자 저장 결과가 올바르지 않습니다.");
             }
             // 사용자와 기본 지갑은 하나의 가입 단위이므로 어느 한쪽 실패 시 함께 되돌립니다.
-            if (walletMapper.insertKrwWallet(user.getId()) != 1) {
-                throw new IllegalStateException("가입 지갑 저장 결과가 올바르지 않습니다.");
-            }
+            walletProvisionService.provisionKrwWallet(user.getId());
             return user.getId();
         } catch (DuplicateKeyException exception) {
             // 사전 조회 이후 동시 가입이 들어와도 DB Unique 제약을 최종 방어선으로 사용합니다.
@@ -109,7 +107,7 @@ public class AuthServiceImpl implements AuthService {
             return false;
         }
         // 사업장 생성·비활성화가 즉시 반영되도록 Session에 계산 결과를 저장하지 않습니다.
-        return workplaceMapper.countActiveByOwnerUserId(principal.getUserId()) == 0;
+        return !workplaceOwnershipService.hasActiveOwnedWorkplace(principal.getUserId());
     }
 
     private ConflictException signupConflict() {

@@ -13,10 +13,9 @@ import com.gighub.attendance.service.WorkplaceQrService;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
-import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.member.domain.UserRole;
-import com.gighub.workplace.mapper.WorkplaceMapper;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,17 +24,17 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class WorkplaceQrServiceImpl implements WorkplaceQrService {
 
-    private final WorkplaceMapper workplaceMapper;
+    private final WorkplaceOwnershipService workplaceOwnershipService;
     private final QrTokenMapper qrTokenMapper;
     private final QrTokenCodec qrTokenCodec;
     private final WorkplaceQrIssuer qrIssuer;
 
     public WorkplaceQrServiceImpl(
-            WorkplaceMapper workplaceMapper,
+            WorkplaceOwnershipService workplaceOwnershipService,
             QrTokenMapper qrTokenMapper,
             QrTokenCodec qrTokenCodec,
             WorkplaceQrIssuer qrIssuer) {
-        this.workplaceMapper = workplaceMapper;
+        this.workplaceOwnershipService = workplaceOwnershipService;
         this.qrTokenMapper = qrTokenMapper;
         this.qrTokenCodec = qrTokenCodec;
         this.qrIssuer = qrIssuer;
@@ -65,9 +64,8 @@ public class WorkplaceQrServiceImpl implements WorkplaceQrService {
     public WorkplaceQrReissueResponse reissue(AuthPrincipal principal, Long workplaceId) {
         requireOwnerRole(principal);
         // 사업장을 먼저 잠급니다. 잠금 순서는 workplaces -> qr_tokens로 고정합니다.
-        if (workplaceMapper.findOwnedActiveIdForUpdate(workplaceId, principal.getUserId()) == null) {
-            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
-        }
+        workplaceOwnershipService.lockOwnedActiveWorkplace(
+                workplaceId, principal.getUserId());
 
         // 활성 QR이 없어도 0을 받고 그대로 진행합니다. 발급 누락 상태를 여기서 복구합니다.
         qrTokenMapper.revokeActiveByWorkplaceId(workplaceId);
@@ -113,8 +111,7 @@ public class WorkplaceQrServiceImpl implements WorkplaceQrService {
      */
     private void requireOwnedWorkplace(AuthPrincipal principal, Long workplaceId) {
         requireOwnerRole(principal);
-        if (workplaceMapper.countOwnedActiveById(workplaceId, principal.getUserId()) != 1) {
-            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
-        }
+        workplaceOwnershipService.requireOwnedActiveWorkplace(
+                workplaceId, principal.getUserId());
     }
 }

@@ -18,8 +18,8 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.config.RootConfig;
 import com.gighub.member.domain.UserRole;
 import com.gighub.member.mapper.UserMapper;
-import com.gighub.wallet.mapper.WalletMapper;
-import com.gighub.workplace.mapper.WorkplaceMapper;
+import com.gighub.wallet.service.WalletProvisionService;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -35,9 +35,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 
 @Tag("database")
 class AuthFlowDatabaseIntegrationTest {
@@ -113,12 +113,13 @@ class AuthFlowDatabaseIntegrationTest {
             AnnotationConfigApplicationContext context,
             JdbcTemplate jdbcTemplate,
             String loginId) {
-        WalletMapper failingWalletMapper = mock(WalletMapper.class);
-        when(failingWalletMapper.insertKrwWallet(any())).thenReturn(0);
+        WalletProvisionService failingWalletProvision = mock(WalletProvisionService.class);
+        doThrow(new IllegalStateException("wallet failure"))
+                .when(failingWalletProvision).provisionKrwWallet(anyLong());
         AuthServiceImpl target = new AuthServiceImpl(
-                context.getBean(WorkplaceMapper.class),
+                context.getBean(WorkplaceOwnershipService.class),
                 context.getBean(UserMapper.class),
-                failingWalletMapper,
+                failingWalletProvision,
                 context.getBean(PasswordEncoder.class)
         );
         TransactionInterceptor transactionInterceptor = new TransactionInterceptor();

@@ -342,6 +342,8 @@ function parseArchitectureManifest(content) {
 
   const moduleIds = new Set();
   const packageRoots = new Set();
+  const packageRootOwners = new Map();
+  const moduleOwnedTables = new Map();
   for (const module of manifest.logicalModules ?? []) {
     if (
       !isPlainObject(module) ||
@@ -361,6 +363,24 @@ function parseArchitectureManifest(content) {
       );
     }
     moduleIds.add(module.id);
+    if (!Array.isArray(module.ownedTables)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} logical module ${module.id} must declare ownedTables.`,
+      );
+    }
+    for (const table of module.ownedTables ?? []) {
+      if (typeof table !== "string" || !/^[a-z][a-z0-9_]*$/.test(table)) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} has invalid owned table ${String(table)}.`,
+        );
+      } else if (moduleOwnedTables.has(table)) {
+        errors.push(
+          `${ARCHITECTURE_MANIFEST_PATH} assigns table ${table} to more than one logical module.`,
+        );
+      } else {
+        moduleOwnedTables.set(table, module.id);
+      }
+    }
     for (const packageRoot of module.packageRoots) {
       if (
         typeof packageRoot !== "string" ||
@@ -375,6 +395,58 @@ function parseArchitectureManifest(content) {
         );
       }
       packageRoots.add(packageRoot);
+      packageRootOwners.set(packageRoot, module.id);
+    }
+  }
+
+  const ownershipTables = new Set();
+  if (!Array.isArray(manifest.tableOwnership)) {
+    errors.push(`${ARCHITECTURE_MANIFEST_PATH} tableOwnership must be an array.`);
+  }
+  for (const ownership of manifest.tableOwnership ?? []) {
+    if (
+      !isPlainObject(ownership) ||
+      typeof ownership.table !== "string" ||
+      !/^[a-z][a-z0-9_]*$/.test(ownership.table) ||
+      typeof ownership.owner !== "string" ||
+      typeof ownership.allowedWriterType !== "string" ||
+      !/^com\.gighub\.[A-Za-z0-9_.]+Mapper$/.test(
+        ownership.allowedWriterType,
+      )
+    ) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} each tableOwnership entry must declare table, owner, and allowedWriterType.`,
+      );
+      continue;
+    }
+    if (ownershipTables.has(ownership.table)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} duplicates tableOwnership for ${ownership.table}.`,
+      );
+    }
+    ownershipTables.add(ownership.table);
+    if (!moduleIds.has(ownership.owner)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} table ${ownership.table} has unknown owner ${ownership.owner}.`,
+      );
+    }
+    if (moduleOwnedTables.get(ownership.table) !== ownership.owner) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} table ${ownership.table} must match logical module ownedTables.`,
+      );
+    }
+    const writerRoot = ownership.allowedWriterType.split(".")[2];
+    if (packageRootOwners.get(writerRoot) !== ownership.owner) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} allowed writer ${ownership.allowedWriterType} must belong to owner ${ownership.owner}.`,
+      );
+    }
+  }
+  for (const table of moduleOwnedTables.keys()) {
+    if (!ownershipTables.has(table)) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} is missing tableOwnership for ${table}.`,
+      );
     }
   }
 
@@ -442,6 +514,28 @@ function verifyArchitectureManifestEvolution(baseline, candidate) {
     }
   }
 
+  const baselineOwnership = tableOwnershipByTable(baseline);
+  const candidateOwnership = tableOwnershipByTable(candidate);
+  for (const [table, ownership] of baselineOwnership) {
+    const candidateEntry = candidateOwnership.get(table);
+    if (!candidateEntry) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} must not remove table ownership for ${table}.`,
+      );
+      continue;
+    }
+    if (candidateEntry.owner !== ownership.owner) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} must not reassign table ${table} from ${ownership.owner} to ${candidateEntry.owner}.`,
+      );
+    }
+    if (candidateEntry.allowedWriterType !== ownership.allowedWriterType) {
+      errors.push(
+        `${ARCHITECTURE_MANIFEST_PATH} must not replace the allowed writer for ${table} without a new architecture decision.`,
+      );
+    }
+  }
+
   for (const rule of [
     "domainForbiddenImportPrefixes",
     "domainForbiddenImportRegexes",
@@ -487,6 +581,53 @@ function controllerDtoImports(files) {
   return result;
 }
 
+function tableOwnershipByTable(manifest) {
+  return new Map(
+    (manifest.tableOwnership ?? []).map((ownership) => [
+      ownership.table,
+      ownership,
+    ]),
+  );
+}
+
+function mapperNamespace(content) {
+  return /<mapper\b[^>]*\bnamespace\s*=\s*["']([^"']+)["']/.exec(
+    String(content),
+  )?.[1];
+}
+
+function mapperDmlTargets(content) {
+  const targets = [];
+  const statementPattern = /<(insert|update|delete)\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  for (const match of String(content).matchAll(statementPattern)) {
+    const verb = match[1].toLowerCase();
+    const sql = match[2]
+      .replace(/<!--[\s\S]*?-->/g, " ")
+      .replace(/\/\*[\s\S]*?\*\//g, " ")
+      .replace(/--[ \t][^\r\n]*/g, " ");
+    const targetPattern =
+      verb === "insert"
+        ? /\bINSERT\s+INTO\s+[`"]?([a-z][a-z0-9_]*)[`"]?/i
+        : verb === "update"
+          ? /\bUPDATE\s+[`"]?([a-z][a-z0-9_]*)[`"]?/i
+          : /\bDELETE\s+FROM\s+[`"]?([a-z][a-z0-9_]*)[`"]?/i;
+    const targetMatch = targetPattern.exec(sql);
+    let target = targetMatch?.[1] ?? null;
+    if (verb === "update" && targetMatch) {
+      const setOffset = sql.search(/\bSET\b/i);
+      const updateHead = setOffset < 0 ? sql : sql.slice(targetMatch.index, setOffset);
+      if (/\bJOIN\b/i.test(updateHead) || updateHead.includes(",")) {
+        target = null;
+      }
+    }
+    if (verb === "delete" && /\bUSING\b/i.test(sql)) {
+      target = null;
+    }
+    targets.push({ verb, target, offset: match.index });
+  }
+  return targets;
+}
+
 function addArchitectureViolation(violations, kind, file, target, message) {
   const id = `${kind}:${file}:${target}`;
   violations.set(id, { id, kind, file, target, message });
@@ -503,6 +644,7 @@ function findArchitectureViolations(files, manifest) {
   const forbiddenRegexes = manifest.guardRules.domainForbiddenImportRegexes.map(
     (pattern) => new RegExp(pattern),
   );
+  const ownershipByTable = tableOwnershipByTable(manifest);
 
   for (const [file, content] of files) {
     if (isBackendProductionJava(file)) {
@@ -511,6 +653,20 @@ function findArchitectureViolations(files, manifest) {
         .split("/")[2];
       const sourceModule = modules.get(sourceRoot);
       const imports = javaImports(content);
+
+      if (file.includes("/mapper/")) {
+        const annotationDmlPattern =
+          /@(?:org\.apache\.ibatis\.annotations\.)?(Insert|Update|Delete)(?:Provider)?\b/g;
+        for (const match of String(content).matchAll(annotationDmlPattern)) {
+          addArchitectureViolation(
+            violations,
+            "mapper-annotation-dml-forbidden",
+            file,
+            match[0],
+            "Mapper DML must stay in XML so table ownership remains statically reviewable.",
+          );
+        }
+      }
 
       if (!sourceModule) {
         addArchitectureViolation(
@@ -593,6 +749,51 @@ function findArchitectureViolations(files, manifest) {
     }
 
     if (isBackendMapperXml(file)) {
+      const namespace = mapperNamespace(content);
+      for (const statement of mapperDmlTargets(content)) {
+        const statementTarget = `${statement.verb}:offset-${statement.offset}`;
+        if (!namespace) {
+          addArchitectureViolation(
+            violations,
+            "mapper-missing-namespace",
+            file,
+            statementTarget,
+            "Mapper XML with DML must declare its Java Mapper namespace.",
+          );
+          continue;
+        }
+        if (!statement.target) {
+          addArchitectureViolation(
+            violations,
+            "mapper-dml-target-unresolved",
+            file,
+            statementTarget,
+            "DML target table must be statically identifiable for ownership review.",
+          );
+          continue;
+        }
+        const ownership = ownershipByTable.get(statement.target);
+        if (!ownership) {
+          addArchitectureViolation(
+            violations,
+            "mapper-dml-table-unowned",
+            file,
+            statement.target,
+            "Every DML table must have a manifest owner and allowed writer type.",
+          );
+          continue;
+        }
+        if (namespace !== ownership.allowedWriterType) {
+          addArchitectureViolation(
+            violations,
+            "mapper-dml-owner-mismatch",
+            file,
+            `${statement.target}:${namespace}`,
+            `Table ${statement.target} may only be written by ${ownership.allowedWriterType}.`,
+          );
+        }
+      }
+
       const resultTagPattern = /<(select|resultMap)\b[^>]*>/g;
       for (const tagMatch of String(content).matchAll(resultTagPattern)) {
         const tag = tagMatch[0];
@@ -905,7 +1106,7 @@ function collectReviewScopeWarnings(mode) {
         gitOptional(["ls-files", "--others", "--exclude-standard", "-z"]) ?? "",
       )) {
         addedFiles.add(file);
-        if (fs.existsSync(file)) {
+        if (fs.existsSync(file) && fs.statSync(file).isFile()) {
           const content = fs.readFileSync(file, "utf8");
           lineStats.push({
             file,
@@ -921,7 +1122,7 @@ function collectReviewScopeWarnings(mode) {
       let content = null;
       if (mode === "staged") {
         content = gitOptional(["show", `:${file}`]);
-      } else if (fs.existsSync(file)) {
+      } else if (fs.existsSync(file) && fs.statSync(file).isFile()) {
         content = fs.readFileSync(file, "utf8");
       }
       if (content !== null) addedEntries.push({ file, content });

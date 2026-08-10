@@ -15,14 +15,16 @@ import com.gighub.work.mapper.result.WorkCaseDetailRow;
 import com.gighub.work.mapper.result.WorkCaseListRow;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.mapper.result.WorkCaseStatusCountRow;
+import com.gighub.work.domain.WorkCaseStatus;
+import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 /**
  * OWNER 근무 Case의 조회·저장·상태 전이 SQL 진입점입니다.
  *
- * <p>에스크로와 정산이 쓰는 {@link WorkMapper}와 분리합니다. 같은 테이블이라도 조회 목적과
- * 잠금 범위가 달라, 한 파일에 섞으면 어느 쿼리가 어느 흐름의 계약인지 알 수 없게 됩니다.</p>
+ * <p>{@code work_cases} DML은 이 Mapper 하나가 소유합니다. 다른 모듈은 공개 Work Command
+ * Service를 통해 상태를 바꾸며 Mapper나 persistence 타입을 직접 가져가지 않습니다.</p>
  *
  * <p>상태 조건을 Java의 if 문이 아니라 {@code WHERE}에 두어 확인과 변경이 한 문장 안에서
  * 원자적으로 처리되게 합니다. 호출부는 변경된 행 수가 0인지로 상태가 어긋났음을 판단합니다.</p>
@@ -73,8 +75,6 @@ public interface WorkCaseMapper {
      *
      * @return 철회된 초대 수
      */
-    int revokePendingInvitations(@Param("workCaseId") Long workCaseId);
-
     /**
      * 상태와 무관하게 해당 근무의 전체 초대 수를 셉니다.
      *
@@ -96,6 +96,21 @@ public interface WorkCaseMapper {
      * @return 변경된 행 수. {@code DRAFT}가 아니면 0
      */
     int cancelDraft(@Param("workCaseId") Long workCaseId);
+
+    /** 수락 시 미매칭 DRAFT에 WORKER를 배정하고 ACCEPTED로 전이합니다. */
+    int assignWorkerAndAccept(
+            @Param("workCaseId") long workCaseId,
+            @Param("workerId") long workerId);
+
+    /** Settlement outer Transaction이 가장 먼저 잠그는 최소 Work Snapshot입니다. */
+    WorkCaseEscrowSnapshot getEscrowContextForUpdate(
+            @Param("workCaseId") Long workCaseId);
+
+    /** Domain이 승인한 expected-state 목록에서 목표 상태로 원자 전이합니다. */
+    int updateWorkStatus(
+            @Param("workCaseId") Long workCaseId,
+            @Param("fromStatuses") List<WorkCaseStatus> fromStatuses,
+            @Param("toStatus") WorkCaseStatus toStatus);
 
     /**
      * 사업장의 상태별 근무 건수를 집계합니다.

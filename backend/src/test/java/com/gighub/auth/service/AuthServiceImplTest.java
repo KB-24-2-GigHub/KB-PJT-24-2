@@ -13,8 +13,8 @@ import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
 import com.gighub.member.domain.UserStatus;
 import com.gighub.member.mapper.UserMapper;
-import com.gighub.wallet.mapper.WalletMapper;
-import com.gighub.workplace.mapper.WorkplaceMapper;
+import com.gighub.wallet.service.WalletProvisionService;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
@@ -25,37 +25,39 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class AuthServiceImplTest {
 
-    private final WorkplaceMapper workplaceMapper = mock(WorkplaceMapper.class);
+    private final WorkplaceOwnershipService workplaceService =
+            mock(WorkplaceOwnershipService.class);
     private final UserMapper userMapper = mock(UserMapper.class);
-    private final WalletMapper walletMapper = mock(WalletMapper.class);
+    private final WalletProvisionService walletProvisionService =
+            mock(WalletProvisionService.class);
     private final PasswordEncoder passwordEncoder = mock(PasswordEncoder.class);
     private final AuthServiceImpl service = new AuthServiceImpl(
-            workplaceMapper,
+            workplaceService,
             userMapper,
-            walletMapper,
+            walletProvisionService,
             passwordEncoder
     );
 
     @Test
     void ownerWithoutActiveWorkplaceNeedsSetup() {
         AuthPrincipal principal = new AuthPrincipal(1L, UserRole.OWNER, "김사장");
-        when(workplaceMapper.countActiveByOwnerUserId(1L)).thenReturn(0);
-
         assertTrue(service.needsWorkplaceSetup(principal));
     }
 
     @Test
     void ownerWithActiveWorkplaceDoesNotNeedSetup() {
         AuthPrincipal principal = new AuthPrincipal(1L, UserRole.OWNER, "김사장");
-        when(workplaceMapper.countActiveByOwnerUserId(1L)).thenReturn(1);
+        when(workplaceService.hasActiveOwnedWorkplace(1L)).thenReturn(true);
 
         assertFalse(service.needsWorkplaceSetup(principal));
     }
@@ -65,7 +67,7 @@ class AuthServiceImplTest {
         AuthPrincipal principal = new AuthPrincipal(2L, UserRole.WORKER, "김근로");
 
         assertFalse(service.needsWorkplaceSetup(principal));
-        verify(workplaceMapper, never()).countActiveByOwnerUserId(2L);
+        verify(workplaceService, never()).hasActiveOwnedWorkplace(2L);
     }
 
     @Test
@@ -86,7 +88,6 @@ class AuthServiceImplTest {
             user.setId(31L);
             return 1;
         });
-        when(walletMapper.insertKrwWallet(31L)).thenReturn(1);
 
         assertEquals(31L, service.signup(request));
 
@@ -98,7 +99,7 @@ class AuthServiceImplTest {
         assertEquals("bcrypt-hash", user.getPasswordHash());
         assertEquals("01012345678", user.getPhone());
         assertEquals(UserStatus.ACTIVE, user.getStatus());
-        verify(walletMapper).insertKrwWallet(31L);
+        verify(walletProvisionService).provisionKrwWallet(31L);
     }
 
     @Test
@@ -120,7 +121,7 @@ class AuthServiceImplTest {
 
         assertThrows(ConflictException.class, () -> service.signup(request));
 
-        verify(walletMapper, never()).insertKrwWallet(any());
+        verify(walletProvisionService, never()).provisionKrwWallet(anyLong());
     }
 
     @Test
@@ -132,7 +133,8 @@ class AuthServiceImplTest {
             user.setId(32L);
             return 1;
         });
-        when(walletMapper.insertKrwWallet(32L)).thenReturn(0);
+        doThrow(new IllegalStateException("가입 지갑 저장 결과가 올바르지 않습니다."))
+                .when(walletProvisionService).provisionKrwWallet(32L);
 
         assertThrows(IllegalStateException.class, () -> service.signup(request));
     }
@@ -143,7 +145,6 @@ class AuthServiceImplTest {
         User user = user(51L, UserRole.OWNER, UserStatus.ACTIVE);
         when(userMapper.findByLoginId("owner01")).thenReturn(user);
         when(passwordEncoder.matches("secret123", "bcrypt-hash")).thenReturn(true);
-        when(workplaceMapper.countActiveByOwnerUserId(51L)).thenReturn(0);
 
         LoginResult result = service.login(request);
 
@@ -196,7 +197,7 @@ class AuthServiceImplTest {
 
         assertThrows(RoleMismatchException.class, () -> service.login(request));
 
-        verify(workplaceMapper, never()).countActiveByOwnerUserId(any());
+        verify(workplaceService, never()).hasActiveOwnedWorkplace(any());
     }
 
     private SignupRequest signupRequest() {

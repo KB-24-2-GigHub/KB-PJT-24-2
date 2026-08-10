@@ -6,6 +6,8 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
+import java.time.LocalDateTime;
+
 /**
  * 수정·삭제 전에 잠근 근무 행의 판단 근거입니다.
  *
@@ -30,4 +32,6 @@ public class WorkCaseLockRow {
     private final Long workerId;
     private final WorkCaseStatus status;
     private final Integer termsVersion;
+    private final LocalDateTime startsAt;
+    private final LocalDateTime endsAt;
 }

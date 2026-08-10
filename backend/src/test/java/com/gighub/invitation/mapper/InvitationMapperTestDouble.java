@@ -72,11 +72,6 @@ public abstract class InvitationMapperTestDouble implements InvitationMapper {
     }
 
     @Override
-    public int assignWorkerAndAccept(long workCaseId, long workerId) {
-        throw new UnsupportedOperationException("assignWorkerAndAccept");
-    }
-
-    @Override
     public int markExpired(long invitationId) {
         throw new UnsupportedOperationException("markExpired");
     }
@@ -89,5 +84,10 @@ public abstract class InvitationMapperTestDouble implements InvitationMapper {
     @Override
     public int revokePendingByWorkCaseId(long workCaseId, LocalDateTime revokedAt) {
         throw new UnsupportedOperationException("revokePendingByWorkCaseId");
+    }
+
+    @Override
+    public int revokePendingByWorkCaseIdNow(long workCaseId) {
+        throw new UnsupportedOperationException("revokePendingByWorkCaseIdNow");
     }
 }

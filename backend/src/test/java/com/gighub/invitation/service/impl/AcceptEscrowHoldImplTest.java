@@ -4,6 +4,7 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.service.impl.AcceptEscrowHoldImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 

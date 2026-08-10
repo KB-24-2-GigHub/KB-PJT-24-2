@@ -9,20 +9,23 @@ import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ConflictException;
+import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 /** 승인된 사업장 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
-public class WorkplaceServiceImpl implements WorkplaceService {
+public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershipService {
 
     private final WorkplaceMapper workplaceMapper;
     private final WorkplaceQrIssuer qrIssuer;
@@ -83,6 +86,34 @@ public class WorkplaceServiceImpl implements WorkplaceService {
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public boolean hasActiveOwnedWorkplace(Long ownerUserId) {
+        return ownerUserId != null
+                && ownerUserId > 0
+                && workplaceMapper.countActiveByOwnerUserId(ownerUserId) > 0;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public void requireOwnedActiveWorkplace(Long workplaceId, Long ownerUserId) {
+        if (workplaceId == null
+                || ownerUserId == null
+                || workplaceMapper.countOwnedActiveById(workplaceId, ownerUserId) != 1) {
+            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
+        }
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void lockOwnedActiveWorkplace(Long workplaceId, Long ownerUserId) {
+        if (workplaceId == null
+                || ownerUserId == null
+                || workplaceMapper.findOwnedActiveIdForUpdate(workplaceId, ownerUserId) == null) {
+            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
+        }
     }
 
     /**

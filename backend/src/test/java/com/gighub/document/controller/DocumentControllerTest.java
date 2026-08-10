@@ -8,6 +8,7 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.mapper.DocumentQueryMapper;
+import com.gighub.document.service.DocumentQueryServiceImpl;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -62,7 +63,8 @@ class DocumentControllerTest {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DocumentController(documentQueryMapper))
+                .standaloneSetup(new DocumentController(
+                        new DocumentQueryServiceImpl(documentQueryMapper)))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();

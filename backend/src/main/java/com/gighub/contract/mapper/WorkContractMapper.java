@@ -1,24 +1,11 @@
 package com.gighub.contract.mapper;
 
 import com.gighub.contract.mapper.param.WorkContractInsertParam;
-import com.gighub.contract.mapper.result.ContractPartyNamesRow;
 import org.apache.ibatis.annotations.Mapper;
-import org.apache.ibatis.annotations.Param;
 
 /** 근로계약 Snapshot 행의 저장과 조회 SQL 진입점입니다. */
 @Mapper
 public interface WorkContractMapper {
-
-    /**
-     * 계약 Snapshot에 굳힐 당사자 이름을 읽습니다.
-     *
-     * @param employerId 근무를 등록한 OWNER 식별자
-     * @param workerId   수락한 WORKER 식별자
-     * @return 두 이름. 어느 한쪽이라도 없으면 {@code null}
-     */
-    ContractPartyNamesRow findPartyNames(
-            @Param("employerId") long employerId,
-            @Param("workerId") long workerId);
 
     /**
      * 계약 Snapshot 한 행을 저장하고 생성된 식별자를 {@code param.id}에 채웁니다.

@@ -5,19 +5,6 @@
 <mapper namespace="com.gighub.contract.mapper.WorkContractMapper">
 
     <!--
-        두 이름을 한 번에 읽습니다. 한쪽이라도 없으면 결과가 비어 호출부가 무결성 문제로
-        판단할 수 있습니다.
-    -->
-    <select id="findPartyNames"
-            resultType="com.gighub.contract.mapper.result.ContractPartyNamesRow">
-        SELECT employer.name AS employer_name,
-               worker.name   AS worker_name
-        FROM users employer
-                 JOIN users worker ON worker.id = #{workerId}
-        WHERE employer.id = #{employerId}
-    </select>
-
-    <!--
         조건 값은 근무 행에서 복사한 그대로 저장합니다. 여기서 다시 계산하면 계약서와 근무의
         해석이 갈라질 수 있습니다.
 

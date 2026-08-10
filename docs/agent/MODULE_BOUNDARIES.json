@@ -96,14 +96,14 @@
       "owner": "work",
       "allowedWriterPackage": "com.gighub.work.mapper",
       "allowedWriterType": "com.gighub.work.mapper.WorkCaseMapper",
-      "currentWriteState": "multiple-writers"
+      "currentWriteState": "owned"
     },
     {
       "table": "work_invitations",
       "owner": "work",
       "allowedWriterPackage": "com.gighub.invitation.mapper",
       "allowedWriterType": "com.gighub.invitation.mapper.InvitationMapper",
-      "currentWriteState": "multiple-writers"
+      "currentWriteState": "owned"
     },
     {
       "table": "work_contracts",
@@ -131,7 +131,7 @@
       "owner": "wallet",
       "allowedWriterPackage": "com.gighub.wallet.mapper",
       "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
-      "currentWriteState": "external-direct-callers"
+      "currentWriteState": "owned"
     },
     {
       "table": "funding_orders",
@@ -152,14 +152,14 @@
       "owner": "wallet",
       "allowedWriterPackage": "com.gighub.wallet.mapper",
       "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
-      "currentWriteState": "external-direct-callers"
+      "currentWriteState": "owned"
     },
     {
       "table": "escrows",
       "owner": "wallet",
       "allowedWriterPackage": "com.gighub.wallet.mapper",
       "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
-      "currentWriteState": "external-direct-callers"
+      "currentWriteState": "owned"
     },
     {
       "table": "mock_bank_accounts",
@@ -180,7 +180,7 @@
       "owner": "settlement",
       "allowedWriterPackage": "com.gighub.settlement.mapper",
       "allowedWriterType": "com.gighub.settlement.mapper.SettlementMapper",
-      "currentWriteState": "external-direct-callers"
+      "currentWriteState": "owned"
     },
     {
       "table": "disputes",
@@ -281,7 +281,7 @@
     {
       "consumer": "settlement",
       "provider": "work",
-      "kind": "query"
+      "kind": "query-command-participant"
     },
     {
       "consumer": "settlement",
@@ -360,59 +360,28 @@
     },
     {
       "id": "QX-005",
-      "mapper": "com.gighub.settlement.mapper.SettlementLedgerMapper",
-      "crossModuleTables": ["wallet_transactions", "wallets"],
-      "purpose": "settlement replay projection",
+      "mapper": "com.gighub.attendance.mapper.AttendanceLifecycleMapper",
+      "crossModuleTables": [
+        "work_cases",
+        "work_invitations",
+        "work_contracts",
+        "escrows",
+        "settlements",
+        "workplaces",
+        "documents",
+        "document_versions",
+        "document_signatures",
+        "document_shares"
+      ],
+      "purpose": "attendance lifecycle candidate and readiness projection",
       "crossTableWriteAllowed": false
     }
   ],
   "temporaryViolations": [
     {
-      "id": "TV-001",
-      "kind": "multiple-table-writers",
-      "target": "work_cases",
-      "ownerIssues": [286, 287]
-    },
-    {
-      "id": "TV-002",
-      "kind": "multiple-table-writers",
-      "target": "work_invitations",
-      "ownerIssues": [287]
-    },
-    {
-      "id": "TV-003",
-      "kind": "cross-module-mapper-import",
-      "target": "wallets, escrows and wallet_transactions direct callers",
-      "ownerIssues": [287, 289]
-    },
-    {
-      "id": "TV-004",
-      "kind": "acceptance-orchestrator-direct-mapper",
-      "target": "AcceptAggregateExecutor",
-      "ownerIssues": [287, 288]
-    },
-    {
-      "id": "TV-005",
-      "kind": "cross-module-query-mapper-import",
-      "target": "WorkplaceQrServiceImpl, SignedContractArtifactVerifier and PdfContractArtifactPort",
-      "ownerIssues": [287]
-    },
-    {
-      "id": "TV-006",
-      "kind": "controller-mapper-import",
-      "target": "BadgeController and DocumentController",
-      "ownerIssues": [287]
-    },
-    {
-      "id": "TV-007",
-      "kind": "settlement-owner-bypass",
-      "target": "SettlementServiceImpl",
-      "ownerIssues": [287, 289, 290]
-    },
-    {
       "id": "TV-008",
       "kind": "persistence-type-cross-module-import",
-      "target": "production Java",
+      "target": "Attendance/Work persistence DTO and Row imports",
       "ownerIssues": [291]
     },
     {
