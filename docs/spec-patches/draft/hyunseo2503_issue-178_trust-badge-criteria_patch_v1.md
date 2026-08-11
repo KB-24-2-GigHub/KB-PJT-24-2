@@ -42,9 +42,10 @@ targets:
 - 분모: 본인이 당사자인 `work_cases` 중 `status IN ('COMPLETED', 'NO_SHOW',
   'CHECK_OUT_MISSING')`인 누적 건수. `CANCELED`와 아직 진행 중인 상태는 집계하지
   않는다.
-- 분자("정상 근무"): 그 중 `status='COMPLETED'`이고 `attendance_records.isLate`가
-  `true`가 아닌 건수. `NO_SHOW`, `CHECK_OUT_MISSING`, 지각 `COMPLETED`는 비정상으로
-  센다.
+- 분자("정상 근무"): 그 중 `status='COMPLETED'`이고 지각이 아닌 건수. 지각 여부는
+  저장된 값이 아니라 `SPEC-161-01`과 동일하게 CHECK_IN 성공 기록의 `attempted_at`이
+  `work_cases.starts_at`보다 늦었는지로 그때 파생한다. `NO_SHOW`, `CHECK_OUT_MISSING`,
+  지각 `COMPLETED`는 비정상으로 센다.
 
 ### 공통 응답·재산정
 
