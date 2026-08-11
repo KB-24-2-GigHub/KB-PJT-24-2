@@ -1,26 +1,30 @@
 package com.gighub.attendance.domain;
 
 /**
- * 거절된 스캔 시도의 감사 사유입니다.
+ * 거절된 스캔 시도의 승인된 감사 사유입니다.
  *
- * <p>{@code attendance_records.failure_reason}에 상수 이름 그대로 저장하므로 이름을 바꾸면
- * 이미 쌓인 감사 기록과 어긋납니다. 사용자에게 보내는 메시지와 분리해 두어, 문구를 다듬어도
- * 감사 분석 기준이 흔들리지 않게 합니다.</p>
+ * <p>API_SPEC 6.0.0이 {@code attendance_records.failure_reason}에 남길 값을 다섯 개로
+ * 고정했습니다. 상수 이름을 그대로 저장하므로 이름을 바꾸면 이미 쌓인 감사 기록과
+ * 어긋납니다.</p>
+ *
+ * <p>정확히 하나의 근무와 출퇴근 유형을 정한 뒤 발생한 거절만 이 사유로 기록합니다. QR
+ * 변조와 후보 없음·복수처럼 신뢰할 근무를 정할 수 없는 요청은 근태 행 없이 보안 로그만
+ * 남깁니다.</p>
  */
 public enum AttendanceFailureReason {
 
-    /** 사업장 좌표 Snapshot이 없어 거리 판정을 할 수 없습니다. */
-    WORKPLACE_LOCATION_MISSING,
+    /** 위치 정확도가 승인 상한을 넘었습니다. */
+    LOCATION_INACCURATE,
 
-    /** 서버가 계산한 거리가 승인된 반경을 넘었습니다. */
-    DISTANCE_EXCEEDED,
+    /** 측정 시각이 승인된 신선도 범위를 벗어났습니다. */
+    LOCATION_STALE,
 
-    /** 잠근 뒤 확인한 근무 상태가 요청한 출퇴근을 허용하지 않습니다. */
-    WORK_STATE_NOT_SCANNABLE,
+    /** 반올림 전 거리가 승인 반경을 넘었습니다. */
+    OUTSIDE_RADIUS,
 
-    /** 이미 성공한 출근과 퇴근이 모두 있어 더 처리할 스캔이 없습니다. */
-    ALREADY_COMPLETED,
+    /** 잠근 뒤 확인한 시간창이 이미 닫혔습니다. */
+    TIME_WINDOW_CLOSED,
 
-    /** 조건부 상태 전이가 경쟁에서 밀려 0행을 바꿨습니다. */
-    TRANSITION_LOST_RACE
+    /** 상태가 어긋났거나 다른 Key와의 경쟁에서 밀렸습니다. */
+    STATE_CONFLICT
 }

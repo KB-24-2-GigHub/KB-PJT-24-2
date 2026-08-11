@@ -20,24 +20,32 @@ import org.apache.ibatis.annotations.Param;
 public interface AttendanceRecordMapper {
 
     /**
-     * 로그인 WORKER와 QR이 가리키는 사업장에서 지금 처리 대상인 근무 후보를 찾습니다.
+     * 지금 출퇴근을 처리할 활성 근무 후보를 찾습니다.
      *
-     * <p>{@code idx_work_cases_worker_workplace_status_start_end}를 타는 조회입니다. 시간창
-     * 경계는 {@link com.gighub.attendance.domain.AttendanceWindowPolicy}가 계산해 넘깁니다.</p>
-     *
-     * <p>잠금은 걸지 않으므로 호출부는 후보가 정확히 한 건일 때만 이 결과의
-     * {@code workCaseId}로 {@link com.gighub.work.service.WorkLifecycleCommandService#lock}을
-     * 부른 뒤 다시 검증합니다.</p>
+     * <p>시간창 경계는 {@link com.gighub.attendance.domain.AttendanceWindowPolicy}가 판정
+     * 시각으로부터 계산해 넘깁니다. 결과의 {@code scanType}도 같은 SQL이 정합니다.</p>
      *
      * @return 최대 2건. 2건이면 호출부가 후보 복수로 거절합니다
      */
-    List<AttendanceScanCandidateRow> findScanCandidates(
+    List<AttendanceScanCandidateRow> findActiveScanCandidates(
             @Param("workerId") long workerId,
             @Param("workplaceId") long workplaceId,
-            @Param("latestStartsAt") LocalDateTime latestStartsAt,
-            @Param("earliestEndsAt") LocalDateTime earliestEndsAt);
+            @Param("readyLatestStartsAt") LocalDateTime readyLatestStartsAt,
+            @Param("readyEarliestStartsAt") LocalDateTime readyEarliestStartsAt,
+            @Param("checkOutEarliestEndsAt") LocalDateTime checkOutEarliestEndsAt);
 
-    /** 근무 한 건의 성공 CHECK_IN/CHECK_OUT 시각을 함께 읽습니다. */
+    /**
+     * 활성 후보가 없을 때 같은 시간 범위의 완료 후보 수를 셉니다.
+     *
+     * <p>"이미 완료"와 "근무 없음"을 가르는 값이라 최대 2까지만 셉니다.</p>
+     */
+    int countCompletedScanCandidates(
+            @Param("workerId") long workerId,
+            @Param("workplaceId") long workplaceId,
+            @Param("readyLatestStartsAt") LocalDateTime readyLatestStartsAt,
+            @Param("checkOutEarliestEndsAt") LocalDateTime checkOutEarliestEndsAt);
+
+    /** 근무 한 건의 성공 CHECK_IN/CHECK_OUT 판정 시각을 함께 읽습니다. */
     AttendanceSuccessTimestampsRow findSuccessTimestamps(@Param("workCaseId") long workCaseId);
 
     /**

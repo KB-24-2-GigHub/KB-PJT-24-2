@@ -344,7 +344,7 @@ class InvitationAcceptDatabaseIntegrationTest {
             }
 
             @Override
-            public void scheduleDueAt(long workCaseId, java.time.LocalDateTime dueAt) {
+            public void schedulePayout(long workCaseId, java.time.LocalDateTime dueAt) {
                 throw new UnsupportedOperationException();
             }
         };

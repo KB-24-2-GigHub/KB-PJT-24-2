@@ -3,6 +3,7 @@ package com.gighub.attendance.service;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
 
@@ -12,20 +13,22 @@ import com.gighub.attendance.domain.AttendanceScanOutcome;
 import com.gighub.attendance.domain.AttendanceType;
 import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.dto.AttendanceScanRequest;
+import com.gighub.attendance.exception.AttendanceScanException;
 import com.gighub.attendance.geo.HaversineDistanceCalculator;
 import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.QrTokenMapper;
 import com.gighub.attendance.mapper.param.AttendanceRecordInsertParam;
 import com.gighub.attendance.mapper.result.AttendanceScanCandidateRow;
-import com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow;
 import com.gighub.attendance.mapper.result.QrTokenRow;
 import com.gighub.attendance.qr.QrTokenPayload;
 import com.gighub.auth.security.AuthPrincipal;
-import com.gighub.common.exception.ConflictException;
+import com.gighub.common.api.ApiTimes;
 import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
+import com.gighub.workplace.service.WorkplaceOwnershipService;
+import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -34,9 +37,13 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 스캔 한 건의 DB 판정을 하나의 Transaction으로 처리합니다.
  *
- * <p>거절은 예외 대신 {@link AttendanceScanOutcome}으로 돌려줍니다. 거절 감사 행이 같은
- * Transaction에서 commit 되어야 하므로, 여기서 예외를 던지면 남기려던 기록이 함께
- * 되돌아갑니다. 사용자에게 보낼 오류로 바꾸는 일은 Transaction 밖의 호출부가 합니다.</p>
+ * <p>승인된 잠금 순서는 {@code workplaces -> qr_tokens -> work_cases}입니다. QR 재발급도
+ * {@code workplaces}를 먼저 잠그므로 두 흐름이 같은 순서로 줄을 서고, 폐기된 QR이 뒤늦게
+ * 성공하지 않습니다.</p>
+ *
+ * <p>근무와 유형을 정한 뒤의 거절은 예외 대신 {@link AttendanceScanOutcome}으로 돌려줍니다.
+ * 거절 감사 행이 같은 Transaction에서 commit 되어야 하므로, 여기서 예외를 던지면 남기려던
+ * 기록이 함께 되돌아갑니다. 사용자 오류로 바꾸는 일은 Transaction 밖의 호출부가 합니다.</p>
  *
  * <p>{@code work_cases}와 {@code settlements}는 각 모듈의 공개 명령으로만 바꿉니다. Wallet과
  * Escrow의 금액·원장은 이 Transaction에서 변경하지 않습니다.</p>
@@ -44,8 +51,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 public class AttendanceScanExecutor {
 
+    /** ATT-003이 고정한 인증 반경입니다. 반올림 전 값이 이 값을 포함합니다. */
+    private static final BigDecimal ALLOWED_RADIUS_METERS = BigDecimal.valueOf(100);
+
+    /** 지급 예정 시각은 성공 판정 시각으로부터 이만큼 뒤입니다. */
+    private static final int SETTLEMENT_DUE_HOURS = 24;
+
     private static final int DISTANCE_SCALE = 2;
 
+    private final WorkplaceOwnershipService workplaceOwnershipService;
     private final QrTokenMapper qrTokenMapper;
     private final AttendanceRecordMapper attendanceRecordMapper;
     private final WorkLifecycleCommandService workLifecycleCommandService;
@@ -53,11 +67,13 @@ public class AttendanceScanExecutor {
     private final AttendanceScanAuditor scanAuditor;
 
     public AttendanceScanExecutor(
+            WorkplaceOwnershipService workplaceOwnershipService,
             QrTokenMapper qrTokenMapper,
             AttendanceRecordMapper attendanceRecordMapper,
             WorkLifecycleCommandService workLifecycleCommandService,
             SettlementReservationService settlementReservationService,
             AttendanceScanAuditor scanAuditor) {
+        this.workplaceOwnershipService = workplaceOwnershipService;
         this.qrTokenMapper = qrTokenMapper;
         this.attendanceRecordMapper = attendanceRecordMapper;
         this.workLifecycleCommandService = workLifecycleCommandService;
@@ -70,75 +86,71 @@ public class AttendanceScanExecutor {
             AuthPrincipal principal,
             AttendanceScanRequest request,
             QrTokenPayload payload,
-            LocalDateTime now) {
+            LocalDateTime attemptedAt) {
+        // 1단계: 사업장을 먼저 잠그고 거리 판정 기준이 될 현재 좌표를 읽습니다.
+        WorkplaceLocationSnapshot workplace =
+                workplaceOwnershipService.lockActiveWorkplaceLocation(payload.workplaceId());
+        if (workplace == null) {
+            scanAuditor.logUnresolvedRejection(principal.getUserId(), "WORKPLACE_INACTIVE");
+            throw AttendanceScanException.qrRevoked();
+        }
+
+        // 2단계: 활성 QR을 잠그고 Token이 현재 QR인지 확인합니다.
         QrTokenRow activeQr = requireActiveQr(principal, payload);
+
         AttendanceScanCandidateRow candidate =
-                requireSingleCandidate(principal, payload.workplaceId(), now);
+                requireSingleCandidate(principal, payload.workplaceId(), attemptedAt);
 
-        AttendanceSuccessTimestampsRow attendance =
-                attendanceRecordMapper.findSuccessTimestamps(candidate.getWorkCaseId());
-
-        // 출근 직후 재시도를 퇴근으로 넘기지 않습니다. 거리·상태 검증보다 먼저 판정해 재시도가
-        // 새 거절 기록을 만들지 않게 합니다.
-        if (AttendanceWindowPolicy.isCheckInReplay(attendance.getCheckedInAt(), now)) {
-            return AttendanceScanOutcome.recorded(
-                    candidate.getWorkCaseId(),
-                    AttendanceType.CHECK_IN,
-                    attendance.getCheckedInAt(),
-                    null);
-        }
-
-        if (attendance.getCheckedInAt() != null && attendance.getCheckedOutAt() != null) {
+        if (!workplace.hasCoordinates()) {
+            // 좌표가 없으면 거리를 판정할 수 없습니다. 근무는 특정했으므로 감사 행을 남깁니다.
             return reject(
-                    principal, candidate, activeQr, AttendanceType.CHECK_OUT,
-                    AttendanceFailureReason.ALREADY_COMPLETED, null, now,
-                    "이미 출퇴근이 모두 기록된 근무입니다.");
-        }
-        AttendanceType type = attendance.getCheckedInAt() == null
-                ? AttendanceType.CHECK_IN
-                : AttendanceType.CHECK_OUT;
-
-        if (candidate.getWorkplaceLatitude() == null || candidate.getWorkplaceLongitude() == null) {
-            return reject(
-                    principal, candidate, activeQr, type,
-                    AttendanceFailureReason.WORKPLACE_LOCATION_MISSING, null, now,
-                    "사업장 위치가 등록되지 않아 처리할 수 없습니다.");
-        }
-        BigDecimal distance = distanceMeters(candidate, request);
-        // 정확히 경계값이면 통과시킵니다. 반경은 허용 범위의 상한입니다.
-        if (distance.compareTo(candidate.getAllowedRadiusMeters()) > 0) {
-            return reject(
-                    principal, candidate, activeQr, type,
-                    AttendanceFailureReason.DISTANCE_EXCEEDED, distance, now,
-                    "사업장에서 너무 멀리 떨어져 있습니다.");
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.LOCATION_INACCURATE, null, attemptedAt);
         }
 
-        return type == AttendanceType.CHECK_IN
-                ? checkIn(principal, candidate, activeQr, distance, now)
-                : checkOut(principal, candidate, activeQr, request, distance, now);
+        BigDecimal distance = distanceMeters(workplace, request);
+        if (distance.compareTo(ALLOWED_RADIUS_METERS) > 0) {
+            return reject(
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.OUTSIDE_RADIUS, distance, attemptedAt);
+        }
+
+        return candidate.getScanType() == AttendanceType.CHECK_IN
+                ? checkIn(principal, candidate, activeQr, request, distance, attemptedAt)
+                : checkOut(principal, candidate, activeQr, request, distance, attemptedAt);
     }
 
     private AttendanceScanOutcome checkIn(
             AuthPrincipal principal,
             AttendanceScanCandidateRow candidate,
             QrTokenRow activeQr,
+            AttendanceScanRequest request,
             BigDecimal distance,
-            LocalDateTime now) {
+            LocalDateTime attemptedAt) {
+        // 3단계: 근무 행을 잠그고 후보 조회 이후 상태가 바뀌지 않았는지 다시 확인합니다.
         WorkLifecycleSnapshot lock = workLifecycleCommandService.lock(candidate.getWorkCaseId());
         if (lock == null || lock.status() != WorkCaseStatus.READY) {
             return reject(
-                    principal, candidate, activeQr, AttendanceType.CHECK_IN,
-                    AttendanceFailureReason.WORK_STATE_NOT_SCANNABLE, distance, now,
-                    "현재 출근할 수 있는 근무가 아닙니다.");
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.STATE_CONFLICT, distance, attemptedAt);
+        }
+        if (isReadyWindowClosed(lock, attemptedAt)) {
+            return reject(
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.TIME_WINDOW_CLOSED, distance, attemptedAt);
         }
 
         insertSuccess(
-                principal, candidate, activeQr, AttendanceType.CHECK_IN, distance, now, null);
+                principal, candidate, activeQr, request, AttendanceType.CHECK_IN,
+                distance, attemptedAt, null);
         requireTransitioned(workLifecycleCommandService.transition(
                 lock.workCaseId(), WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS));
 
-        return AttendanceScanOutcome.recorded(
-                candidate.getWorkCaseId(), AttendanceType.CHECK_IN, now, null);
+        return AttendanceScanOutcome.checkedIn(
+                candidate.getWorkCaseId(),
+                attemptedAt,
+                attemptedAt.isAfter(lock.startsAt()),
+                lateMinutes(lock.startsAt(), attemptedAt));
     }
 
     private AttendanceScanOutcome checkOut(
@@ -147,11 +159,10 @@ public class AttendanceScanExecutor {
             QrTokenRow activeQr,
             AttendanceScanRequest request,
             BigDecimal distance,
-            LocalDateTime now) {
-        boolean early = now.isBefore(candidate.getEndsAt());
-        if (early && !Boolean.TRUE.equals(request.getConfirmEarlyCheckout())) {
-            // 확인 전에는 성공 행도 COMPLETED도 만들지 않습니다. 거절이 아니라 되물음이므로
-            // 감사 행도 남기지 않습니다.
+            LocalDateTime attemptedAt) {
+        boolean early = attemptedAt.isBefore(candidate.getEndsAt());
+        if (early && !request.isEarlyCheckoutConfirmed()) {
+            // 확인 전에는 성공 행도 거절 행도, 상태 변경도 만들지 않습니다.
             return AttendanceScanOutcome.confirmationRequired(
                     candidate.getWorkCaseId(), candidate.getEndsAt());
         }
@@ -159,55 +170,75 @@ public class AttendanceScanExecutor {
         WorkLifecycleSnapshot lock = workLifecycleCommandService.lock(candidate.getWorkCaseId());
         if (lock == null || lock.status() != WorkCaseStatus.IN_PROGRESS) {
             return reject(
-                    principal, candidate, activeQr, AttendanceType.CHECK_OUT,
-                    AttendanceFailureReason.WORK_STATE_NOT_SCANNABLE, distance, now,
-                    "현재 퇴근할 수 있는 근무가 아닙니다.");
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.STATE_CONFLICT, distance, attemptedAt);
+        }
+        if (!attemptedAt.isBefore(AttendanceWindowPolicy.checkOutMissingAt(lock.endsAt()))) {
+            return reject(
+                    principal, candidate, activeQr, request,
+                    AttendanceFailureReason.TIME_WINDOW_CLOSED, distance, attemptedAt);
         }
 
-        LocalDateTime earlyConfirmedAt = early ? now : null;
+        LocalDateTime earlyConfirmedAt = early ? attemptedAt : null;
         insertSuccess(
-                principal, candidate, activeQr, AttendanceType.CHECK_OUT, distance, now,
-                earlyConfirmedAt);
+                principal, candidate, activeQr, request, AttendanceType.CHECK_OUT,
+                distance, attemptedAt, earlyConfirmedAt);
         requireTransitioned(workLifecycleCommandService.transition(
                 lock.workCaseId(), WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED));
-        // 지급 예정 시각만 예약합니다. Wallet·Escrow 금액과 원장은 바뀌지 않습니다.
-        settlementReservationService.scheduleDueAt(lock.workCaseId(), now);
 
-        return AttendanceScanOutcome.recorded(
-                candidate.getWorkCaseId(), AttendanceType.CHECK_OUT, now, earlyConfirmedAt);
+        // 지급 예정만 예약합니다. Wallet·Escrow 금액과 원장은 바뀌지 않습니다.
+        LocalDateTime settlementDueAt = attemptedAt.plusHours(SETTLEMENT_DUE_HOURS);
+        settlementReservationService.schedulePayout(lock.workCaseId(), settlementDueAt);
+
+        return AttendanceScanOutcome.checkedOut(
+                candidate.getWorkCaseId(), attemptedAt, earlyConfirmedAt, settlementDueAt);
     }
 
     /**
-     * 거절을 감사 기록으로 남기고 결과로 돌려줍니다.
+     * 후보 조회와 잠금 사이에 READY 시간창이 닫혔는지 다시 봅니다.
      *
-     * <p>{@code work_cases}를 잠근 뒤의 거절도 같은 Transaction에서 기록합니다. 잠금을 이미
-     * 쥐고 있으므로 자기 자신과 FK 잠금을 두고 경쟁하지 않습니다.</p>
+     * <p>Scheduler가 그 사이에 결근으로 옮겼다면 상태 확인에서 걸리지만, 상태가 아직
+     * READY인 채로 경계만 지난 순간도 있습니다.</p>
      */
+    private boolean isReadyWindowClosed(WorkLifecycleSnapshot lock, LocalDateTime attemptedAt) {
+        return attemptedAt.isBefore(AttendanceWindowPolicy.readyOpensAt(lock.startsAt()))
+                || !attemptedAt.isBefore(AttendanceWindowPolicy.noShowAt(lock.startsAt()));
+    }
+
+    /** 지각은 저장 상태가 아니라 시작 시각과의 양의 차이를 분 단위로 올린 파생값입니다. */
+    private static int lateMinutes(LocalDateTime startsAt, LocalDateTime attemptedAt) {
+        if (!attemptedAt.isAfter(startsAt)) {
+            return 0;
+        }
+        return (int) Math.ceil(Duration.between(startsAt, attemptedAt).toNanos() / 60_000_000_000d);
+    }
+
     private AttendanceScanOutcome reject(
             AuthPrincipal principal,
             AttendanceScanCandidateRow candidate,
             QrTokenRow activeQr,
-            AttendanceType type,
+            AttendanceScanRequest request,
             AttendanceFailureReason reason,
             BigDecimal distance,
-            LocalDateTime now,
-            String message) {
+            LocalDateTime attemptedAt) {
         scanAuditor.recordRejection(
                 candidate.getWorkCaseId(),
                 principal.getUserId(),
                 activeQr.getId(),
-                type,
+                candidate.getScanType(),
                 reason,
-                distance,
-                now);
-        return AttendanceScanOutcome.rejected(candidate.getWorkCaseId(), reason, message);
+                toStoredDistance(distance),
+                request.getAccuracyMeters(),
+                ApiTimes.toLocalDateTime(request.getCapturedAt()),
+                attemptedAt);
+        return AttendanceScanOutcome.rejected(candidate.getWorkCaseId(), reason);
     }
 
     /**
      * 조건부 전이는 잠금 안에서 상태를 이미 확인했으므로 실패할 수 없습니다.
      *
-     * <p>그래도 0행이면 잠금 밖에서 상태를 바꾼 경로가 생겼다는 뜻입니다. 이때는 성공 근태
-     * 행과 상태가 어긋난 채 남지 않도록 Transaction 전체를 되돌립니다.</p>
+     * <p>그래도 0행이면 잠금 밖에서 상태를 바꾼 경로가 생겼다는 뜻입니다. 성공 근태 행과
+     * 상태가 어긋난 채 남지 않도록 Transaction 전체를 되돌립니다.</p>
      */
     private void requireTransitioned(boolean transitioned) {
         if (!transitioned) {
@@ -219,18 +250,20 @@ public class AttendanceScanExecutor {
             AuthPrincipal principal,
             AttendanceScanCandidateRow candidate,
             QrTokenRow activeQr,
+            AttendanceScanRequest request,
             AttendanceType type,
             BigDecimal distance,
-            LocalDateTime now,
+            LocalDateTime attemptedAt,
             LocalDateTime earlyCheckoutConfirmedAt) {
         AttendanceRecordInsertParam param = AttendanceRecordInsertParam.builder()
                 .workCaseId(candidate.getWorkCaseId())
                 .workerId(principal.getUserId())
                 .qrTokenId(activeQr.getId())
                 .attendanceType(type)
-                .capturedAt(now)
-                .attemptedAt(now)
-                .distanceMeters(distance)
+                .capturedAt(ApiTimes.toLocalDateTime(request.getCapturedAt()))
+                .attemptedAt(attemptedAt)
+                .distanceMeters(toStoredDistance(distance))
+                .accuracyMeters(request.getAccuracyMeters())
                 .result(AttendanceResult.SUCCESS)
                 .earlyCheckoutConfirmedAt(earlyCheckoutConfirmedAt)
                 .build();
@@ -240,16 +273,17 @@ public class AttendanceScanExecutor {
             }
         } catch (DuplicateKeyException exception) {
             // 행 잠금을 잡았더라도 최종 보장은 uk_attendance_records_success입니다.
-            throw new ConflictException("이미 기록된 근태입니다.");
+            throw AttendanceScanException.stateConflict("이미 기록된 근태입니다.");
         }
     }
 
     private QrTokenRow requireActiveQr(AuthPrincipal principal, QrTokenPayload payload) {
-        QrTokenRow activeQr = qrTokenMapper.findActiveByWorkplaceId(payload.workplaceId());
+        QrTokenRow activeQr =
+                qrTokenMapper.findActiveByWorkplaceIdForUpdate(payload.workplaceId());
         if (activeQr == null
                 || !MessageDigest.isEqual(activeQr.getTokenNonce(), payload.nonce())) {
             scanAuditor.logUnresolvedRejection(principal.getUserId(), "QR_TOKEN_REVOKED");
-            throw new ConflictException("사용할 수 없는 QR입니다. 사업장에 문의해 주세요.");
+            throw AttendanceScanException.qrRevoked();
         }
         return activeQr;
     }
@@ -257,32 +291,61 @@ public class AttendanceScanExecutor {
     /**
      * 지금 처리할 근무가 정확히 한 건인지 확인합니다.
      *
-     * <p>0건과 복수를 같은 메시지로 합칩니다. 구분해 알려주면 다른 사람의 근무 존재 여부를
-     * 추론할 수 있습니다.</p>
+     * <p>활성 후보가 없으면 같은 시간 범위의 완료 후보를 확인해 "이미 완료"와 "근무 없음"을
+     * 가릅니다. 서버는 시각이나 ID로 임의 선택하지 않습니다.</p>
      */
     private AttendanceScanCandidateRow requireSingleCandidate(
-            AuthPrincipal principal, long workplaceId, LocalDateTime now) {
-        List<AttendanceScanCandidateRow> candidates = attendanceRecordMapper.findScanCandidates(
+            AuthPrincipal principal, long workplaceId, LocalDateTime attemptedAt) {
+        List<AttendanceScanCandidateRow> candidates =
+                attendanceRecordMapper.findActiveScanCandidates(
+                        principal.getUserId(),
+                        workplaceId,
+                        AttendanceWindowPolicy.readyLatestStartsAt(attemptedAt),
+                        AttendanceWindowPolicy.readyEarliestStartsAt(attemptedAt),
+                        AttendanceWindowPolicy.checkOutEarliestEndsAt(attemptedAt));
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+        if (candidates.size() > 1) {
+            scanAuditor.logUnresolvedRejection(principal.getUserId(), "WORK_CASE_AMBIGUOUS");
+            throw AttendanceScanException.workCaseAmbiguous();
+        }
+
+        int completed = attendanceRecordMapper.countCompletedScanCandidates(
                 principal.getUserId(),
                 workplaceId,
-                AttendanceWindowPolicy.latestScannableStartsAt(now),
-                AttendanceWindowPolicy.earliestScannableEndsAt(now));
-        if (candidates.size() != 1) {
-            scanAuditor.logUnresolvedRejection(
-                    principal.getUserId(),
-                    candidates.isEmpty() ? "WORK_CASE_NOT_FOUND" : "WORK_CASE_AMBIGUOUS");
-            throw new ConflictException("지금 출퇴근할 근무를 찾을 수 없습니다.");
+                AttendanceWindowPolicy.readyLatestStartsAt(attemptedAt),
+                AttendanceWindowPolicy.checkOutEarliestEndsAt(attemptedAt));
+        if (completed == 1) {
+            scanAuditor.logUnresolvedRejection(principal.getUserId(), "ALREADY_COMPLETED");
+            throw AttendanceScanException.alreadyCompleted();
         }
-        return candidates.get(0);
+        if (completed > 1) {
+            scanAuditor.logUnresolvedRejection(principal.getUserId(), "WORK_CASE_AMBIGUOUS");
+            throw AttendanceScanException.workCaseAmbiguous();
+        }
+        scanAuditor.logUnresolvedRejection(principal.getUserId(), "WORK_CASE_NOT_FOUND");
+        throw AttendanceScanException.workCaseNotFound();
     }
 
+    /**
+     * 현재 사업장 좌표를 기준으로 거리를 계산합니다.
+     *
+     * <p>판정은 반올림하지 않은 Double 값으로 하고, 저장할 때만 소수 2자리로 줄입니다.
+     * 반올림한 값으로 판정하면 100m를 아주 조금 넘은 요청이 통과합니다.</p>
+     */
     private BigDecimal distanceMeters(
-            AttendanceScanCandidateRow candidate, AttendanceScanRequest request) {
-        return BigDecimal.valueOf(HaversineDistanceCalculator.distanceMeters(
-                        candidate.getWorkplaceLatitude().doubleValue(),
-                        candidate.getWorkplaceLongitude().doubleValue(),
-                        request.getLatitude(),
-                        request.getLongitude()))
-                .setScale(DISTANCE_SCALE, RoundingMode.HALF_UP);
+            WorkplaceLocationSnapshot workplace, AttendanceScanRequest request) {
+        double meters = HaversineDistanceCalculator.distanceMeters(
+                workplace.latitude().doubleValue(),
+                workplace.longitude().doubleValue(),
+                request.getLatitude().doubleValue(),
+                request.getLongitude().doubleValue());
+        return BigDecimal.valueOf(meters);
+    }
+
+    /** 저장 직전에만 컬럼 정밀도로 줄입니다. */
+    static BigDecimal toStoredDistance(BigDecimal distance) {
+        return distance == null ? null : distance.setScale(DISTANCE_SCALE, RoundingMode.HALF_UP);
     }
 }

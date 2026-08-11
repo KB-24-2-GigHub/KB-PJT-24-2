@@ -55,21 +55,21 @@ public class AttendanceLifecycleScheduler {
         processPhase(
                 "READY",
                 () -> lifecycleMapper.findReadyCandidateIds(
-                        AttendanceWindowPolicy.latestScannableStartsAt(now),
-                        AttendanceWindowPolicy.latestNoShowFreeStartsAt(now),
+                        AttendanceWindowPolicy.readyLatestStartsAt(now),
+                        AttendanceWindowPolicy.readyEarliestStartsAt(now),
                         BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToReady);
         processPhase(
                 "NO_SHOW",
                 () -> lifecycleMapper.findNoShowCandidateIds(
-                        AttendanceWindowPolicy.latestNoShowFreeStartsAt(now), BATCH_SIZE),
+                        AttendanceWindowPolicy.readyEarliestStartsAt(now), BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToNoShow);
         processPhase(
                 "CHECK_OUT_MISSING",
                 () -> lifecycleMapper.findCheckoutMissingCandidateIds(
-                        AttendanceWindowPolicy.earliestScannableEndsAt(now), BATCH_SIZE),
+                        AttendanceWindowPolicy.checkOutEarliestEndsAt(now), BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToCheckoutMissing);
     }

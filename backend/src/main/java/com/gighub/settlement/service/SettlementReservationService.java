@@ -9,10 +9,11 @@ public interface SettlementReservationService {
     void reserveWaiting(long workCaseId, long amount);
 
     /**
-     * 근태 완료 outer Transaction에 참여해 지급 예정 시각을 예약합니다.
+     * 근태 완료 outer Transaction에 참여해 지급을 예약합니다.
      *
-     * <p>status와 금액은 바꾸지 않습니다. Wallet·Escrow 자금은 이 호출로 움직이지
-     * 않습니다.</p>
+     * <p>{@code WAITING} 정산을 {@code SCHEDULED}로 옮기고 지급 예정 시각을 채웁니다. 금액은
+     * 바꾸지 않으며 Wallet·Escrow 자금은 이 호출로 움직이지 않습니다. 실제 지급은 M6가 이
+     * 예약을 소비해 처리합니다.</p>
      */
-    void scheduleDueAt(long workCaseId, LocalDateTime dueAt);
+    void schedulePayout(long workCaseId, LocalDateTime dueAt);
 }

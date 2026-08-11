@@ -35,14 +35,15 @@ public interface SettlementMapper {
             @Param("workCaseId") Long workCaseId);
 
     /**
-     * M5 퇴근 완료가 지급 예정 시각을 예약한다.
+     * M5 퇴근 완료가 지급을 예약한다.
      *
-     * <p>status와 금액은 바꾸지 않는다. WAITING이면서 아직 예약되지 않은 행에만 적용되므로
-     * 같은 근무의 재시도는 0행으로 멱등하다.</p>
+     * <p>{@code WAITING}이면서 아직 예약되지 않은 행만 {@code SCHEDULED}로 옮기고 지급 예정
+     * 시각을 채운다. 금액은 바꾸지 않고 자금도 움직이지 않는다. 이미 예약된 행은 0행이므로
+     * 같은 근무의 재시도가 예정 시각을 덮어쓰지 않는다.</p>
      *
      * @return 변경된 행 수
      */
-    int scheduleDueAtWaiting(
+    int scheduleWaitingPayout(
             @Param("workCaseId") Long workCaseId,
             @Param("dueAt") LocalDateTime dueAt);
 

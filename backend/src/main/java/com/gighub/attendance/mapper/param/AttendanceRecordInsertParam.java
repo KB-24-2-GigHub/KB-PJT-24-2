@@ -21,6 +21,7 @@ public class AttendanceRecordInsertParam {
     private final LocalDateTime capturedAt;
     private final LocalDateTime attemptedAt;
     private final BigDecimal distanceMeters;
+    private final BigDecimal accuracyMeters;
     private final AttendanceResult result;
     private final String failureReason;
     private final LocalDateTime earlyCheckoutConfirmedAt;

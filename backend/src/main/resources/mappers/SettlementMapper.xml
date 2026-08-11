@@ -61,13 +61,16 @@
     </select>
 
     <!--
-        M5 퇴근 완료가 정산 지급 시점을 예약한다. status·금액·다른 시각은 건드리지 않고
-        WAITING이면서 아직 예약되지 않은 행에만 due_at을 채운다. 이미 채워졌다면 같은 근무
-        재시도이므로 0행으로 조용히 멱등 처리한다.
+        M5 퇴근 완료가 정산 지급을 예약한다. WAITING이면서 아직 예약되지 않은 행만
+        SCHEDULED로 옮기고 지급 예정 시각을 함께 채운다. 금액과 승인·처리·완료 필드는
+        건드리지 않으며 자금은 M6가 이 예약을 소비해 옮긴다.
+
+        이미 예약된 행은 0행으로 남겨 같은 근무의 재시도가 예정 시각을 덮어쓰지 않게 한다.
     -->
-    <update id="scheduleDueAtWaiting">
+    <update id="scheduleWaitingPayout">
         UPDATE settlements
-        SET due_at     = #{dueAt},
+        SET status     = 'SCHEDULED',
+            due_at     = #{dueAt},
             updated_at = NOW(6)
         WHERE work_case_id = #{workCaseId}
           AND status = 'WAITING'

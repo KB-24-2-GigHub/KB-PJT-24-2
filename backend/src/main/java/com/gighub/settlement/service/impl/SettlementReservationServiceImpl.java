@@ -28,8 +28,9 @@ public class SettlementReservationServiceImpl implements SettlementReservationSe
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void scheduleDueAt(long workCaseId, LocalDateTime dueAt) {
-        // 재시도는 0행으로 조용히 멱등 처리하므로 영향 행 수를 검증하지 않습니다.
-        settlementMapper.scheduleDueAtWaiting(workCaseId, dueAt);
+    public void schedulePayout(long workCaseId, LocalDateTime dueAt) {
+        // 이미 예약된 근무는 0행입니다. 재시도를 실패로 바꾸지 않도록 영향 행 수를
+        // 검증하지 않습니다.
+        settlementMapper.scheduleWaitingPayout(workCaseId, dueAt);
     }
 }
