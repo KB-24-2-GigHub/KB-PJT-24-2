@@ -1,0 +1,53 @@
+# EC2 /opt/gighub/config/database.properties 작성 템플릿.
+#
+# 이 파일 자체는 실제 값을 담지 않는다. 서버로 복사한 뒤 <...> 부분을 실제 값으로
+# 바꾼다. 치환이 끝나면 아래 명령이 0 을 출력해야 한다.
+#
+#   grep -c "<" /opt/gighub/config/database.properties
+#
+# 권한은 600, 소유자는 ec2-user 로 유지한다. 이 파일에 실제 값을 채워 커밋하지 않는다.
+#
+# 파일 이름은 database 지만 애플리케이션 설정 전체를 담는다.
+# 기준: backend/config/database.example.properties
+
+# --- Database (RDS) -----------------------------------------------------------
+database.driver-class-name=com.mysql.cj.jdbc.Driver
+database.jdbc-url=jdbc:mysql://<rds-endpoint>:3306/kb_pjt?useSSL=true&requireSSL=true&serverTimezone=Asia%2FSeoul&characterEncoding=UTF-8
+database.username=<rds-user>
+database.password=<rds-password>
+
+database.pool.maximum-pool-size=10
+database.pool.minimum-idle=2
+database.pool.connection-timeout-ms=30000
+database.pool.validation-timeout-ms=5000
+
+# --- 초대 링크 ----------------------------------------------------------------
+# invite.web-origin 이 로컬 값으로 남으면 발급된 초대 URL 이
+# http://localhost:5173 을 가리켜 WORKER 가 접속할 수 없다.
+# 배포 후 초대 흐름이 조용히 깨지는 대표 원인이다.
+#
+#   openssl rand -base64 32
+invite.hmac.secret=<32자 이상 시크릿>
+invite.hmac.previous-secret=
+invite.web-origin=https://gighub.kro.kr
+
+# --- 고정 QR 서명 -------------------------------------------------------------
+#   openssl rand -base64 32
+qr.hmac.active-key-id=k1
+qr.hmac.key.k1=<base64 32바이트 키>
+
+# --- 계약 문서 저장 -----------------------------------------------------------
+# 컨테이너 내부 경로다. compose.prod.yaml 이 호스트 /opt/gighub/documents 를
+# 여기에 볼륨으로 연결한다.
+document.storage.base-path=/var/gighub/documents
+
+# --- 배포 전용 ----------------------------------------------------------------
+# 두 키 모두 로컬에서는 설정하지 않는다. 미설정 시 현재 로컬 동작이 유지된다.
+#
+# cors.allowed-origins: /api/** 를 credentials 와 함께 호출할 수 있는 브라우저
+#   Origin 목록(콤마 구분). 미설정 시 http://localhost:5173 만 허용한다.
+# security.cookie.domain: XSRF-TOKEN 쿠키를 상위 도메인으로 넓혀,
+#   다른 host 의 Frontend JavaScript 가 읽을 수 있게 한다.
+#   미설정 시 host-only 다.
+cors.allowed-origins=https://gighub.kro.kr
+security.cookie.domain=gighub.kro.kr
