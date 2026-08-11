@@ -65,5 +65,30 @@ services:
       db:
         condition: service_healthy
 
+  # 초대 수락 E2E(#267)의 사전 데이터만 넣는다. 근무와 초대는 이 서비스가 아니라
+  # 실제 OWNER API 흐름에서 만들어야 Token 원문이 발급 응답에서만 나온다.
+  seed-invitation-accept:
+    image: mysql:8.4.10
+    profiles: ["tools"]
+    environment:
+      MYSQL_HOST: db
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PWD: ${MYSQL_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+    volumes:
+      - ./backend/src/test/resources/db/seed:/seed:ro
+    entrypoint: ["sh", "-c"]
+    command:
+      - >
+        exec mysql
+        --host="$${MYSQL_HOST}"
+        --user="$${MYSQL_USER}"
+        --default-character-set=utf8mb4
+        "$${MYSQL_DATABASE}"
+        < /seed/test-invitation-accept.sql
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   mysql-data:
