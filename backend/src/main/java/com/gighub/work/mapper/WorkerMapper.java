@@ -44,13 +44,18 @@ public interface WorkerMapper {
     /**
      * 인증 WORKER의 확정 이후 근무 목록 한 Page를 정렬이 고정된 순서로 조회합니다.
      *
-     * <p>정렬은 {@code starts_at DESC, id DESC}로 고정됩니다. {@code worker_id} 조건이 미매칭
-     * {@code DRAFT}를 자연스럽게 제외하므로 상태를 별도로 걸러내지 않습니다.</p>
+     * <p>정렬은 {@code starts_at DESC, id DESC}로 고정됩니다. 범위는 배정이 확정된 이후 상태
+     * 허용 목록으로 제한합니다. {@code worker_id}만으로는 부족합니다. 배정 뒤 취소된 근무는
+     * {@code worker_id}가 남은 채 {@code CANCELED}가 되므로, 상태를 걸지 않으면 성립하지 않은
+     * 근무가 본인 이력에 섞입니다.</p>
      */
     List<WorkerWorkCaseRow> findPage(WorkerWorkCaseListQuery query);
 
     /**
      * 같은 조건으로 전체 건수를 셉니다. Page Metadata의 {@code totalElements}에 씁니다.
+     *
+     * <p>{@link #findPage}와 같은 조건 조각을 공유해야 {@code totalElements}와 실제 반환된
+     * {@code content}가 어긋나지 않습니다.</p>
      */
     long countByWorker(WorkerWorkCaseListQuery query);
 }
