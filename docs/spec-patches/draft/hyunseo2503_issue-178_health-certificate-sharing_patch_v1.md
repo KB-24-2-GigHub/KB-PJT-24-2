@@ -10,6 +10,7 @@ targets:
   - operation: DELETE /api/documents/{documentId}/shares/{workplaceId}
   - operation: GET /api/worker/workplaces
   - decision: DEC-DOCUMENT-SHARE-UNIT
+  - decision: DEC-WORKPLACE-LIST
 ---
 
 # SPEC-178-03: 보건증 공유 단위·수명주기 계약
@@ -25,6 +26,10 @@ targets:
   `DRAFT`, `COMPLETED`, `NO_SHOW`, `CHECK_OUT_MISSING`, `CANCELED`는 신규 공유 생성
   대상이 아니다. 이미 만들어진 공유의 열람 가능 기간은 이 조건과 별개로 §1
   (`SPEC-178-01`)의 `ends_at > NOW()` 기준을 그대로 따른다.
+- 대상 사업장은 `DEC-WORKPLACE-LIST`에 따라 `status='ACTIVE'`여야 한다. `ACTIVE`가
+  아닌 사업장은 확정 근무 건 존재 여부와 무관하게 변환 대상에서 제외한다.
+- 한 근무자는 한 사업장에 확정 근무 건을 최대 하나만 가진다고 가정한다. 같은
+  사업장에 대한 근무 건 중복 배정은 이 계약의 범위 밖이다.
 - 해당 사업장에 조건을 만족하는 근무 건이 하나도 없으면 `400 VALIDATION_ERROR`이며
   `fieldErrors`의 `field`는 `workplaceId`다.
 - 공유 대상 사장님(`shared_with_user_id`)은 그 근무 건의 근무 계약 소유자로 서버가
@@ -43,16 +48,17 @@ targets:
   문서의 활성 공유를 전부 철회한다. 철회할 활성 공유가 없어도 `204`를 반환하며 존재
   여부를 오류로 구분하지 않는다.
 
-`GET /api/worker/workplaces`는 요청자 본인이 위와 같은 조건(`ACCEPTED` 또는 `READY`
-근무 건 보유)을 만족하는 사업장을 `workplaceId`, `workplaceName`, `ownerName`,
-`startsAt`, `endsAt`로 반환한다. 사업장별로 한 건만 반환하고 `startsAt` 오름차순으로
-정렬하며 근무 건 식별자는 포함하지 않는다. 이 목록의 선정 조건은 공유 생성 시
-`workplaceId` 변환 조건과 동일하다.
+`GET /api/worker/workplaces`는 요청자 본인이 위와 같은 조건(`ACTIVE` 사업장에 `ACCEPTED`
+또는 `READY` 근무 건 보유)을 만족하는 사업장을 `workplaceId`, `workplaceName`,
+`ownerName`, `startsAt`, `endsAt`로 반환한다. 사업장별로 한 건만 반환하고 `startsAt`
+오름차순으로 정렬하며 근무 건 식별자는 포함하지 않는다. 이 목록의 선정 조건은 공유
+생성 시 `workplaceId` 변환 조건과 동일하다.
 
 ## 완료 조건
 
-- [ ] `ACCEPTED`·`READY` 상태의 확정 근무가 있는 사업장에만 새 보건증 공유를 만들 수 있다.
+- [ ] `ACCEPTED`·`READY` 상태의 확정 근무가 있는 `ACTIVE` 사업장에만 새 보건증 공유를 만들 수 있다.
 - [ ] `IN_PROGRESS`를 포함해 출근 이후 상태이거나 미확정·종료된 근무의 사업장은 신규 공유 생성 대상에서 `400 VALIDATION_ERROR`로 거부된다.
+- [ ] `ACTIVE`가 아닌 사업장은 확정 근무 건이 있어도 신규 공유 생성과 `GET /api/worker/workplaces` 목록에서 제외된다.
 - [ ] 대상 근무 건이 없거나 본인 소유가 아닌 문서·근로계약서·만료 보건증 요청이 모두 같은 `400 VALIDATION_ERROR`로 응답되고 사유가 세분화되지 않는다.
 - [ ] 공유 대상 사장님은 요청 Body와 무관하게 서버가 근무 건 기준으로 도출한다.
 - [ ] 같은 문서·근무 건 조합에 활성 공유가 이미 있으면 `409 CONFLICT`다.
