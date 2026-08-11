@@ -12,6 +12,7 @@
     "check:precommit": "node scripts/run-precommit.js",
     "db:migrate": "docker compose --profile tools run --rm flyway migrate",
     "db:seed:contract": "npm run db:migrate && docker compose --profile tools run --rm seed-contract-test",
+    "db:fixture:invite": "npm run db:migrate && node scripts/prepare-invitation-fixture.js --confirm-local",
     "lint": "node scripts/run-lint.js all",
     "lint:fe": "node scripts/run-lint.js frontend",
     "lint:be": "node scripts/run-lint.js backend",
