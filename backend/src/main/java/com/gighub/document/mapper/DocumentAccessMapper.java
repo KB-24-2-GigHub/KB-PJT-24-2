@@ -1,19 +1,29 @@
 package com.gighub.document.mapper;
 
-import com.gighub.document.dto.DocumentFileVersion;
 import com.gighub.document.mapper.param.DocumentAccessLogParam;
+import com.gighub.document.mapper.result.DocumentFileAccessRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 /** 당사자 파일 접근 권한 검사와 접근 감사 기록을 담당합니다(DOC-011). */
 @Mapper
 public interface DocumentAccessMapper {
 
-    /** 일반 사용자에게 반환할 SIGNED Version 2를 조회한다(없으면 null). */
-    DocumentFileVersion findSignedVersionForAccess(@Param("documentId") Long documentId);
+    /** 문서와 허용 Version을 잠가 파일 접근의 선형화 지점을 만듭니다. */
+    DocumentFileAccessRow lockFileAccessContext(@Param("documentId") Long documentId);
 
-    /** 문서가 참조하는 불변 계약 Snapshot의 OWNER 또는 WORKER인지 확인한다. */
-    boolean isContractParty(
+    /** 현재도 유효한 보건증 공유 한 건을 잠급니다. */
+    Long lockValidHealthShare(
+            @Param("documentId") Long documentId,
+            @Param("userId") Long userId,
+            @Param("now") LocalDateTime now,
+            @Param("today") LocalDate today);
+
+    /** 철회·만료로 사라진 접근과 처음부터 권한 없는 접근의 감사 사유를 구분합니다. */
+    boolean hasHealthShareHistory(
             @Param("documentId") Long documentId,
             @Param("userId") Long userId);
 

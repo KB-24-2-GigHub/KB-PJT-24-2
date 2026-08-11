@@ -4,115 +4,299 @@
 
 <mapper namespace="com.gighub.document.mapper.DocumentQueryMapper">
 
-    <resultMap id="documentResult" type="com.gighub.document.dto.Document">
-        <constructor>
-            <idArg column="id" javaType="java.lang.Long"/>
-            <arg column="created_by_user_id" javaType="java.lang.Long"/>
-            <arg column="owner_user_id" javaType="java.lang.Long"/>
-            <arg column="work_case_id" javaType="java.lang.Long"/>
-            <arg column="document_type" javaType="java.lang.String"/>
-            <arg column="status" javaType="java.lang.String"/>
-            <arg column="issued_on" javaType="java.time.LocalDate"/>
-            <arg column="expires_on" javaType="java.time.LocalDate"/>
-            <arg column="created_at" javaType="java.time.LocalDateTime"/>
-            <arg column="updated_at" javaType="java.time.LocalDateTime"/>
-        </constructor>
-    </resultMap>
-
-    <resultMap id="documentVersionResult"
-               type="com.gighub.document.dto.DocumentVersion">
-        <constructor>
-            <idArg column="id" javaType="java.lang.Long"/>
-            <arg column="document_id" javaType="java.lang.Long"/>
-            <arg column="version_no" javaType="java.lang.Integer"/>
-            <arg column="version_type" javaType="java.lang.String"/>
-            <arg column="storage_key" javaType="java.lang.String"/>
-            <arg column="mime_type" javaType="java.lang.String"/>
-            <arg column="size_bytes" javaType="java.lang.Long"/>
-            <arg column="created_at" javaType="java.time.LocalDateTime"/>
-        </constructor>
-    </resultMap>
-
-    <resultMap id="documentListItemResult"
-               type="com.gighub.document.dto.DocumentListItem">
+    <resultMap id="documentListRowResult"
+               type="com.gighub.document.mapper.result.DocumentListRow">
         <constructor>
             <idArg column="document_id" javaType="java.lang.Long"/>
-            <arg column="type" javaType="java.lang.String"/>
+            <arg column="doc_type" javaType="java.lang.String"/>
             <arg column="status" javaType="java.lang.String"/>
-            <arg column="issued_on" javaType="java.time.LocalDate"/>
-            <arg column="expires_on" javaType="java.time.LocalDate"/>
-            <arg column="owner_name" javaType="java.lang.String"/>
+            <arg column="mime_type" javaType="java.lang.String"/>
+            <arg column="issued_date" javaType="java.time.LocalDate"/>
+            <arg column="expires_date" javaType="java.time.LocalDate"/>
+            <arg column="latest_version" javaType="java.lang.Integer"/>
             <arg column="source" javaType="java.lang.String"/>
+            <arg column="owner_name" javaType="java.lang.String"/>
+            <arg column="shared_by_name" javaType="java.lang.String"/>
+            <arg column="workplace_id" javaType="java.lang.Long"/>
+            <arg column="workplace_name" javaType="java.lang.String"/>
             <arg column="work_case_id" javaType="java.lang.Long"/>
+            <arg column="worker_name" javaType="java.lang.String"/>
+            <arg column="can_share" javaType="java.lang.Boolean"/>
             <arg column="created_at" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
-    <resultMap id="documentShareResult"
-               type="com.gighub.document.dto.DocumentShare">
+    <resultMap id="documentShareRowResult"
+               type="com.gighub.document.mapper.result.DocumentShareRow">
         <constructor>
-            <idArg column="id" javaType="java.lang.Long"/>
-            <arg column="document_id" javaType="java.lang.Long"/>
+            <idArg column="share_id" javaType="java.lang.Long"/>
+            <arg column="workplace_id" javaType="java.lang.Long"/>
+            <arg column="workplace_name" javaType="java.lang.String"/>
             <arg column="work_case_id" javaType="java.lang.Long"/>
-            <arg column="shared_with_user_id" javaType="java.lang.Long"/>
             <arg column="status" javaType="java.lang.String"/>
-            <arg column="created_at" javaType="java.time.LocalDateTime"/>
+            <arg column="shared_at" javaType="java.time.LocalDateTime"/>
+            <arg column="revoked_at" javaType="java.time.LocalDateTime"/>
+            <arg column="effective_until" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
-    <select id="findDocumentById" resultMap="documentResult">
-        SELECT id, created_by_user_id, owner_user_id, work_case_id,
-               document_type, status, issued_on, expires_on,
-               created_at, updated_at
-        FROM documents
-        WHERE id = #{documentId}
-    </select>
+    <!--
+      OWN 문서는 문서당 한 행, SHARED 보건증은 근무 관계당 한 행입니다.
+      같은 SQL 조각을 목록과 count에서 사용해 Page totalElements가 실제 행 수와 어긋나지 않게 합니다.
+    -->
+    <sql id="visibleDocumentRows">
+        <choose>
+            <when test="role == 'OWNER'">
+                SELECT d.id AS document_id,
+                       d.document_type AS doc_type,
+                       'ACTIVE' AS status,
+                       dv.mime_type AS mime_type,
+                       d.issued_on AS issued_date,
+                       NULL AS expires_date,
+                       dv.version_no AS latest_version,
+                       'OWN' AS source,
+                       owner_user.name AS owner_name,
+                       NULL AS shared_by_name,
+                       wp.id AS workplace_id,
+                       wp.name AS workplace_name,
+                       wc.id AS work_case_id,
+                       worker_user.name AS worker_name,
+                       FALSE AS can_share,
+                       d.created_at AS created_at
+                FROM documents d
+                JOIN document_versions dv
+                  ON dv.document_id = d.id
+                 AND dv.version_type = 'SIGNED'
+                 AND dv.version_no = 2
+                JOIN work_contracts contract ON contract.work_case_id = d.work_case_id
+                JOIN work_cases wc ON wc.id = d.work_case_id
+                JOIN workplaces wp ON wp.id = wc.workplace_id
+                JOIN users owner_user ON owner_user.id = d.owner_user_id
+                JOIN users worker_user ON worker_user.id = contract.worker_id
+                WHERE d.owner_user_id = #{userId}
+                  AND contract.employer_id = #{userId}
+                  AND d.document_type = 'EMPLOYMENT_CONTRACT'
+                  AND d.status = 'ACTIVE'
 
-    <select id="findVersionsByDocumentId" resultMap="documentVersionResult">
-        SELECT id, document_id, version_no, version_type,
-               storage_key, mime_type, size_bytes, created_at
-        FROM document_versions
-        WHERE document_id = #{documentId}
-        ORDER BY version_no DESC
-    </select>
+                UNION ALL
 
-    <select id="findDocuments" resultMap="documentListItemResult">
-        SELECT d.id            AS document_id,
-        d.document_type AS type,
-        d.status        AS status,
-        d.issued_on     AS issued_on,
-        d.expires_on    AS expires_on,
-        u.name          AS owner_name,
-        'OWN'           AS source,
-        d.work_case_id  AS work_case_id,
-        d.created_at    AS created_at
-        FROM documents d
-        JOIN users u ON u.id = d.owner_user_id
-        WHERE d.owner_user_id = #{userId}
-        AND d.status != 'DELETED'
-        <if test="documentType != null">
-            AND d.document_type = #{documentType}
+                SELECT d.id AS document_id,
+                       d.document_type AS doc_type,
+                       'ACTIVE' AS status,
+                       dv.mime_type AS mime_type,
+                       d.issued_on AS issued_date,
+                       d.expires_on AS expires_date,
+                       dv.version_no AS latest_version,
+                       'SHARED' AS source,
+                       document_owner.name AS owner_name,
+                       document_owner.name AS shared_by_name,
+                       wp.id AS workplace_id,
+                       wp.name AS workplace_name,
+                       wc.id AS work_case_id,
+                       document_owner.name AS worker_name,
+                       FALSE AS can_share,
+                       d.created_at AS created_at
+                FROM document_shares share
+                JOIN documents d ON d.id = share.document_id
+                JOIN document_versions dv
+                  ON dv.document_id = d.id
+                 AND dv.version_type = 'ORIGINAL'
+                 AND dv.version_no = 1
+                JOIN work_cases wc ON wc.id = share.work_case_id
+                JOIN workplaces wp ON wp.id = wc.workplace_id
+                JOIN users document_owner ON document_owner.id = d.owner_user_id
+                WHERE share.shared_with_user_id = #{userId}
+                  AND share.purpose = 'HEALTH_CERTIFICATE'
+                  AND share.status = 'ACTIVE'
+                  AND d.document_type = 'HEALTH_CERTIFICATE'
+                  AND d.status = 'ACTIVE'
+                  AND d.expires_on IS NOT NULL
+                  AND d.expires_on &gt;= #{today}
+                  AND wc.worker_id = d.owner_user_id
+                  AND wc.employer_id = #{userId}
+                  AND wc.status IN ('ACCEPTED', 'READY', 'IN_PROGRESS')
+                  AND #{now} &lt; wc.ends_at
+                  AND wp.owner_user_id = #{userId}
+                  AND wp.status = 'ACTIVE'
+            </when>
+            <when test="role == 'WORKER'">
+                SELECT d.id AS document_id,
+                       d.document_type AS doc_type,
+                       CASE
+                           WHEN d.expires_on &lt; #{today} THEN 'EXPIRED'
+                           ELSE 'ACTIVE'
+                       END AS status,
+                       dv.mime_type AS mime_type,
+                       d.issued_on AS issued_date,
+                       d.expires_on AS expires_date,
+                       dv.version_no AS latest_version,
+                       'OWN' AS source,
+                       document_owner.name AS owner_name,
+                       NULL AS shared_by_name,
+                       NULL AS workplace_id,
+                       NULL AS workplace_name,
+                       NULL AS work_case_id,
+                       NULL AS worker_name,
+                       EXISTS (
+                           SELECT 1
+                           FROM work_cases share_case
+                           JOIN workplaces share_workplace
+                             ON share_workplace.id = share_case.workplace_id
+                            AND share_workplace.status = 'ACTIVE'
+                           WHERE share_case.worker_id = #{userId}
+                             AND share_case.status IN ('ACCEPTED', 'READY')
+                             AND #{now} &lt; share_case.ends_at
+                             AND d.expires_on &gt;= #{today}
+                             AND NOT EXISTS (
+                                 SELECT 1
+                                 FROM document_shares existing_share
+                                 WHERE existing_share.document_id = d.id
+                                   AND existing_share.work_case_id = share_case.id
+                                   AND existing_share.shared_with_user_id = share_case.employer_id
+                                   AND existing_share.purpose = 'HEALTH_CERTIFICATE'
+                                   AND existing_share.status = 'ACTIVE'
+                             )
+                       ) AS can_share,
+                       d.created_at AS created_at
+                FROM documents d
+                JOIN document_versions dv
+                  ON dv.document_id = d.id
+                 AND dv.version_type = 'ORIGINAL'
+                 AND dv.version_no = 1
+                JOIN users document_owner ON document_owner.id = d.owner_user_id
+                WHERE d.owner_user_id = #{userId}
+                  AND d.document_type = 'HEALTH_CERTIFICATE'
+                  AND d.status = 'ACTIVE'
+                  AND d.expires_on IS NOT NULL
+
+                UNION ALL
+
+                SELECT d.id AS document_id,
+                       d.document_type AS doc_type,
+                       'ACTIVE' AS status,
+                       dv.mime_type AS mime_type,
+                       d.issued_on AS issued_date,
+                       NULL AS expires_date,
+                       dv.version_no AS latest_version,
+                       'SHARED' AS source,
+                       owner_user.name AS owner_name,
+                       owner_user.name AS shared_by_name,
+                       wp.id AS workplace_id,
+                       wp.name AS workplace_name,
+                       wc.id AS work_case_id,
+                       worker_user.name AS worker_name,
+                       FALSE AS can_share,
+                       d.created_at AS created_at
+                FROM documents d
+                JOIN document_versions dv
+                  ON dv.document_id = d.id
+                 AND dv.version_type = 'SIGNED'
+                 AND dv.version_no = 2
+                JOIN work_contracts contract ON contract.work_case_id = d.work_case_id
+                JOIN work_cases wc ON wc.id = d.work_case_id
+                JOIN workplaces wp ON wp.id = wc.workplace_id
+                JOIN users owner_user ON owner_user.id = d.owner_user_id
+                JOIN users worker_user ON worker_user.id = contract.worker_id
+                WHERE contract.worker_id = #{userId}
+                  AND d.document_type = 'EMPLOYMENT_CONTRACT'
+                  AND d.status = 'ACTIVE'
+            </when>
+            <otherwise>
+                SELECT NULL AS document_id,
+                       NULL AS doc_type,
+                       NULL AS status,
+                       NULL AS mime_type,
+                       NULL AS issued_date,
+                       NULL AS expires_date,
+                       NULL AS latest_version,
+                       NULL AS source,
+                       NULL AS owner_name,
+                       NULL AS shared_by_name,
+                       NULL AS workplace_id,
+                       NULL AS workplace_name,
+                       NULL AS work_case_id,
+                       NULL AS worker_name,
+                       FALSE AS can_share,
+                       NULL AS created_at
+                WHERE FALSE
+            </otherwise>
+        </choose>
+    </sql>
+
+    <select id="findDocuments" resultMap="documentListRowResult">
+        SELECT visible.*
+        FROM (
+            <include refid="visibleDocumentRows"/>
+        ) visible
+        WHERE 1 = 1
+        <if test="workplaceId != null">
+            AND visible.workplace_id = #{workplaceId}
         </if>
-        ORDER BY d.created_at DESC, d.id DESC
+        <if test="docType != null">
+            AND visible.doc_type = #{docType}
+        </if>
+        ORDER BY visible.created_at DESC,
+                 visible.document_id DESC,
+                 visible.work_case_id DESC
         LIMIT #{size} OFFSET #{offset}
     </select>
 
-    <select id="countDocuments" resultType="int">
+    <select id="countDocuments" resultType="long">
         SELECT COUNT(*)
-        FROM documents d
-        WHERE d.owner_user_id = #{userId}
-        AND d.status != 'DELETED'
-        <if test="documentType != null">
-            AND d.document_type = #{documentType}
+        FROM (
+            <include refid="visibleDocumentRows"/>
+        ) visible
+        WHERE 1 = 1
+        <if test="workplaceId != null">
+            AND visible.workplace_id = #{workplaceId}
+        </if>
+        <if test="docType != null">
+            AND visible.doc_type = #{docType}
         </if>
     </select>
 
-    <select id="findSharesByDocumentId" resultMap="documentShareResult">
-        SELECT id, document_id, work_case_id, shared_with_user_id,
-               status, created_at
-        FROM document_shares
-        WHERE document_id = #{documentId}
-        ORDER BY created_at DESC
+    <select id="isOwnedActiveHealthDocument" resultType="boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM documents d
+        WHERE d.id = #{documentId}
+          AND d.owner_user_id = #{ownerUserId}
+          AND d.document_type = 'HEALTH_CERTIFICATE'
+          AND d.status = 'ACTIVE'
+    </select>
+
+    <select id="findSharesByDocumentId" resultMap="documentShareRowResult">
+        SELECT share.id AS share_id,
+               wp.id AS workplace_id,
+               wp.name AS workplace_name,
+               wc.id AS work_case_id,
+               CASE
+                   WHEN share.status = 'REVOKED' THEN 'REVOKED'
+                   WHEN share.status != 'ACTIVE'
+                     OR d.status != 'ACTIVE'
+                     OR d.expires_on IS NULL
+                     OR d.expires_on &lt; #{today}
+                     OR wc.worker_id != d.owner_user_id
+                     OR wc.employer_id != share.shared_with_user_id
+                     OR wp.owner_user_id != share.shared_with_user_id
+                     OR wp.status != 'ACTIVE'
+                     OR wc.status NOT IN ('ACCEPTED', 'READY', 'IN_PROGRESS')
+                     OR #{now} &gt;= wc.ends_at
+                       THEN 'EXPIRED'
+                   ELSE 'ACTIVE'
+               END AS status,
+               share.created_at AS shared_at,
+               share.revoked_at AS revoked_at,
+               LEAST(
+                   wc.ends_at,
+                   TIMESTAMP(DATE_ADD(d.expires_on, INTERVAL 1 DAY))
+               ) AS effective_until
+        FROM document_shares share
+        JOIN documents d ON d.id = share.document_id
+        JOIN work_cases wc ON wc.id = share.work_case_id
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        WHERE share.document_id = #{documentId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
+        ORDER BY share.created_at DESC, share.id DESC
     </select>
 
 </mapper>

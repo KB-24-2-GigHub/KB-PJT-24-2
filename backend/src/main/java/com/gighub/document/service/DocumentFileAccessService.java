@@ -1,172 +1,158 @@
 package com.gighub.document.service;
 
-import com.gighub.document.dto.Document;
-import com.gighub.document.dto.DocumentFileVersion;
-import com.gighub.document.exception.DocumentAccessDeniedException;
-import com.gighub.document.exception.DocumentNotFoundException;
-import com.gighub.document.mapper.DocumentAccessMapper;
-import com.gighub.document.mapper.DocumentQueryMapper;
-import com.gighub.document.mapper.param.DocumentAccessLogParam;
+import com.gighub.document.mapper.result.DocumentFileAccessRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.DocumentStorageIntegrityException;
 import com.gighub.document.storage.Sha256;
-import lombok.RequiredArgsConstructor;
+import com.gighub.member.domain.UserRole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.Locale;
+import java.util.Set;
 
-/**
- * 계약 당사자 파일 접근을 승인 범위대로 검증하고 {@code document_access_logs}에 기록합니다
- * (DOC-011).
- *
- * <p>존재하지 않는 문서는 감사 대상 접근이 아니므로 기록 없이
- * {@link DocumentNotFoundException}을 던진다. 조회된 문서의 상태·서명본·당사자 여부와
- * 파일 무결성에 따른 허용·거부 결정은 {@code document_access_logs}에 남긴다.</p>
- */
+/** 짧은 DB 접근 Transaction 사이에서 잠금 없이 문서 파일을 읽고 검증합니다. */
 @Service
-@RequiredArgsConstructor
 public class DocumentFileAccessService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentFileAccessService.class);
 
-    private static final String STATUS_ACTIVE = "ACTIVE";
-    private static final String RESULT_ALLOWED = "ALLOWED";
-    private static final String RESULT_DENIED = "DENIED";
-    private static final String DENIAL_PARTY_ACCESS = "PARTY_ACCESS_DENIED";
-    private static final String DENIAL_DOCUMENT_UNAVAILABLE = "DOCUMENT_UNAVAILABLE";
-    private static final String DENIAL_SIGNED_VERSION_UNAVAILABLE = "SIGNED_VERSION_UNAVAILABLE";
-    private static final String DENIAL_FILE_UNAVAILABLE = "FILE_UNAVAILABLE";
-    private static final String DENIAL_CHECKSUM_MISMATCH = "CHECKSUM_MISMATCH";
-    private static final String ACTION_VIEW = "CONTRACT_FILE_VIEW";
-    private static final String ACTION_DOWNLOAD = "CONTRACT_FILE_DOWNLOAD";
     private static final String CONTRACT_DOCUMENT_TYPE = "EMPLOYMENT_CONTRACT";
+    private static final String HEALTH_DOCUMENT_TYPE = "HEALTH_CERTIFICATE";
+    private static final Set<String> SAFE_MIME_TYPES =
+            Set.of("application/pdf", "image/jpeg", "image/png");
 
-    private final DocumentQueryMapper documentQueryMapper;
-    private final DocumentAccessMapper documentAccessMapper;
+    private final DocumentFileAccessTransaction accessTransaction;
     private final DocumentStorageAdapter storageAdapter;
 
-    public DocumentFileResult loadFile(Long documentId, Long principalUserId, String mode) {
-        Document document = documentQueryMapper.findDocumentById(documentId);
-        if (document == null) {
-            throw new DocumentNotFoundException("문서를 찾을 수 없습니다.");
-        }
+    @Autowired
+    public DocumentFileAccessService(
+            DocumentFileAccessTransaction accessTransaction,
+            DocumentStorageAdapter storageAdapter) {
+        this.accessTransaction = accessTransaction;
+        this.storageAdapter = storageAdapter;
+    }
 
-        DocumentFileVersion version = documentAccessMapper.findSignedVersionForAccess(documentId);
-        if (!CONTRACT_DOCUMENT_TYPE.equals(document.getDocumentType())
-                || !STATUS_ACTIVE.equals(document.getStatus())) {
-            denyIntegrity(documentId, version, principalUserId, mode,
-                    DENIAL_DOCUMENT_UNAVAILABLE, "계약 문서를 사용할 수 없습니다.");
-        }
-        if (version == null) {
-            denyIntegrity(documentId, null, principalUserId, mode,
-                    DENIAL_SIGNED_VERSION_UNAVAILABLE, "서명된 계약 문서를 사용할 수 없습니다.");
-        }
+    public DocumentFileResult loadFile(
+            Long documentId,
+            Long actorUserId,
+            UserRole actorRole,
+            String mode) {
+        DocumentFileAccessRow candidate = accessTransaction.prepareAccess(
+                documentId, actorUserId, actorRole, mode);
 
-        if (!documentAccessMapper.isContractParty(documentId, principalUserId)) {
-            logAccess(documentId, version.getId(), principalUserId, mode,
-                    RESULT_DENIED, DENIAL_PARTY_ACCESS);
-            throw new DocumentAccessDeniedException("문서에 접근할 권한이 없습니다.");
-        }
+        // prepare Transaction이 끝난 뒤에만 저장소 I/O를 수행해 DB 잠금을 오래 점유하지 않습니다.
+        DocumentFileReadResult readResult = readVerifiedContent(candidate);
+        DocumentFileAccessRow current = accessTransaction.finalizeAccess(
+                candidate, readResult, actorUserId, actorRole, mode);
 
-        byte[] content = readVerifiedContent(version, principalUserId, mode);
-        logAccess(documentId, version.getId(), principalUserId, mode, RESULT_ALLOWED, null);
-
+        boolean safeMime = SAFE_MIME_TYPES.contains(normalizedMime(current.getMimeType()));
+        String responseMime = safeMime
+                ? normalizedMime(current.getMimeType())
+                : "application/octet-stream";
         return DocumentFileResult.builder()
-                .content(content)
-                .mimeType(version.getMimeType())
-                .fileName(fileName(document, version))
+                .content(readResult.getContent())
+                .mimeType(responseMime)
+                .fileName(fileName(current, responseMime))
+                .asciiFileName(asciiFileName(current, responseMime))
+                .forceAttachment(!safeMime)
                 .build();
     }
 
-    private void logAccess(
-            Long documentId, Long versionId, Long actorUserId, String mode,
-            String result, String denialReason) {
-        int inserted = documentAccessMapper.insertAccessLog(DocumentAccessLogParam.builder()
-                .documentId(documentId)
-                .documentVersionId(versionId)
-                .actorUserId(actorUserId)
-                .action(actionFor(mode))
-                .result(result)
-                .denialReason(denialReason)
-                .build());
-        if (inserted != 1) {
-            throw new IllegalStateException("계약 문서 접근 감사를 기록하지 못했습니다.");
-        }
-    }
-
-    private String actionFor(String mode) {
-        return "download".equals(mode) ? ACTION_DOWNLOAD : ACTION_VIEW;
-    }
-
-    private byte[] readVerifiedContent(
-            DocumentFileVersion version, Long principalUserId, String mode) {
+    private DocumentFileReadResult readVerifiedContent(DocumentFileAccessRow row) {
         boolean checksumMismatch = false;
 
         try {
-            if (storageAdapter.exists(version.getStorageKey())) {
-                byte[] content = storageAdapter.read(version.getStorageKey());
-                if (matchesChecksum(content, version.getChecksum())) {
-                    return content;
+            if (storageAdapter.exists(row.getStorageKey())) {
+                byte[] content = storageAdapter.read(row.getStorageKey());
+                if (matchesChecksum(content, row.getChecksum())) {
+                    return DocumentFileReadResult.verified(content);
                 }
                 checksumMismatch = true;
             }
         } catch (DocumentStorageIntegrityException failure) {
-            log.warn("계약 문서 최종 Object를 읽지 못했습니다. documentId={}",
-                    version.getDocumentId(), failure);
+            // 저장 Key나 개인 정보가 예외 메시지에 섞일 수 있어 구조화된 이유만 기록합니다.
+            log.warn("문서 파일 최종 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
         }
 
-        String pendingKey = ContractStorageKeys.pendingKey(
-                version.getWorkCaseId(), version.getDocumentId(), version.getVersionNo());
-        try {
-            if (storageAdapter.exists(pendingKey)) {
-                byte[] pendingContent = storageAdapter.read(pendingKey);
-                if (matchesChecksum(pendingContent, version.getChecksum())) {
-                    promoteFallbackQuietly(version, pendingKey);
-                    return pendingContent;
+        if (CONTRACT_DOCUMENT_TYPE.equals(row.getDocType())) {
+            String pendingKey = ContractStorageKeys.pendingKey(
+                    row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo());
+            try {
+                if (storageAdapter.exists(pendingKey)) {
+                    byte[] pendingContent = storageAdapter.read(pendingKey);
+                    if (matchesChecksum(pendingContent, row.getChecksum())) {
+                        promoteFallbackQuietly(row, pendingKey);
+                        return DocumentFileReadResult.verified(pendingContent);
+                    }
+                    checksumMismatch = true;
                 }
-                checksumMismatch = true;
+            } catch (DocumentStorageIntegrityException failure) {
+                log.warn("문서 파일 임시 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
             }
-        } catch (DocumentStorageIntegrityException failure) {
-            log.warn("계약 문서 임시 Object를 읽지 못했습니다. documentId={}",
-                    version.getDocumentId(), failure);
         }
 
-        String reason = checksumMismatch
-                ? DENIAL_CHECKSUM_MISMATCH : DENIAL_FILE_UNAVAILABLE;
-        denyIntegrity(version.getDocumentId(), version, principalUserId, mode, reason,
-                "계약 문서 파일 무결성을 확인할 수 없습니다.");
-        throw new IllegalStateException("도달할 수 없는 코드입니다.");
+        return checksumMismatch
+                ? DocumentFileReadResult.checksumMismatch()
+                : DocumentFileReadResult.fileUnavailable();
     }
 
-    private void promoteFallbackQuietly(DocumentFileVersion version, String pendingKey) {
+    private void promoteFallbackQuietly(DocumentFileAccessRow row, String pendingKey) {
         try {
-            storageAdapter.promote(pendingKey, version.getStorageKey(), version.getChecksum());
+            storageAdapter.promote(pendingKey, row.getStorageKey(), row.getChecksum());
         } catch (DocumentStorageIntegrityException failure) {
-            // 검증된 임시 Bytes는 반환하되 다음 조회에서도 복구를 다시 시도할 수 있게 남겨 둔다.
-            log.warn("계약 문서 조회 중 재승격에 실패했습니다. documentId={}",
-                    version.getDocumentId(), failure);
+            // 검증된 Bytes는 반환할 수 있고 다음 조회에서 복구를 재시도할 수 있습니다.
+            log.warn("문서 파일 조회 중 최종 Object 승격에 실패했습니다. result=ALLOWED");
         }
     }
 
     private boolean matchesChecksum(byte[] content, byte[] expectedChecksum) {
-        return Arrays.equals(Sha256.digest(content), expectedChecksum);
+        return expectedChecksum != null
+                && Arrays.equals(Sha256.digest(content), expectedChecksum);
     }
 
-    private void denyIntegrity(
-            Long documentId, DocumentFileVersion version, Long principalUserId,
-            String mode, String reason, String message) {
-        logAccess(documentId, version == null ? null : version.getId(), principalUserId,
-                mode, RESULT_DENIED, reason);
-        throw new DocumentStorageIntegrityException(message);
+    private String normalizedMime(String mimeType) {
+        return mimeType == null ? "" : mimeType.toLowerCase(Locale.ROOT);
     }
 
-    // Storage Key나 내부 ID를 노출하지 않는 사용자용 파일명을 만든다.
-    private String fileName(Document document, DocumentFileVersion version) {
-        String base = CONTRACT_DOCUMENT_TYPE.equals(document.getDocumentType())
-                ? "근로계약서" : document.getDocumentType();
-        return base + "_v" + version.getVersionNo() + ".pdf";
+    private String fileName(DocumentFileAccessRow row, String mimeType) {
+        String issuedDate = row.getIssuedDate() == null
+                ? "날짜미상"
+                : row.getIssuedDate().toString();
+        if (HEALTH_DOCUMENT_TYPE.equals(row.getDocType())) {
+            return sanitize("보건증_" + issuedDate + "_" + row.getOwnerName())
+                    + extension(mimeType);
+        }
+        return sanitize("근로계약서_" + row.getWorkplaceName() + "_" + issuedDate
+                + "_" + row.getWorkerName()) + extension(mimeType);
     }
+
+    private String asciiFileName(DocumentFileAccessRow row, String mimeType) {
+        String base = HEALTH_DOCUMENT_TYPE.equals(row.getDocType())
+                ? "health-certificate"
+                : "employment-contract";
+        return base + extension(mimeType);
+    }
+
+    private String extension(String mimeType) {
+        return switch (mimeType) {
+            case "application/pdf" -> ".pdf";
+            case "image/jpeg" -> ".jpg";
+            case "image/png" -> ".png";
+            default -> ".bin";
+        };
+    }
+
+    /** 파일명에서 제어 문자와 경로 구분자를 제거해 Header 주입과 경로 오해를 막습니다. */
+    private String sanitize(String value) {
+        if (value == null || value.isBlank()) {
+            return "문서";
+        }
+        return value.replaceAll("[\\p{Cntrl}/\\\\]+", " ").trim();
+    }
+
 }

@@ -291,8 +291,8 @@ participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데
 | -------- | ------------------------------------------ | ---------------------------------------------------------------------- | ------------------------ | ------------------------------- |
 | `QX-001` | `work.mapper.WorkCaseMapper`               | users, workplaces, attendance_records, escrows, settlements, documents | Work 목록·상세           | query 역할 분리는 #287/#291     |
 | `QX-002` | `wallet.mapper.WalletQueryMapper`          | work_cases, workplaces                                                 | Wallet 거래내역 표시     | 유지 가능한 Read Model          |
-| `QX-003` | `document.mapper.DocumentQueryMapper`      | users                                                                  | 문서 목록·공유자 표시    | #132의 권한/비공개 값 계약 유지 |
-| `QX-004` | `document.mapper.DocumentAccessMapper`     | work_contracts                                                         | 계약 당사자 접근 판정    | Document Query Port로 캡슐화    |
+| `QX-003` | `document.mapper.DocumentQueryMapper`      | users, work_contracts, work_cases, workplaces                          | 역할별 문서 목록·공유 이력 | #132의 권한/비공개 값 계약 유지 |
+| `QX-004` | `document.mapper.DocumentAccessMapper`     | users, work_contracts, work_cases, workplaces                          | 계약 당사자·보건증 공유 접근 판정 | Document Query Port로 캡슐화    |
 | `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
 
 `AttendanceLifecycleMapper`는 Scheduler batch와 READY 선행조건을 한 번에 읽는 consumer-owned
