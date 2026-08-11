@@ -12,7 +12,9 @@ import com.gighub.attendance.domain.AttendanceFailureReason;
 import com.gighub.attendance.domain.AttendanceResult;
 import com.gighub.attendance.domain.AttendanceScanOutcome;
 import com.gighub.attendance.domain.AttendanceType;
+import com.gighub.attendance.dto.AttendanceScanConfirmationResponse;
 import com.gighub.attendance.dto.AttendanceScanRequest;
+import com.gighub.attendance.dto.AttendanceScanResponse;
 import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.QrTokenMapper;
 import com.gighub.attendance.mapper.param.AttendanceRecordInsertParam;
@@ -22,6 +24,7 @@ import com.gighub.attendance.qr.QrHmacKeys;
 import com.gighub.attendance.qr.QrTokenCodec;
 import com.gighub.attendance.qr.QrTokenPayload;
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.work.domain.WorkCaseStatus;
@@ -55,6 +58,7 @@ class AttendanceScanExecutorTest {
     private static final long WORKPLACE_ID = 3L;
     private static final long WORKER_ID = 5L;
     private static final long QR_TOKEN_ID = 9L;
+    private static final long CLAIM_ID = 77L;
     private static final LocalDateTime STARTS_AT = LocalDateTime.of(2026, 8, 11, 9, 0);
     private static final LocalDateTime ENDS_AT = LocalDateTime.of(2026, 8, 11, 18, 0);
     private static final BigDecimal SITE_LATITUDE = new BigDecimal("37.5665000");
@@ -85,9 +89,14 @@ class AttendanceScanExecutorTest {
     @Mock
     private AttendanceScanAuditor scanAuditor;
 
+    @Mock
+    private IdempotencyClaimService claimService;
+
+    private final AttendanceScanReplayCodec replayCodec = new AttendanceScanReplayCodec();
+
     @Test
     void firstScanRecordsCheckInAndStartsTheWork() {
-        LocalDateTime now = STARTS_AT.plusMinutes(5);
+        Instant receivedAt = toInstant(STARTS_AT.plusMinutes(5));
         givenActiveWorkplaceAndQr();
         givenCandidate(AttendanceType.CHECK_IN);
         givenLock(WorkCaseStatus.READY);
@@ -95,55 +104,24 @@ class AttendanceScanExecutorTest {
                 WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS))
                 .thenReturn(true);
 
-        AttendanceScanOutcome outcome = executor().execute(principal, onSite(now), payload(), now);
+        AttendanceScanOutcome outcome = executor().execute(
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
 
         assertFalse(outcome.isRejected());
-        assertEquals(AttendanceType.CHECK_IN, outcome.getScanType());
-        assertEquals(now, outcome.getRecordedAt());
+        AttendanceScanResponse response = (AttendanceScanResponse) outcome.getResponse();
+        assertEquals(AttendanceType.CHECK_IN, response.getScanType());
         // 5분 지각은 파생값으로만 나오고 정산 예약은 하지 않습니다.
-        assertTrue(outcome.isLate());
-        assertEquals(5, outcome.getLateMinutes());
-        assertNull(outcome.getSettlementDueAt());
+        assertTrue(response.getIsLate());
+        assertEquals(5, response.getLateMinutes());
+        assertNull(response.getSettlementDueAt());
         verify(settlementReservationService, never()).schedulePayout(anyLong(), any());
+        // 멱등 Claim은 근태 판정과 같은 Transaction에서 완료되어야 합니다.
+        verify(claimService).complete(eq(CLAIM_ID), eq(200), any());
     }
 
     @Test
     void checkOutAfterScheduledEndCompletesWorkAndSchedulesPayoutIn24Hours() {
-        LocalDateTime now = ENDS_AT.plusMinutes(10);
-        givenActiveWorkplaceAndQr();
-        givenCandidate(AttendanceType.CHECK_OUT);
-        givenLock(WorkCaseStatus.IN_PROGRESS);
-        when(workLifecycleCommandService.transition(
-                WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
-                .thenReturn(true);
-
-        AttendanceScanOutcome outcome = executor().execute(principal, onSite(now), payload(), now);
-
-        assertFalse(outcome.isRejected());
-        assertEquals(AttendanceType.CHECK_OUT, outcome.getScanType());
-        // 정시 퇴근이라 조기 확인 시각은 남지 않습니다.
-        assertNull(outcome.getEarlyCheckoutConfirmedAt());
-        assertEquals(now.plusHours(24), outcome.getSettlementDueAt());
-        verify(settlementReservationService).schedulePayout(WORK_CASE_ID, now.plusHours(24));
-    }
-
-    @Test
-    void earlyCheckOutAsksForConfirmationBeforeRecordingAnything() {
-        LocalDateTime now = ENDS_AT.minusHours(1);
-        givenActiveWorkplaceAndQr();
-        givenCandidate(AttendanceType.CHECK_OUT);
-
-        AttendanceScanOutcome outcome = executor().execute(principal, onSite(now), payload(), now);
-
-        assertTrue(outcome.isConfirmationRequired());
-        assertEquals(ENDS_AT, outcome.getScheduledEndAt());
-        verify(attendanceRecordMapper, never()).insertAttempt(any());
-        verify(workLifecycleCommandService, never()).lock(anyLong());
-    }
-
-    @Test
-    void confirmedEarlyCheckOutRecordsTheConfirmationTime() {
-        LocalDateTime now = ENDS_AT.minusHours(1);
+        Instant receivedAt = toInstant(ENDS_AT.plusMinutes(10));
         givenActiveWorkplaceAndQr();
         givenCandidate(AttendanceType.CHECK_OUT);
         givenLock(WorkCaseStatus.IN_PROGRESS);
@@ -152,36 +130,88 @@ class AttendanceScanExecutorTest {
                 .thenReturn(true);
 
         AttendanceScanOutcome outcome = executor().execute(
-                principal, request(now, SITE_LATITUDE, SITE_LONGITUDE, true), payload(), now);
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
 
         assertFalse(outcome.isRejected());
-        assertEquals(now, outcome.getEarlyCheckoutConfirmedAt());
+        AttendanceScanResponse response = (AttendanceScanResponse) outcome.getResponse();
+        assertEquals(AttendanceType.CHECK_OUT, response.getScanType());
+        // 정시 퇴근이라 조기 확인 시각은 남지 않습니다.
+        assertNull(response.getEarlyCheckoutConfirmedAt());
+        assertEquals(ENDS_AT.plusMinutes(10).plusHours(24), toLocalDateTime(response.getSettlementDueAt()));
+        verify(settlementReservationService).schedulePayout(
+                eq(WORK_CASE_ID), eq(ENDS_AT.plusMinutes(10).plusHours(24)));
+        verify(claimService).complete(eq(CLAIM_ID), eq(200), any());
+    }
+
+    @Test
+    void earlyCheckOutAsksForConfirmationBeforeRecordingAnything() {
+        Instant receivedAt = toInstant(ENDS_AT.minusHours(1));
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_OUT);
+
+        AttendanceScanOutcome outcome = executor().execute(
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
+
+        assertFalse(outcome.isRejected());
+        AttendanceScanConfirmationResponse response =
+                (AttendanceScanConfirmationResponse) outcome.getResponse();
+        assertEquals("CONFIRMATION_REQUIRED", response.getResult());
+        assertEquals(ENDS_AT, toLocalDateTime(response.getScheduledEndAt()));
+        verify(attendanceRecordMapper, never()).insertAttempt(any());
+        verify(workLifecycleCommandService, never()).lock(anyLong());
+        // 확인 요청도 24시간 Replay 대상이라 Claim을 완료합니다.
+        verify(claimService).complete(eq(CLAIM_ID), eq(200), any());
+    }
+
+    @Test
+    void confirmedEarlyCheckOutRecordsTheConfirmationTime() {
+        Instant receivedAt = toInstant(ENDS_AT.minusHours(1));
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_OUT);
+        givenLock(WorkCaseStatus.IN_PROGRESS);
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
+                .thenReturn(true);
+
+        AttendanceScanOutcome outcome = executor().execute(
+                principal,
+                request(receivedAt, SITE_LATITUDE, SITE_LONGITUDE, true),
+                payload(),
+                CLAIM_ID,
+                receivedAt);
+
+        assertFalse(outcome.isRejected());
+        AttendanceScanResponse response = (AttendanceScanResponse) outcome.getResponse();
+        assertEquals(ENDS_AT.minusHours(1), toLocalDateTime(response.getEarlyCheckoutConfirmedAt()));
 
         ArgumentCaptor<AttendanceRecordInsertParam> saved =
                 ArgumentCaptor.forClass(AttendanceRecordInsertParam.class);
         verify(attendanceRecordMapper).insertAttempt(saved.capture());
-        assertEquals(now, saved.getValue().getEarlyCheckoutConfirmedAt());
+        assertEquals(ENDS_AT.minusHours(1), saved.getValue().getEarlyCheckoutConfirmedAt());
         assertEquals(AttendanceResult.SUCCESS, saved.getValue().getResult());
     }
 
     @Test
     void scanOutsideAllowedRadiusIsRejectedAndAudited() {
-        LocalDateTime now = STARTS_AT.plusMinutes(5);
+        Instant receivedAt = toInstant(STARTS_AT.plusMinutes(5));
         givenActiveWorkplaceAndQr();
         givenCandidate(AttendanceType.CHECK_IN);
 
         // 사업장에서 약 1.1km 떨어진 좌표입니다.
         AttendanceScanOutcome outcome = executor().execute(
                 principal,
-                request(now, new BigDecimal("37.5765000"), SITE_LONGITUDE, false),
+                request(receivedAt, new BigDecimal("37.5765000"), SITE_LONGITUDE, false),
                 payload(),
-                now);
+                CLAIM_ID,
+                receivedAt);
 
         assertTrue(outcome.isRejected());
         assertEquals(AttendanceFailureReason.OUTSIDE_RADIUS, outcome.getFailureReason());
-        // 성공 근태 행과 상태 전이는 만들지 않고 거절 감사만 남깁니다.
+        // 성공 근태 행과 상태 전이는 만들지 않고 거절 감사만 남깁니다. 거절은 저장·재생
+        // 대상이 아니므로 Claim을 완료하지 않습니다.
         verify(attendanceRecordMapper, never()).insertAttempt(any());
         verify(workLifecycleCommandService, never()).lock(anyLong());
+        verify(claimService, never()).complete(anyLong(), any(Integer.class), any());
 
         ArgumentCaptor<BigDecimal> distance = ArgumentCaptor.forClass(BigDecimal.class);
         verify(scanAuditor).recordRejection(
@@ -193,8 +223,64 @@ class AttendanceScanExecutorTest {
                 distance.capture(),
                 any(),
                 any(),
-                eq(now));
+                any());
         assertTrue(distance.getValue().doubleValue() > 100);
+    }
+
+    @Test
+    void staleCaptureIsRejectedAfterCandidateIsResolvedSoItCanBeAudited() {
+        Instant receivedAt = toInstant(STARTS_AT.plusMinutes(5));
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_IN);
+
+        // capturedAt이 수신 시각보다 10분 앞서 승인된 5분 신선도 범위를 벗어납니다.
+        AttendanceScanOutcome outcome = executor().execute(
+                principal,
+                new AttendanceScanRequest(
+                        "token",
+                        SITE_LATITUDE,
+                        SITE_LONGITUDE,
+                        new BigDecimal("10.00"),
+                        receivedAt.minusSeconds(600),
+                        false),
+                payload(),
+                CLAIM_ID,
+                receivedAt);
+
+        assertTrue(outcome.isRejected());
+        assertEquals(AttendanceFailureReason.LOCATION_STALE, outcome.getFailureReason());
+        // 근무가 특정된 뒤의 거절이므로 근태 감사 행으로 남아야 합니다.
+        verify(scanAuditor).recordRejection(
+                eq(WORK_CASE_ID),
+                eq(WORKER_ID),
+                eq(QR_TOKEN_ID),
+                eq(AttendanceType.CHECK_IN),
+                eq(AttendanceFailureReason.LOCATION_STALE),
+                any(),
+                any(),
+                any(),
+                any());
+    }
+
+    @Test
+    void settlementScheduleFailureRollsBackTheWholeCheckOut() {
+        Instant receivedAt = toInstant(ENDS_AT.plusMinutes(10));
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_OUT);
+        givenLock(WorkCaseStatus.IN_PROGRESS);
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
+                .thenReturn(true);
+        // 정산 행이 없거나 WAITING이 아닌 이상 상태를 흉내 냅니다.
+        org.mockito.Mockito.doThrow(new IllegalStateException("정산 지급 예약을 반영하지 못했습니다."))
+                .when(settlementReservationService).schedulePayout(anyLong(), any());
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> executor().execute(
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt));
+
+        // 근태 상태 전이가 이미 실행됐더라도, 이 메서드가 던진 예외로 Transaction 전체가
+        // 되돌아가야 하며 Claim도 완료 호출까지 가지 않아야 합니다.
+        verify(claimService, never()).complete(anyLong(), any(Integer.class), any());
     }
 
     private AttendanceScanExecutor executor() {
@@ -204,19 +290,20 @@ class AttendanceScanExecutorTest {
                 attendanceRecordMapper,
                 workLifecycleCommandService,
                 settlementReservationService,
-                scanAuditor);
+                scanAuditor,
+                replayCodec,
+                claimService);
     }
 
     /** 사업장 좌표와 같은 지점이라 거리 판정을 항상 통과합니다. */
-    private static AttendanceScanRequest onSite(LocalDateTime now) {
-        return request(now, SITE_LATITUDE, SITE_LONGITUDE, false);
+    private static AttendanceScanRequest onSite(Instant receivedAt) {
+        return request(receivedAt, SITE_LATITUDE, SITE_LONGITUDE, false);
     }
 
     private static AttendanceScanRequest request(
-            LocalDateTime now, BigDecimal latitude, BigDecimal longitude, boolean confirm) {
-        Instant capturedAt = now.atZone(ZoneId.of("Asia/Seoul")).toInstant();
+            Instant receivedAt, BigDecimal latitude, BigDecimal longitude, boolean confirm) {
         return new AttendanceScanRequest(
-                "token", latitude, longitude, new BigDecimal("10.00"), capturedAt, confirm);
+                "token", latitude, longitude, new BigDecimal("10.00"), receivedAt, confirm);
     }
 
     /** 생성자가 package-private이라 실제 서명·검증을 거쳐 값을 얻습니다. */
@@ -262,5 +349,13 @@ class AttendanceScanExecutorTest {
                 .endsAt(ENDS_AT)
                 .scanType(scanType)
                 .build();
+    }
+
+    private static Instant toInstant(LocalDateTime value) {
+        return value.atZone(ZoneId.of("Asia/Seoul")).toInstant();
+    }
+
+    private static LocalDateTime toLocalDateTime(Instant value) {
+        return value == null ? null : LocalDateTime.ofInstant(value, ZoneId.of("Asia/Seoul"));
     }
 }

@@ -29,8 +29,12 @@ public class SettlementReservationServiceImpl implements SettlementReservationSe
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public void schedulePayout(long workCaseId, LocalDateTime dueAt) {
-        // 이미 예약된 근무는 0행입니다. 재시도를 실패로 바꾸지 않도록 영향 행 수를
-        // 검증하지 않습니다.
-        settlementMapper.scheduleWaitingPayout(workCaseId, dueAt);
+        // 같은 요청의 재시도는 멱등 Claim이 Replay로 흡수해 이 Method를 다시 부르지
+        // 않습니다. 그래서 0행은 "이미 예약됨"이 아니라 Settlement가 없거나 WAITING이
+        // 아닌 이상 상태이며, 근태·상태 전이만 commit되고 지급 예약이 빠지면 안 되므로
+        // 전체를 되돌립니다.
+        if (settlementMapper.scheduleWaitingPayout(workCaseId, dueAt) != 1) {
+            throw new IllegalStateException("정산 지급 예약을 반영하지 못했습니다.");
+        }
     }
 }

@@ -3,7 +3,7 @@ package com.gighub.attendance.controller;
 import javax.validation.Valid;
 
 import com.gighub.attendance.dto.AttendanceScanRequest;
-import com.gighub.attendance.dto.AttendanceScanResponse;
+import com.gighub.attendance.dto.AttendanceScanResult;
 import com.gighub.attendance.service.AttendanceScanService;
 import com.gighub.attendance.service.result.AttendanceScanOutput;
 import com.gighub.auth.security.AuthPrincipal;
@@ -36,7 +36,7 @@ public class AttendanceScanController {
      * 최초 성공도 {@code 201}이 아닙니다.</p>
      */
     @PostMapping("/api/attendance/scans")
-    public ResponseEntity<ApiResponse<AttendanceScanResponse>> scan(
+    public ResponseEntity<ApiResponse<AttendanceScanResult>> scan(
             @RequestHeader("Idempotency-Key") String idempotencyKey,
             @Valid @RequestBody AttendanceScanRequest request,
             Authentication authentication) {
@@ -44,7 +44,7 @@ public class AttendanceScanController {
         AttendanceScanOutput output =
                 attendanceScanService.scan(principal, idempotencyKey, request);
 
-        ApiResponse<AttendanceScanResponse> body = ApiResponse.of(output.response());
+        ApiResponse<AttendanceScanResult> body = ApiResponse.of(output.response());
         if (output.replayed()) {
             return ResponseEntity.ok().header(REPLAYED_HEADER, "true").body(body);
         }
