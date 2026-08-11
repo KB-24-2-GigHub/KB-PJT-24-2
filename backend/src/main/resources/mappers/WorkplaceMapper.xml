@@ -93,7 +93,7 @@
     <resultMap id="workplaceLocationSnapshot"
                type="com.gighub.workplace.service.result.WorkplaceLocationSnapshot">
         <constructor>
-            <idArg column="id" javaType="long"/>
+            <idArg column="id" javaType="java.lang.Long"/>
             <arg column="latitude" javaType="java.math.BigDecimal"/>
             <arg column="longitude" javaType="java.math.BigDecimal"/>
         </constructor>

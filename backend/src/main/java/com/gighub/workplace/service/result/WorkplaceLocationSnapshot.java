@@ -10,9 +10,14 @@ import java.math.BigDecimal;
  *
  * <p>좌표가 없는 사업장은 두 값이 모두 {@code null}입니다. 컬럼 제약이 둘을 함께
  * 채우거나 함께 비우도록 강제하므로 한쪽만 있는 상태는 없습니다.</p>
+ *
+ * <p>{@code workplaceId}는 원시 {@code long}이 아니라 {@code Long}입니다. MyBatis가
+ * {@code <constructor>} 매핑에서 리플렉션으로 생성자를 찾을 때 XML의 {@code javaType}과
+ * 정확히 일치하는 참조 타입을 요구하며, 원시 타입 생성자는 찾지 못해
+ * {@code ReflectionException}으로 실패합니다.</p>
  */
 public record WorkplaceLocationSnapshot(
-        long workplaceId,
+        Long workplaceId,
         BigDecimal latitude,
         BigDecimal longitude) {
 
