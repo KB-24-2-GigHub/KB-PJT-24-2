@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `6.0.0`         |
-| 승인일      | 2026-08-10      |
+| 명세 릴리스 | `6.0.1`         |
+| 승인일      | 2026-08-11      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
 
@@ -13,9 +13,10 @@
 
 ## MVP P0 Operation 계약
 
-아래 표는 REQUIREMENTS의 37개 MVP P0 시나리오를 외부 Operation에 연결합니다. `Target`은
-6.0.0 최종 제품 계약이며 현재 코드의 구현 완료를 뜻하지 않습니다. 현재 구현 상태와 담당
-이슈는 [SPEC_TRACEABILITY.md](SPEC_TRACEABILITY.md)의 같은 시나리오 ID를 기준으로 판정합니다.
+아래 표는 원본 [MVP_SCOPE.md](MVP_SCOPE.md)를 REQUIREMENTS에서 공식화한 37개 MVP P0
+시나리오를 외부 Operation에 연결합니다. `Target`은 최종 제품 계약이며 현재 코드의 구현
+완료를 뜻하지 않습니다. 현재 구현 상태와 담당 이슈는
+[SPEC_TRACEABILITY.md](SPEC_TRACEABILITY.md)의 같은 시나리오 ID를 기준으로 판정합니다.
 
 표의 `CSRF`는 Session Cookie와 CSRF Header, `IK`는 필수 `Idempotency-Key`를 뜻합니다.
 단일·목록·오류 Envelope와 인증·역할·소유권 오류는 공통 계약을 따릅니다. 일반 GET은 안전하게
