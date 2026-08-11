@@ -5,76 +5,126 @@ issue: 178
 base_spec_version: 6.0.1
 targets:
   - requirement: BADGE-001
+  - requirement: BADGE-002
+  - requirement: BADGE-003
   - operation: GET /api/users/me/badge
+  - operation: GET /api/invitations/{token}
   - decision: DEC-TRUST-BADGE-CRITERIA
 ---
 
-# SPEC-178-06: 신뢰 배지 산정 기준
+# SPEC-178-06: 신뢰 뱃지 산정 기준
 
 ## 추가 사항
 
-배지 등급은 역할과 무관하게 같은 두 값으로 계산한다: **누적 건수**와 그 중
-**정상 비율**. 두 조건을 모두 만족해야 해당 등급이며, 건수만 많고 비율이 낮은
-사용자가 등급을 얻지 못하도록 두 조건을 AND로 검사한다.
+BADGE-001의 “최근 5·10·15건” 기준을 역할 공통 **누적 10·20·30건**과 정상 비율
+**80·90·100%** 기준으로 대체한다. OWNER와 WORKER 모두 같은 문턱을 사용하며 누적 건수와
+정상 건수 비율을 AND로 판정한다.
 
-| 등급 | 누적 건수 | 정상 비율 |
-| --- | --- | --- |
-| 0단계 | (기본값) | - |
-| 1단계 | 10건 이상 | 80% 이상 |
-| 2단계 | 20건 이상 | 90% 이상 |
-| 3단계 | 30건 이상 | 100% |
+| 등급  | 누적 건수 | 정상 비율 |
+| ----- | --------: | --------: |
+| 0단계 |    기본값 |         - |
+| 1단계 | 10건 이상 |  80% 이상 |
+| 2단계 | 20건 이상 |  90% 이상 |
+| 3단계 | 30건 이상 |      100% |
 
-등급은 3단계부터 역순으로 검사해 처음 조건을 만족하는 단계로 정한다(예: 50건에
-85%면 1단계 조건은 만족하지만 2단계 조건은 못 만족하므로 1단계). 두 조건 중
-하나라도 충족하지 못하면 0단계다.
+3단계부터 내림차순으로 검사해 처음 만족한 등급을 적용한다. 비율은 반올림하지 않고
+`normalCount * 100 >= totalCount * thresholdPercent`로 비교한다. `totalCount=0`은
+항상 0단계다.
 
 ### OWNER (`TRUST_OWNER`)
 
-- 분모: 본인이 당사자인 `settlements` 중 `status='COMPLETED'`인 누적 건수.
-  `WAITING`/`SCHEDULED`/`PROCESSING`/`FAILED`/`ON_HOLD`는 아직 결과가 나지 않은
-  것으로 보고 집계하지 않는다.
-- 분자("정상 정산"): 그 중 `work_case_id`에 `CANCELED`·`REJECTED`가 아닌 `disputes`
-  행이 없는 건수. 분쟁 신고 기능(`DISPUTE-001~003`)이 Deferred라 지금은 항상 전부
-  정상으로 집계되며, 그 기능이 나오면 이 계산식을 바꾸지 않고 그대로 반영된다.
+- 누적 건수는 OWNER가 지급자인 `settlements` 중 `status=COMPLETED`인 건수다.
+  `WAITING`, `SCHEDULED`, `PROCESSING`, `FAILED`, `ON_HOLD`는 포함하지 않는다.
+- 정상 건수는 그중 같은 `work_case_id`에 상태가 `CANCELED` 또는 `REJECTED`가 아닌
+  분쟁 행이 없는 건수다.
+- 분쟁 기능이 Deferred인 동안은 완료 정산을 정상으로 센다. 분쟁 기능 도입 뒤에도 이
+  분모·분자 정의를 바꾸지 않고 실제 분쟁 행만 반영한다.
 
 ### WORKER (`TRUST_WORKER`)
 
-- 분모: 본인이 당사자인 `work_cases` 중 `status IN ('COMPLETED', 'NO_SHOW',
-  'CHECK_OUT_MISSING')`인 누적 건수. `CANCELED`와 아직 진행 중인 상태는 집계하지
-  않는다.
-- 분자("정상 근무"): 그 중 `status='COMPLETED'`이고 지각이 아닌 건수. 지각 여부는
-  저장된 값이 아니라 `SPEC-161-01`과 동일하게 CHECK_IN 성공 기록의 `attempted_at`이
-  `work_cases.starts_at`보다 늦었는지로 그때 파생한다. `NO_SHOW`, `CHECK_OUT_MISSING`,
-  지각 `COMPLETED`는 비정상으로 센다.
+- 누적 건수는 본인이 WORKER인 Work Case 중 `COMPLETED`, `NO_SHOW`,
+  `CHECK_OUT_MISSING` 상태의 건수다. `CANCELED`와 진행 전·진행 중 상태는 포함하지 않는다.
+- 정상 건수는 그중 `status=COMPLETED`이고 지각하지 않은 건수다.
+- 지각 여부는 별도 저장 Flag가 아니라 성공한 CHECK_IN 기록의 `attempted_at`이
+  `work_cases.starts_at`보다 늦은지로 재계산한다. `NO_SHOW`,
+  `CHECK_OUT_MISSING`과 지각한 COMPLETED는 비정상이다.
 
-### 공통 응답·재산정
+### 응답 계약
 
-- 이력이 없는 신규 사용자도 `null` 없이 `badgeType`, `level=0`을 반환한다.
-- `recentCount`는 위에서 정의한 누적 분모 건수를 그대로 반환한다.
-- `remainingToNextLevel`은 다음 단계 건수 임계값까지 남은 건수다(`max(0, 다음 단계
-  건수 임계값 - 현재 누적 건수)`). 건수는 이미 충분한데 비율만 부족한 경우
-  `remainingToNextLevel=0`이며, 그 사정은 `criterionDesc`로 안내한다. 3단계는 항상
-  `remainingToNextLevel=0`이다.
-- 재산정은 기준 이벤트(정산 완료·분쟁 상태 변경, 근무 종료·노쇼 확정)가 발생하는
-  트랜잭션에서 즉시 이루어진다. 별도 배치·스케줄 작업을 두지 않는다.
-- 같은 사용자에 대한 재산정이 동시에 여러 트랜잭션에서 발생해도 `user_badges`의
-  `UNIQUE(user_id, badge_type)`을 이용한 Upsert로 마지막에 Commit된 계산 결과만
-  반영한다. 별도 분산 Lock이나 순서 보장 장치를 두지 않는다.
-- 이 계약을 배포하는 시점에 이미 존재하는 이력에 대한 별도 Backfill 배치를 두지
-  않는다. 기존 사용자는 배포 뒤 다음 기준 이벤트가 발생할 때 그 시점까지의 누적
-  이력으로 처음 계산되며, 그전까지는 이력이 없는 사용자와 동일하게 `level=0`으로
-  응답한다.
-- `user_badges.evidence`에는 누적 분모 건수, 정상 건수, 비율, 계산 시각을 저장해
-  재검증 가능하게 한다. 새 Column은 추가하지 않는다.
+`GET /api/users/me/badge`는 기존 필드 집합을 유지한다.
+
+```json
+{
+  "badgeType": "TRUST_WORKER",
+  "level": 1,
+  "recentCount": 12,
+  "remainingToNextLevel": 8,
+  "criterionLabel": "성실근로",
+  "criterionDesc": "누적 12건과 정상 비율을 기준으로 산정했습니다."
+}
+```
+
+- 하위 호환을 위해 필드명 `recentCount`는 유지하지만 값은 최근 구간이 아니라 이 Patch의
+  누적 `totalCount`다.
+- 이력이 없는 사용자도 `null` 대신 역할에 맞는 `badgeType`과 `level=0`,
+  `recentCount=0`을 반환한다.
+- `remainingToNextLevel`은 다음 등급의 건수 문턱까지 남은 수
+  `max(0, thresholdCount - totalCount)`다. 건수는 충족했지만 비율이 부족하면 0이고,
+  `criterionDesc`가 부족한 정상 비율을 안내한다. 3단계도 0이다.
+- `criterionLabel`은 OWNER가 `안심거래`, WORKER가 `성실근로`다.
+  `criterionDesc`는 누적 건수, 정상 건수와 다음 등급의 건수·비율 조건을 함께 설명한다.
+- 인증 후 `GET /api/invitations/{token}`은 OWNER의 같은 기준 결과가 1~3단계일 때만
+  `ownerBadge={badgeType:"TRUST_OWNER",level}`을 반환한다. 0단계는 기존 계약대로
+  `ownerBadge=null`이다.
+
+### 재계산·동시성·기존 사용자
+
+뱃지는 원천 이력에서 계산되는 파생 Projection이다. Work·Attendance·Settlement 모듈이
+`user_badges`를 직접 쓰지 않고 Member/Auth의 Badge Application Service만 쓴다.
+
+`GET /api/users/me/badge`와 인증된 초대 조회의 `ownerBadge` 계산은 다음 순서를 따른다.
+
+1. 산정 대상 `users` 행을 `SELECT ... FOR UPDATE`로 잠근다. 뱃지 행이 아직 없어도 잠금
+   기준이 항상 존재하도록 `user_badges`가 아니라 사용자 행을 잠근다.
+2. 잠금을 얻은 뒤 현재 Commit된 정산·분쟁·Work Case·CHECK_IN 원천 이력을 다시 조회해
+   건수와 등급을 계산한다.
+3. 같은 트랜잭션에서 `UNIQUE(user_id, badge_type)` 기준으로 `user_badges`를 Upsert하고
+   Commit한 뒤 응답한다.
+
+따라서 같은 사용자의 동시 조회 계산은 직렬화되고, 먼저 읽은 오래된 결과가 나중 결과를
+덮어쓰지 않는다. 원천 이력 변경과 동시에 시작된 조회는 그 트랜잭션 시작 시점에 Commit된
+이력을 반영하며 다음 조회가 새 Commit을 반드시 다시 계산한다.
+
+초대 조회를 담당하는 Work 모듈은 Member/Auth가 공개한 Badge Projection 갱신·조회
+Application 경계를 호출한다. `user_badges` Mapper나 원천 모듈 Mapper를 직접 호출하지
+않는다. 구현 변경에서는 이 공개 호출 방향을 Module Boundary Manifest에도 함께 등록한다.
+
+배포 시 별도 일괄 소급 계산(Backfill) Batch는 실행하지 않는다. 대신 기존 사용자도 위 두
+조회 경로의 첫 요청에서 배포 전 누적 이력 전체를 즉시 계산한다. 기존 이력이 있는데 다음
+이벤트가 생길 때까지 0단계로 남겨 두지 않는다.
+
+`user_badges.evidence`에는 다음 닫힌 JSON 필드를 저장한다. 새 Column은 추가하지 않는다.
+
+- `ruleVersion="trust-badge-cumulative-10-20-30-v1"`
+- `badgeType`, `level`
+- `totalCount`, `normalCount`
+- 적용된 `thresholdCount`, `thresholdPercent`
+- `calculatedAt`
+
+0단계의 `thresholdCount`와 `thresholdPercent`는 0이고, 1~3단계는 현재 등급의 문턱을
+저장한다.
+
+비율은 `totalCount`와 `normalCount`로 재검증하며 개인 이름, 원천 행 ID 목록과 그 밖의
+개인 정보는 evidence에 저장하지 않는다.
 
 ## 완료 조건
 
-- [ ] 총 건수가 아무리 많아도 정상 비율이 80% 미만이면 1단계에 도달하지 못한다.
-- [ ] 건수 10/20/30, 비율 80/90/100% 두 조건을 모두 만족해야 각각 1/2/3단계다.
-- [ ] 이력이 없는 신규 사용자가 `level=0`으로 응답하며 `null`이 아니다.
-- [ ] 건수 조건은 충족했지만 비율 조건을 못 채운 경우 `remainingToNextLevel=0`이고 `criterionDesc`가 비율 부족을 설명한다.
-- [ ] 3단계 사용자의 `remainingToNextLevel`이 `0`이다.
-- [ ] 근무 종료·노쇼 확정·정산 완료 시점에 배지가 배치 없이 즉시 재계산된다.
-- [ ] `user_badges.evidence`에서 등급 산정 근거(누적 건수·정상 건수·비율)를 재확인할 수 있다.
-- [ ] 같은 사용자의 재산정이 동시에 발생해도 `user_badges` 행이 `UNIQUE(user_id, badge_type)` 위반 없이 마지막 계산값으로 정상 갱신된다.
-- [ ] 배포 시점에 별도 Backfill 없이도, 기존 이력이 있는 사용자가 다음 기준 이벤트 발생 시 그 누적 이력 그대로 정상 계산된다.
+- [ ] OWNER·WORKER 모두 누적 10/20/30건과 80/90/100% AND 기준을 사용한다.
+- [ ] 비율 비교에 반올림을 사용하지 않는다.
+- [ ] 이력 없는 내 뱃지는 역할별 0단계 객체이고 초대의 OWNER 0단계는 `null`이다.
+- [ ] `recentCount`가 누적 건수라는 호환 의미와 다음 단계 안내 규칙이 고정된다.
+- [ ] 첫 조회가 배포 전 기존 이력까지 계산하므로 별도 일괄 소급 계산이 필요 없다.
+- [ ] 사용자 행 잠금 뒤 재조회·Upsert하여 동시 계산의 오래된 덮어쓰기를 막는다.
+- [ ] 원천 모듈이 뱃지 행을 직접 쓰지 않고 Member/Auth Service가 쓰기 경계를 소유한다.
+- [ ] 초대 조회는 공개 Badge Application 경계를 사용하고 호출 방향을 Manifest에 등록한다.
+- [ ] evidence로 규칙 Version, 건수, 적용 문턱과 계산 시각을 재검증할 수 있다.

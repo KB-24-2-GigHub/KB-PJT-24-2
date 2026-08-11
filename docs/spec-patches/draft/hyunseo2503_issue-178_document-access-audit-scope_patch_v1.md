@@ -14,47 +14,64 @@ targets:
 
 # SPEC-178-04: 문서 접근 감사 범위
 
-> **선행 조건**: `GET /api/documents/{documentId}`는 정식 명세에 없고
-> `SPEC-178-01`이 draft로 처음 추가한 대상이다. 이 Patch는 `SPEC-178-01`이 먼저
-> 또는 같은 릴리스로 승인되는 것을 전제로 하며, 단독으로 정식 SPEC에 반영할 수
-> 없다.
+> **선행 조건**: 이 Patch는 `GET /api/documents/{documentId}`를 정의한
+> SPEC-178-01과 함께 승인한다.
 
 ## 추가 사항
 
-계약서(`EMPLOYMENT_CONTRACT`) 파일 접근에만 적용되던 `document_access_logs` 감사
-계약(`DEC-CONTRACT-FILE-COMMIT`)을 보건증(`HEALTH_CERTIFICATE`)과 §1(`SPEC-178-01`)이
-추가한 문서 상세 조회로 넓힌다. 새 규칙을 만들지 않고 계약서에 이미 승인된 형식을
-그대로 재사용한다.
+기존 근로계약서 파일 감사 규칙을 보건증 파일과 문서 상세 조회에 확장한다. 목록 조회와
+공유 생성·철회는 `document_access_logs` 대상이 아니다.
 
-- 보건증 `GET /api/documents/{documentId}/file` 접근은 `action`을
-  `HEALTH_CERT_FILE_VIEW` 또는 `HEALTH_CERT_FILE_DOWNLOAD`로 같은 행을 Commit한다.
-  `result`, `document_version_id` 채움 규칙, FK 위반 요청의 처리(DB에 안 남기고
-  `traceId` 보안 로그만)는 계약서와 동일하다.
-- 보건증 `denial_reason`은 계약서 5종 중 전자서명 개념이 없는
-  `SIGNED_VERSION_UNAVAILABLE`을 제외한 `PARTY_ACCESS_DENIED`, `DOCUMENT_UNAVAILABLE`,
-  `FILE_UNAVAILABLE`, `CHECKSUM_MISMATCH` 4종만 사용한다. 새 사유 Code를 추가하지
-  않는다.
-- `GET /api/documents/{documentId}`(문서 상세) 접근은 문서 유형과 무관하게 `action`을
-  `DOCUMENT_DETAIL_VIEW`로 기록한다. 파일 바이트를 다루지 않으므로 `denial_reason`은
-  `PARTY_ACCESS_DENIED`, `DOCUMENT_UNAVAILABLE` 중 하나만 쓰고
-  `FILE_UNAVAILABLE`·`CHECKSUM_MISMATCH`는 쓰지 않는다.
-- `GET /api/documents`(목록 조회)와 `POST`/`DELETE .../shares`(공유 생성·철회)는
-  `document_access_logs`에 행을 만들지 않는다. 공유 이력은 `document_shares`의
-  생성·철회 시각으로 이미 확인할 수 있다.
-- 문서 API는 모두 인증된 접근자만 호출 가능하므로 미인증 요청은 공통 Session
-  검증에서 `401 AUTH_REQUIRED`로 차단되며 문서 감사 로직에 도달하지 않는다.
-  `actor_user_id`가 `NULL`인 감사 행은 발생하지 않는다.
-- 애플리케이션 로그(`log.info`/`log.warn`/`log.error`)에는 `documentId`,
-  `actorUserId`, `action`, `result`, `denialReason`, `traceId` 같은 식별자·Enum만
-  남긴다. `storage_key`, Checksum 원문, 파일 내용, 보건증·계약서의 개인정보 필드는
-  어떤 로그 레벨에도 남기지 않는다.
+### 감사 대상
+
+| 요청                     | `action`                    |
+| ------------------------ | --------------------------- |
+| 보건증 파일 view         | `HEALTH_CERT_FILE_VIEW`     |
+| 보건증 파일 download     | `HEALTH_CERT_FILE_DOWNLOAD` |
+| 근로계약서 파일 view     | `CONTRACT_FILE_VIEW`        |
+| 근로계약서 파일 download | `CONTRACT_FILE_DOWNLOAD`    |
+| 문서 상세 조회           | `DOCUMENT_DETAIL_VIEW`      |
+
+- 인증 뒤 기존 문서 행을 식별한 요청은 허용·거부 결과마다 정확히 한 행을 Commit한다.
+- `ALLOWED`는 실제 응답에 사용한 최신 허용 `document_version_id`가 필수이고
+  `denial_reason=null`이다.
+- `DENIED`는 허용 Version까지 식별했으면 그 `document_version_id`를 기록하고, Version을
+  식별하기 전에 거부됐거나 허용 Version이 없을 때만 `null`이다.
+- 보건증 파일 거부 사유는 `PARTY_ACCESS_DENIED`, `DOCUMENT_UNAVAILABLE`,
+  `FILE_UNAVAILABLE`, `CHECKSUM_MISMATCH` 중 하나다.
+- 근로계약서 파일은 기존 다섯 사유에 `SIGNED_VERSION_UNAVAILABLE`를 포함한다.
+- 상세 조회 거부 사유는 파일을 읽지 않으므로 `PARTY_ACCESS_DENIED` 또는
+  `DOCUMENT_UNAVAILABLE`만 사용한다.
+- 공유 만료·철회, 보건증 만료·삭제와 근무 관계 종료로 접근이 사라진 경우는
+  `DOCUMENT_UNAVAILABLE`로 기록하고 외부에는 SPEC-178-01의
+  `404 RESOURCE_NOT_FOUND`를 반환한다.
+
+### Commit과 실패 처리
+
+- 파일 요청은 권한·Version·Checksum을 검증한 뒤 감사 행을 먼저 Commit하고 Header나
+  파일 Bytes를 전송한다.
+- 상세 요청도 감사 행 Commit이 끝난 뒤 Metadata Body를 전송한다.
+- 거부 응답도 문서 식별 뒤라면 감사 행 Commit을 완료한 뒤 반환한다.
+- 감사 Commit에 실패하면 성공 Body·Header·파일 Bytes를 보내지 않고
+  `500 INTERNAL_ERROR`를 반환한다. 같은 `traceId`로 최소 보안 로그를 남긴다.
+- 존재하지 않는 `documentId`는 FK 대상이 없으므로 감사 행을 만들지 않고
+  `traceId` 보안 로그만 남긴다.
+- 미인증 요청은 공통 인증 단계에서 `401 AUTH_REQUIRED`로 막으며
+  `actor_user_id=null`인 감사 행을 만들지 않는다.
+- `document_access_logs`는 일반 기능에서 수정·삭제하지 않는다.
+
+### 애플리케이션 로그
+
+일반 애플리케이션 로그에는 `traceId`, `action`, `result`, `denialReason`처럼 닫힌
+Enum과 상관관계 정보만 기록한다. `actorUserId`, 이름, 문서 파일명, 저장 Key, Checksum
+원문, 파일 내용, 보건증·근로계약서의 개인 정보는 어떤 로그 수준에도 기록하지 않는다.
+사용자와 문서의 감사 식별값은 접근 통제된 `document_access_logs`에만 저장한다.
 
 ## 완료 조건
 
-- [ ] 보건증 파일 `VIEW`·`DOWNLOAD` 성공·거부가 `HEALTH_CERT_FILE_VIEW`/`HEALTH_CERT_FILE_DOWNLOAD`로 `document_access_logs`에 남는다.
-- [ ] 보건증 `DENIED` 행의 `denial_reason`이 `PARTY_ACCESS_DENIED`/`DOCUMENT_UNAVAILABLE`/`FILE_UNAVAILABLE`/`CHECKSUM_MISMATCH` 중 하나이며 `SIGNED_VERSION_UNAVAILABLE`은 쓰이지 않는다.
-- [ ] `GET /api/documents/{documentId}` 상세 조회 성공·거부가 `DOCUMENT_DETAIL_VIEW`로 감사되고, 그 `denial_reason`은 `PARTY_ACCESS_DENIED`·`DOCUMENT_UNAVAILABLE`로만 제한된다.
-- [ ] `GET /api/documents` 목록 조회와 공유 생성·철회는 `document_access_logs`에 행을 만들지 않는다.
-- [ ] 존재하지 않는 `documentId` 요청은 DB에 감사 행을 만들지 않고 `traceId` 보안 로그만 남긴다.
-- [ ] 미인증 요청은 `401 AUTH_REQUIRED`로 차단되어 `actor_user_id=NULL`인 감사 행이 만들어지지 않는다.
-- [ ] 애플리케이션 로그 어디에도 `storage_key`, Checksum 원문, 파일 내용, 개인정보가 노출되지 않는다.
+- [ ] 보건증 파일 view·download의 허용·거부가 전용 action으로 정확히 한 번 감사된다.
+- [ ] 문서 상세 조회의 허용·거부가 `DOCUMENT_DETAIL_VIEW`로 감사된다.
+- [ ] ALLOWED의 Version ID와 DENIED의 Version Null 규칙이 지켜진다.
+- [ ] 상세와 파일 모두 감사 Commit 실패 시 데이터 전송 없이 `500`을 반환한다.
+- [ ] 목록·공유 변경, 미인증 요청과 존재하지 않는 문서는 DB 감사 행을 만들지 않는다.
+- [ ] 일반 로그에 사용자 식별자, 저장 정보와 문서 개인 정보가 노출되지 않는다.

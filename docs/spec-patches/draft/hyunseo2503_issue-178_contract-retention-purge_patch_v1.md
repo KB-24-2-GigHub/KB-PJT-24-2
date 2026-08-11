@@ -8,54 +8,67 @@ targets:
   - requirement: COMMON-003
   - decision: DEC-OPEN-DOCUMENT-RETENTION-SCOPE
   - decision: DEC-CONTRACT-RETENTION
-  - decision: DEC-OPEN-DOCUMENT-RESPONSE-SHAPES
 ---
 
-# SPEC-178-05: 근로계약서 보존·파기
+# SPEC-178-05: 근로계약서 보존·폐기
 
-> **선행 조건**: 파기된 문서가 목록·상세·파일 응답에서 제외되고 직접 접근 시
-> `404 RESOURCE_NOT_FOUND`가 되는 동작은 `SPEC-178-01`이 정한 문서함 노출·오류
-> 통일 규칙을 그대로 가져다 쓴다. 이 Patch는 `SPEC-178-01`이 먼저 또는 같은
-> 릴리스로 승인되는 것을 전제로 한다.
+> **선행 조건**: 폐기 문서의 비노출과 `404 RESOURCE_NOT_FOUND`는 SPEC-178-01을
+> 따른다.
 
 ## 추가 사항
 
-근로계약서(`EMPLOYMENT_CONTRACT`)의 보존 기준일은 그 문서가 속한 `work_cases.ends_at`의
-`Asia/Seoul` 달력 날짜다. 야간 근무처럼 `starts_at`과 `ends_at`이 다른 날짜에 걸쳐도
-동일하게 `ends_at` 날짜를 기준으로 삼는다. 보존 기간은 그 날짜 `Asia/Seoul` 자정
-(00:00)부터 3년이며, 3년이 지난 자정 이후 파기 대상이 된다.
+근로계약서(`EMPLOYMENT_CONTRACT`)의 보존 기준일은 연결된
+`work_cases.ends_at`을 `Asia/Seoul`로 변환한 날짜다. 보존 만료 시각은 그 날짜에
+3년을 더한 날의 서울 자정이다. 자정을 넘기는 야간 근무도 시작일이 아니라 종료일을
+사용한다.
 
-`document_versions`, `document_shares`, `document_access_logs`는 모두 `documents`에
-대한 `ON DELETE RESTRICT` 외래키로 보호되어 있어 `documents` 행을 물리적으로 지우면
-연결된 감사·공유·버전 기록을 먼저 지워야 한다. 이미 승인된 `COMMON-003`("일반 도메인
-행은 상태 또는 삭제 시각으로 비활성화한다")을 그대로 따라, 파기는 행 삭제가 아니라
-다음과 같은 상태 전환으로 수행한다.
+예를 들어 서울 시각 2026-08-20에 종료된 근무의 만료 시각은
+2029-08-20T00:00:00+09:00이다. 서버 현재 시각이 만료 시각 이상이면 폐기 대상이다.
 
-- 비공개 저장소의 파일 실체(Storage Object)만 물리적으로 삭제한다.
-- `documents.status`를 `DELETED`로 바꾼다. 행 자체는 지우지 않는다.
-- `document_versions`(Metadata·Checksum), `document_shares`, `document_access_logs`는
-  전부 보존하며 파기 대상이 아니다. 별도 만료·파기 배치를 두지 않고 무기한 보존한다.
-- `documents.status=DELETED`가 되면 §1(`SPEC-178-01`)의 문서함 노출 규칙(`status IN
-  (SIGNED, ACTIVE)`)에 따라 목록·상세·파일 응답 모두에서 자연히 제외되고 직접 접근은
-  `404 RESOURCE_NOT_FOUND`다. 파기 전용 오류 Code나 별도 분기를 추가하지 않는다.
+이 Patch에서 “자동 삭제”는 계약 이력 행의 물리 삭제가 아니라 문서 비노출과 비공개 저장소
+Object의 물리 삭제를 뜻한다.
 
-파기 배치는 매일 1회 실행하고 작은 Batch 크기로 대상을 처리한다. 파일 삭제 시도는
-멱등하며, 이미 삭제된 Object에 대한 재시도는 성공으로 간주한다. 실패한 건은 다음 배치
-주기에 다시 시도하며, Dry-run 모드·정교한 실패 격리·재시작 복구 절차는 두지 않는다.
-파기 시도 전용 이력 Column이나 테이블을 추가하지 않고 `documents.status`와
-`updated_at`만으로 상태를 판별한다.
+- `documents` 행은 `status=DELETED`로 전이하고 물리 삭제하지 않는다.
+- `document_versions`의 Metadata·Checksum, `document_signatures`,
+  `document_shares`, `document_access_logs`, `work_contracts`와 Work Case 관계는
+  기간 제한 없이 보존한다.
+- 각 Version의 최종 Storage Object와 결정적 `.pending` Object는 모두 물리 삭제한다.
+- 폐기 전후에 사용자 DELETE Endpoint를 제공하지 않는다.
 
-시스템이 자동 생성하는 `EMPLOYMENT_CONTRACT` 문서는 항상 `work_case_id`가 있다는 것을
-애플리케이션 불변식으로 취급한다. `documents.work_case_id` 컬럼 자체는 보건증과 공유하는
-Nullable 컬럼이라 스키마를 바꾸지 않으며, DB 제약 대신 계약서 생성 경로에서만 이 불변식을
-지킨다.
+### 실행과 장애 복구
+
+폐기 Job은 매일 02:00 `Asia/Seoul`에 실행하며 `documentId ASC` Keyset 방식으로 한 번에
+100건씩 처리한다. 시스템 생성 근로계약서의 `work_case_id`가 없으면 데이터 손상으로
+격리하고 `INTERNAL_ERROR` 운영 경보를 남긴다.
+
+각 문서는 다음 두 단계로 처리한다.
+
+1. 짧은 DB 트랜잭션에서 문서 행을 잠근다. 만료 대상이면
+   `documents.status=DELETED`로 바꾸고 Commit하여 목록·상세·파일 접근을 먼저 막는다.
+   이미 DELETED면 상태 변경 없이 다음 단계로 간다.
+2. Commit 뒤 모든 `document_versions`를 조회해 각 `storage_key`의 최종 Object와 같은
+   Version의 결정적 `.pending` Object를 멱등 삭제한다.
+
+Object가 이미 없으면 성공으로 본다. 일부 삭제가 실패해도 문서를 ACTIVE로 되돌리지 않는다.
+다음 Job은 만료된 DELETED 계약서도 다시 선택하므로 남은 최종·임시 Object를 재시도한다.
+따라서 DB 상태 변경 뒤 프로세스가 종료되거나 저장소가 일시 실패해도 접근이 다시 열리지
+않고 후속 실행으로 복구된다.
+
+이력 Column이나 별도 purge 테이블을 추가하지 않으며 `updated_at`을 Object 삭제 성공
+표시로 해석하지 않는다. 이 선택 때문에 완료된 DELETED 문서도 후속 Job에서 멱등 삭제를
+다시 시도할 수 있다. Job은 모든 Keyset Page를 순회하므로 앞의 100건 때문에 뒤 대상이
+굶지 않는다.
+
+운영 로그에는 `traceId`, `documentId`, `versionId`, 단계, 성공·실패 Enum만 남기고 저장
+Key·Checksum과 계약 당사자 정보는 남기지 않는다.
 
 ## 완료 조건
 
-- [ ] 근로계약서 보존 만료일이 `work_cases.ends_at`의 `Asia/Seoul` 달력 날짜 기준 3년 뒤로 계산된다.
-- [ ] 야간 근무(자정을 넘는 근무)도 `ends_at` 날짜를 기준으로 동일하게 계산된다.
-- [ ] 파기 시 Storage Object만 삭제되고 `documents`, `document_versions`, `document_shares`, `document_access_logs` 행은 삭제되지 않는다.
-- [ ] 파기 뒤 `documents.status`가 `DELETED`이고, 해당 문서는 목록·상세·파일 응답에서 제외되며 직접 접근 시 `404 RESOURCE_NOT_FOUND`다.
-- [ ] `document_access_logs`에 대한 별도 파기·만료 배치가 없다.
-- [ ] 파일 삭제 재시도가 멱등하게 동작하고(이미 없는 Object 재시도가 실패로 처리되지 않음), 새 이력 Column·테이블이 추가되지 않는다.
-- [ ] 시스템 생성 근로계약서는 항상 `work_case_id`가 채워져 있다.
+- [ ] 보존 만료가 `ends_at`의 서울 종료 날짜와 3년 기준으로 계산된다.
+- [ ] 야간 근무도 종료 날짜를 사용한다.
+- [ ] DB를 먼저 DELETED로 Commit하여 Object 삭제 실패 중에도 사용자 접근을 막는다.
+- [ ] 모든 Version의 최종 Object와 결정적 임시 Object를 삭제한다.
+- [ ] Object 미존재를 성공으로 보고 실패한 삭제는 다음 실행에서 재시도한다.
+- [ ] 만료된 DELETED 문서도 재선택해 DB 선처리 뒤 실패를 복구한다.
+- [ ] 문서·Version·Checksum·서명·공유·접근 감사와 계약 관계 행은 보존한다.
+- [ ] 근로계약서 사용자 DELETE와 별도 감사 만료 Job을 추가하지 않는다.
