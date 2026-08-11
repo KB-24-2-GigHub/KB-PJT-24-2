@@ -8,9 +8,15 @@ targets:
   - requirement: COMMON-003
   - decision: DEC-OPEN-DOCUMENT-RETENTION-SCOPE
   - decision: DEC-CONTRACT-RETENTION
+  - decision: DEC-OPEN-DOCUMENT-RESPONSE-SHAPES
 ---
 
 # SPEC-178-05: 근로계약서 보존·파기
+
+> **선행 조건**: 파기된 문서가 목록·상세·파일 응답에서 제외되고 직접 접근 시
+> `404 RESOURCE_NOT_FOUND`가 되는 동작은 `SPEC-178-01`이 정한 문서함 노출·오류
+> 통일 규칙을 그대로 가져다 쓴다. 이 Patch는 `SPEC-178-01`이 먼저 또는 같은
+> 릴리스로 승인되는 것을 전제로 한다.
 
 ## 추가 사항
 
