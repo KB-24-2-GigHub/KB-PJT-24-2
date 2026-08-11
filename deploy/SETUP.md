@@ -442,7 +442,33 @@ Access-Control-Allow-Origin: https://gighub.store
 
 ## 10. 롤백
 
-> Task 5에서 실제로 검증한 절차로 채운다.
+`deploy-api.yml`은 커밋 SHA 와 브랜치 이름 두 태그로 push 한다. SHA 태그가 있으므로
+이전 배포로 즉시 되돌릴 수 있다. 이미지는 GHCR 에 남아 있어 pull 없이 전환된다.
+
+```bash
+cd /opt/gighub
+
+# 지금 무엇이 떠 있는가
+docker compose -f compose.prod.yaml images app
+
+# 이전 커밋으로 되돌린다
+API_TAG=<이전-커밋-SHA> docker compose -f compose.prod.yaml up -d app
+
+# 확인은 health 가 아니라 DB 경유 엔드포인트로 한다
+sleep 20
+curl -s "http://127.0.0.1:8080/api/auth/login-id-availability?loginId=rollback-check"
+docker compose -f compose.prod.yaml images app
+```
+
+`images app` 의 **TAG 와 IMAGE ID 가 둘 다 바뀌어야** 실제로 전환된 것이다. TAG 만 보면
+같은 이미지에 태그만 다시 붙은 경우를 구분하지 못한다.
+
+배포에 쓸 수 있는 SHA 는 GitHub Actions 실행 요약의 "배포 완료" 절이나
+`git log` 에서 확인한다.
+
+> **DB 스키마는 롤백되지 않는다.** `migrate-db.yml` 로 적용한 Migration 은 애플리케이션을
+> 되돌려도 그대로 남는다. 컬럼 삭제 같은 파괴적 변경을 적용한 뒤 애플리케이션만 되돌리면
+> 이전 코드가 없는 컬럼을 찾다가 실패한다. 배포와 Migration 을 분리한 이유가 이것이다.
 
 ## 문제 해결
 

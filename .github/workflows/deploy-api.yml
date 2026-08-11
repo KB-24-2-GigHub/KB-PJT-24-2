@@ -3,11 +3,15 @@ name: Deploy API
 # 브랜치 이름을 이 파일에 두지 않는다. 배포 대상은 아래 if 와
 # GitHub Variable DEPLOY_BRANCH 하나로 결정한다.
 #
-#   DEPLOY_BRANCH = <브랜치명>  해당 브랜치 push 마다 자동 배포
-#   DEPLOY_BRANCH = (빈 값)     자동 배포 꺼짐. 수동 버튼만 동작
+#   변수 = <브랜치명>   해당 브랜치 push 마다 자동 배포
+#   변수 삭제           자동 배포 꺼짐. 수동 버튼만 동작
 #
-# 빈 값은 어떤 브랜치 이름과도 일치하지 않으므로, 변수 하나로 자동과 수동을
-# 전환할 수 있다. 팀이 공유하는 브랜치에서는 빈 값을 기본으로 삼는다.
+#     gh variable set DEPLOY_BRANCH --body "dev2"   # 켜기
+#     gh variable delete DEPLOY_BRANCH              # 끄기
+#
+# GitHub API 는 값이 빈 변수를 거부하므로(422) 끄는 방법은 삭제다. 정의되지 않은
+# 변수는 빈 문자열로 평가되고 github.ref_name 은 절대 빈 문자열이 아니므로
+# 조건이 거짓이 된다. 팀이 공유하는 브랜치에서는 삭제 상태를 기본으로 삼는다.
 on:
   push:
   workflow_dispatch:

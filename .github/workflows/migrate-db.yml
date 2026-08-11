@@ -1,0 +1,111 @@
+name: Migrate DB
+
+# 수동 전용. 새 Flyway Migration 이 병합됐을 때만 사람이 실행한다.
+#
+# 배포 워크플로에서 분리한 이유는 되돌릴 수 없기 때문이다. 애플리케이션은 이전
+# 이미지 태그로 즉시 롤백되지만 적용된 DDL 은 돌아오지 않는다. 컬럼을 삭제하는
+# Migration 을 배포에 묶으면, 앱을 되돌린 순간 이전 코드가 없는 컬럼을 찾다가
+# 전부 실패한다.
+#
+# 주의: workflow_dispatch 실행 버튼은 이 파일이 기본 브랜치(main)에 있어야
+# 나타난다. main 에 도달하기 전에는 목록에도 보이지 않는다.
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "RDS 스키마를 변경한다. 진행하려면 migrate 라고 입력"
+        required: true
+        default: ""
+
+concurrency:
+  group: migrate-db
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    # 버튼을 잘못 눌러 되돌릴 수 없는 변경이 나가는 것을 막는다.
+    if: inputs.confirm == 'migrate'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      AWS_DEFAULT_REGION: ap-northeast-2
+      REMOTE: ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}
+      COMPOSE: docker compose -f /opt/gighub/compose.prod.yaml --profile tools run --rm flyway
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # Flyway CLI 이미지에는 MySQL Connector/J 가 없다.
+      - name: Prepare MySQL driver
+        run: sh backend/gradlew -p backend prepareFlywayDriver
+
+      - name: Install SSH key
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy.pem
+          chmod 600 ~/.ssh/deploy.pem
+
+      # 22번 인바운드는 평소 닫혀 있다. 이 실행의 러너 IP 만 잠시 허용한다.
+      - name: Open SSH for this runner
+        id: sg
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          RUNNER_IP="$(curl -sS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${{ secrets.EC2_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description='gh-migrate run ${{ github.run_id }}'}]"
+          ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Upload migrations and driver
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy.pem \
+            backend/src/main/resources/db/migration/*.sql \
+            "${REMOTE}:/opt/gighub/migrations/"
+          scp -i ~/.ssh/deploy.pem \
+            backend/build/flyway-drivers/*.jar \
+            "${REMOTE}:/opt/gighub/drivers/"
+
+      # 적용 예정 목록을 먼저 로그에 남긴다. 실패 시 어디서 멈췄는지 판단할 근거다.
+      - name: Show pending migrations
+        run: ssh -i ~/.ssh/deploy.pem "${REMOTE}" "${COMPOSE} info"
+
+      - name: Apply migrations
+        run: ssh -i ~/.ssh/deploy.pem "${REMOTE}" "${COMPOSE} migrate"
+
+      - name: Verify schema head
+        run: ssh -i ~/.ssh/deploy.pem "${REMOTE}" "${COMPOSE} info"
+
+      # 실패 여부와 무관하게 반드시 회수한다.
+      - name: Close SSH
+        if: always() && steps.sg.outputs.runner_ip != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "${{ secrets.EC2_SG_ID }}" \
+            --protocol tcp --port 22 \
+            --cidr "${{ steps.sg.outputs.runner_ip }}/32" \
+          || echo "::warning::SSH 규칙 회수 실패. 보안그룹을 직접 확인할 것"
+
+      # Migration 적용 후 애플리케이션이 새 스키마로 정상 동작하는지 본다.
+      - name: Verify application against migrated schema
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 6 --retry-delay 5 --retry-all-errors \
+            "https://api.gighub.store/api/auth/login-id-availability?loginId=migrate-smoke"
+          echo
