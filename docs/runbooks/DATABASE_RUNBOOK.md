@@ -410,6 +410,106 @@ npm.cmd run db:seed:contract
 
 같은 명령을 다시 실행하면 전용 테스트 계정과 `[TEST-17]` 근무 건만 위 상태로 되돌립니다. 다른 사용자의 데이터는 삭제하지 않습니다. 전체 DB를 초기화하는 `docker compose down -v`나 Flyway `clean`을 이 Seed의 재실행 방법으로 사용하지 않습니다.
 
+## 선택적 초대 수락 E2E Fixture
+
+WORKER 초대 조회와 수락을 Browser로 확인할 때만 실행합니다. 위 계약·에스크로 Seed는 근무와 초대를 이미 `ACCEPTED`로 만들기 때문에 수락 흐름 자체를 재현할 수 없어 별도 Fixture를 둡니다.
+
+### 선행 조건
+
+| 항목           | 확인 내용                                                    |
+| -------------- | ------------------------------------------------------------ |
+| 로컬 MySQL     | Compose `db`가 `healthy`                                     |
+| Backend Tomcat | `http://localhost:8080`에서 기동 중                          |
+| 초대 설정      | 로컬 properties에 `invite.hmac.secret`과 `invite.web-origin` |
+
+계약·에스크로 Seed와 달리 Backend 기동이 필요합니다. 이 Fixture는 DRAFT 근무와 초대를 SQL이 아니라 실제 OWNER API로 만들기 때문입니다. `invite.*` 설정이 없으면 Spring Root Context가 뜨지 않아 초대 발급 단계에서 멈춥니다.
+
+### 실행
+
+```powershell
+npm.cmd run db:fixture:invite
+```
+
+이 명령은 미적용 Migration을 먼저 적용하고, [`test-invitation-accept.sql`](../../backend/src/test/resources/db/seed/test-invitation-accept.sql)로 계정·사업장·지갑을 준비한 뒤, [`prepare-invitation-fixture.js`](../../scripts/prepare-invitation-fixture.js)가 OWNER로 로그인해 DRAFT 근무와 초대를 만듭니다. 대상 DB가 폐기 가능한 로컬 DB임을 확인하지 못하면 SQL에 닿기 전에 중단합니다.
+
+성공하면 다음 상태와 함께 초대 URL을 출력합니다.
+
+| 항목           | 초기 상태                                            |
+| -------------- | ---------------------------------------------------- |
+| 사장님 로그인  | `test_owner_267` / `Test1234!`                       |
+| 근로자 로그인  | `test_worker_267` / `Test1234!`                      |
+| 사업장         | `Gig-Hub 초대 수락 E2E 매장`, 사업자번호 `0000000267` |
+| 근무·일급      | 실행일 +7일 09:00~18:00, 무급 휴게 60분·300,000원    |
+| 사장님 지갑    | 가용 1,000,000원, 잠금 0원                           |
+| 근로자 지갑    | 가용 0원                                             |
+| 업무 처리 상태 | 근무 `DRAFT`, 초대 `PENDING`, 계약·에스크로·정산 없음 |
+
+초대 Token 원문은 이 출력의 URL 안에만 있고 저장소에는 Token Hash만 남습니다. 출력된 URL을 파일, 이슈, 채팅, Console 로그에 붙여넣지 않습니다. 필요하면 명령을 다시 실행해 새 URL을 받습니다.
+
+### E2E 확인 절차
+
+1. 로그아웃 상태의 Browser로 출력된 초대 URL을 엽니다. WORKER 로그인으로 이동하고 원래 경로가 보존되는지 확인합니다.
+2. `test_worker_267`로 로그인한 뒤 초대 경로로 복귀해 조건이 다시 조회되는지 확인합니다.
+3. 근무 제목, 시간, 사업장, 휴게, 일급, 조건 Version이 읽기 전용으로 표시되는지 확인합니다.
+4. 수락을 실행하고 근무·초대·계약·에스크로·정산·지갑 원장을 대사합니다. 일급 300,000원이 계약 금액, 에스크로 금액, 정산 예정 금액과 같고 사장님 지갑이 가용 700,000원·잠금 300,000원으로 바뀌어야 합니다.
+5. OWNER와 WORKER가 같은 계약 최종본을 보는지 확인합니다.
+6. 새로고침, 뒤로가기, 중복 클릭, 응답 유실 후 재시도에서 계약과 HOLD가 한 번만 생성되는지 확인합니다.
+
+### 대사 SQL
+
+4번과 6번은 화면만으로 판정하지 않고 다음 질의로 확인합니다.
+
+```sql
+SET @wc = (
+    SELECT work_case.id
+    FROM work_cases work_case
+    JOIN users owner_user
+        ON owner_user.id = work_case.employer_id
+       AND owner_user.login_id = 'test_owner_267'
+);
+
+-- 금액은 네 곳이 모두 같아야 합니다.
+SELECT
+    (SELECT agreed_wage FROM work_cases WHERE id = @wc) AS work_case_wage,
+    (SELECT agreed_wage FROM work_contracts WHERE work_case_id = @wc) AS contract_wage,
+    (SELECT amount FROM escrows WHERE work_case_id = @wc) AS escrow_amount,
+    (SELECT amount FROM settlements WHERE work_case_id = @wc) AS settlement_amount;
+
+-- 수락 뒤 상태입니다.
+SELECT
+    (SELECT status FROM work_cases WHERE id = @wc) AS work_case,
+    (SELECT status FROM work_invitations WHERE work_case_id = @wc) AS invitation,
+    (SELECT status FROM escrows WHERE work_case_id = @wc) AS escrow,
+    (SELECT status FROM settlements WHERE work_case_id = @wc) AS settlement;
+
+-- 중복 수락이 없으면 네 값이 모두 1입니다.
+SELECT
+    (SELECT COUNT(*) FROM work_contracts WHERE work_case_id = @wc) AS contracts,
+    (SELECT COUNT(*) FROM escrows WHERE work_case_id = @wc) AS escrows,
+    (SELECT COUNT(*) FROM settlements WHERE work_case_id = @wc) AS settlements,
+    (SELECT COUNT(*) FROM wallet_transactions
+      WHERE work_case_id = @wc AND transaction_type = 'ESCROW_HOLD') AS holds;
+
+-- 지갑 원장은 before/after가 이어지고 합계가 변하지 않아야 합니다.
+SELECT transaction_type, amount,
+       available_before, available_after, locked_before, locked_after
+FROM wallet_transactions wallet_transaction
+JOIN wallets wallet ON wallet.id = wallet_transaction.wallet_id
+JOIN users owner_user ON owner_user.id = wallet.user_id
+WHERE owner_user.login_id = 'test_owner_267'
+ORDER BY wallet_transaction.id;
+```
+
+기대값은 금액 네 곳 모두 `300000`, 상태 `ACCEPTED`/`ACCEPTED`/`HELD`/`WAITING`, 중복 개수 모두 `1`, 원장은 `FUNDING` 1,000,000원 뒤 `ESCROW_HOLD` 300,000원이 이어지고 가용 700,000원·잠금 300,000원으로 합계 1,000,000원이 유지되는 상태입니다.
+
+계약 최종본은 OWNER와 WORKER가 각각 `GET /api/documents/{documentId}/file`로 받은 파일이 같은지 비교해 확인합니다.
+
+### 재실행 범위
+
+같은 명령을 다시 실행하면 `test_owner_267` 사업장에 속한 근무와 그 하위 초대·계약·에스크로·정산·지갑 원장·멱등 Claim만 지우고 위 초기 상태로 되돌립니다. 계약·에스크로 Seed의 `[TEST-17]` 데이터, 다른 사용자의 데이터, 공용 Mock 계좌는 대상이 아닙니다.
+
+수락까지 진행한 수동 테스트 이력을 보존해야 한다면 재실행하지 말고 별도 로컬 DB나 Docker volume에서 Fixture를 실행합니다. 전체 DB를 초기화하는 `docker compose down -v`나 Flyway `clean`을 재실행 방법으로 사용하지 않습니다.
+
 ## 중지와 데이터 보존
 
 ```powershell
