@@ -4,6 +4,7 @@ import com.gighub.settlement.dto.SettlementSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -32,6 +33,18 @@ public interface SettlementMapper {
     // 분쟁 게이트: 지급을 막는 분쟁 행과 빈 구간을 정산 완료까지 잠근다.
     List<Long> findBlockingDisputeIdsForUpdate(
             @Param("workCaseId") Long workCaseId);
+
+    /**
+     * M5 퇴근 완료가 지급 예정 시각을 예약한다.
+     *
+     * <p>status와 금액은 바꾸지 않는다. WAITING이면서 아직 예약되지 않은 행에만 적용되므로
+     * 같은 근무의 재시도는 0행으로 멱등하다.</p>
+     *
+     * @return 변경된 행 수
+     */
+    int scheduleDueAtWaiting(
+            @Param("workCaseId") Long workCaseId,
+            @Param("dueAt") LocalDateTime dueAt);
 
     // 상태 전이: 수동 승인 가능한 WAITING 정산만 처리 중으로 바꾼다.
     int transitionWaitingToProcessing(

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.attendance.mapper.AttendanceRecordMapper">
+
+    <resultMap id="scanCandidateRow"
+               type="com.gighub.attendance.mapper.result.AttendanceScanCandidateRow">
+        <constructor>
+            <arg column="work_case_id" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
+            <arg column="starts_at" javaType="java.time.LocalDateTime"/>
+            <arg column="ends_at" javaType="java.time.LocalDateTime"/>
+            <arg column="workplace_latitude" javaType="java.math.BigDecimal"/>
+            <arg column="workplace_longitude" javaType="java.math.BigDecimal"/>
+            <arg column="allowed_radius_meters" javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        시간창을 SQL에 두어 다른 날짜의 근무가 후보에 섞이지 않게 합니다. 조건이 없으면 같은
+        WORKER가 같은 사업장에 다음 근무를 하나만 더 갖고 있어도 후보가 2건이 되어 스캔이
+        영구히 막힙니다.
+
+        경계는 AttendanceWindowPolicy가 계산해 넘겨줍니다. 자동 판정 Scheduler와 같은 값을
+        써야 스캔과 판정이 서로 모순되지 않습니다.
+
+        LIMIT 2는 "정확히 한 건"을 판정하기 위한 값입니다. 2건째가 보이면 호출부가 후보 복수로
+        거절하므로 전체를 세지 않습니다.
+    -->
+    <select id="findScanCandidates" resultMap="scanCandidateRow">
+        SELECT id AS work_case_id,
+               status,
+               starts_at,
+               ends_at,
+               workplace_latitude,
+               workplace_longitude,
+               allowed_radius_meters
+        FROM work_cases
+        WHERE worker_id = #{workerId}
+          AND workplace_id = #{workplaceId}
+          AND status IN ('READY', 'IN_PROGRESS')
+          AND starts_at &lt;= #{latestStartsAt}
+          AND ends_at &gt; #{earliestEndsAt}
+        ORDER BY starts_at, id
+        LIMIT 2
+    </select>
+
+    <resultMap id="successTimestampsRow"
+               type="com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow">
+        <constructor>
+            <arg column="checked_in_at" javaType="java.time.LocalDateTime"/>
+            <arg column="checked_out_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSuccessTimestamps" resultMap="successTimestampsRow">
+        SELECT
+            MAX(CASE WHEN attendance_type = 'CHECK_IN' AND result = 'SUCCESS'
+                     THEN captured_at END) AS checked_in_at,
+            MAX(CASE WHEN attendance_type = 'CHECK_OUT' AND result = 'SUCCESS'
+                     THEN captured_at END) AS checked_out_at
+        FROM attendance_records
+        WHERE work_case_id = #{workCaseId}
+    </select>
+
+    <insert id="insertAttempt">
+        INSERT INTO attendance_records (
+            work_case_id, worker_id, qr_token_id, attendance_type,
+            captured_at, attempted_at, distance_meters,
+            result, failure_reason, early_checkout_confirmed_at
+        ) VALUES (
+            #{workCaseId}, #{workerId}, #{qrTokenId}, #{attendanceType},
+            #{capturedAt}, #{attemptedAt}, #{distanceMeters},
+            #{result}, #{failureReason}, #{earlyCheckoutConfirmedAt}
+        )
+    </insert>
+
+</mapper>
