@@ -52,6 +52,12 @@ services:
       FLYWAY_CLEAN_DISABLED: "true"
     volumes:
       - /opt/gighub/migrations:/flyway/sql:ro
-      # Flyway CLI 이미지에는 MySQL Connector/J 가 없다.
-      # backend 의 prepareFlywayDriver Task 산출물을 여기에 둔다.
-      - /opt/gighub/drivers:/flyway/drivers:ro
+      # Flyway CLI 이미지에는 MySQL Connector/J 가 없으므로 backend 의
+      # prepareFlywayDriver Task 산출물을 얹는다.
+      #
+      # 반드시 파일 단위로 마운트한다. /flyway/drivers 를 디렉터리째 마운트하면
+      # 이미지에 내장된 다른 DB 플러그인의 드라이버까지 가려져,
+      # Flyway 가 플러그인 로딩 단계에서 ServiceConfigurationError 로 죽는다.
+      # (예: CassandraDatabase -> NoClassDefFoundError DriverOption)
+      # 루트 compose.yaml 도 같은 이유로 파일 단위 마운트를 쓴다.
+      - /opt/gighub/drivers/mysql-connector-j-9.7.0.jar:/flyway/drivers/mysql-connector-j-9.7.0.jar:ro

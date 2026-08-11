@@ -234,10 +234,13 @@ EC2에서 값을 채우고 권한을 잠근다:
 ```bash
 vi /opt/gighub/config/database.properties     # <...> 를 실제 값으로
 chmod 600 /opt/gighub/config/database.properties
-grep -c "<" /opt/gighub/config/database.properties
+grep -vE '^\s*#' /opt/gighub/config/database.properties | grep -c '<'
 ```
 
 기대: **`0`** — 치환하지 않은 자리표시자가 없어야 한다.
+
+> 주석을 먼저 걸러내는 이유는 템플릿의 안내 주석 자체에 꺾쇠가 들어 있기 때문이다.
+> `grep -c '<'` 만 쓰면 그 주석 줄까지 세어 항상 0 이 아닌 값이 나온다.
 
 시크릿 생성:
 
@@ -326,5 +329,6 @@ docker compose -f compose.prod.yaml --profile tools run --rm flyway info
 | 브라우저 CORS 오류            | `database.properties`의 `cors.allowed-origins`         |
 | 초대 링크가 localhost         | `database.properties`의 `invite.web-origin`            |
 | 재배포 후 계약 PDF 사라짐     | `/opt/gighub/documents` 볼륨 마운트 여부               |
+| Flyway `ServiceConfigurationError` | `/flyway/drivers`를 **디렉터리째** 마운트하면 이미지 내장 플러그인 드라이버가 가려진다. jar **파일 단위**로 마운트해야 한다 |
 | 약 90일 후 인증서 만료        | `systemctl status certbot-renew.timer`                 |
 | `docker compose pull` 403     | EC2에서 `docker login ghcr.io` 여부                    |

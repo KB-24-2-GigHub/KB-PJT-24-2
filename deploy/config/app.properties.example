@@ -1,9 +1,10 @@
 # EC2 /opt/gighub/config/database.properties 작성 템플릿.
 #
-# 이 파일 자체는 실제 값을 담지 않는다. 서버로 복사한 뒤 <...> 부분을 실제 값으로
-# 바꾼다. 치환이 끝나면 아래 명령이 0 을 출력해야 한다.
+# 이 파일 자체는 실제 값을 담지 않는다. 서버로 복사한 뒤 꺾쇠로 묶인 자리표시자를
+# 실제 값으로 바꾼다. 치환이 끝나면 아래 명령이 0 을 출력해야 한다.
+# 주석에도 꺾쇠가 등장하므로 주석을 제외하고 세어야 한다.
 #
-#   grep -c "<" /opt/gighub/config/database.properties
+#   grep -vE '^\s*#' /opt/gighub/config/database.properties | grep -c '<'
 #
 # 권한은 600, 소유자는 ec2-user 로 유지한다. 이 파일에 실제 값을 채워 커밋하지 않는다.
 #
