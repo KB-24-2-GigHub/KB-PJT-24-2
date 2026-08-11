@@ -455,6 +455,55 @@ npm.cmd run db:fixture:invite
 5. OWNER와 WORKER가 같은 계약 최종본을 보는지 확인합니다.
 6. 새로고침, 뒤로가기, 중복 클릭, 응답 유실 후 재시도에서 계약과 HOLD가 한 번만 생성되는지 확인합니다.
 
+### 대사 SQL
+
+4번과 6번은 화면만으로 판정하지 않고 다음 질의로 확인합니다.
+
+```sql
+SET @wc = (
+    SELECT work_case.id
+    FROM work_cases work_case
+    JOIN users owner_user
+        ON owner_user.id = work_case.employer_id
+       AND owner_user.login_id = 'test_owner_267'
+);
+
+-- 금액은 네 곳이 모두 같아야 합니다.
+SELECT
+    (SELECT agreed_wage FROM work_cases WHERE id = @wc) AS work_case_wage,
+    (SELECT agreed_wage FROM work_contracts WHERE work_case_id = @wc) AS contract_wage,
+    (SELECT amount FROM escrows WHERE work_case_id = @wc) AS escrow_amount,
+    (SELECT amount FROM settlements WHERE work_case_id = @wc) AS settlement_amount;
+
+-- 수락 뒤 상태입니다.
+SELECT
+    (SELECT status FROM work_cases WHERE id = @wc) AS work_case,
+    (SELECT status FROM work_invitations WHERE work_case_id = @wc) AS invitation,
+    (SELECT status FROM escrows WHERE work_case_id = @wc) AS escrow,
+    (SELECT status FROM settlements WHERE work_case_id = @wc) AS settlement;
+
+-- 중복 수락이 없으면 네 값이 모두 1입니다.
+SELECT
+    (SELECT COUNT(*) FROM work_contracts WHERE work_case_id = @wc) AS contracts,
+    (SELECT COUNT(*) FROM escrows WHERE work_case_id = @wc) AS escrows,
+    (SELECT COUNT(*) FROM settlements WHERE work_case_id = @wc) AS settlements,
+    (SELECT COUNT(*) FROM wallet_transactions
+      WHERE work_case_id = @wc AND transaction_type = 'ESCROW_HOLD') AS holds;
+
+-- 지갑 원장은 before/after가 이어지고 합계가 변하지 않아야 합니다.
+SELECT transaction_type, amount,
+       available_before, available_after, locked_before, locked_after
+FROM wallet_transactions wallet_transaction
+JOIN wallets wallet ON wallet.id = wallet_transaction.wallet_id
+JOIN users owner_user ON owner_user.id = wallet.user_id
+WHERE owner_user.login_id = 'test_owner_267'
+ORDER BY wallet_transaction.id;
+```
+
+기대값은 금액 네 곳 모두 `300000`, 상태 `ACCEPTED`/`ACCEPTED`/`HELD`/`WAITING`, 중복 개수 모두 `1`, 원장은 `FUNDING` 1,000,000원 뒤 `ESCROW_HOLD` 300,000원이 이어지고 가용 700,000원·잠금 300,000원으로 합계 1,000,000원이 유지되는 상태입니다.
+
+계약 최종본은 OWNER와 WORKER가 각각 `GET /api/documents/{documentId}/file`로 받은 파일이 같은지 비교해 확인합니다.
+
 ### 재실행 범위
 
 같은 명령을 다시 실행하면 `test_owner_267` 사업장에 속한 근무와 그 하위 초대·계약·에스크로·정산·지갑 원장·멱등 Claim만 지우고 위 초기 상태로 되돌립니다. 계약·에스크로 Seed의 `[TEST-17]` 데이터, 다른 사용자의 데이터, 공용 Mock 계좌는 대상이 아닙니다.
