@@ -27,7 +27,7 @@ targets:
   "documentId": 5,
   "docType": "HEALTH_CERTIFICATE",
   "status": "ACTIVE",
-  "fileName": "보건증_강남점_20260601",
+  "fileName": "보건증_20260601_김알바",
   "mimeType": "image/jpeg",
   "issuedDate": "2026-06-01",
   "expiryDate": "2027-06-01",
@@ -56,6 +56,12 @@ targets:
 
 - `GET /api/documents`는 `workplaceId?`, `docType?`, `page?`, `size?` Query만 사용한다.
   `source`는 요청 Query로 받지 않고 서버가 `OWN`/`SHARED`로 판정한다.
+- `fileName`은 서버가 조립하며 DB에 별도 Column을 두지 않는다. 근로계약서는
+  `근로계약서_{사업장명}_{발급일}_{알바생이름}`, 보건증은
+  `보건증_{발급일}_{알바생이름}`이다. 사업장명은 그 문서가 속한 근무 건의 사업장명,
+  발급일은 `issuedDate`를 `YYYYMMDD`로, 알바생이름은 근로계약서는 그 근무 건 WORKER,
+  보건증은 문서 소유자의 이름이다. 보건증은 특정 근무 건에 묶이지 않으므로 사업장명을
+  포함하지 않는다.
 - 최신 Version은 `SIGNED`가 있으면 그중 `version_no` 최대값, 없으면 `ORIGINAL` 중
   `version_no` 최대값이다. `mimeType`·`latestVersion`은 그 Version의 값이다.
 - 문서함에는 `status`가 `SIGNED` 또는 `ACTIVE`인 문서만 노출한다. `DRAFT`,
@@ -106,3 +112,4 @@ targets:
 - [ ] 허용되지 않은 MIME은 `application/octet-stream` + `attachment` + `nosniff`로 응답한다.
 - [ ] 저장소에 파일 실체가 없으면 `404`가 아니라 `500 INTERNAL_ERROR`다.
 - [ ] 응답 어디에도 `storage_key`, Checksum, 내부 사용자 ID가 노출되지 않는다.
+- [ ] `fileName`이 근로계약서는 `근로계약서_{사업장명}_{발급일}_{알바생이름}`, 보건증은 `보건증_{발급일}_{알바생이름}` 형식으로 조립되어 반환된다.
