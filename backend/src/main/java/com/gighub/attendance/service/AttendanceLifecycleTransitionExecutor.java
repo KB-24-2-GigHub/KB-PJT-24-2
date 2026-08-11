@@ -1,5 +1,6 @@
 package com.gighub.attendance.service;
 
+import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
 import com.gighub.work.domain.WorkCaseStatus;
@@ -40,8 +41,8 @@ public class AttendanceLifecycleTransitionExecutor {
         WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
                 || row.status() != WorkCaseStatus.ACCEPTED
-                || row.startsAt().isAfter(now.plusMinutes(30))
-                || !now.isBefore(row.startsAt().plusHours(1))) {
+                || AttendanceWindowPolicy.readyOpensAt(row.startsAt()).isAfter(now)
+                || !now.isBefore(AttendanceWindowPolicy.noShowAt(row.startsAt()))) {
             return false;
         }
 
@@ -64,7 +65,7 @@ public class AttendanceLifecycleTransitionExecutor {
         WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
                 || row.status() != WorkCaseStatus.READY
-                || row.startsAt().plusHours(1).isAfter(now)
+                || AttendanceWindowPolicy.noShowAt(row.startsAt()).isAfter(now)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)) {
             return false;
         }
@@ -76,7 +77,7 @@ public class AttendanceLifecycleTransitionExecutor {
         WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
                 || row.status() != WorkCaseStatus.IN_PROGRESS
-                || row.endsAt().plusHours(2).isAfter(now)
+                || AttendanceWindowPolicy.checkOutMissingAt(row.endsAt()).isAfter(now)
                 || !lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_OUT)) {
             return false;

@@ -17,6 +17,7 @@ import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
+import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -114,6 +115,20 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 || workplaceMapper.findOwnedActiveIdForUpdate(workplaceId, ownerUserId) == null) {
             throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
         }
+    }
+
+    /**
+     * 결과가 없어도 예외로 끝내지 않습니다. 호출자인 근태 스캔은 "활성 사업장 아님"을
+     * 자신의 승인된 QR 오류로 바꿔야 하는데, 여기서 사업장 조회 실패를 던지면 그 구분이
+     * 사라집니다.
+     */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WorkplaceLocationSnapshot lockActiveWorkplaceLocation(Long workplaceId) {
+        if (workplaceId == null) {
+            return null;
+        }
+        return workplaceMapper.findActiveLocationForUpdate(workplaceId);
     }
 
     /**
