@@ -7,8 +7,18 @@ name: Migrate DB
 # Migration 을 배포에 묶으면, 앱을 되돌린 순간 이전 코드가 없는 컬럼을 찾다가
 # 전부 실패한다.
 #
-# 주의: workflow_dispatch 실행 버튼은 이 파일이 기본 브랜치(main)에 있어야
-# 나타난다. main 에 도달하기 전에는 목록에도 보이지 않는다.
+# 주의: 이 워크플로는 기본 브랜치(main)에 도달해야 실행할 수 있다.
+#
+# dispatch 가 가능하려면 워크플로가 Actions 에 등록되어 있어야 하고, 등록 경로는
+# 두 가지다. 기본 브랜치에 파일이 존재하거나, 다른 트리거로 한 번이라도 실행된
+# 적이 있거나다. 이 파일은 workflow_dispatch 전용이라 스스로 실행될 방법이 없으므로
+# 기본 브랜치가 유일한 등록 경로다.
+#
+# 도달 전에 시도하면 다음과 같이 거부된다.
+#   HTTP 404: workflow migrate-db.yml not found on the default branch
+#
+# 반면 deploy-api.yml 은 push 트리거로 이미 실행된 적이 있어 등록되어 있으므로,
+# 기본 브랜치에 없어도 --ref 로 dispatch 할 수 있다.
 on:
   workflow_dispatch:
     inputs:
