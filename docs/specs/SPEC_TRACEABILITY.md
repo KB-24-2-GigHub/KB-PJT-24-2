@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `6.0.0`         |
-| 승인일      | 2026-08-10      |
+| 명세 릴리스 | `6.0.1`         |
+| 승인일      | 2026-08-11      |
 | 소유자      | PM/Admin Master |
 
 이 표는 요구사항을 승인 REST Operation과 도메인에 연결합니다. 아래 MVP P0 감사만 PM의
@@ -101,11 +101,18 @@ PM이 기존 이슈를 지정하거나 별도 기능 이슈 생성을 승인할 
 | WALLET-005    | 지갑·계좌 금액 변경 Operation                                                          | `wallet_transactions`, `mock_bank_transactions`                                                                                 | DEC-IDEMPOTENCY                                                                                                                                                              |
 | WALLET-006    | 충전·출금·초대 수락·정산 승인 Operation                                                | `idempotency_requests`, 멱등 Key, 금융 Aggregate                                                                                | DEC-IDEMPOTENCY, DEC-IDEMPOTENCY-STORAGE, DEC-IDEMPOTENCY-CLAIM-LIFECYCLE                                                                                                    |
 
+### `6.0.1` MVP_SCOPE 원본 추적
+
+| 구분             | 추적 대상                                                                                                         | 연결 계약                                                                           |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 최상위 제품 목표 | [MVP_SCOPE.md](MVP_SCOPE.md), [Issue #307](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/307), `SPEC-307-01` | 원본 시연 순서·Priority·화면 성공 판정, 에이전트 라우팅, 파생 규범 문서와 보호 Lock |
+| 파생 규범 계약   | REQUIREMENTS·API_SPEC·DECISIONS·SPEC_TRACEABILITY                                                                 | 원본의 37개 P0를 안정적인 ID·목표 API·결정·기능 이슈·현재 구현 감사와 연결         |
+
 ### `6.0.0` MVP P0 행정 추적
 
 | 구분             | 추적 대상                                                                                                         | 연결 계약                                                                                    |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| 보호 명세 릴리스 | [Issue #282](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/282), `SPEC-282-01`                             | 외부 `MVP_SCOPE.md`의 37개 P0, 목표 API, 우선순위, 구현 상태·기능 이슈·공백 감사             |
+| 보호 명세 릴리스 | [Issue #282](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/282), `SPEC-282-01`                             | 원본 [MVP_SCOPE.md](MVP_SCOPE.md)의 37개 P0, 목표 API, 우선순위, 구현 상태·기능 이슈·공백 감사 |
 | 제품 기준점      | `dev2@b0e34fec5604169e96ecc33df9d69428f81d48a4`, GitHub 상태 2026-08-10                                           | 목표 계약과 현재 구현 판정 분리, 미구현 M4~M7을 RF-01에서 구현하지 않음                      |
 | 호환성 경계      | 목표 Work·Invitation·Settlement Payload가 바뀌는 Major, 코드·Migration 없음, 최소 호환 스키마 `202608061428` 유지 | 시급·보건증 요구·지각 분할 정산·노쇼 별도 환불 승인은 담당 기능 이슈가 없어 미구현 상태 유지 |
 

@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-307-01
-status: draft
+status: accepted
 issue: 307
 base_spec_version: 6.0.0
 targets:

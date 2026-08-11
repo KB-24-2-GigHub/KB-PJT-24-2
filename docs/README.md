@@ -31,6 +31,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 모듈·테이블 경계   | [`agent/MODULE_BOUNDARIES.md`](agent/MODULE_BOUNDARIES.md)         | 논리 모듈, Write owner, 공개 Service와 Tx 계약     |
 | 위험 기반 검증     | [`agent/VERIFICATION_GUIDE.md`](agent/VERIFICATION_GUIDE.md)       | R0~R3, Characterization, 장기 생명주기와 실행 명령 |
 | 코드 진입점 탐색   | [`agent/IMPLEMENTATION_GUIDE.md`](agent/IMPLEMENTATION_GUIDE.md)   | Route, API, Backend, DB 작업별 안정적인 탐색 순서  |
+| 최상위 제품 목표 확인 | [`specs/MVP_SCOPE.md`](specs/MVP_SCOPE.md)                       | 원본 시연 시나리오, Priority와 화면 성공 판정      |
 | 요구사항 확인      | [`specs/REQUIREMENTS.md`](specs/REQUIREMENTS.md)                   | 승인된 요구사항과 수용 기준                        |
 | API 계약 확인      | [`specs/API_SPEC.md`](specs/API_SPEC.md)                           | 승인된 REST 계약                                   |
 | 제품 결정 확인     | [`specs/DECISIONS.md`](specs/DECISIONS.md)                         | 승인·미결정·폐기 결정                              |
@@ -43,6 +44,10 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 공유 계약은 새 대화, 에이전트 인계, 브랜치 전환 또는 계약 변경 후 다시 읽습니다. 같은
 대화에서 바뀌지 않았다면 반복해서 읽지 않습니다. 상세 명세와 Runbook은 현재 작업에 필요한
 부분만 선택합니다.
+
+제품 범위, Priority, 시연 성공 결과 또는 `P0`/`P1`/`P2`/`Deferred`를 판단하는 작업은
+[`specs/MVP_SCOPE.md`](specs/MVP_SCOPE.md)를 먼저 완전히 읽고, 그다음 관련 요구사항·API·결정·추적
+문서에서 안정적인 ID와 공식 계약을 확인합니다.
 
 ## 보호 명세
 
