@@ -89,7 +89,9 @@ targets:
 도메인별 오류 Code를 새로 만들지 않는다. 문서 API는 `VALIDATION_ERROR`, `AUTH_REQUIRED`,
 `FORBIDDEN`, `ROLE_MISMATCH`, `RESOURCE_NOT_FOUND`, `CONFLICT`,
 `CONTRACT_RETENTION_REQUIRED`, `INTERNAL_ERROR`만 사용한다. 미존재·권한없음·삭제·
-공유철회·공유만료는 모두 `404 RESOURCE_NOT_FOUND`로 통일하고 `410`을 쓰지 않는다.
+공유철회·공유만료는 모두 `404 RESOURCE_NOT_FOUND`로 통일하고 `410`을 쓰지 않는다. 이는
+공통 규칙("역할 또는 리소스 소유권 위반은 403")에 대한 문서 API 한정 예외이며, 목적은
+요청자가 알 수 없는 타인의 문서 존재 여부를 403/404 구분으로 노출하지 않는 것이다.
 저장소 파일 실체 누락만 예외로 `500 INTERNAL_ERROR`다.
 
 ## 완료 조건
