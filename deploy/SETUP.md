@@ -96,7 +96,7 @@ sudo sshd -t && sudo systemctl reload sshd
 ```bash
 sudo dnf install -y nginx
 sudo systemctl enable --now nginx
-curl -I http://api.gighub.store
+curl -sS -D - -o /dev/null http://api.gighub.store/ | head -3
 ```
 
 기대: `HTTP/1.1 200 OK` (nginx 기본 페이지)
@@ -173,7 +173,7 @@ sudo certbot --nginx -d api.gighub.store --agree-tos -m <이메일> --redirect
 기대: `Congratulations! You have successfully enabled HTTPS`
 
 ```bash
-curl -I https://api.gighub.store
+curl -sS -D - -o /dev/null https://api.gighub.store/ | head -3
 sudo systemctl status certbot-renew.timer
 ```
 
@@ -196,6 +196,58 @@ mysql -h <rds-endpoint> -u <rds-user> -p -e "SELECT VERSION();"
 기대: `8.4.x`
 
 접속이 안 되면 `my-rds-sg` 인바운드 소스가 `my-ec2-sg`인지 확인한다.
+
+### 6.1 시간대를 Asia/Seoul로 맞춘다 — 데이터 투입 전에
+
+**RDS 기본 시간대는 UTC지만 이 프로젝트는 DB에 Asia/Seoul wall-clock 값이 들어있다고
+전제한다**(`docs/agent/ARCHITECTURE_OVERVIEW.md`). 로컬 `compose.yaml`도
+`--default-time-zone=+09:00`으로 띄운다.
+
+Migration이 `DEFAULT CURRENT_TIMESTAMP(6)`를 52곳에서 쓰는데, 이 값은 **서버 시간대로
+평가**되므로 JDBC `serverTimezone` 파라미터로 교정할 수 없다. UTC인 채로 두면 DB 기본값으로
+채워지는 모든 시각이 9시간 어긋난다. 로컬에서는 재현되지 않는다.
+
+1. RDS 콘솔 → **파라미터 그룹** → 파라미터 그룹 생성
+   - 엔진 유형 `MySQL Community`, 파라미터 그룹 패밀리 `mysql8.4`
+2. 생성한 그룹 편집 → `time_zone` 검색 → 값 `Asia/Seoul` → 저장
+3. RDS → 해당 인스턴스 → **수정** → DB 파라미터 그룹을 새 그룹으로 변경 → 즉시 적용
+4. 인스턴스 **재부팅** — RDS → 인스턴스 선택 → 작업 → 재부팅
+
+> **"즉시 적용"은 재부팅을 대체하지 않는다.** `time_zone` 자체는 동적 파라미터지만,
+> **파라미터 그룹을 다른 그룹으로 교체하는 것**은 정적 변경으로 취급된다. 그래서 그룹을
+> 갈아끼우면 안의 파라미터가 동적이어도 `pending-reboot` 상태로 대기한다. "즉시 적용"은
+> *변경 요청을 지금 처리하라*는 뜻이지 *재부팅 없이 반영하라*는 뜻이 아니다.
+>
+> 반영 여부는 RDS 콘솔 → 인스턴스 → **구성** 탭의 파라미터 그룹 옆 괄호로 확인한다.
+> `(pending-reboot)`면 아직이고, `(in-sync)`여야 반영된 것이다.
+
+확인:
+
+```bash
+mysql -h <rds-endpoint> -u <rds-user> -p -e "SELECT @@global.time_zone, @@session.time_zone, NOW();"
+```
+
+기대: `Asia/Seoul`과 한국 현재 시각. `SYSTEM`이나 `UTC`면 아직 반영되지 않은 것이다.
+
+**데이터가 들어간 뒤에 바꾸면 기존 행과 새 행의 시간대가 섞인다.** Migration 전에 끝낸다.
+
+### 6.2 데이터베이스 생성
+
+RDS 인스턴스 생성 시 "초기 데이터베이스 이름"을 비워두면 데이터베이스가 만들어지지 않는다.
+Flyway는 `Unknown database 'kb_pjt'`(Error 1049)로 실패한다.
+
+문자셋과 콜레이션은 로컬 `compose.yaml`과 일치시킨다.
+
+```bash
+mysql -h <rds-endpoint> -u <rds-user> -p \
+  -e "CREATE DATABASE IF NOT EXISTS kb_pjt CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci;"
+
+mysql -h <rds-endpoint> -u <rds-user> -p \
+  -e "SELECT SCHEMA_NAME, DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME
+      FROM information_schema.SCHEMATA WHERE SCHEMA_NAME='kb_pjt';"
+```
+
+기대: `kb_pjt | utf8mb4 | utf8mb4_0900_ai_ci`
 
 ## 7. /opt/gighub 디렉터리와 설정 파일
 
@@ -330,5 +382,7 @@ docker compose -f compose.prod.yaml --profile tools run --rm flyway info
 | 초대 링크가 localhost         | `database.properties`의 `invite.web-origin`            |
 | 재배포 후 계약 PDF 사라짐     | `/opt/gighub/documents` 볼륨 마운트 여부               |
 | Flyway `ServiceConfigurationError` | `/flyway/drivers`를 **디렉터리째** 마운트하면 이미지 내장 플러그인 드라이버가 가려진다. jar **파일 단위**로 마운트해야 한다 |
+| 앱은 정상인데 `curl -I`가 401 | **`curl -I`는 HEAD다.** `SecurityConfig`의 공개 경로는 `AntPathRequestMatcher(pattern, GET)`로 GET만 허용하므로 HEAD는 인증 대상이 된다. 상태 확인은 GET으로 한다 |
+| Flyway `Unknown database` (1049) | RDS에 `kb_pjt`가 없다. 6.2절 |
 | 약 90일 후 인증서 만료        | `systemctl status certbot-renew.timer`                 |
 | `docker compose pull` 403     | EC2에서 `docker login ghcr.io` 여부                    |
