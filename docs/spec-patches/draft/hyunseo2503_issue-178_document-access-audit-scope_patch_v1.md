@@ -14,6 +14,11 @@ targets:
 
 # SPEC-178-04: 문서 접근 감사 범위
 
+> **선행 조건**: `GET /api/documents/{documentId}`는 정식 명세에 없고
+> `SPEC-178-01`이 draft로 처음 추가한 대상이다. 이 Patch는 `SPEC-178-01`이 먼저
+> 또는 같은 릴리스로 승인되는 것을 전제로 하며, 단독으로 정식 SPEC에 반영할 수
+> 없다.
+
 ## 추가 사항
 
 계약서(`EMPLOYMENT_CONTRACT`) 파일 접근에만 적용되던 `document_access_logs` 감사
