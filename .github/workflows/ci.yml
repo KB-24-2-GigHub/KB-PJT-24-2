@@ -35,7 +35,7 @@ jobs:
           # refs/remotes/origin/<base> 가 없어 Guardrail 이 예외로 중단된다.
           fetch-depth: 0
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
