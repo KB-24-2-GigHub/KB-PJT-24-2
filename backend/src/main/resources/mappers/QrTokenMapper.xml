@@ -33,6 +33,22 @@
     </select>
 
     <!--
+        승인된 잠금 순서의 두 번째 단계입니다. 재발급이 workplaces 를 잠근 뒤 이 행을
+        폐기하므로, 스캔도 같은 순서로 잠가야 폐기된 QR 이 뒤늦게 통과하지 않습니다.
+    -->
+    <select id="findActiveByWorkplaceIdForUpdate"
+            resultType="com.gighub.attendance.mapper.result.QrTokenRow">
+        SELECT id,
+               workplace_id,
+               token_nonce,
+               created_at
+        FROM qr_tokens
+        WHERE workplace_id = #{workplaceId}
+          AND status = 'ACTIVE'
+        FOR UPDATE
+    </select>
+
+    <!--
         ck_qr_tokens_revoked_at 은 REVOKED 와 revoked_at 을 함께 요구합니다. 둘을 나눠 쓰면
         중간 상태가 제약에 걸립니다.
     -->

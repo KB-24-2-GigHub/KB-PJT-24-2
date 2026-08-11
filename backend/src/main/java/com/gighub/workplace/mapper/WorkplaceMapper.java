@@ -4,6 +4,7 @@ import java.util.List;
 
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
+import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -93,4 +94,15 @@ public interface WorkplaceMapper {
     Long findOwnedActiveIdForUpdate(
             @Param("workplaceId") Long workplaceId,
             @Param("ownerUserId") Long ownerUserId);
+
+    /**
+     * 소유권과 무관하게 활성 사업장 행을 잠그고 현재 좌표를 읽습니다.
+     *
+     * <p>근태 스캔은 사업장을 소유하지 않은 WORKER가 호출하므로 소유자 조건을 두지
+     * 않습니다. 거리 판정 기준이 현재 좌표라서 잠금과 좌표 조회를 한 문장에서 처리합니다.</p>
+     *
+     * @return 활성 사업장이 아니면 {@code null}
+     */
+    WorkplaceLocationSnapshot findActiveLocationForUpdate(
+            @Param("workplaceId") Long workplaceId);
 }

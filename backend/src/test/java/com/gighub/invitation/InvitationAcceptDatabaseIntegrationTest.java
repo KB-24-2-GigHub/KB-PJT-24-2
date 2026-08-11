@@ -337,8 +337,16 @@ class InvitationAcceptDatabaseIntegrationTest {
     @Test
     @Timeout(120)
     void settlementFailureRollsBackDocumentFilesAndEveryEarlierParticipant() throws Exception {
-        SettlementReservationService failingSettlement = (workCaseId, amount) -> {
-            throw new IllegalStateException("settlement failure injection");
+        SettlementReservationService failingSettlement = new SettlementReservationService() {
+            @Override
+            public void reserveWaiting(long workCaseId, long amount) {
+                throw new IllegalStateException("settlement failure injection");
+            }
+
+            @Override
+            public void schedulePayout(long workCaseId, java.time.LocalDateTime dueAt) {
+                throw new UnsupportedOperationException();
+            }
         };
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.register(RootConfig.class);
