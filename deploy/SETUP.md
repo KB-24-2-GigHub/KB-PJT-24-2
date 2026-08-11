@@ -363,7 +363,82 @@ docker compose -f compose.prod.yaml --profile tools run --rm flyway info
 
 ## 9. 수동 배포
 
-> Task 4에서 실제로 성공한 명령으로 채운다.
+### 9.1 이미지 빌드와 push (로컬)
+
+> **WAR 을 반드시 먼저 다시 빌드한다.** `gradle check` 는 `war` 를 의존하지 않으므로,
+> 코드를 고친 뒤 `npm run check` 만 돌리면 `build/libs/gig-hub.war` 는 이전 빌드 그대로
+> 남는다. 그 상태로 `docker build` 하면 **옛 코드가 배포되고, HTTP 상태 코드만으로는
+> 절대 드러나지 않는다.** 실제로 이 함정에 한 번 걸렸다.
+
+```bash
+sh backend/gradlew -p backend war
+
+# 이미지에 새 코드가 들어갔는지 확인한다. 이미지에 unzip 은 없고 jar 는 있다.
+docker build -t ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:<tag> backend
+docker run --rm --entrypoint sh ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:<tag> -c \
+  "cd /tmp && jar xf /usr/local/tomcat/webapps/ROOT.war META-INF/context.xml \
+   && grep -c RemoteIpValve META-INF/context.xml"
+
+docker push ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:<tag>
+```
+
+기대: 마지막 확인이 `1`
+
+### 9.2 EC2 에서 교체
+
+```bash
+# 패키지가 private 이면 최초 1회 필요하다.
+echo $CR_PAT | docker login ghcr.io -u <github-사용자명> --password-stdin
+
+cd /opt/gighub
+API_TAG=<tag> docker compose -f compose.prod.yaml pull app
+API_TAG=<tag> docker compose -f compose.prod.yaml up -d app
+docker compose -f compose.prod.yaml ps
+```
+
+셸 환경변수가 `.env` 의 `API_TAG` 보다 우선하므로 `.env` 를 고칠 필요는 없다.
+
+### 9.3 배포 검증 — 상태 코드만으로는 부족하다
+
+`/api/health` 는 DB 를 조회하지 않는 순수 liveness 다(`HealthController` Javadoc).
+HikariCP 는 지연 초기화이므로 **DB 가 완전히 망가져도 앱은 기동하고 health 는 200 이다.**
+아래 세 가지를 모두 확인한다.
+
+```bash
+# 1) DB 전 구간 — users 테이블을 실제로 SELECT 한다
+curl -s -w "\nHTTP %{http_code}\n" \
+  "https://api.gighub.store/api/auth/login-id-availability?loginId=smoke-check"
+
+# 2) 쿠키 속성 — Domain 과 Secure 가 둘 다 있어야 한다
+curl -sS -D - -o /dev/null https://api.gighub.store/api/auth/csrf | grep -i set-cookie
+
+# 3) CORS — 프론트 Origin 이 허용되는지
+curl -sS -D - -o /dev/null -X OPTIONS \
+  -H "Origin: https://gighub.store" \
+  -H "Access-Control-Request-Method: POST" \
+  https://api.gighub.store/api/auth/login | grep -i access-control-allow-origin
+```
+
+기대:
+
+```
+{"data":{"available":true}}                                        HTTP 200
+Set-Cookie: XSRF-TOKEN=...; Domain=gighub.store; Path=/; Secure; SameSite=Lax
+Access-Control-Allow-Origin: https://gighub.store
+```
+
+세 확인이 각각 다른 실패를 잡는다.
+
+| 확인 | 실패 시 원인                                                   |
+| ---- | -------------------------------------------------------------- |
+| 1    | RDS 연결, Flyway 미적용, `database.properties` 값               |
+| 2 Domain | `security.cookie.domain` 누락, **또는 옛 WAR 이 배포됨**    |
+| 2 Secure | nginx `X-Forwarded-Proto` 누락, `RemoteIpValve` 없는 옛 WAR |
+| 3    | `cors.allowed-origins` 값, 또는 옛 WAR                          |
+
+**EC2 내부(`127.0.0.1:8080`)에서 확인하면 `Secure` 는 없는 것이 정상이다.** nginx 를
+거치지 않아 `X-Forwarded-Proto` 가 없기 때문이다. `Domain` 은 내부에서도 있어야 한다.
+두 속성이 서로 다른 장치에서 나온다는 사실을 이 차이로 구분할 수 있다.
 
 ## 10. 롤백
 
