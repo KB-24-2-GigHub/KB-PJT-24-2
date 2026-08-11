@@ -29,7 +29,7 @@ database.pool.validation-timeout-ms=5000
 #   openssl rand -base64 32
 invite.hmac.secret=<32자 이상 시크릿>
 invite.hmac.previous-secret=
-invite.web-origin=https://gighub.kro.kr
+invite.web-origin=https://gighub.store
 
 # --- 고정 QR 서명 -------------------------------------------------------------
 #   openssl rand -base64 32
@@ -49,5 +49,5 @@ document.storage.base-path=/var/gighub/documents
 # security.cookie.domain: XSRF-TOKEN 쿠키를 상위 도메인으로 넓혀,
 #   다른 host 의 Frontend JavaScript 가 읽을 수 있게 한다.
 #   미설정 시 host-only 다.
-cors.allowed-origins=https://gighub.kro.kr
-security.cookie.domain=gighub.kro.kr
+cors.allowed-origins=https://gighub.store
+security.cookie.domain=gighub.store

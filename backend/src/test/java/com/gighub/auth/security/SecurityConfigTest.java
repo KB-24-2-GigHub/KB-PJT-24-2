@@ -54,7 +54,7 @@ class SecurityConfigTest {
         MockEnvironment environment = new MockEnvironment();
         environment.setProperty(
                 "cors.allowed-origins",
-                "https://gighub.kro.kr,https://www.gighub.kro.kr");
+                "https://gighub.store,https://www.gighub.store");
 
         CorsConfigurationSource source = new SecurityConfig(environment).corsConfigurationSource();
         CorsConfiguration configuration =
@@ -62,14 +62,14 @@ class SecurityConfigTest {
 
         assertNotNull(configuration);
         assertEquals(
-                Arrays.asList("https://gighub.kro.kr", "https://www.gighub.kro.kr"),
+                Arrays.asList("https://gighub.store", "https://www.gighub.store"),
                 configuration.getAllowedOrigins());
     }
 
     @Test
     void corsTrimsWhitespaceAroundConfiguredOrigins() {
         MockEnvironment environment = new MockEnvironment();
-        environment.setProperty("cors.allowed-origins", " https://gighub.kro.kr , https://a.example ");
+        environment.setProperty("cors.allowed-origins", " https://gighub.store , https://a.example ");
 
         CorsConfigurationSource source = new SecurityConfig(environment).corsConfigurationSource();
         CorsConfiguration configuration =
@@ -77,7 +77,7 @@ class SecurityConfigTest {
 
         assertNotNull(configuration);
         assertEquals(
-                Arrays.asList("https://gighub.kro.kr", "https://a.example"),
+                Arrays.asList("https://gighub.store", "https://a.example"),
                 configuration.getAllowedOrigins());
     }
 
@@ -98,7 +98,7 @@ class SecurityConfigTest {
     @Test
     void csrfCookieUsesConfiguredDomain() {
         MockEnvironment environment = new MockEnvironment();
-        environment.setProperty("security.cookie.domain", "gighub.kro.kr");
+        environment.setProperty("security.cookie.domain", "gighub.store");
 
         CsrfTokenRepository repository = new SecurityConfig(environment).csrfTokenRepository();
         MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/auth/csrf");
@@ -109,7 +109,7 @@ class SecurityConfigTest {
 
         Cookie cookie = response.getCookie("XSRF-TOKEN");
         assertNotNull(cookie);
-        assertEquals("gighub.kro.kr", cookie.getDomain());
+        assertEquals("gighub.store", cookie.getDomain());
     }
 
     /**
