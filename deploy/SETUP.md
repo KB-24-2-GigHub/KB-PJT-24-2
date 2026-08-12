@@ -61,10 +61,15 @@ nslookup api.gighub.store
 | ----------- | ------------ | ---- | ----------- | -------------------------- |
 | `my-ec2-sg` | HTTP         | 80   | `0.0.0.0/0` | ACME 검증, HTTPS 리다이렉트 |
 | `my-ec2-sg` | HTTPS        | 443  | `0.0.0.0/0` | 서비스                     |
-| `my-ec2-sg` | SSH          | 22   | `0.0.0.0/0` | GitHub Actions 배포        |
+| `my-ec2-sg` | SSH          | 22   | `(확인 필요)` | GitHub Actions 배포        |
 | `my-rds-sg` | MYSQL/Aurora | 3306 | `my-ec2-sg` | EC2에서만 접근             |
 
-22번 전체 개방은 GitHub 러너 IP 대역이 광범위해서다. 3절의 키 인증 강제로 완화한다.
+22번 상시 개방 여부는 미확인이다. 3절의 키 인증 강제로 완화한다.
+
+> `deploy-api.yml`과 `migrate-db.yml`은 여기에 더해 실행마다 러너 IP `/32` 규칙을
+> 추가했다가 `if: always()`로 회수한다. 상시 규칙과 별개이므로, 워크플로가 중간에
+> 죽으면 회수되지 않은 `/32` 규칙이 남을 수 있다. `gh-actions run <id>` 설명이 붙은
+> 오래된 규칙이 보이면 지운다.
 
 ## 3. SSH 접속과 잠금
 
@@ -469,6 +474,86 @@ docker compose -f compose.prod.yaml images app
 > **DB 스키마는 롤백되지 않는다.** `migrate-db.yml` 로 적용한 Migration 은 애플리케이션을
 > 되돌려도 그대로 남는다. 컬럼 삭제 같은 파괴적 변경을 적용한 뒤 애플리케이션만 되돌리면
 > 이전 코드가 없는 컬럼을 찾다가 실패한다. 배포와 Migration 을 분리한 이유가 이것이다.
+
+## 11. 브랜치와 배포 스위치
+
+배포 대상 브랜치는 워크플로 파일이 아니라 GitHub Variable `DEPLOY_BRANCH` 하나가
+결정한다. 브랜치 전략이 바뀌어도 워크플로 파일은 수정하지 않는다.
+
+| `DEPLOY_BRANCH` | 자동 배포                    | 수동 버튼 |
+| --------------- | ---------------------------- | --------- |
+| `dev`           | `dev` push 마다              | 사용 가능 |
+| **(삭제 상태)** | **꺼짐** — 어떤 push도 무시  | 사용 가능 |
+| `main`          | 릴리스만                     | 사용 가능 |
+
+```bash
+# 켜기
+gh variable set DEPLOY_BRANCH --body "dev"
+
+# 끄기 — 시연·발표 전에 서버를 동결한다
+gh variable delete DEPLOY_BRANCH
+
+# 지금 상태
+gh variable list
+```
+
+**끄는 방법이 "빈 값"이 아니라 "삭제"인 이유**는 GitHub API가 값이 빈 변수를 422로
+거부하기 때문이다. 정의되지 않은 변수는 빈 문자열로 평가되고 `github.ref_name`은 절대
+빈 문자열이 아니므로, `deploy-api.yml`의 `if` 조건이 거짓이 되어 Job이 skip된다.
+
+변수와 무관하게 수동 실행은 언제나 동작한다.
+
+```bash
+gh workflow run deploy-api.yml --ref dev
+gh run watch
+```
+
+필터 없는 `on: push`의 비용은 모든 브랜치 push에서 워크플로가 시작한 뒤 즉시 skip되는
+것이다. Actions 목록에 회색 항목이 남지만 러너 시간은 소비하지 않는다.
+
+## 12. Vercel 연결
+
+프론트엔드는 Vercel의 네이티브 Git 연동이 배포한다. GitHub Actions는 관여하지 않는다.
+중복 배포가 되기 때문이다.
+
+**설정은 저장소 밖에만 존재한다.** 이 절이 유일한 기록이다.
+
+| 위치                                    | 값                                    |
+| ---------------------------------------- | ------------------------------------- |
+| Settings → Git → Production Branch      | `dev`                                 |
+| Settings → Environment Variables → Production | `VITE_API_BASE_URL` = `https://api.gighub.store/api` |
+
+변경 후 **Deployments에서 Redeploy를 1회 실행한다.** 설정 변경만으로는 기존 배포에
+반영되지 않는다.
+
+`frontend/src/services/http.js`가 `import.meta.env.VITE_API_BASE_URL || '/api'`를 쓴다.
+변수가 없으면 상대경로 `/api`로 떨어지는데 Vercel에는 그 경로를 받을 백엔드가 없다.
+로컬에서는 Vite dev 프록시가 `/api`를 `DEV_PROXY_TARGET`으로 넘기므로 값이 달라도 된다.
+
+### 12.1 Preview 배포에서 API 호출이 차단되는 것은 의도된 동작이다
+
+Production Branch가 `dev`이므로 나머지 브랜치는 Preview 배포가 된다. Preview URL은
+배포마다 달라 백엔드 `cors.allowed-origins`에 등록할 수 없고, 따라서 브라우저가
+프리플라이트에서 막는다.
+
+이는 결함이 아니라 안전한 기본값이다. 임의의 Preview 배포가 운영 API와 운영 DB에 닿지
+못하게 한다. **Preview는 화면 확인용으로 쓰고, 연동 검증은 운영이나 로컬에서 한다.**
+
+허용하려면 `/opt/gighub/config/database.properties`의 `cors.allowed-origins`에 해당
+Origin을 추가해야 하는데, Preview 도메인은 고정되지 않으므로 사실상 와일드카드가
+필요하다. 인증 쿠키를 실어 보내는 API에 와일드카드를 여는 것은 권장하지 않는다.
+
+### 12.2 연동 검증
+
+Vercel과 EC2가 처음 만나는 지점이므로, 설정 직후 브라우저에서 확인한다.
+
+1. `https://gighub.store` 로그인 성공
+2. DevTools → Network — 로그인 요청에 CORS 오류 없음
+3. 저장 동작(POST)에 `X-XSRF-TOKEN` 헤더가 붙는다
+4. Application → Cookies — `XSRF-TOKEN`에 `Domain=gighub.store`와 `Secure`
+5. 새로고침 후 세션 유지
+
+실패 시 확인 지점은 "문제 해결" 표를 따른다.
 
 ## 문제 해결
 
