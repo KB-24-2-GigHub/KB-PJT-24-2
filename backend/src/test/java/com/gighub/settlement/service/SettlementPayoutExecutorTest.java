@@ -278,7 +278,8 @@ class SettlementPayoutExecutorTest {
                 .workCaseId(WORK_CASE_ID)
                 .amount(WAGE)
                 .status(status)
-                .dueAt(DUE_AT);
+                .dueAt(DUE_AT)
+                .retryCount(0);
         if (status == SettlementStatus.COMPLETED) {
             builder.approvedByUserId(EMPLOYER_ID)
                     .processingAt(PROCESSING_AT)

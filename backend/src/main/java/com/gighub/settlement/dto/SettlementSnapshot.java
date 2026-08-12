@@ -21,4 +21,7 @@ public class SettlementSnapshot {
     private final LocalDateTime processingAt;
     private final LocalDateTime completedAt;
     private final String failureCode;
+    private final Integer retryCount;
+    private final LocalDateTime lastFailureAt;
+    private final LocalDateTime nextRetryAt;
 }

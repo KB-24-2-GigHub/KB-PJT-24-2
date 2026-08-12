@@ -10,15 +10,15 @@ This is the compact database context for repository agents. Read it before chang
 | Last verified          | 2026-08-12                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
-| Migration head         | `202608111744`                                                                                                 |
-| Versioned migrations   | 14                                                                                                             |
+| Migration head         | `202608112307`                                                                                                 |
+| Versioned migrations   | 15                                                                                                             |
 | Domain tables          | 24, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
-| Readable DDL snapshot  | [`schema-snapshot-202608111744.sql`](../database/schema-snapshot-202608111744.sql), owner-maintained reference |
+| Readable DDL snapshot  | [`schema-snapshot-202608112307.sql`](../database/schema-snapshot-202608112307.sql), owner-maintained reference |
 
 When this summary and executable configuration disagree, inspect the owner-authored or
 owner-adopted migrations, Git tracking, `compose.yaml`, `DatabaseConfig.java`, and
-`backend/build.gradle`. Versions `202607311427` through `202608111744` are approved parts of the
+`backend/build.gradle`. Versions `202607311427` through `202608112307` are approved parts of the
 current schema. Version `202608041614` adds the independent idempotency Claim store, and version
 `202608051337` replaces Mock bank-account user ownership with a four-digit Demo PIN while preserving
 account IDs and finance references. Version `202608061428` adds document-Version and structured
@@ -59,6 +59,7 @@ not edit or regenerate SQL.
 | `202608061428` | `V202608061428__add_document_access_audit_details.sql`       | Link access audits to a version of the same document and store structured denial reasons              |
 | `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql` | Restrict audit `action` and audit `denial_reason` to the approved value sets                            |
 | `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`        | Restrict `user_badges.badge_type` to `TRUST_OWNER` and `TRUST_WORKER`                                  |
+| `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql` | Add settlement refund/retry lifecycle constraints and the required dispute title                        |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
 
@@ -113,6 +114,12 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - `wallet_transactions` records before/after snapshots, but the database does not validate ledger arithmetic or the polymorphic reference target.
 - `escrows.work_case_id` and `settlements.work_case_id` are each unique. Composite foreign keys require their amounts to equal the work case's agreed wage.
 - There is no direct foreign key between a settlement and an escrow.
+- `settlements` accepts `WAITING`, `SCHEDULED`, `ON_HOLD`, `PROCESSING`, `COMPLETED`, `REFUNDED`,
+  and `FAILED` only in approved column shapes. `retry_count`, `last_failure_at`, and
+  `next_retry_at` preserve Scheduler failure evidence; `(status, due_at)` remains the candidate index.
+- `PROCESSING` must not be committed independently from its money transaction. A pre-existing stuck
+  `PROCESSING`, legacy `FAILED`, or ambiguous completed row is rejected by migration preflight rather
+  than guessed into the new lifecycle.
 - Funding and withdrawal foreign keys preserve the selected Mock account and bank-transaction references, but they do not enforce ACTIVE status, funding PIN approval, or that a withdrawal request user owns its wallet.
 
 ### Attendance and dispute
@@ -125,6 +132,8 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - `attendance_records.early_checkout_confirmed_at` is allowed only on a successful `CHECK_OUT`, preserving an explicit early-checkout confirmation audit moment.
 - Separate attendance foreign keys do not prove that the recorded worker is the worker assigned to the work case.
 - Generated open-slot uniqueness permits at most one `OPEN` or `UNDER_REVIEW` dispute per work case.
+- Every new dispute requires a trimmed title of 1 to 100 characters. Existing disputes without an
+  approved original title block the migration and require owner-directed manual reconciliation.
 
 ### Documents and signatures
 

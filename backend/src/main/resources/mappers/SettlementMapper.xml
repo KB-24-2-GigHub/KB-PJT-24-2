@@ -28,6 +28,9 @@
             <arg column="processingAt" javaType="java.time.LocalDateTime"/>
             <arg column="completedAt" javaType="java.time.LocalDateTime"/>
             <arg column="failureCode" javaType="java.lang.String"/>
+            <arg column="retryCount" javaType="java.lang.Integer"/>
+            <arg column="lastFailureAt" javaType="java.time.LocalDateTime"/>
+            <arg column="nextRetryAt" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
@@ -40,7 +43,10 @@
         due_at              AS dueAt,
         processing_at       AS processingAt,
         completed_at        AS completedAt,
-        failure_code        AS failureCode
+        failure_code        AS failureCode,
+        retry_count         AS retryCount,
+        last_failure_at     AS lastFailureAt,
+        next_retry_at       AS nextRetryAt
     </sql>
 
     <!-- 정산 원장: 상태 검사와 갱신이 끝날 때까지 같은 행을 잠근다. -->
@@ -84,6 +90,7 @@
             approved_by_user_id = #{approvedByUserId},
             processing_at       = NOW(6),
             failure_code        = NULL,
+            next_retry_at       = NULL,
             updated_at          = NOW(6)
         WHERE id = #{settlementId}
           AND status = 'SCHEDULED'

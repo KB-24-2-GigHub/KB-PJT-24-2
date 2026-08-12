@@ -2,26 +2,27 @@
 
 > 저장소 원본: `docs/DATABASE_SCHEMA_ERD.md`
 >
-> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608111744`
+> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608112307`
 >
 > 범위: 도메인 테이블 24개와 Flyway 내부 관리 테이블 1개, 총 25개입니다.
 >
-> 읽기용 통합 DDL: [`database/schema-snapshot-202608111744.sql`](database/schema-snapshot-202608111744.sql)
+> 읽기용 통합 DDL: [`database/schema-snapshot-202608112307.sql`](database/schema-snapshot-202608112307.sql)
 >
 > 편집 정책: Migration과 통합 DDL은 프로젝트 소유자 전용입니다. 에이전트는 소유자가 변경한
 > 스키마를 근거로 이 설명 문서만 갱신할 수 있습니다.
 
-현재 소유자 승인 기준은 Head `202608111744`의 Migration 14개·도메인 테이블 24개입니다.
+현재 소유자 승인 기준은 Head `202608112307`의 Migration 15개·도메인 테이블 24개입니다.
 사업장 고정 QR `202607311427`, 비밀번호 재설정 Token `202607311428`, 퇴근 누락 상태
 `202607311429`, OWNER Profile 제거 `202608041138`, 멱등 요청 Claim `202608041614`, Mock 계좌
 비귀속 PIN 전환 `202608051337`, 문서 접근 감사 상세 `202608061428`, 문서 감사 allowlist
 `202608111743`, 뱃지 유형 allowlist `202608111744`를 모두 현재 스키마로 사용합니다.
+정산 환불·재시도 생명주기와 분쟁 제목은 `202608112307`에서 추가합니다.
 
 ## 한 장 요약
 
 Gig-Hub 데이터베이스는 `users`를 중심으로 회원, 사업장, 근무, 지갑, 근태와 문서 기능을 연결합니다. 사장님과 근로자는 별도 회원 테이블로 나누지 않고 `users.role`로 구분합니다. OWNER 식별정보는 `users`, 사업체·사업장 기준정보는 `workplaces`에 저장하며 한 사용자는 여러 사업장을 가질 수 있습니다. Mock 계좌는 사용자에게 소유·귀속되지 않는 합성 계좌입니다. 별도 OWNER Profile 테이블은 사용하지 않습니다. 로그인 아이디와 이메일은 각각 고유하고, 회원 탈퇴 상태에서는 `deleted_at`이 반드시 기록되어야 합니다. 비밀번호 재설정 원문 Token은 DB에 저장하지 않고 `password_reset_tokens.token_hash`로만 추적합니다. `flyway_schema_history`는 업무 데이터가 아니라 적용한 Migration의 버전·체크섬·성공 여부를 기록합니다.
 
-근무 흐름의 중심은 `work_cases`입니다. 한 근무 건은 사장님과 사업장을 반드시 가지며 근로자는 초대 전까지 비어 있을 수 있습니다. 초대 수락 후에는 `work_contracts`에 조건을 스냅샷으로 보존하고, 계약 당사자와 일급이 원래 근무 건과 달라질 수 없도록 복합 외래키로 묶습니다. `escrows`와 `settlements`는 근무 건당 최대 한 건이며 금액은 확정 일급과 같아야 합니다. `due_at`은 자동 정산 예정 시간을 저장할 뿐이고 DB Scheduler나 Trigger는 없습니다. 실제 자동 지급은 추후 Spring Scheduler가 수행합니다.
+근무 흐름의 중심은 `work_cases`입니다. 한 근무 건은 사장님과 사업장을 반드시 가지며 근로자는 초대 전까지 비어 있을 수 있습니다. 초대 수락 후에는 `work_contracts`에 조건을 스냅샷으로 보존하고, 계약 당사자와 일급이 원래 근무 건과 달라질 수 없도록 복합 외래키로 묶습니다. `escrows`와 `settlements`는 근무 건당 최대 한 건이며 금액은 확정 일급과 같아야 합니다. `settlements`는 상태별 시각·승인자·재시도 감사 필드 조합을 CHECK로 고정하고 `REFUNDED` 종료 상태를 포함합니다. `due_at`은 자동 정산 예정 시간을 저장할 뿐이고 DB Scheduler나 Trigger는 없습니다. 실제 자동 지급은 후속 Spring Scheduler가 수행합니다.
 
 자금은 `mock_bank_accounts`, `wallets`, `escrows`로 분리합니다. Mock 계좌에는 숫자 네 자리 Demo PIN을 저장하며 사용자 FK는 없습니다. 지갑의 `available_balance`만 사용·출금 가능하고 `locked_balance`는 에스크로 예치액입니다. 충전·출금 요청과 지갑 원장은 멱등 키를 고유값으로 저장하여 같은 요청이 중복 반영되지 않게 설계했습니다. `idempotency_requests`는 사용자·Operation별 요청 Claim과 최초 성공 응답을 별도로 저장합니다. Mock 은행 거래와 지갑 거래는 서로 다른 원장이고, 실제 금융망과 연결되지 않습니다.
 
@@ -302,6 +303,9 @@ erDiagram
         datetime processing_at "NULL"
         datetime completed_at "NULL"
         varchar failure_code "NULL"
+        tinyint retry_count
+        datetime last_failure_at "NULL"
+        datetime next_retry_at "NULL"
         datetime created_at
         datetime updated_at
     }
@@ -311,6 +315,7 @@ erDiagram
         bigint work_case_id FK
         bigint requester_id FK
         varchar dispute_type
+        varchar title
         text content
         varchar status
         text resolution "NULL"
@@ -514,6 +519,7 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | `workplaces.business_registration_number`                         | 숫자 10자리                                | 불가 | `ck_workplaces_business_registration_number`                       |
 | `workplaces.name`, `representative_name`, `road_address`, `phone` | 각 값이 앞뒤 공백 제거 후 한 글자 이상     | 불가 | `ck_workplaces_required_text`                                      |
 | `workplaces.detail_address`                                       | `NULL` 또는 앞뒤 공백 제거 후 한 글자 이상 | 가능 | `ck_workplaces_detail_address`                                     |
+| `disputes.title`                                                  | 앞뒤 공백 없이 1~100자                      | 불가 | `ck_disputes_title`                                                |
 | `idempotency_requests.operation_code`, `idempotency_key`          | 빈 문자열 불가, ASCII 대소문자 구분        | 불가 | `ck_idempotency_requests_operation`, `ck_idempotency_requests_key` |
 | `document_access_logs.action`                                     | 승인된 문서 접근 행위 다섯 종류             | 불가 | `ck_document_access_logs_action`                                   |
 | `document_access_logs.denial_reason`                              | NULL 또는 승인된 거부 사유 다섯 종류        | 가능 | `ck_document_access_logs_denial_reason`                            |
@@ -551,7 +557,7 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 
 ### 현재 DDL과 제품 Workflow 경계
 
-아래 표는 현재 Head `202608111744`가 보장하는 사실과 승인된 제품 Workflow 또는 추가 DDL
+아래 표는 현재 Head `202608112307`이 보장하는 사실과 승인된 제품 Workflow 또는 추가 DDL
 검토가 남은 부분을 분리합니다. Migration과 통합 DDL은 프로젝트 소유자만 변경합니다.
 
 | 기능                 | 현재 DB                                                                                           | 제품 Workflow·추가 검토                                                                                                      |
@@ -563,6 +569,7 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유를 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 확정 Version과 거부 사유를 기록하고 보관·조회 정책을 적용                                         |
 | 신뢰 뱃지            | `badge_type`은 `TRUST_OWNER`·`TRUST_WORKER`만 허용하고 등급·건수는 `evidence` JSON에만 존재      | 7.0.0은 누적 문턱과 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence 필드, 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime을 구현 |
 | 멱등 요청 처리       | 사용자·Operation·Key Claim, Fingerprint, 완료 응답과 만료 시각을 저장                             | Claim 획득·대기 없는 충돌 처리·중단 복구·응답 재전송·만료 정리는 애플리케이션에서 구현                                       |
+| 정산 환불·재시도     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index        | Scheduler·환불·분쟁 Service는 후속 이슈에서 구현하며, 기존 고착 `PROCESSING`·`FAILED`·분쟁 행은 추정 보정하지 않음             |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                     | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                                             |
 
 퇴근 누락의 상태값과 근로자 필수 제약은 현재 DDL입니다. 반면 성공 출근과 퇴근 부재를 판정하는
@@ -679,6 +686,8 @@ erDiagram
         bigint amount FK
         varchar status
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
     }
 
     USERS ||--o{ WORKPLACES : "owns"
@@ -774,6 +783,8 @@ erDiagram
         bigint amount FK
         varchar status
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
     }
 
     USERS ||--o| WALLETS : "owns"
@@ -848,6 +859,8 @@ erDiagram
         bigint work_case_id FK, UK
         bigint approved_by_user_id FK "NULL"
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
         varchar status
     }
     DISPUTES {
@@ -855,6 +868,7 @@ erDiagram
         bigint work_case_id FK
         bigint requester_id FK
         bigint resolved_by_user_id FK "NULL"
+        varchar title
         varchar status
     }
 
