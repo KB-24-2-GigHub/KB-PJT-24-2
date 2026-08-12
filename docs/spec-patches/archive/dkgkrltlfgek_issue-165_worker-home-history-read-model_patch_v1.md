@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-165-01
-status: draft
+status: accepted
 issue: 165
 base_spec_version: 6.0.1
 targets:

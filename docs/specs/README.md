@@ -2,10 +2,10 @@
 
 | 항목             | 값                                        |
 | ---------------- | ----------------------------------------- |
-| 명세 릴리스      | `7.0.0`                                   |
+| 명세 릴리스      | `7.0.1`                                   |
 | 승인일           | 2026-08-12                                                   |
 | 소유자           | PM/Admin Master                                              |
-| 최소 호환 스키마 | 목표 Flyway `202608112307` 이상 (#171 미구현, 현재 `202608061428`) |
+| 최소 호환 스키마 | 목표 Flyway `202608112307` 이상 (#171 미구현, 현재 `202608111744`) |
 
 이 디렉터리는 Gig Hub의 제품 요구와 외부 REST 계약을 보관하는 규범 문서 영역입니다.
 구현 코드, Swagger 화면, 작업 이력은 이 문서의 근거가 될 수 있지만 이 문서를 자동으로
@@ -15,6 +15,13 @@
 진행률을 뜻하지 않습니다. 이후 Migration이 제품 의미나 외부 계약을 바꾸지 않고 호환성을
 유지한다면 이 명세 릴리스를 갱신하지 않습니다.
 
+`7.0.1`은 WORKER 홈·근무 이력의 현재 저장 모델 경계와 SHARED 보건증 단건 상세 문맥을
+명시한 보완 릴리스입니다. 시급 Snapshot 전에는 `hourlyWage`, `expectedDeductionAmount`,
+`expectedPaymentAmount`를 반환하지 않고 일급 기반 `expectedNetAmount`를 유지합니다. SHARED
+보건증 상세는 목록의 `workCaseId` Query가 필수이며 서버가 관계를 자동 선택하지 않습니다.
+두 보완은 새 Migration이나 오류 Code를 추가하지 않으며 #165·#132의 구현·통합 완료를
+의미하지 않습니다.
+
 `7.0.0`은 M6 정상 지급·자동 Scheduler·NO_SHOW 환불·임금분쟁 자금 경계와 M7 문서·신뢰
 뱃지 계약을 함께 확정한 Major 릴리스입니다. 정상 CHECK_OUT 뒤 Work Case는 이미
 `COMPLETED`이고 Settlement는
@@ -23,9 +30,10 @@
 기존 `due_at`의 `ON_HOLD`로 보류하며 마지막 열린 분쟁이 닫히면 `SCHEDULED`로 재개합니다.
 NO_SHOW는 OWNER의 별도 멱등 승인으로 `REFUNDED`에 종료합니다.
 
-이 보호 명세 릴리스에는 코드나 Migration이 없습니다. 현재 기준선 Flyway `202608061428`의
+7.0.0 보호 명세 릴리스 자체에는 코드나 Migration이 없었습니다. 현재 기준선은 #179가 문서
+감사·뱃지 allowlist를 새 immutable Migration 두 개로 보강한 Flyway `202608111744`입니다.
 범용 Claim과 `(status,due_at)` Index는 재사용하지만 `REFUNDED`, Scheduler 재시도 필드와
-`disputes.title`이 없어 7.0.0 계약을 실행 호환하는 최초 Schema는
+`disputes.title`이 없어 7.0.0 정산 계약을 실행 호환하는 최초 Schema는
 [Issue #171](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/171)의 신규 immutable
 `V202608112307__add_settlement_retry_and_dispute_title.sql`로 제공할 예정입니다. 현재
 `WAITING`을 직접 지급하고 Work Case를 변경하는 동작을 [#72](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/72)가
@@ -36,10 +44,10 @@ NO_SHOW는 OWNER의 별도 멱등 승인으로 `REFUNDED`에 종료합니다.
 문서 계약은 목록과 단건 상세의 안전한 Item·허용 Version, 파일 404 비식별·Checksum·감사,
 보건증 새 문서 등록·발급일 수정·논리 삭제, Work Case 단위 공유, 계약서 3년 보존 뒤 Object
 폐기를 확정합니다. 신뢰 뱃지는 최근 구간 대신 누적 10·20·30건과 정상 비율 80·90·100%를
-사용하고 조회마다 원천 이력을 재계산합니다. 이 범위는 현재 Flyway `202608061428`로 표현할
-수 있으므로 SPEC-178 승인 자체는 Migration을 추가하지 않습니다. #131·#132·#179~#183이
-열려 있는 동안 문서·뱃지 기능은 Planned 또는 Partial이며 정식 명세 승인을 구현 완료로
-판정하지 않습니다.
+사용하고 조회마다 원천 이력을 재계산합니다. 외부 동작은 기존 구조로 표현 가능했고 #179는
+코드성 감사·뱃지 값 집합만 Flyway `202608111743`·`202608111744`로 보강했습니다.
+#131·#132·#180~#183이 열려 있는 동안 문서·뱃지 기능은 Planned 또는 Partial이며 정식 명세와
+Schema 승인을 구현 완료로 판정하지 않습니다.
 
 `6.0.1`은 PM/Admin이 제공한 원본 [MVP_SCOPE.md](MVP_SCOPE.md)를 내용 변경 없이 저장소에
 보존하고 에이전트 문서 진입점에 연결한 Patch 릴리스입니다. 이 원본은 제품 범위, Priority와
@@ -134,6 +142,7 @@ SPEC_TRACEABILITY는 원본을 안정적인 ID, 공식 API, 결정과 구현 감
 
 | Version | 승인일     | 요약                                                                                                                                                                                                               |
 | ------- | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `7.0.1` | 2026-08-12 | WORKER 홈·이력에서 시급 Snapshot 전 세 공제 필드를 제외하고 SHARED 보건증 상세에 목록 `workCaseId` 문맥을 필수화한 보완 릴리스 ([#165](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/165), [#178](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/178), `SPEC-165-01`, `SPEC-178-07`) |
 | `7.0.0` | 2026-08-12 | M6 Settlement 생명주기·경합·분쟁 보류와 M7 문서 목록·상세·보건증·공유·감사·보존·누적 신뢰 뱃지를 함께 확정한 Major 릴리스 ([#170](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/170), [#178](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/178), `SPEC-170-01`, `SPEC-178-01~06`) |
 | `6.0.1` | 2026-08-11 | 원본 [MVP_SCOPE.md](MVP_SCOPE.md)를 내용 변경 없이 추적하고 에이전트 라우팅·파생 계약 관계·보호 Lock을 보완한 Patch 릴리스 ([#307](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/307), `SPEC-307-01`) |
 | `6.0.0` | 2026-08-10 | 원본 MVP 목표의 37개 P0를 요구·API·결정·기능 이슈·현재 구현 상태와 연결하고 장기 Work 생명주기와 기능 공백을 분리한 Major 릴리스 ([#282](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/282), `SPEC-282-01`) |

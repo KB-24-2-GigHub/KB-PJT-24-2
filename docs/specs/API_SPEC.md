@@ -2,7 +2,7 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `7.0.0`         |
+| 명세 릴리스 | `7.0.1`         |
 | 승인일      | 2026-08-12      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
@@ -507,10 +507,15 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 반환합니다.
 
 - `workCaseId`, `title`, `workplaceName`, `startsAt`, `endsAt`
-- `hourlyWage`, `breakMinutes`, `breakPaid`, `dailyWage`, `expectedNetAmount`, `status`
+- `breakMinutes`, `breakPaid`, `dailyWage`, `expectedNetAmount`, `status`
 - `attendance:{checkedInAt,checkedOutAt,isLate,lateMinutes}`
-- `expectedDeductionAmount`, `expectedPaymentAmount`
 - `escrowStatus`, `settlementStatus`, `settlementDueAt`
+
+현재 `work_cases`에는 승인된 시급 Snapshot이 없으므로 `GET /api/worker/home`과
+`GET /api/worker/work-cases`는 `hourlyWage`, `expectedDeductionAmount`,
+`expectedPaymentAmount`를 반환하지 않습니다. `expectedNetAmount`는 저장 `dailyWage`만으로
+계산합니다. 시급 Snapshot과 `WORK-008`·`SETTLE-006` 구현이 별도 승인되기 전 클라이언트가
+제외된 세 값을 역산하거나 임의 필드로 대체하지 않습니다.
 
 출퇴근 시점은 nullable이고 지각 여부와 분수는 성공 CHECK_IN에서 파생합니다. 오늘 후보는
 `Asia/Seoul` 시작일이 오늘인 배정 근무와 전날부터 남은 `IN_PROGRESS`,
@@ -529,19 +534,19 @@ if incomeTax < 1000:
 expectedNetAmount = dailyWage - incomeTax - localIncomeTax
 ```
 
-확보 안심금액은 클라이언트가 응답 기준값으로 진입 즉시 계산하고 근무 종료 전까지 60초마다
-갱신합니다. API를 매분 재호출하는 계약은 아닙니다. 무급 휴게 반영은
-`DEC-OPEN-DASHBOARD-BREAK`를 따릅니다. 정상 근무의 `expectedDeductionAmount`는 0이고
-`expectedPaymentAmount`는 `dailyWage`입니다. 지각 근무 두 필드의 계산은
-`expectedDeductionAmount=floor(hourlyWage×lateMinutes÷60)`,
-`expectedPaymentAmount=dailyWage-expectedDeductionAmount`이며 원 미만을 버립니다. 세 금액은
-음수가 아니어야 하고 클라이언트가 독자적인 공제식을 만들지 않습니다. 화면 안심금액의
-상한은 `expectedPaymentAmount`입니다.
+확보 안심금액의 시급 기반 공제·상한은 시급 Snapshot과 `WORK-008`·`SETTLE-006` 구현 소유가
+확정될 때까지 Blocked입니다. 클라이언트는 현재 응답의 일급 기반 `expectedNetAmount`를
+참고값으로 사용할 수 있지만 독자적인 시급·공제식을 만들거나 API를 매분 재호출하지 않습니다.
 
 `GET /api/worker/work-cases`의 각 Page Item은 같은 기본 근무 필드와 근태·Escrow·Settlement
 상태를 반환합니다. 저장 상태를 `BEFORE_WORK`, `LATE`, `SETTLED` 같은 화면 별칭으로 바꾸지
 않고 `CHECK_OUT_MISSING`을 `NO_SHOW`와 구분합니다. 두 API는 정밀 좌표, QR Token, OWNER
 잔액과 계약 Storage 정보를 반환하지 않습니다.
+
+근무 이력은 배정 확정 이후 상태만 반환하며 `DRAFT`·`CANCELED`는 content와
+`totalElements`에서 함께 제외합니다. 저장된 Work Case 상태와 성공 근태 기록이 모순이면
+저장값을 반환하되 내부 무결성 신호를 남기며, 한 손상 행 때문에 본인 조회 전체를 실패시키지
+않습니다.
 
 `GET /api/worker/workplaces`는 보건증 신규 공유 후보가 될 수 있는 관계를
 `startsAt ASC, workplaceId ASC`로 반환합니다. Item은 `workplaceId`, `workplaceName`,
@@ -1582,10 +1587,18 @@ M5 근태 전용 Migration은 추가하지 않습니다. 운영 규모의 MySQL 
 `source=OWN`은 현재 사용자가 문서 소유자일 때이고, `source=SHARED`는 유효한 보건증 공유를
 받은 OWNER 또는 근로계약 당사자인 WORKER일 때입니다.
 
-단건 상세에서 같은 `documentId`가 현재 사용자에게 둘 이상의 유효한 SHARED Work Case
-관계로 보이는 경우 어느 `workCaseId` Item을 선택할지는 이번 승인에서 정하지 않았습니다.
-서버는 임의 관계를 고르거나 구현 완료로 표시하지 않고 후속 보호 계약이 선택 규칙 또는
-식별자를 확정할 때까지 이 복수 관계 경계를 Blocked로 유지합니다.
+SHARED `HEALTH_CERTIFICATE`의 단건 상세는 목록의 같은 SHARED Item이 반환한
+`workCaseId`를 `GET /api/documents/{documentId}?workCaseId={workCaseId}`로 반드시
+전달합니다. 서버는 Query가 없을 때 유일한 관계를 자동 선택하거나 복수 관계를 정렬해 첫
+행으로 축약하지 않습니다. 전달된 관계는 현재 사용자, 문서, Work Case, 사업장 OWNER,
+문서 소유 WORKER, ACTIVE 공유와 현재 유효 시간을 함께 검증합니다.
+
+SHARED 보건증에서 `workCaseId`가 없거나 관계가 틀리거나 비가시면 다른 관계로 fallback하지
+않고 `404 RESOURCE_NOT_FOUND`입니다. 문서가 식별된 당사자 불일치는
+`PARTY_ACCESS_DENIED`, 철회·만료·근무 종료는 `DOCUMENT_UNAVAILABLE`로
+`DOCUMENT_DETAIL_VIEW` DENIED 감사를 정확히 한 번 Commit합니다. 미존재 문서는 DB 감사
+대상이 아닙니다. OWN 보건증과 문서 자체 `work_case_id`가 있는 근로계약 당사자는 Query 없는
+기존 상세 경로를 유지하고, 파일 Endpoint는 유효 공유 관계가 하나 이상이면 허용합니다.
 
 목록과 `GET /api/documents/{documentId}`는 다음 Item을 함께 사용하고 상세만 `versions[]`를
 추가합니다.

@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-178-07
-status: draft
+status: accepted
 issue: 178
 base_spec_version: 7.0.0
 targets:
