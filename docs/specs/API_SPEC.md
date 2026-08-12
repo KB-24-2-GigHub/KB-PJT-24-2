@@ -2,7 +2,7 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `7.0.1`         |
+| 명세 릴리스 | `8.0.0`         |
 | 승인일      | 2026-08-12      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
@@ -30,8 +30,8 @@
 | 1-5      | `POST /api/wallet/funding-orders`                                         | OWNER 본인 지갑         | 은행·계좌·금액·PIN·CSRF·IK         | 200 충전 결과                       | 400, 403, 409           | 같은 IK Replay                              | 1-4 → 1-6         | PIN 실패 사유 통합                |
 | 1-6      | `GET /api/wallet/transactions`                                            | OWNER 본인 지갑         | Page·정렬 Query                    | 200 최신 거래 Page                  | 400, 401                | GET 안전                                    | 1-5 → 2-1         | 충전 즉시 재조회                  |
 | 2-1      | `GET /api/workplaces/{id}/work-cases`                                     | OWNER·해당 사업장       | Page Query                         | 200 빈 `content` 허용               | 400, 403                | GET 안전                                    | 1-6 → 2-2         | 빈 목록은 오류 아님               |
-| 2-2      | `POST /api/workplaces/{id}/work-cases`                                    | OWNER·해당 사업장       | 조건 Body·CSRF                     | 201 `{workCaseId,dailyWage}`        | 400, 403, 409           | 자동 재시도 금지                            | 2-1 → 2-3         | 서버가 분 단위 일당 계산          |
-| 2-3      | `PATCH /api/work-cases/{id}`                                              | OWNER·DRAFT 소유자      | 전체 조건·CSRF                     | 204, GET에 재산정 조건              | 400, 403, 409           | 자동 재시도 금지                            | 2-2 → 2-4         | 기존 초대 철회                    |
+| 2-2      | `POST /api/workplaces/{id}/work-cases`                                    | OWNER·해당 사업장       | 조건 Body·CSRF                     | 201 `{workCaseId,dailyWage}`        | 400, 403, 409           | 자동 재시도 금지                            | 2-1 → 2-3         | 입력 약정 일급을 그대로 저장      |
+| 2-3      | `PATCH /api/work-cases/{id}`                                              | OWNER·DRAFT 소유자      | 전체 조건·CSRF                     | 204, GET에 수정 조건                | 400, 403, 409           | 자동 재시도 금지                            | 2-2 → 2-4         | 기존 초대 철회                    |
 | 2-4      | 2-2 POST를 두 번 추가                                                     | OWNER·해당 사업장       | 각 조건 Body·CSRF                  | 서로 다른 201 두 건                 | 400, 409                | 각 요청 독립                                | 2-3 → 2-5         | 시간 중첩 정책은 검증 계약을 따름 |
 | 2-5      | `POST /api/work-cases/{id}/invitations`                                   | OWNER·DRAFT 소유자      | `{healthCertificateRequired}`·CSRF | 200/201 Link·만료·요구 서류         | 403, 409                | 일반 발급으로 현재 Link 복구                | 2-4 → 3-1         | 보건증 요구 필드는 Target         |
 | 3-1      | `/invitations/{token}` → `POST /api/auth/login`                           | 비인증 → WORKER         | Redirect·자격 증명·CSRF            | 로그인 뒤 원 경로 복귀              | 401, 403                | 로그인 자동 재시도 금지                     | 2-5 → 3-2         | Redirect 보존                     |
@@ -45,7 +45,7 @@
 | 4-6      | `GET /api/workplaces/{id}/qr`                                             | OWNER·해당 사업장       | 없음                               | 200 고정 QR Token·Image 자료        | 403, 404, 500           | GET 안전                                    | 4-5 → 5A-1        | 인쇄·저장은 Client Target         |
 | 5A-1     | `GET /api/worker/home`                                                    | WORKER A 본인           | 없음                               | 200 오늘 근무·출근 가능 시각        | 401, 404                | GET 안전                                    | 4-6 → 5A-2        | 실제 저장 근무                    |
 | 5A-2     | `POST /api/attendance/scans`                                              | WORKER A·현장 Work      | QR·위치·CSRF·IK                    | 200 CHECK_IN·IN_PROGRESS            | 409, 422, 503           | 같은 IK Replay                              | 5A-1 → 5A-3·5A-5  | 후보·거리 재검증                  |
-| 5A-3     | `GET /api/worker/home` + Client Clock                                     | WORKER A 본인           | 없음                               | 200 계산 기준, 화면 60초 갱신       | 401, 409                | GET 안전                                    | 5A-2 → 5A-4       | 0원~정상 지급액                   |
+| 5A-3     | `GET /api/worker/home`                                                    | WORKER A 본인           | 없음                               | 200 약정 일급·현재 근무 상태        | 401, 409                | GET 안전                                    | 5A-2 → 5A-4       | 경과 금액 공식 없음              |
 | 5A-4     | `POST /api/attendance/scans`                                              | WORKER A·IN_PROGRESS    | QR·위치·조기 확인·CSRF·IK          | 200 CHECK_OUT·COMPLETED·dueAt       | 409, 422, 503           | 같은 의도 같은 IK                           | 5A-3 → 5A-6       | 조기 확인은 새 IK                 |
 | 5A-5     | `GET /api/workplaces/{id}/work-cases`                                     | OWNER·해당 사업장       | Page Query                         | 200 A `IN_PROGRESS`                 | 403, 404                | GET 안전                                    | 5A-2 → 5A-6       | 수동 재조회 즉시 반영             |
 | 5A-6     | `POST /api/work-cases/{id}/settlement/approve`                            | OWNER·해당 Work         | 0byte·CSRF·IK                      | 200 전액 지급·완료 시각             | 403, 409                | 같은 IK Replay                              | 5A-4 → 5A-7·5A-8  | 정상 일당 전액                    |
@@ -53,11 +53,11 @@
 | 5A-8     | `GET /api/wallet`, `GET .../transactions`, `POST .../withdrawal-requests` | WORKER A 본인           | 출금 계좌·금액·CSRF·IK             | 200 잔액·지급·출금 원장             | 403, 409                | 출금 같은 IK Replay                         | 5A-6 → 종료       | 지급 후 실제 지갑                 |
 | 5B-1     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 B 오늘 근무                     | 401, 404                | GET 안전                                    | 4-6 → 5B-2        | 실제 저장 근무                    |
 | 5B-2     | `POST /api/attendance/scans`                                              | WORKER B·현장 Work      | QR·위치·CSRF·IK                    | 200 CHECK_IN·`lateMinutes=30`       | 409, 422, 503           | 같은 IK Replay                              | 5B-1 → 5B-3       | 지각은 파생값                     |
-| 5B-3     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 지각 분수·예상 공제액           | 401, 409                | GET 안전                                    | 5B-2 → 5B-4       | 시급×지각 분÷60 원 미만 버림      |
-| 5B-4     | `GET /api/worker/home` + Client Clock                                     | WORKER B 본인           | 없음                               | 200 지각 후 지급 예정 상한          | 401, 409                | GET 안전                                    | 5B-3 → 5B-6       | 서버 공제 결과 사용               |
-| 5B-5     | CHECK_OUT Scan 후 `GET /api/wallet`                                       | WORKER B 본인           | QR·위치·CSRF·IK                    | 200 부분 지급 반영                  | 409, 422                | Scan Replay, GET 안전                       | 5B-6 → 종료       | 번호와 무관하게 지급 승인 뒤 조회 |
-| 5B-6     | `POST /api/work-cases/{id}/settlement/approve`                            | OWNER·해당 Work         | 0byte·CSRF·IK                      | 200 WORKER 지급·OWNER 환불 분할     | 403, 409                | 같은 IK Replay                              | 5B-4 → 5B-5·5B-7  | 합계=원 예치액                    |
-| 5B-7     | `GET /api/wallet`, `GET .../transactions`                                 | OWNER 본인              | Page Query                         | 200 부분 지급·환불 원장, 예치 0     | 401, 409                | GET 안전                                    | 5B-6 → 종료       | 보존식 검증                       |
+| 5B-3     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 `lateMinutes=30`·약정 일급      | 401, 409                | GET 안전                                    | 5B-2 → 5B-4       | 자동 공제액 없음                 |
+| 5B-4     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 약정 일급·현재 근무 상태        | 401, 409                | GET 안전                                    | 5B-3 → 5B-6       | 지각 금액 추정 금지              |
+| 5B-5     | CHECK_OUT Scan 후 `GET /api/wallet`                                       | WORKER B 본인           | QR·위치·CSRF·IK                    | 200 약정 일급 전액 지급 반영        | 409, 422                | Scan Replay, GET 안전                       | 5B-6 → 종료       | 지급 승인 뒤 조회                |
+| 5B-6     | `POST /api/work-cases/{id}/settlement/approve`                            | OWNER·해당 Work         | 0byte·CSRF·IK                      | 200 WORKER 전액 지급·OWNER 환불 0   | 403, 409                | 같은 IK Replay                              | 5B-4 → 5B-5·5B-7  | 지급액=원 예치액                 |
+| 5B-7     | `GET /api/wallet`, `GET .../transactions`                                 | OWNER 본인              | Page Query                         | 200 전액 지급 원장, 예치 0          | 401, 409                | GET 안전                                    | 5B-6 → 종료       | 보존식 검증                       |
 | 5C-1     | `GET /api/worker/home`                                                    | WORKER C 본인           | 없음                               | 200 경계 전 READY                   | 401, 404                | GET 안전                                    | 4-6 → 5C-2        | 조기 NO_SHOW 금지                 |
 | 5C-2     | 시스템 Scheduler, 양측 GET                                                | 시스템·해당 당사자      | 제어 Clock/없음                    | 저장 `NO_SHOW`를 양측 200 조회      | 401, 403                | Scheduler 멱등                              | 5C-1 → 5C-3       | 시작+1시간 경계                   |
 | 5C-3     | `POST /api/work-cases/{id}/settlement/no-show-refund/approve`             | OWNER·해당 NO_SHOW Work | 0byte·CSRF·IK                      | 200 OWNER 전액 환불·WORKER 0·예치 0 | 403, 409                | 같은 IK Replay                              | 5C-2 → 종료       | 자동 판정과 환불 승인 분리        |
@@ -511,11 +511,10 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 - `attendance:{checkedInAt,checkedOutAt,isLate,lateMinutes}`
 - `escrowStatus`, `settlementStatus`, `settlementDueAt`
 
-현재 `work_cases`에는 승인된 시급 Snapshot이 없으므로 `GET /api/worker/home`과
-`GET /api/worker/work-cases`는 `hourlyWage`, `expectedDeductionAmount`,
-`expectedPaymentAmount`를 반환하지 않습니다. `expectedNetAmount`는 저장 `dailyWage`만으로
-계산합니다. 시급 Snapshot과 `WORK-008`·`SETTLE-006` 구현이 별도 승인되기 전 클라이언트가
-제외된 세 값을 역산하거나 임의 필드로 대체하지 않습니다.
+`GET /api/worker/home`과 `GET /api/worker/work-cases`의 금액 조건은 약정 일급
+`dailyWage`입니다. `hourlyWage`, `expectedDeductionAmount`, `expectedPaymentAmount`를 반환하지
+않고 `expectedNetAmount`는 저장 `dailyWage`만으로 계산합니다. 클라이언트는 일급에서 시급이나
+지각 공제액을 역산하거나 임의 필드로 대체하지 않습니다.
 
 출퇴근 시점은 nullable이고 지각 여부와 분수는 성공 CHECK_IN에서 파생합니다. 오늘 후보는
 `Asia/Seoul` 시작일이 오늘인 배정 근무와 전날부터 남은 `IN_PROGRESS`,
@@ -534,9 +533,10 @@ if incomeTax < 1000:
 expectedNetAmount = dailyWage - incomeTax - localIncomeTax
 ```
 
-확보 안심금액의 시급 기반 공제·상한은 시급 Snapshot과 `WORK-008`·`SETTLE-006` 구현 소유가
-확정될 때까지 Blocked입니다. 클라이언트는 현재 응답의 일급 기반 `expectedNetAmount`를
-참고값으로 사용할 수 있지만 독자적인 시급·공제식을 만들거나 API를 매분 재호출하지 않습니다.
+시간 경과 확보 안심금액과 지각 공제·상한은 현재 MVP 계약에 없습니다. 클라이언트는 현재
+응답의 일급 기반 `expectedNetAmount`를 참고값으로 사용할 수 있지만 독자적인 시급·경과·
+공제식을 만들거나 API를 매분 재호출하지 않습니다. 해당 값을 도입하려면 별도 제품 결정과 새
+명세 Patch가 필요합니다.
 
 `GET /api/worker/work-cases`의 각 Page Item은 같은 기본 근무 필드와 근태·Escrow·Settlement
 상태를 반환합니다. 저장 상태를 `BEFORE_WORK`, `LATE`, `SETTLED` 같은 화면 별칭으로 바꾸지
@@ -835,16 +835,9 @@ Query 계약은 다음과 같습니다.
 ### `POST /api/workplaces/{workplaceId}/work-cases`
 
 Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `breakMinutes`,
-`breakPaid`, `hourlyWage`를 사용하고 성공은 `201 {data:{workCaseId,dailyWage}}`입니다.
-`dailyWage`는 요청 입력이 아니라 서버 산정 결과입니다.
-
-```text
-totalMinutes = minutesBetween(startsAt, endsAt)
-paidMinutes = totalMinutes - (breakPaid ? 0 : breakMinutes)
-dailyWage = floor(hourlyWage × paidMinutes / 60)
-```
-
-`hourlyWage`, `paidMinutes`, `dailyWage`는 모두 양수여야 하며 원 미만을 버립니다.
+`breakPaid`, `dailyWage`를 사용하고 성공은 `201 {data:{workCaseId,dailyWage}}`입니다.
+`dailyWage`는 양의 KRW 원 단위 정수이며 서버는 입력값을 `work_cases.agreed_wage`에 그대로
+저장합니다. 시급을 저장·역산하거나 근무시간과 휴게조건으로 일급을 다시 계산하지 않습니다.
 
 1. 날짜와 시간을 `Asia/Seoul` 지역 시각으로 결합하고 `endsAt > startsAt`을 검증합니다.
 2. `workplaces.road_address`를 trim하고, trim한 `detail_address`가 비어 있지 않을 때만 한 칸을
@@ -929,10 +922,10 @@ dailyWage = floor(hourlyWage × paidMinutes / 60)
 ### `PATCH /api/work-cases/{workCaseId}`
 
 - 해당 OWNER만 호출하며 `title`, `description`, `workDate`, `startTime`, `endTime`,
-  `breakMinutes`, `breakPaid`, `hourlyWage` 여덟 필드를 모두 요구합니다. 생략과 명시적 `null`은
+  `breakMinutes`, `breakPaid`, `dailyWage` 여덟 필드를 모두 요구합니다. 생략과 명시적 `null`은
   `400 VALIDATION_ERROR`입니다.
-- `dailyWage`는 서버가 다시 계산하며 요청에서 받지 않습니다. 계산 기준은
-  `DEC-WAGE-CALCULATION`을 따릅니다.
+- `dailyWage`는 양의 KRW 원 단위 정수이며 입력값을 약정 일급으로 그대로 저장합니다. 시급이나
+  근무시간에서 다시 계산하지 않습니다.
 - `DRAFT`가 아니면 `409 WORK_CASE_LOCKED`입니다.
 - 값이 같더라도 성공 요청마다 `terms_version`을 정확히 1 증가시킵니다.
 - 현재 조건 Version의 `PENDING` 초대를 같은 트랜잭션에서 `REVOKED`로 전이합니다.
@@ -1012,7 +1005,6 @@ dailyWage = floor(hourlyWage × paidMinutes / 60)
     "workplaceName": "강남점",
     "startsAt": "2026-08-20T01:00:00Z",
     "endsAt": "2026-08-20T09:00:00Z",
-    "hourlyWage": 15000,
     "breakMinutes": 60,
     "breakPaid": false,
     "dailyWage": 120000,
@@ -1232,11 +1224,9 @@ Aggregate Transaction은 다음 순서로 처리합니다. 검증 실패는 성�
 ```
 
 `completedAt`은 UTC `Instant`입니다. 최초 성공과 같은 Key·Fingerprint Replay 모두 200이며
-Replay에는 `Idempotency-Replayed: true`를 설정합니다. 정상 근무는 WORKER에게 산정 일당
-전액을 지급하고 OWNER 환불은 0원입니다. 지각 근무는
-`deductionAmount=floor(hourlyWage×lateMinutes÷60)`,
-`workerPaidAmount=dailyWage-deductionAmount`, `ownerRefundAmount=deductionAmount`으로 원
-미만을 버리며 세 금액은 음수가 아니고 지급액과 환불액의 합은 원 예치액입니다. 다른 Key 또는
+Replay에는 `Idempotency-Replayed: true`를 설정합니다. 정상·지각 근무 모두 WORKER에게 원
+예치액인 약정 일급 전액을 지급하고 OWNER 환불은 0원입니다. `lateMinutes`는 근태 정보이며 현재
+MVP의 지급액 입력으로 사용하지 않습니다. 다른 Key 또는
 Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 SETTLEMENT_ALREADY_PROCESSED`로
 응답합니다.
 
