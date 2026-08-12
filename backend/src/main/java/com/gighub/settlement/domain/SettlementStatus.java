@@ -5,6 +5,7 @@ public enum SettlementStatus {
     SCHEDULED,
     PROCESSING,
     COMPLETED,
+    REFUNDED,
     FAILED,
     ON_HOLD
 }

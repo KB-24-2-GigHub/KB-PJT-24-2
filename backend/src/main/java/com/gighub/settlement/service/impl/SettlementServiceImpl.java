@@ -6,7 +6,7 @@ import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.idempotency.IdempotencyKeys;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.exception.SettlementTemporarilyUnavailableException;
-import com.gighub.settlement.service.SettlementPayoutExecutor;
+import com.gighub.settlement.service.SettlementApprovalTransaction;
 import com.gighub.settlement.service.SettlementReplayCodec;
 import com.gighub.settlement.service.SettlementService;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
@@ -27,15 +27,15 @@ public class SettlementServiceImpl implements SettlementService {
     private static final int MAX_TRANSACTION_ATTEMPTS = 3;
 
     private final IdempotencyClaimService claimService;
-    private final SettlementPayoutExecutor payoutExecutor;
+    private final SettlementApprovalTransaction approvalTransaction;
     private final SettlementReplayCodec replayCodec;
 
     public SettlementServiceImpl(
             IdempotencyClaimService claimService,
-            SettlementPayoutExecutor payoutExecutor,
+            SettlementApprovalTransaction approvalTransaction,
             SettlementReplayCodec replayCodec) {
         this.claimService = claimService;
-        this.payoutExecutor = payoutExecutor;
+        this.approvalTransaction = approvalTransaction;
         this.replayCodec = replayCodec;
     }
 
@@ -62,7 +62,8 @@ public class SettlementServiceImpl implements SettlementService {
     /**
      * 한 Claim으로 지급 Transaction 전체를 제한된 횟수만 다시 실행합니다.
      *
-     * <p>각 시도는 Executor가 소유한 새 Transaction입니다. 실패 Transaction이 완전히
+     * <p>각 시도는 {@link SettlementApprovalTransaction}이 소유한 새 Transaction입니다.
+     * 실패 Transaction이 완전히
      * Rollback된 뒤에만 다음 시도를 시작하고, 최종 실패 때 Claim을 지워 같은 외부 Key로
      * 안전하게 재요청할 수 있게 합니다.</p>
      */
@@ -70,7 +71,7 @@ public class SettlementServiceImpl implements SettlementService {
             SettlementApproveCommand command, long claimId) {
         for (int attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt++) {
             try {
-                return payoutExecutor.execute(command, claimId);
+                return approvalTransaction.execute(command, claimId);
             } catch (PessimisticLockingFailureException transientFailure) {
                 if (attempt == MAX_TRANSACTION_ATTEMPTS) {
                     claimService.abandon(claimId);

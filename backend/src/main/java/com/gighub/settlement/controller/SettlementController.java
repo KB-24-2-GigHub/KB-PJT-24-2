@@ -32,7 +32,7 @@ public class SettlementController {
 
     private final SettlementService settlementService;
 
-    /** 정산 API (사장님 수동 승인 또는 향후 자동 정산 작업에서 호출). */
+    /** OWNER 수동 승인 전용 API입니다. Scheduler는 내부 SettlementPayoutExecutor를 사용합니다. */
     @PostMapping("/api/work-cases/{workCaseId}/settlement/approve")
     public ResponseEntity<ApiResponse<SettlementApproveResponse>> approveSettlement(
             @PathVariable Long workCaseId,

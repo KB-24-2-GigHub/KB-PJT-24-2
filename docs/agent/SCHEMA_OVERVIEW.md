@@ -120,6 +120,13 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - `PROCESSING` must not be committed independently from its money transaction. A pre-existing stuck
   `PROCESSING`, legacy `FAILED`, or ambiguous completed row is rejected by migration preflight rather
   than guessed into the new lifecycle.
+- The runtime payout boundary locks `work_cases`, `settlements`, blocking `disputes`, and `escrows` in
+  that order, resolves each party's KRW wallet ID once, then locks the two wallets by ascending wallet
+  ID. Expected-state balance updates, deterministic settlement-ID ledger entries, Settlement completion,
+  and the manual approval Claim completion commit in one transaction.
+- `SettlementPayoutExecutor` only joins a caller-owned transaction. Manual approval opens a fresh
+  transaction after the external Claim; the future Scheduler must open one short transaction per item,
+  use a null approver, and recheck both `due_at` and `next_retry_at` from the locked Settlement row.
 - Funding and withdrawal foreign keys preserve the selected Mock account and bank-transaction references, but they do not enforce ACTIVE status, funding PIN approval, or that a withdrawal request user owns its wallet.
 
 ### Attendance and dispute

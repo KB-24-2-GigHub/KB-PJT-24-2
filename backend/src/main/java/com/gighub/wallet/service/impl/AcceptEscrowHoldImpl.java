@@ -7,6 +7,7 @@ import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.AcceptEscrowHold;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -78,8 +79,11 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
             throw new IllegalStateException("에스크로를 생성하지 못했습니다.");
         }
 
+        SettlementEscrowRow escrow = Objects.requireNonNull(
+                walletMapper.findSettlementEscrowForUpdate(workCaseId),
+                "생성된 에스크로 식별자");
         long escrowId = Objects.requireNonNull(
-                walletMapper.getEscrowIdByWorkCaseId(workCaseId), "생성된 에스크로 식별자");
+                escrow.getEscrowId(), "생성된 에스크로 식별자");
         int recorded = walletMapper.insertWalletTransaction(WalletTransactionParam.builder()
                 .walletId(walletId)
                 .workCaseId(workCaseId)

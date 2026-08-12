@@ -6,15 +6,20 @@ import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.exception.SettlementAlreadyProcessedException;
 import com.gighub.settlement.exception.SettlementOnHoldException;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
+import com.gighub.settlement.service.command.SettlementPayoutCommand;
+import com.gighub.settlement.service.policy.SettlementPayoutDecision;
+import com.gighub.settlement.service.policy.SettlementPayoutRejectedException;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.exception.EscrowIntegrityException;
-import com.gighub.wallet.exception.IdempotencyKeyReusedException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -242,6 +247,66 @@ class SettlementIntegrityDatabaseIntegrationTest {
     }
 
     @Test
+    @Timeout(30)
+    void manualAndScheduledPayoutRaceHasOneWinnerAndPreservesNullableApprover()
+            throws Exception {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementPayoutExecutor payoutExecutor =
+                    context.getBean(SettlementPayoutExecutor.class);
+            TransactionTemplate scheduledTransaction = new TransactionTemplate(
+                    context.getBean(PlatformTransactionManager.class));
+            scheduledTransaction.setPropagationBehavior(
+                    TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+            jdbcTemplate.update(
+                    "UPDATE settlements SET due_at = DATE_SUB(NOW(6), INTERVAL 1 SECOND)"
+                            + " WHERE id = ?",
+                    fixture.settlementId());
+            LocalDateTime eligibilityTime = jdbcTemplate.queryForObject(
+                    "SELECT NOW(6)", LocalDateTime.class);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+
+            Callable<SettlementResult> ownerRequest = () -> {
+                awaitRaceStart(ready, start);
+                return settlementService.approve(command(
+                        fixture, fixture.approvalKey() + "-MANUAL"));
+            };
+            Callable<SettlementResult> scheduledRequest = () -> {
+                awaitRaceStart(ready, start);
+                return scheduledTransaction.execute(status -> payoutExecutor.execute(
+                        SettlementPayoutCommand.scheduled(
+                                fixture.settlementId(),
+                                fixture.workCaseId(),
+                                eligibilityTime)));
+            };
+
+            try {
+                Future<SettlementResult> ownerFuture = executor.submit(ownerRequest);
+                Future<SettlementResult> scheduledFuture = executor.submit(scheduledRequest);
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+                start.countDown();
+
+                boolean ownerSucceeded = completesSuccessfully(ownerFuture);
+                boolean scheduledSucceeded = completesSuccessfully(scheduledFuture);
+                assertTrue(ownerSucceeded ^ scheduledSucceeded);
+                assertPayoutState(
+                        jdbcTemplate,
+                        fixture,
+                        ownerSucceeded ? fixture.employerId() : null);
+            } finally {
+                start.countDown();
+                executor.shutdownNow();
+                executor.awaitTermination(5, TimeUnit.SECONDS);
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
     @Timeout(25)
     void completedClaimReplaysTheCommittedResponse() throws Exception {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
@@ -305,7 +370,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                         WalletIdempotencyKeys.settlementReleaseOwner(
                                 fixture.settlementId()));
                 assertThrows(
-                        IdempotencyKeyReusedException.class,
+                        EscrowIntegrityException.class,
                         () -> settlementService.approve(command(
                                 fixture,
                                 fixture.approvalKey()))
@@ -322,6 +387,81 @@ class SettlementIntegrityDatabaseIntegrationTest {
                                 + " WHERE user_id = ?"
                                 + " AND operation_code = 'SETTLEMENT_APPROVE'",
                         fixture.employerId()));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void secondLedgerCollisionRollsBackTheFirstLedgerAndEveryMoneyMutation() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+            String workerLedgerKey = WalletIdempotencyKeys.settlementReleaseWorker(
+                    fixture.settlementId());
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO wallet_transactions"
+                                + " (wallet_id, work_case_id, transaction_type, amount,"
+                                + " available_before, available_after, locked_before,"
+                                + " locked_after, reference_type, reference_id,"
+                                + " idempotency_key)"
+                                + " VALUES (?, ?, 'ESCROW_RELEASE', ?, 0, ?, 0, 0,"
+                                + " 'ESCROW', ?, ?)",
+                        fixture.workerWalletId(),
+                        fixture.workCaseId(),
+                        WAGE,
+                        WAGE,
+                        fixture.escrowId(),
+                        workerLedgerKey);
+
+                assertThrows(
+                        EscrowIntegrityException.class,
+                        () -> settlementService.approve(command(
+                                fixture, fixture.approvalKey())));
+
+                jdbcTemplate.update(
+                        "DELETE FROM wallet_transactions WHERE idempotency_key = ?",
+                        workerLedgerKey);
+                assertInitialState(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code = 'SETTLEMENT_APPROVE'",
+                        fixture.employerId()));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void claimCompletionFailureRollsBackCompletedPayoutAndBothLedgers() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementApprovalTransaction approvalTransaction =
+                    context.getBean(SettlementApprovalTransaction.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+
+            try {
+                assertThrows(
+                        RuntimeException.class,
+                        () -> approvalTransaction.execute(
+                                command(fixture, fixture.approvalKey()),
+                                Long.MAX_VALUE));
+
+                assertInitialState(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE id = ?",
+                        Long.MAX_VALUE));
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }
@@ -384,7 +524,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
     @Test
     @Timeout(20)
-    void openDisputeBlocksScheduledPayoutWithoutChangingMoney() {
+    void openDisputeBlocksManualPayoutWithoutChangingMoney() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementService settlementService = context.getBean(SettlementService.class);
@@ -459,10 +599,59 @@ class SettlementIntegrityDatabaseIntegrationTest {
         };
     }
 
+    private void awaitRaceStart(CountDownLatch ready, CountDownLatch start)
+            throws InterruptedException {
+        ready.countDown();
+        if (!start.await(5, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("동시 정산 테스트 시작 신호를 기다리지 못했습니다.");
+        }
+    }
+
+    private boolean completesSuccessfully(Future<SettlementResult> future)
+            throws Exception {
+        try {
+            SettlementResult result = future.get(15, TimeUnit.SECONDS);
+            assertFullPayoutAmounts(result);
+            return true;
+        } catch (ExecutionException executionException) {
+            Throwable cause = executionException.getCause();
+            if (cause instanceof SettlementPayoutRejectedException rejected) {
+                assertEquals(
+                        SettlementPayoutDecision.ALREADY_PROCESSED,
+                        rejected.getDecision());
+            } else {
+                assertTrue(cause instanceof SettlementAlreadyProcessedException);
+            }
+            return false;
+        }
+    }
+
     private void assertCompletedState(
             JdbcTemplate jdbcTemplate,
             SettlementFixture fixture,
             LocalDateTime completedAt) {
+        assertCompletedState(
+                jdbcTemplate, fixture, completedAt, fixture.employerId());
+    }
+
+    private void assertPayoutState(
+            JdbcTemplate jdbcTemplate,
+            SettlementFixture fixture,
+            Long approvedByUserId) {
+        LocalDateTime completedAt = dateTime(
+                jdbcTemplate,
+                "SELECT completed_at FROM settlements WHERE id = ?",
+                fixture.settlementId());
+        assertNotNull(completedAt);
+        assertCompletedState(
+                jdbcTemplate, fixture, completedAt, approvedByUserId);
+    }
+
+    private void assertCompletedState(
+            JdbcTemplate jdbcTemplate,
+            SettlementFixture fixture,
+            LocalDateTime completedAt,
+            Long approvedByUserId) {
         assertEquals(0L, value(
                 jdbcTemplate,
                 "SELECT locked_balance FROM wallets WHERE id = ?",
@@ -498,7 +687,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 "SELECT status FROM settlements WHERE id = ?",
                 fixture.settlementId()
         ));
-        assertEquals(fixture.employerId().longValue(), value(
+        assertEquals(approvedByUserId, nullableLong(
                 jdbcTemplate,
                 "SELECT approved_by_user_id FROM settlements WHERE id = ?",
                 fixture.settlementId()
@@ -902,6 +1091,13 @@ class SettlementIntegrityDatabaseIntegrationTest {
             );
         }
         return value;
+    }
+
+    private Long nullableLong(
+            JdbcTemplate jdbcTemplate,
+            String sql,
+            Object... arguments) {
+        return jdbcTemplate.queryForObject(sql, Long.class, arguments);
     }
 
     private String text(
