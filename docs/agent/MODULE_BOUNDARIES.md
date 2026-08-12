@@ -302,12 +302,11 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 
 ## 남은 위반과 단일 후속 소유자
 
-#287에서 TV-001~TV-007을 제거했다. 아래 항목은 기능 공백을 임의 구현하지 않고 각 후속 이슈가
-소유한다.
+#287에서 TV-001~TV-007을 제거했고 #291에서 TV-008의 API/Domain→persistence 타입 의존을
+제거했다. 아래 항목은 기능 공백을 임의 구현하지 않고 각 후속 이슈가 소유한다.
 
 | ID       | 현재 근거                                                                             | 위반                                               | Primary 후속 이슈         |
 | -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
-| `TV-008` | Attendance/Work persistence DTO/Row imports                                             | 타 모듈 persistence DTO/Row 의미 누출              | #291                      |
 | `TV-009` | Work/Invitation Service와 SQL의 상태 문자열                                           | 장기 생명주기 정책 분산                            | #286                      |
 | `TV-010` | 새로고침·재로그인 뒤 client replay key                                               | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 | `TV-011` | lifecycle별 nullable/timestamp 조합                                                   | Application 정책과 DB 구조 방어 간 공백            | #292                      |
