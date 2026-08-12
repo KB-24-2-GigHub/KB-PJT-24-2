@@ -110,6 +110,9 @@ public class SecurityConfig {
 
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
+                // 계약서·보건증은 같은 Origin 화면의 iframe에서만 미리보기한다.
+                // 외부 Origin의 프레이밍은 계속 차단하되 기본 DENY로 내부 미리보기까지 막지 않는다.
+                .headers(headers -> headers.frameOptions(frameOptions -> frameOptions.sameOrigin()))
                 .csrf(csrf -> csrf
                         .csrfTokenRepository(csrfTokenRepository)
                         .csrfTokenRequestHandler(csrfRequestHandler))
