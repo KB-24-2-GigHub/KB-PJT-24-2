@@ -135,7 +135,7 @@ public class DocumentFileAccessService {
             return null;
         }
 
-        String extension = healthStorageExtension(row.getMimeType());
+        String extension = strictHealthStorageExtension(row.getMimeType());
         if (extension == null) {
             return null;
         }
@@ -153,7 +153,7 @@ public class DocumentFileAccessService {
     private boolean isCanonicalContractVersion(DocumentFileAccessRow row) {
         if (!CONTRACT_DOCUMENT_TYPE.equals(row.getDocType())
                 || !SIGNED_VERSION_TYPE.equals(row.getVersionType())
-                || !"application/pdf".equals(normalizedMime(row.getMimeType()))
+                || !"application/pdf".equals(row.getMimeType())
                 || row.getWorkCaseId() == null
                 || row.getWorkCaseId() <= 0
                 || row.getDocumentId() == null
@@ -180,8 +180,9 @@ public class DocumentFileAccessService {
                 && row.getVersionId() > 0;
     }
 
-    private String healthStorageExtension(String mimeType) {
-        return switch (normalizedMime(mimeType)) {
+    private String strictHealthStorageExtension(String mimeType) {
+        // 응답 Header와 달리 저장 경계에서는 DB MIME 원문이 승인 문자열과 정확히 같아야 합니다.
+        return switch (mimeType == null ? "" : mimeType) {
             case "image/jpeg" -> "jpg";
             case "image/png" -> "png";
             case "application/pdf" -> "pdf";

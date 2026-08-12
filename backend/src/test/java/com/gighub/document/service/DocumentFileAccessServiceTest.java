@@ -370,6 +370,40 @@ class DocumentFileAccessServiceTest {
     }
 
     @Test
+    void uppercaseHealthMimeDoesNotReadACanonicalObjectWithMatchingChecksum() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11), "IMAGE/JPEG", HEALTH_FINAL_KEY);
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        lenient().when(storageAdapter.exists(HEALTH_FINAL_KEY)).thenReturn(true);
+        lenient().when(storageAdapter.read(HEALTH_FINAL_KEY)).thenReturn(CONTENT);
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view"));
+
+        verify(storageAdapter, never()).exists(any());
+        verify(storageAdapter, never()).read(any());
+        assertAudit("HEALTH_CERT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, WORKER_ID);
+    }
+
+    @Test
+    void uppercaseContractMimeDoesNotReadACanonicalObjectWithMatchingChecksum() {
+        DocumentFileAccessRow row = contractRow(
+                "ACTIVE", "APPLICATION/PDF", CONTRACT_FINAL_KEY);
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        lenient().when(storageAdapter.exists(CONTRACT_FINAL_KEY)).thenReturn(true);
+        lenient().when(storageAdapter.read(CONTRACT_FINAL_KEY)).thenReturn(CONTENT);
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, OWNER_ID, UserRole.OWNER, "view"));
+
+        verify(storageAdapter, never()).exists(any());
+        verify(storageAdapter, never()).read(any());
+        assertAudit("CONTRACT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, OWNER_ID);
+    }
+
+    @Test
     void unsupportedContractMimeDoesNotProbeStorage() {
         DocumentFileAccessRow row = contractRow("ACTIVE", "text/html");
         when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
