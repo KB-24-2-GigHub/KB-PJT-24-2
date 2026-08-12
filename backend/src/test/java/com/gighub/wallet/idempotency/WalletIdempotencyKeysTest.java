@@ -16,22 +16,39 @@ class WalletIdempotencyKeysTest {
     private static final String RAW_KEY = "shared-key-001";
 
     @Test
-    @DisplayName("같은 원문 키도 자금 흐름 범위별로 서로 다른 69자 ASCII 키가 된다")
+    @DisplayName("외부 Key 범위와 Settlement ID 기반 원장 Key가 서로 충돌하지 않는다")
     void createsDistinctFixedLengthKeysByScope() {
         Set<String> keys = Set.of(
                 WalletIdempotencyKeys.funding(RAW_KEY),
                 WalletIdempotencyKeys.escrowHold(RAW_KEY),
-                WalletIdempotencyKeys.escrowReleaseEmployer(RAW_KEY),
-                WalletIdempotencyKeys.escrowReleaseWorker(RAW_KEY),
+                WalletIdempotencyKeys.settlementReleaseOwner(17L),
+                WalletIdempotencyKeys.settlementReleaseWorker(17L),
                 WalletIdempotencyKeys.withdrawal(RAW_KEY)
         );
 
         assertEquals(5, keys.size());
         keys.forEach(key -> {
-            assertEquals(69, key.length());
             assertEquals(key.length(), key.getBytes(StandardCharsets.US_ASCII).length);
-            assertTrue(key.matches("[A-Z]{4}:[0-9a-f]{64}"));
+            assertTrue(key.matches("[A-Z_]+:[0-9a-f]{64}"));
         });
+    }
+
+    @Test
+    @DisplayName("같은 Settlement ID는 외부 요청 Key와 무관한 결정적 양측 원장 Key를 만든다")
+    void createsDeterministicSettlementKeys() {
+        assertEquals(
+                WalletIdempotencyKeys.settlementReleaseOwner(17L),
+                WalletIdempotencyKeys.settlementReleaseOwner(17L));
+        assertEquals(
+                WalletIdempotencyKeys.settlementReleaseWorker(17L),
+                WalletIdempotencyKeys.settlementReleaseWorker(17L));
+        assertTrue(WalletIdempotencyKeys.settlementReleaseOwner(17L)
+                .startsWith("SETTLEMENT_RELEASE_OWNER:"));
+        assertTrue(WalletIdempotencyKeys.settlementReleaseWorker(17L)
+                .startsWith("SETTLEMENT_RELEASE_WORKER:"));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> WalletIdempotencyKeys.settlementReleaseOwner(0L));
     }
 
     @Test

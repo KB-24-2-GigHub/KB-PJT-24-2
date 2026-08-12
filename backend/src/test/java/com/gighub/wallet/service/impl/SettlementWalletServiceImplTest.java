@@ -46,12 +46,15 @@ class SettlementWalletServiceImplTest {
     @Test
     void releaseLocksWalletsByUserIdAndWritesLedgersForTheOriginalRoles() {
         SettlementWalletCommand command = command(8L, 2L);
+        stubEscrowLock(command, holdLedger(8L, 80L));
         stubRelease(command, wallet(80L, 8L, 400_000L, AMOUNT),
-                wallet(20L, 2L, 0L, 0L), holdLedger(8L, 80L));
+                wallet(20L, 2L, 0L, 0L));
 
-        service.release(command);
+        long escrowId = service.lockHeldEscrow(command);
+        service.release(command, escrowId);
 
         InOrder lockOrder = inOrder(walletMapper);
+        lockOrder.verify(walletMapper).getEscrowStatusForUpdate(WORK_CASE_ID);
         lockOrder.verify(walletMapper).getWalletSnapshotForUpdate(2L);
         lockOrder.verify(walletMapper).getWalletSnapshotForUpdate(8L);
 
@@ -100,18 +103,11 @@ class SettlementWalletServiceImplTest {
     @Test
     void releaseRejectsAChangedEmployerBeforeAnyMoneyMutation() {
         SettlementWalletCommand command = command(8L, WORKER_ID);
-        when(walletMapper.getWalletSnapshotForUpdate(WORKER_ID))
-                .thenReturn(wallet(40L, WORKER_ID, 0L, 0L));
-        when(walletMapper.getWalletSnapshotForUpdate(8L))
-                .thenReturn(wallet(80L, 8L, 400_000L, AMOUNT));
-        when(walletMapper.getEscrowStatusForUpdate(WORK_CASE_ID)).thenReturn("HELD");
-        when(walletMapper.getHeldEscrowAmount(WORK_CASE_ID)).thenReturn(AMOUNT);
-        when(walletMapper.getEscrowIdByWorkCaseId(WORK_CASE_ID)).thenReturn(ESCROW_ID);
-        when(walletMapper.findEscrowHoldTransactionSnapshot(WORK_CASE_ID, ESCROW_ID))
-                .thenReturn(holdLedger(EMPLOYER_ID, 30L));
+        stubEscrowLock(command, holdLedger(EMPLOYER_ID, 30L));
 
-        assertThrows(EscrowIntegrityException.class, () -> service.release(command));
+        assertThrows(EscrowIntegrityException.class, () -> service.lockHeldEscrow(command));
 
+        verify(walletMapper, never()).getWalletSnapshotForUpdate(anyLong());
         verify(walletMapper, never()).releaseEscrow(anyLong());
         verify(walletMapper, never()).releaseLockedFunds(anyLong(), anyLong());
         verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
@@ -121,35 +117,53 @@ class SettlementWalletServiceImplTest {
     void releaseTranslatesAConcurrentLedgerCollision() {
         SettlementWalletCommand command = command(EMPLOYER_ID, WORKER_ID);
         stubRelease(command, wallet(30L, EMPLOYER_ID, 400_000L, AMOUNT),
-                wallet(40L, WORKER_ID, 0L, 0L), holdLedger(EMPLOYER_ID, 30L));
+                wallet(40L, WORKER_ID, 0L, 0L));
         when(walletMapper.insertWalletTransaction(any()))
                 .thenReturn(1)
                 .thenThrow(new DuplicateKeyException("concurrent ledger"));
 
-        assertThrows(IdempotencyKeyReusedException.class, () -> service.release(command));
+        assertThrows(
+                IdempotencyKeyReusedException.class,
+                () -> service.release(command, ESCROW_ID));
         verify(walletMapper, times(2)).insertWalletTransaction(any());
+    }
+
+    @Test
+    void lockHeldEscrowRejectsNonHeldStateBeforeWalletLocks() {
+        SettlementWalletCommand command = command(EMPLOYER_ID, WORKER_ID);
+        when(walletMapper.getEscrowStatusForUpdate(WORK_CASE_ID)).thenReturn("RELEASED");
+
+        assertThrows(
+                com.gighub.wallet.exception.InvalidEscrowStateException.class,
+                () -> service.lockHeldEscrow(command));
+
+        verify(walletMapper, never()).getWalletSnapshotForUpdate(anyLong());
     }
 
     private void stubRelease(
             SettlementWalletCommand command,
             WalletBalanceSnapshot employer,
-            WalletBalanceSnapshot worker,
-            WalletTransactionSnapshot hold) {
+            WalletBalanceSnapshot worker) {
         long firstId = Math.min(command.getEmployerId(), command.getWorkerId());
         long secondId = Math.max(command.getEmployerId(), command.getWorkerId());
         WalletBalanceSnapshot first = firstId == command.getEmployerId() ? employer : worker;
         WalletBalanceSnapshot second = secondId == command.getEmployerId() ? employer : worker;
         when(walletMapper.getWalletSnapshotForUpdate(firstId)).thenReturn(first);
         when(walletMapper.getWalletSnapshotForUpdate(secondId)).thenReturn(second);
+        when(walletMapper.releaseEscrow(WORK_CASE_ID)).thenReturn(1);
+        when(walletMapper.releaseLockedFunds(command.getEmployerId(), AMOUNT)).thenReturn(1);
+        when(walletMapper.addAvailableBalance(command.getWorkerId(), AMOUNT)).thenReturn(1);
+        when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
+    }
+
+    private void stubEscrowLock(
+            SettlementWalletCommand command,
+            WalletTransactionSnapshot hold) {
         when(walletMapper.getEscrowStatusForUpdate(WORK_CASE_ID)).thenReturn("HELD");
         when(walletMapper.getHeldEscrowAmount(WORK_CASE_ID)).thenReturn(AMOUNT);
         when(walletMapper.getEscrowIdByWorkCaseId(WORK_CASE_ID)).thenReturn(ESCROW_ID);
         when(walletMapper.findEscrowHoldTransactionSnapshot(WORK_CASE_ID, ESCROW_ID))
                 .thenReturn(hold);
-        when(walletMapper.releaseEscrow(WORK_CASE_ID)).thenReturn(1);
-        when(walletMapper.releaseLockedFunds(command.getEmployerId(), AMOUNT)).thenReturn(1);
-        when(walletMapper.addAvailableBalance(command.getWorkerId(), AMOUNT)).thenReturn(1);
-        when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
     }
 
     private SettlementWalletCommand command(long employerId, long workerId) {

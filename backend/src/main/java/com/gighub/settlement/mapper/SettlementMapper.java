@@ -48,8 +48,8 @@ public interface SettlementMapper {
             @Param("workCaseId") Long workCaseId,
             @Param("dueAt") LocalDateTime dueAt);
 
-    // 상태 전이: 수동 승인 가능한 WAITING 정산만 처리 중으로 바꾼다.
-    int transitionWaitingToProcessing(
+    // 상태 전이: 수동 승인 가능한 SCHEDULED 정산만 처리 중으로 바꾼다.
+    int transitionScheduledToProcessing(
             @Param("settlementId") Long settlementId,
             @Param("approvedByUserId") Long approvedByUserId);
 

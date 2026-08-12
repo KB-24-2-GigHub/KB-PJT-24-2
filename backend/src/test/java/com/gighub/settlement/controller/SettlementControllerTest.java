@@ -4,6 +4,9 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.config.ApiJsonMapper;
 import com.gighub.member.domain.UserRole;
+import com.gighub.settlement.exception.SettlementAlreadyProcessedException;
+import com.gighub.settlement.exception.SettlementNotReadyException;
+import com.gighub.settlement.exception.SettlementOnHoldException;
 import com.gighub.settlement.service.SettlementService;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
@@ -23,10 +26,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -83,7 +88,41 @@ class SettlementControllerTest {
         verify(settlementService).approve(captor.capture());
         assertEquals(WORK_CASE_ID, captor.getValue().getWorkCaseId());
         assertEquals(EMPLOYER_ID, captor.getValue().getApproverUserId());
+        assertEquals(UserRole.OWNER, captor.getValue().getApproverRole());
         assertEquals(KEY, captor.getValue().getIdempotencyKey());
+    }
+
+    @Test
+    void replayAddsOnlyTheApprovedResponseHeader() throws Exception {
+        when(settlementService.approve(any())).thenReturn(
+                SettlementResult.builder()
+                        .settlementId(12L)
+                        .status("COMPLETED")
+                        .completedAt(COMPLETED_AT)
+                        .replayed(true)
+                        .build());
+
+        mockMvc.perform(post(PATH, WORK_CASE_ID)
+                        .principal(employerAuthentication())
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Idempotency-Replayed", "true"))
+                .andExpect(jsonPath("$.data.settlementId").value(12))
+                .andExpect(jsonPath("$.data.completedAt")
+                        .value("2026-07-24T08:12:34.123456Z"));
+    }
+
+    @Test
+    void approveSettlementRejectsANonEmptyBody() throws Exception {
+        mockMvc.perform(post(PATH, WORK_CASE_ID)
+                        .principal(employerAuthentication())
+                        .header("Idempotency-Key", KEY)
+                        .contentType("application/json")
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(settlementService, never()).approve(any());
     }
 
     @Test
@@ -93,6 +132,35 @@ class SettlementControllerTest {
                 .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
 
         verify(settlementService, never()).approve(any());
+    }
+
+    @Test
+    void approveSettlementRequiresTheIdempotencyHeader() throws Exception {
+        mockMvc.perform(post(PATH, WORK_CASE_ID).principal(employerAuthentication()))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(settlementService, never()).approve(any());
+    }
+
+    @Test
+    void approvedSettlementConflictsExposeTheirExactCodes() throws Exception {
+        assertConflict(new SettlementOnHoldException(), "SETTLEMENT_ON_HOLD");
+        assertConflict(new SettlementNotReadyException(), "SETTLEMENT_NOT_READY");
+        assertConflict(
+                new SettlementAlreadyProcessedException(),
+                "SETTLEMENT_ALREADY_PROCESSED");
+    }
+
+    private void assertConflict(RuntimeException failure, String code) throws Exception {
+        reset(settlementService);
+        when(settlementService.approve(any())).thenThrow(failure);
+
+        mockMvc.perform(post(PATH, WORK_CASE_ID)
+                        .principal(employerAuthentication())
+                        .header("Idempotency-Key", KEY))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value(code));
     }
 
     private static Authentication employerAuthentication() {

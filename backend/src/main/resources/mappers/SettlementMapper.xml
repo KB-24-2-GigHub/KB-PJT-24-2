@@ -78,7 +78,7 @@
           AND due_at IS NULL
     </update>
 
-    <update id="transitionWaitingToProcessing">
+    <update id="transitionScheduledToProcessing">
         UPDATE settlements
         SET status              = 'PROCESSING',
             approved_by_user_id = #{approvedByUserId},
@@ -86,7 +86,7 @@
             failure_code        = NULL,
             updated_at          = NOW(6)
         WHERE id = #{settlementId}
-          AND status = 'WAITING'
+          AND status = 'SCHEDULED'
           AND approved_by_user_id IS NULL
           AND processing_at IS NULL
           AND completed_at IS NULL
