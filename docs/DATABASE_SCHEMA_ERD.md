@@ -2,20 +2,20 @@
 
 > 저장소 원본: `docs/DATABASE_SCHEMA_ERD.md`
 >
-> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608061428`
+> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608111744`
 >
 > 범위: 도메인 테이블 24개와 Flyway 내부 관리 테이블 1개, 총 25개입니다.
 >
-> 읽기용 통합 DDL: [`database/schema-snapshot-202608061428.sql`](database/schema-snapshot-202608061428.sql)
+> 읽기용 통합 DDL: [`database/schema-snapshot-202608111744.sql`](database/schema-snapshot-202608111744.sql)
 >
 > 편집 정책: Migration과 통합 DDL은 프로젝트 소유자 전용입니다. 에이전트는 소유자가 변경한
 > 스키마를 근거로 이 설명 문서만 갱신할 수 있습니다.
 
-현재 소유자 승인 기준은 Head `202608061428`의 Migration 12개·도메인 테이블 24개입니다.
+현재 소유자 승인 기준은 Head `202608111744`의 Migration 14개·도메인 테이블 24개입니다.
 사업장 고정 QR `202607311427`, 비밀번호 재설정 Token `202607311428`, 퇴근 누락 상태
 `202607311429`, OWNER Profile 제거 `202608041138`, 멱등 요청 Claim `202608041614`, Mock 계좌
-비귀속 PIN 전환 `202608051337`, 문서 접근 감사 상세 `202608061428`을 모두 현재 스키마로
-사용합니다.
+비귀속 PIN 전환 `202608051337`, 문서 접근 감사 상세 `202608061428`, 문서 감사 allowlist
+`202608111743`, 뱃지 유형 allowlist `202608111744`를 모두 현재 스키마로 사용합니다.
 
 ## 한 장 요약
 
@@ -515,7 +515,9 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | `workplaces.name`, `representative_name`, `road_address`, `phone` | 각 값이 앞뒤 공백 제거 후 한 글자 이상     | 불가 | `ck_workplaces_required_text`                                      |
 | `workplaces.detail_address`                                       | `NULL` 또는 앞뒤 공백 제거 후 한 글자 이상 | 가능 | `ck_workplaces_detail_address`                                     |
 | `idempotency_requests.operation_code`, `idempotency_key`          | 빈 문자열 불가, ASCII 대소문자 구분        | 불가 | `ck_idempotency_requests_operation`, `ck_idempotency_requests_key` |
-| `document_access_logs.denial_reason`                              | NULL 또는 빈 문자열이 아닌 ASCII 사유 Code | 가능 | `ck_document_access_logs_denial_reason`                            |
+| `document_access_logs.action`                                     | 승인된 문서 접근 행위 다섯 종류             | 불가 | `ck_document_access_logs_action`                                   |
+| `document_access_logs.denial_reason`                              | NULL 또는 승인된 거부 사유 다섯 종류        | 가능 | `ck_document_access_logs_denial_reason`                            |
+| `user_badges.badge_type`                                          | `TRUST_OWNER` 또는 `TRUST_WORKER`          | 불가 | `ck_user_badges_type`                                              |
 
 ### 아직 유한값 CHECK가 없는 코드성 문자열
 
@@ -527,9 +529,6 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | `wallet_transactions.reference_type`    | 지갑 원장이 참조하는 업무 종류 | 길이만 `VARCHAR(30)`       |
 | `idempotency_requests.operation_code`   | 멱등성 적용 Operation          | 빈 값이 아닌 `VARCHAR(64)` |
 | `disputes.dispute_type`                 | 분쟁 유형                      | 길이만 `VARCHAR(30)`       |
-| `document_access_logs.action`           | 문서 접근 행위                 | 길이만 `VARCHAR(30)`       |
-| `document_access_logs.denial_reason`    | DENIED 내부 사유 Code          | 빈 값이 아닌 `VARCHAR(50)` |
-| `user_badges.badge_type`                | 배지 유형                      | 길이만 `VARCHAR(40)`       |
 
 ### 복합키 목록
 
@@ -550,18 +549,19 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 - 에스크로·정산·지갑 사이에는 직접 FK가 없으므로 잔액과 상태 변경의 원자성은 Spring Transaction이 보장해야 합니다.
 - DB Event, Trigger, Scheduler는 없습니다. `settlements.due_at`을 읽는 자동 정산은 Spring Scheduler의 책임입니다.
 
-### 현재 DDL과 미결정 제품 Workflow
+### 현재 DDL과 제품 Workflow 경계
 
-아래 표는 현재 Head `202608061428`이 보장하는 사실과 제품 결정 또는 추가 DDL 검토가 남은
-부분을 분리합니다. Migration과 통합 DDL은 프로젝트 소유자만 변경합니다.
+아래 표는 현재 Head `202608111744`가 보장하는 사실과 승인된 제품 Workflow 또는 추가 DDL
+검토가 남은 부분을 분리합니다. Migration과 통합 DDL은 프로젝트 소유자만 변경합니다.
 
 | 기능                 | 현재 DB                                                                                           | 제품 Workflow·추가 검토                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | 퇴근 누락            | `CHECK_OUT_MISSING` 허용, 배정 근로자 필수. `attendance_records.result`는 `SUCCESS/REJECTED` 유지 | 판정 시점·실행 주체·늦은 QR·보정 권한과 증거·정산·장기 미해결 임금·기존 행 처리 미정. 실제 조회 확정 뒤 Scheduler Index 검토 |
 | 사업장 고정 반경     | `workplaces.radius_meters`와 근무 Snapshot `allowed_radius_meters`가 모든 양수를 허용             | 애플리케이션은 두 값에 항상 100m를 저장·검증. DB에서도 정확히 100을 강제할지는 소유자가 결정                                 |
 | 시스템 생성 계약서   | `EMPLOYMENT_CONTRACT`도 `work_case_id=NULL`을 가질 수 있음                                        | 계약서는 계약 확정 때 시스템만 생성하고 근무 건에 연결. DB 제약으로도 강제할지는 소유자가 결정                               |
-| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 기준일·삭제 범위와 전용 추적 컬럼·Index가 없음                | 시작일·종료일 기준과 파일·Metadata·Checksum·감사 삭제 범위를 먼저 확정한 뒤 소유자가 필요한 Schema 보강을 결정               |
-| 문서 접근 감사       | 문서와 선택적 Version, 행위·결과·구조화된 거부 사유를 저장. 기존 행의 신규 상세는 NULL            | 호환 Backend가 새 접근마다 확정 Version과 거부 사유를 기록하고 보관·조회 정책을 적용                                         |
+| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존·완료·재시도 컬럼과 Index가 없음                       | 7.0.0은 `ends_at` 서울 날짜+3년, 02:00 Keyset Job, DB 선삭제, Object 멱등 삭제, Metadata·Checksum·감사 무기한 보존을 확정. #131이 추가 DDL 없이 Runtime을 구현 |
+| 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유를 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 확정 Version과 거부 사유를 기록하고 보관·조회 정책을 적용                                         |
+| 신뢰 뱃지            | `badge_type`은 `TRUST_OWNER`·`TRUST_WORKER`만 허용하고 등급·건수는 `evidence` JSON에만 존재      | 7.0.0은 누적 문턱과 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence 필드, 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime을 구현 |
 | 멱등 요청 처리       | 사용자·Operation·Key Claim, Fingerprint, 완료 응답과 만료 시각을 저장                             | Claim 획득·대기 없는 충돌 처리·중단 복구·응답 재전송·만료 정리는 애플리케이션에서 구현                                       |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                     | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                                             |
 
@@ -878,11 +878,12 @@ erDiagram
 
 파일 자체는 DB가 아니라 비공개 저장소에 두고, DB에는 버전·저장 키·체크섬·서명·공유·접근 이력을 보존합니다.
 
-근로계약서는 사용자 삭제를 허용하지 않고 근로일 이후 3년간 보존한 뒤 백엔드가 자동
-삭제합니다. 야간 근무의 시작일·종료일 중 기준일과 저장소 파일·문서 Metadata·Checksum·감사의
-삭제 범위는 아직 미정입니다. 저장소 파일을 멱등 폐기하고 `documents.status=DELETED`로 접근을
-차단하면서 감사 Metadata를 보존하는 방식은 현재 스키마와 잘 맞는 설계 제안이지만 팀 확정
-후에만 구현합니다.
+근로계약서는 사용자가 삭제할 수 없습니다. 7.0.0 계약은 `work_cases.ends_at`의 서울 날짜에
+3년을 더한 자정부터 매일 02:00 Job이 `documentId` Keyset으로 처리하도록 확정했습니다. 문서를
+먼저 `DELETED`로 Commit해 접근을 차단한 뒤 모든 Version의 최종·결정적 임시 Object를 멱등
+삭제하고 실패한 만료 DELETED 문서는 다시 선택합니다. 문서·Version Metadata·Checksum·서명·
+공유·접근 감사·계약 관계 행은 기간 제한 없이 보존하며 별도 완료 Marker나 purge 이력은 두지
+않습니다. 현재 스키마는 이 정책을 표현할 수 있지만 Job 자체는 #131의 애플리케이션 작업입니다.
 
 ```mermaid
 erDiagram

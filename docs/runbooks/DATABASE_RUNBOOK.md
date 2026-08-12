@@ -7,8 +7,8 @@
 | 항목                | 현재 기준                           |
 | ------------------- | ----------------------------------- |
 | 문서 상태           | 현재 기준                           |
-| Migration Head      | `202608061428`                      |
-| Versioned Migration | 12개                                |
+| Migration Head      | `202608111744`                      |
+| Versioned Migration | 14개                                |
 | 도메인 테이블       | 24개 (`flyway_schema_history` 제외) |
 | MySQL               | `mysql:8.4.10`                      |
 | Flyway CLI          | `flyway/flyway:12.9.0`              |
@@ -23,9 +23,9 @@
 | JDBC·MyBatis·트랜잭션 설정          | `backend/src/main/java/com/gighub/config/DatabaseConfig.java`                                          |
 | DB 라이브러리 버전과 검증 작업      | `backend/build.gradle`                                                                                 |
 | 스키마의 작업용 요약                | [`../agent/SCHEMA_OVERVIEW.md`](../agent/SCHEMA_OVERVIEW.md)                                           |
-| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608061428.sql`](../database/schema-snapshot-202608061428.sql), 참고용 |
+| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608111744.sql`](../database/schema-snapshot-202608111744.sql), 참고용 |
 
-`V202607311427`부터 `V202608061428`까지는 PM·관리자 승인을 거친 현재 정식
+`V202607311427`부터 `V202608111744`까지는 PM·관리자 승인을 거친 현재 정식
 Migration입니다. 통합 DDL은 같은 Head를 빈 DB에서 검토하기 위한 읽기용 Snapshot이며 기존
 DB 업그레이드에는 반드시 Flyway Migration을 사용합니다.
 
@@ -159,7 +159,7 @@ docker compose --profile tools run --rm flyway info
 npm.cmd run db:migrate
 ```
 
-현재 다음 열두 개 Migration이 순서대로 적용되어야 합니다.
+현재 다음 열네 개 Migration이 순서대로 적용되어야 합니다.
 
 | Version        | 파일                                                         |
 | -------------- | ------------------------------------------------------------ |
@@ -175,6 +175,8 @@ npm.cmd run db:migrate
 | `202608041614` | `V202608041614__add_idempotency_request_claims.sql`          |
 | `202608051337` | `V202608051337__replace_mock_bank_account_user_with_pin.sql` |
 | `202608061428` | `V202608061428__add_document_access_audit_details.sql`       |
+| `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql`    |
+| `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`           |
 
 같은 명령을 다시 실행했을 때 `Schema ... is up to date. No migration necessary.`가 나오면 반복 실행도 정상입니다.
 
@@ -280,20 +282,108 @@ WHERE denial_reason IS NOT NULL
   AND (result <> 'DENIED' OR CHAR_LENGTH(denial_reason) = 0);
 ```
 
-#### 현재 DDL과 미결정 제품 Workflow
+#### `202608111743`·`202608111744` 적용 전 확인
 
-Head `202608061428`은 문서 접근 감사에 Version과 거부 사유를 추가하며, 사용자 귀속 없는
-Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소, `employer_profiles` 제거와
-`CHECK_OUT_MISSING` 상태·근로자 필수 제약도 유지합니다. 이는 구조를 저장할 수 있다는 DDL
-사실이며 각 Workflow의 Runtime 구현 완료를 뜻하지 않습니다.
+두 Migration은 새 컬럼·Index를 만들지 않고 기존 코드성 문자열 컬럼에 유한값 CHECK만
+추가합니다.
 
-| 기능                 | 현재 DDL                                                                                      | 미결정·후속 사항                                                                                       |
+- `202608111743`의 단일 `ALTER TABLE document_access_logs`는 `action`을
+  `HEALTH_CERT_FILE_VIEW`, `HEALTH_CERT_FILE_DOWNLOAD`,
+  `CONTRACT_FILE_VIEW`, `CONTRACT_FILE_DOWNLOAD`, `DOCUMENT_DETAIL_VIEW`만 허용합니다.
+- `ck_document_access_logs_denial_reason`은 기존 "빈 문자열이 아님" 조건을 승인된 다섯 사유
+  목록으로 대체합니다. 기존 Migration 파일은 수정하지 않고 새 Migration에서 제약만 교체합니다.
+- `202608111744`의 단일 `ALTER TABLE user_badges`는 `badge_type`을 `TRUST_OWNER`와
+  `TRUST_WORKER`만 허용합니다.
+
+MySQL은 서로 다른 `ALTER TABLE` 문을 하나의 Transaction으로 묶지 않습니다. 그래서 두 테이블을
+한 Flyway Version에 넣지 않고 한 DDL 문씩 연속 Version으로 분리했습니다. 각 문장 안의 제약 교체는
+원자적으로 성공하거나 실패하고, 앞 Version이 성공한 뒤 다음 Version이 실패하면 성공 이력은 그대로
+남습니다. Flyway는 실패한 단계만 점검·복구한 뒤 재실행합니다.
+
+적용 전에 목록 밖의 값이 남아 있으면 해당 `ALTER TABLE`이 실패합니다. 두 Version 중 하나라도
+실행하기 전에 다음 두 조회 결과가 모두 `0`인지 확인하고, `0`이 아니면 임의 보정하지 않고 범위를
+소유자에게 보고합니다.
+
+```sql
+SELECT COUNT(*) AS invalid_audit_rows
+FROM document_access_logs
+WHERE action NOT IN (
+        'HEALTH_CERT_FILE_VIEW', 'HEALTH_CERT_FILE_DOWNLOAD',
+        'CONTRACT_FILE_VIEW', 'CONTRACT_FILE_DOWNLOAD', 'DOCUMENT_DETAIL_VIEW'
+      )
+   OR (denial_reason IS NOT NULL
+       AND denial_reason NOT IN (
+           'PARTY_ACCESS_DENIED', 'DOCUMENT_UNAVAILABLE', 'FILE_UNAVAILABLE',
+           'CHECKSUM_MISMATCH', 'SIGNED_VERSION_UNAVAILABLE'
+       ));
+
+SELECT COUNT(*) AS invalid_badge_rows
+FROM user_badges
+WHERE badge_type NOT IN ('TRUST_OWNER', 'TRUST_WORKER');
+```
+
+`action`과 `badge_type`은 테이블 기본 `utf8mb4_0900_ai_ci`이므로 CHECK 비교가 대소문자를
+구분하지 않습니다. `denial_reason`은 `ascii_bin`이라 대소문자를 구분합니다. 애플리케이션은 세
+컬럼 모두 대문자 상수만 기록합니다.
+
+##### 두 Version 사이 실패 복구
+
+다음 절차는 공유·Staging·Production이 아니라 폐기 가능한 로컬 DB에서만 수행합니다. 실패한
+Migration 파일을 수정하거나 이미 성공한 `202608111743`을 수동으로 되돌리지 않습니다.
+
+1. `flyway info`와 Schema History에서 어느 Version이 성공·실패·대기 상태인지 확인합니다.
+
+   ```powershell
+   docker compose --profile tools run --rm flyway info
+   ```
+
+   ```sql
+   SELECT installed_rank, version, description, success
+   FROM flyway_schema_history
+   WHERE version IN ('202608111743', '202608111744')
+   ORDER BY installed_rank;
+   ```
+
+2. 이름만 보지 말고 실제 CHECK 식까지 확인합니다.
+
+   ```sql
+   SHOW CREATE TABLE document_access_logs;
+   SHOW CREATE TABLE user_badges;
+   ```
+
+   `202608111743` 실패 시에는 신규 action CHECK가 없어야 하고 기존 denial CHECK가 유지되어야
+   합니다. `202608111744` 실패 시에는 두 감사 CHECK가 적용된 `202608111743`만 성공 상태이고
+   뱃지 CHECK는 없어야 합니다. 이 상태와 다르면 수동 DDL을 실행하지 말고 소유자에게 보고해
+   후속 immutable Migration 범위를 결정합니다.
+
+3. 목록 밖 데이터가 원인이면 소유자가 승인한 별도 데이터 처리로 원인을 제거합니다. 이 Runbook은
+   실제 행의 의미를 추정하는 `UPDATE`나 `DELETE`를 제공하지 않습니다.
+4. 실패한 문장이 테이블에 일부 적용되지 않았음을 확인한 뒤, Flyway의 실패 이력만 정리합니다.
+
+   ```powershell
+   docker compose --profile tools run --rm flyway repair
+   ```
+
+   `repair`는 Schema를 고치지 않으므로 2단계 확인 전에 실행하지 않습니다. 실패 이력이 없고
+   `info`가 해당 Version을 `Pending`으로 표시하면 불필요한 `repair`는 생략합니다.
+5. `npm.cmd run db:migrate`를 다시 실행합니다. 성공한 앞 Version은 재실행하지 않고 실패했던
+   Version부터 적용되는지 확인한 뒤 `validate`와 `info`를 실행합니다.
+
+#### 현재 DDL과 제품 Workflow 경계
+
+Head `202608111744`는 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록을
+고정하며, 사용자 귀속 없는 Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소,
+`employer_profiles` 제거와 `CHECK_OUT_MISSING` 상태·근로자 필수 제약도 유지합니다. 이는 구조를
+저장할 수 있다는 DDL 사실이며 각 Workflow의 Runtime 구현 완료를 뜻하지 않습니다.
+
+| 기능                 | 현재 DDL                                                                                      | 승인된 제품 Workflow·후속 사항                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | 퇴근 누락 상태       | `CHECK_OUT_MISSING` 허용, 해당 상태의 `worker_id` 필수. `attendance_records.result` 변경 없음 | 판정 시점·실행 주체·늦은 QR·보정·정산·장기 미해결 임금·기존 행 처리와 실제 조회에 맞춘 Scheduler Index |
 | 100m 고정 반경       | 반경 기본값은 100이지만 두 반경 CHECK는 모든 양수를 허용                                      | 애플리케이션 강제로 충분한지, DB CHECK도 정확히 100으로 바꿀지 결정                                    |
 | 시스템 생성 계약서   | `EMPLOYMENT_CONTRACT`도 `work_case_id=NULL` 허용                                              | 근무 건 필수 연결을 DB에서도 강제할지 결정                                                             |
-| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존 시각·Index 없음                                 | 기준일과 파일·Metadata·Checksum·감사 삭제 범위를 확정한 뒤 추적 컬럼과 Scheduler Index 필요 여부 결정  |
-| 문서 접근 감사       | 문서와 선택적 Version, 행위·결과·구조화된 거부 사유 저장. 기존 행의 신규 상세는 NULL          | 호환 Backend가 새 접근마다 Version과 거부 사유를 빠짐없이 기록하고 보관·조회 정책을 적용               |
+| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존·완료·재시도 컬럼과 Index 없음                    | 7.0.0은 `ends_at` 서울 날짜+3년, 02:00 Keyset Job, DB 선삭제, Object 멱등 삭제와 Metadata·감사 무기한 보존을 확정. #131이 추가 DDL 없이 Runtime 구현 |
+| 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 Version과 거부 사유를 빠짐없이 기록하고 보관·조회 정책을 적용               |
+| 신뢰 뱃지            | `badge_type`은 두 종류만 허용하고 등급·건수·문턱은 `evidence` JSON에만 존재                   | 7.0.0은 누적 문턱, 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence와 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime 구현 |
 | 멱등 요청 Claim      | 사용자·Operation·Key 복합 UNIQUE, Fingerprint와 성공 응답 Snapshot 저장                       | Claim 선점·Replay·즉시 409·중단 복구·만료 정리는 후속 애플리케이션 구현                                |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                 | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                       |
 
@@ -313,7 +403,7 @@ docker compose --profile tools run --rm flyway validate
 docker compose --profile tools run --rm flyway info
 ```
 
-현재 기준의 정상 결과는 열두 개 Migration의 검증 성공, Schema version `202608061428`, 모든
+현재 기준의 정상 결과는 열네 개 Migration의 검증 성공, Schema version `202608111744`, 모든
 항목의 `Success`입니다.
 
 ## Spring·MyBatis 연결 검증
@@ -326,6 +416,8 @@ docker compose --profile tools run --rm flyway info
 ```powershell
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.bank.MockBankAccountPinSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentAccessAuditSchemaDatabaseIntegrationTest"
+.\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.badge.UserBadgeTypeSchemaDatabaseIntegrationTest"
+.\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentShareUniquenessSchemaDatabaseIntegrationTest"
 ```
 
 호환 Mapper와 Service까지 같은 브랜치에 있으면 전체 DB 통합 테스트를 실행합니다.
