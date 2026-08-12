@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `6.0.1`         |
-| 승인일      | 2026-08-11      |
+| 명세 릴리스 | `7.0.0`         |
+| 승인일      | 2026-08-12      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
 
@@ -113,9 +113,11 @@
 - `fieldErrors`는 필드 오류가 있을 때만 포함합니다.
 - 인증 없음과 Session 만료는 401, 역할 또는 리소스 소유권 위반은 403입니다.
 - 내부 SQL, Stack Trace, Token 원문과 타인의 리소스 존재 여부를 노출하지 않습니다.
-- 승인된 공통 오류 Code는 `VALIDATION_ERROR`, `AUTH_REQUIRED`, `FORBIDDEN`,
+- 승인된 공통·정산 오류 Code는 `VALIDATION_ERROR`, `AUTH_REQUIRED`, `FORBIDDEN`,
   `ROLE_MISMATCH`, `RESOURCE_NOT_FOUND`, `CONFLICT`, `IDEMPOTENCY_KEY_REUSED`,
-  `WORK_CASE_LOCKED`, `CONTRACT_RETENTION_REQUIRED`, `INTERNAL_ERROR`입니다.
+  `WORK_CASE_LOCKED`, `CONTRACT_RETENTION_REQUIRED`, `SETTLEMENT_ON_HOLD`,
+  `SETTLEMENT_NOT_READY`, `SETTLEMENT_ALREADY_PROCESSED`, `DISPUTE_ALREADY_OPEN`,
+  `SETTLEMENT_TEMPORARILY_UNAVAILABLE`, `INTERNAL_ERROR`입니다.
 - 아이디 없음·비밀번호 불일치·비활성 또는 잠금 계정은 이유를 구분하지 않고
   `401 AUTH_REQUIRED`로 응답합니다.
 - CSRF 검증 실패는 `403 FORBIDDEN`, 중복 가입은 `409 CONFLICT`, 역할 불일치는
@@ -129,9 +131,8 @@
   않습니다.
 - Mock 계좌·지갑 금융 오류는 `DEC-BANK-ERROR-CATALOG`, 초대 오류는
   `DEC-INVITE-ERROR-CATALOG`, 고정 QR 조회·재발급 오류는 `DEC-QR-ERROR-CATALOG`를
-  따릅니다. 근태 스캔 오류는 `DEC-ATTENDANCE-ERROR-CATALOG`를 따르며 문서·정산의 추가
-  도메인 오류 Code는 `DEC-OPEN-ERROR-CATALOG`가 승인하기 전까지 새 규범 값으로 확정하지
-  않습니다.
+  따릅니다. 근태 스캔 오류는 `DEC-ATTENDANCE-ERROR-CATALOG`, 정산·분쟁 오류는
+  `DEC-SETTLEMENT-ERROR-CATALOG`, 문서 오류는 `DEC-DOCUMENT-ERROR-CATALOG`를 따릅니다.
 
 ### Session, CSRF와 로컬 CORS
 
@@ -210,6 +211,11 @@ Fingerprint로 판정합니다.
   제거하고 `-0`을 `0`으로 만든 지수 없는 위도·경도·정확도, UTC `capturedAt`, 소문자
   `confirmEarlyCheckout`을 순서대로 LF 결합한 UTF-8 Bytes의 SHA-256을 Fingerprint로
   저장합니다. Token 원문과 WORKER 정밀 좌표는 Claim·일반 로그·오류에 저장하지 않습니다.
+- OWNER 정상 지급 Operation은 `SETTLEMENT_APPROVE`, Fingerprint는
+  `SHA-256(UTF-8("SETTLEMENT_APPROVE\n" + decimalWorkCaseId))`입니다. OWNER NO_SHOW 환불
+  Operation은 `SETTLEMENT_NO_SHOW_REFUND_APPROVE`, Fingerprint는
+  `SHA-256(UTF-8("SETTLEMENT_NO_SHOW_REFUND_APPROVE\n" + decimalWorkCaseId))`입니다.
+  외부 Key 원문은 금융 원장 Key로 사용하지 않습니다.
 - 형식 검증 실패와 계좌 인증 실패 등 자금 이동 전 실패는 저장·재생하지 않습니다. 실패
   과정에서 만든 `PROCESSING` Claim은 별도 짧은 트랜잭션에서 삭제하므로 같은 Key로 입력을
   고쳐 다시 시도할 수 있습니다.
@@ -364,6 +370,32 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 `GET /api/users/me/badge`는 `badgeType`, `level`, `recentCount`,
 `remainingToNextLevel`, `criterionLabel`, `criterionDesc`를 `data`에 반환합니다.
 
+- 역할에 따라 `badgeType`은 `TRUST_OWNER` 또는 `TRUST_WORKER`이고, 이력이 없어도
+  `level=0`, `recentCount=0`인 객체를 반환합니다.
+- `recentCount`는 호환 필드명이며 최근 구간이 아니라 누적 건수입니다. 1·2·3단계는 각각
+  누적 10·20·30건과 정상 비율 80·90·100%를 모두 만족해야 하며 높은 단계부터 판정합니다.
+  비율은 반올림하지 않고 `normalCount * 100 >= totalCount * thresholdPercent`로 비교합니다.
+- OWNER 누적 건수는 지급자인 `COMPLETED` Settlement 수이고, 정상 건수는 그중 같은
+  Work Case에 `CANCELED`·`REJECTED`가 아닌 분쟁이 없는 수입니다.
+- 분쟁 기능이 아직 구현되지 않은 동안에는 완료 Settlement를 정상으로 세며, 기능 도입 뒤
+  분모·분자 정의를 바꾸지 않고 실제 분쟁 행만 반영합니다.
+- WORKER 누적 건수는 본인의 `COMPLETED`·`NO_SHOW`·`CHECK_OUT_MISSING` Work Case 수이고,
+  정상 건수는 `COMPLETED`이면서 성공 CHECK_IN `attemptedAt <= startsAt`인 수입니다.
+- `remainingToNextLevel`은 다음 단계 건수 문턱까지 남은 수입니다. 건수는 충족했지만 정상
+  비율이 부족하면 0이고 `criterionDesc`가 부족한 비율 조건을 안내하며 3단계도 0입니다.
+- `criterionLabel`은 OWNER `안심거래`, WORKER `성실근로`입니다. 조회는 사용자 행을 잠근 뒤
+  현재 Commit된 원천 이력을 다시 계산하고 같은 트랜잭션의 Member/Auth 경계에서
+  `user_badges`를 Upsert한 뒤 Commit하고 응답합니다. 뱃지 행이 없어도 사용자 행이 잠금
+  기준입니다. 별도 Backfill Batch는 없으며 첫 조회가 배포 전 이력까지 계산합니다.
+- `criterionDesc`는 누적 건수·정상 건수와 다음 단계의 건수·정상 비율 조건을 함께
+  설명합니다. Work·Attendance·Settlement는 `user_badges`를 직접 쓰지 않고, 초대 조회도
+  Member/Auth가 공개한 Badge Application 경계를 사용하며 이 호출 방향을 Module Boundary
+  Manifest에 등록합니다.
+- evidence는 `ruleVersion=trust-badge-cumulative-10-20-30-v1`, badgeType, level,
+  totalCount, normalCount, 적용 thresholdCount·thresholdPercent, calculatedAt만 저장합니다.
+  새 Column은 추가하지 않습니다. 0단계 문턱은 둘 다 0이며 원천 행 ID와 개인정보는
+  저장하지 않습니다.
+
 ### 비밀번호 재설정
 
 - 요청은 이메일 존재 여부와 무관하게 같은 202 응답을 반환합니다.
@@ -511,8 +543,12 @@ expectedNetAmount = dailyWage - incomeTax - localIncomeTax
 않고 `CHECK_OUT_MISSING`을 `NO_SHOW`와 구분합니다. 두 API는 정밀 좌표, QR Token, OWNER
 잔액과 계약 Storage 정보를 반환하지 않습니다.
 
-`GET /api/worker/workplaces`는 WORKER에게 노출 가능한 별도 목록이며 `ACTIVE` 사업장만
-반환합니다. 전체 Item 필드는 별도 승인 전까지 이 계약에서 추정하지 않습니다.
+`GET /api/worker/workplaces`는 보건증 신규 공유 후보가 될 수 있는 관계를
+`startsAt ASC, workplaceId ASC`로 반환합니다. Item은 `workplaceId`, `workplaceName`,
+`ownerName`, `startsAt`, `endsAt`만 포함합니다. ACTIVE 사업장과 인증 WORKER의
+`ACCEPTED`·`READY` Work Case만 후보이며 이 Endpoint는 `documentId`를 받지 않으므로 특정
+문서의 만료나 중복 공유는 판정하지 않습니다. 실제 공유 POST에서 이를 다시 검증합니다.
+응답은 공통 `{data:{content,page}}` 목록 Envelope를 사용합니다.
 
 ## 지갑과 거래
 
@@ -714,7 +750,7 @@ Operation입니다. 신규 실행에서 계좌 Row를 잠근 뒤 상태·PIN·�
 | POST   | `/api/work-cases/{workCaseId}/invitations/reissue` | 해당 OWNER  | 활성 초대 원자적 교체              |
 | GET    | `/api/work-cases/{workCaseId}/workplace-contact`   | 해당 WORKER | `{ownerName,phone}`                |
 | GET    | `/api/work-cases/{workCaseId}/disputes`            | 당사자      | 신고 Page                          |
-| POST   | `/api/work-cases/{workCaseId}/disputes`            | 당사자      | `{content}` → `{reportId}`         |
+| POST   | `/api/work-cases/{workCaseId}/disputes`            | 당사자      | `{title,content}` → `{reportId}`   |
 
 ### `GET /api/workplaces/{workplaceId}/work-cases/summary`
 
@@ -985,8 +1021,9 @@ dailyWage = floor(hourlyWage × paidMinutes / 60)
 }
 ```
 
-활성 OWNER Badge가 없으면 같은 필드 집합에서 `"ownerBadge": null`을 반환합니다. 내부
-`termsVersion`, 초대 ID, Token Hash와 문서 Storage Key는 이 응답에 포함하지 않습니다.
+OWNER의 누적 이력을 같은 요청에서 재계산한 결과가 1~3단계이면 `ownerBadge`에
+`badgeType=TRUST_OWNER`와 `level`만 반환하고, 0단계이면 `"ownerBadge": null`을 반환합니다.
+내부 `termsVersion`, 초대 ID, Token Hash와 문서 Storage Key는 이 응답에 포함하지 않습니다.
 
 ### 초대 오류 응답
 
@@ -1136,12 +1173,45 @@ Aggregate Transaction은 다음 순서로 처리합니다. 검증 실패는 성�
 `409 CONFLICT`로 반환해 같은 Key 재시도를 허용합니다. Commit 여부가 불명확하면 Key를 바꾸지
 않고 Replay합니다.
 
-## 정산 즉시 승인
+## 정산 승인·자동 실행과 임금분쟁
+
+### Settlement 상태·시간·자금 경계
+
+- 초대 수락 Aggregate는 합의 일급의 Settlement를 `WAITING`, `due_at=null`로 만듭니다.
+- 정상 또는 확인된 CHECK_OUT은 Work Case를 `COMPLETED`, Settlement를 `SCHEDULED`,
+  `due_at=recordedAt+24시간`으로 한 Transaction에서 바꿉니다. 정산 처리기는 이미 완료된
+  Work Case 상태를 만들거나 변경하지 않습니다.
+- `due_at`은 OWNER 승인의 만료 시각이 아니라 Scheduler가 추가로 지급 자격을 얻는 경계입니다.
+  OWNER는 Scheduler가 선점하기 전까지 `due_at` 전후 모두 승인할 수 있습니다.
+- Scheduler의 시간 판정은 MySQL `NOW(6)`을 사용하고 `due_at <= NOW(6)`을 포함합니다. API
+  시각은 UTC `Instant`, DB `DATETIME(6)`은 `Asia/Seoul` 벽시계입니다.
+- 정상 지급은 `PROCESSING`, Escrow 해제, OWNER locked 감소, WORKER available 증가, 양측
+  `ESCROW_RELEASE` 원장과 `COMPLETED`를 하나의 Transaction에서 확정합니다. 실패하면 모두
+  Rollback되어 `SCHEDULED`로 남고 `PROCESSING`은 별도 Commit하지 않습니다.
+
+| 현재 상태 | 허용 전이 | 의미 |
+| --- | --- | --- |
+| `WAITING` | `SCHEDULED`, `PROCESSING` | 정상 CHECK_OUT 예약 또는 NO_SHOW 환불 승인 대기 |
+| `SCHEDULED` | `ON_HOLD`, `PROCESSING` | OWNER 또는 due Scheduler가 지급할 수 있는 정상 정산 |
+| `ON_HOLD` | `SCHEDULED` | 열린 임금분쟁으로 정상 지급이 보류됨; `due_at` 보존 |
+| `PROCESSING` | `COMPLETED`, `REFUNDED` | 같은 자금 Transaction 안에서만 존재하는 중간 상태 |
+| `COMPLETED` | 없음 | 정상·지각 지급이 끝난 재처리 불가 상태 |
+| `REFUNDED` | 없음 | NO_SHOW 전액 환불이 끝난 재처리 불가 상태 |
+| `FAILED` | 관리자 승인 복구만 | 자동 지급 재시도 소진 또는 무결성 실패로 자동 재처리 금지 |
+
+`CHECK_OUT_MISSING`은 추가 결정이 승인될 때까지 `WAITING/due_at=null`, Escrow `HELD`를
+유지하며 지급·환불하지 않습니다.
 
 ### `POST /api/work-cases/{workCaseId}/settlement/approve`
 
-- 해당 근무 OWNER만 호출합니다.
-- `Idempotency-Key`가 필수이며 Body는 없습니다.
+- 해당 Work Case의 OWNER만 호출하며 Body는 0byte, CSRF와 `Idempotency-Key`가 필수입니다.
+- Work Case `COMPLETED`, Settlement `SCHEDULED`, Escrow `HELD`, 열린 분쟁 없음과 당사자·
+  합의 금액을 잠금 뒤 다시 검증합니다.
+- Operation은 `SETTLEMENT_APPROVE`이고 Fingerprint는 공통 멱등 계약을 따릅니다. OWNER 승인과
+  Scheduler는 Settlement ID 기반 `SETTLEMENT_RELEASE_OWNER`, `SETTLEMENT_RELEASE_WORKER`
+  Namespace의 SHA-256인 같은 결정적 원장 Key와 원자 지급 실행기를 사용합니다.
+  `wallet_transactions.idempotency_key`의 Unique가 상태 전이와 함께 중복 자금 이동을 최종
+  방어합니다.
 
 ```json
 {
@@ -1156,29 +1226,33 @@ Aggregate Transaction은 다음 순서로 처리합니다. 검증 실패는 성�
 }
 ```
 
-`completedAt`은 UTC `Instant`입니다. 성공과 멱등 재전송 모두 200이며 재전송에는
-`Idempotency-Replayed: true`를 설정합니다. 정상 근무는 WORKER에게 산정 일당 전액을
-지급하고 OWNER 환불은 0원입니다. 지각 근무는
-`workerPaidAmount + ownerRefundAmount = originalEscrowAmount`를 만족하며 정확한 분할식은
+`completedAt`은 UTC `Instant`입니다. 최초 성공과 같은 Key·Fingerprint Replay 모두 200이며
+Replay에는 `Idempotency-Replayed: true`를 설정합니다. 정상 근무는 WORKER에게 산정 일당
+전액을 지급하고 OWNER 환불은 0원입니다. 지각 근무는
 `deductionAmount=floor(hourlyWage×lateMinutes÷60)`,
-`workerPaidAmount=dailyWage-deductionAmount`, `ownerRefundAmount=deductionAmount`입니다. 원
-미만을 버리고 세 금액은 음수가 아니어야 합니다. 두 자금 이동과 양측 원장은 한
-Transaction에서 한 번만 확정합니다.
+`workerPaidAmount=dailyWage-deductionAmount`, `ownerRefundAmount=deductionAmount`으로 원
+미만을 버리며 세 금액은 음수가 아니고 지급액과 환불액의 합은 원 예치액입니다. 다른 Key 또는
+Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 SETTLEMENT_ALREADY_PROCESSED`로
+응답합니다.
 
 ### `POST /api/work-cases/{workCaseId}/settlement/no-show-refund/approve`
 
 - 해당 Work Case의 OWNER만 호출하며 Body는 0byte, CSRF와 `Idempotency-Key`가 필수입니다.
-- 성공 CHECK_IN이 없고 저장 상태가 `NO_SHOW`이며 아직 지급·환불되지 않은 경우만 승인합니다.
-- 시작+1시간의 시스템 판정은 상태만 `NO_SHOW`로 바꾸며 이 승인 요청 전에는 자금을
-  이동하지 않습니다.
-- 성공은 WORKER 지급액 0원, OWNER 환불액 원 예치액 전액, 예치 잔액 0원과
-  `ESCROW_REFUND` 원장을 한 Transaction으로 확정합니다.
+- 성공 CHECK_IN이 없고 Work Case `NO_SHOW`, Settlement `WAITING/due_at=null`, Escrow `HELD`,
+  열린 분쟁 없음인 경우만 승인합니다. 시스템 NO_SHOW 판정은 상태만 바꾸며 자동 환불하지
+  않습니다.
+- Operation은 `SETTLEMENT_NO_SHOW_REFUND_APPROVE`이고 Fingerprint는 공통 멱등 계약을
+  따릅니다. 원장 Key는 Settlement ID 기반 `SETTLEMENT_REFUND_OWNER` Namespace의 SHA-256으로
+  정합니다.
+- 성공은 Settlement `PROCESSING → REFUNDED`, Escrow `HELD → REFUNDED`, OWNER locked 감소·
+  available 증가와 OWNER `ESCROW_REFUND` 한 건을 한 Transaction으로 확정합니다. WORKER
+  Wallet과 원장은 바꾸지 않습니다.
 
 ```json
 {
   "data": {
     "settlementId": 3,
-    "status": "COMPLETED",
+    "status": "REFUNDED",
     "originalEscrowAmount": 120000,
     "workerPaidAmount": 0,
     "ownerRefundAmount": 120000,
@@ -1187,9 +1261,73 @@ Transaction에서 한 번만 확정합니다.
 }
 ```
 
-성공과 같은 Key Replay는 200이며 Replay Header를 반환합니다. 타 OWNER는 403, 상태·당사자·
-성공 출근·이미 처리 충돌은 409입니다. Settlement의 재처리 불가 종료 상태 명칭은
-`DEC-OPEN-NO-SHOW-SETTLEMENT`을 따릅니다.
+최초 성공과 같은 Key·Fingerprint Replay는 200이며 Replay Header를 반환합니다. 열린 분쟁은
+`409 SETTLEMENT_ON_HOLD`, 다른 Key로 이미 처리된 환불은
+`409 SETTLEMENT_ALREADY_PROCESSED`입니다.
+
+### 예정 자동 지급
+
+- 외부 실행 Endpoint나 임의 OWNER 승인자를 만들지 않습니다. 자동 지급의
+  `approved_by_user_id`는 `null`, 내부 Operation 식별자는 Settlement ID 기반
+  `SETTLEMENT_SCHEDULED_PAYOUT`입니다.
+- 한 실행은 `SCHEDULED`, `due_at <= NOW(6)`, 열린 분쟁 없음,
+  `next_retry_at IS NULL OR next_retry_at <= NOW(6)` 후보를 `due_at ASC, id ASC` 순서로 최대
+  100건 처리합니다. 각 후보는 짧은 독립 Transaction에서 `FOR UPDATE SKIP LOCKED`와 조건부
+  전이로 선점합니다.
+- Deadlock, Lock Timeout과 일시 Adapter 실패는 자금 Transaction 전체를 Rollback한 뒤 별도
+  짧은 감사 Transaction에서 `retry_count`, `failure_code`, `last_failure_at`, `next_retry_at`을
+  갱신합니다. 재시도 간격은 1분, 5분, 15분, 60분이고 이후 60분을 유지합니다.
+- 총 다섯 번 실패하면 돈과 원장이 움직이지 않았음을 재검증하고 `FAILED`로 전이합니다. 상태·
+  금액·원장 무결성 실패도 즉시 `FAILED`와 닫힌 `failure_code`를 남기며 자동 정상화하지
+  않습니다. 프로세스 중단은 `SCHEDULED`로 Rollback되고 과거 고착 `PROCESSING`은 자동
+  지급하지 않고 수동 대사 대상으로 격리합니다.
+
+### `POST /api/work-cases/{workCaseId}/disputes`
+
+- Work Case OWNER와 배정 WORKER만 호출하며 CSRF가 필수입니다. 서버는
+  `dispute_type=WAGE`로 기록하고 Work Case당 `OPEN`·`UNDER_REVIEW` 분쟁을 하나만 허용합니다.
+- Body의 `title`은 trim 후 1~100자, `content`는 trim 후 1~2000자입니다.
+
+```json
+{
+  "title": "지급 금액 확인 요청",
+  "content": "지각 차감 내역을 확인해 주세요."
+}
+```
+
+성공은 `201 {"data":{"reportId":1}}`입니다. 정상 `SCHEDULED` 정산에 분쟁을 등록하면 같은
+Transaction에서 `ON_HOLD`로 바꾸되 `due_at`, Escrow, Wallet과 원장은 보존합니다. NO_SHOW의
+`WAITING` 상태는 그대로 두지만 열린 분쟁이 환불 승인을 막습니다. 분쟁 등록과 지급은
+`work_cases → settlements → disputes` 순서로 직렬화하며 지급이 먼저 Commit된 경우 후속
+신고가 이미 끝난 자금 이동을 되돌리지 않습니다.
+
+### `GET /api/work-cases/{workCaseId}/disputes`
+
+- Work Case OWNER와 배정 WORKER만 공통 Page Query로 조회합니다.
+- Item은 `reportId`, `title`, `content`, `status`, nullable `resolution`, `requesterRole`,
+  `createdAt`, nullable `resolvedAt`을 반환하고 내부 사용자 ID와 처리자 ID를 노출하지 않습니다.
+
+`OPEN`, `UNDER_REVIEW`는 열린 분쟁이며 정상 지급과 NO_SHOW 환불을 모두 막습니다.
+`RESOLVED`, `REJECTED`, `CANCELED`은 닫힌 분쟁입니다. 마지막 열린 분쟁을 닫는 Transaction은
+정상 Settlement를 `ON_HOLD → SCHEDULED`로 복구하고 기존 `due_at`을 보존하며, NO_SHOW 환불
+승인도 다시 허용합니다. 관리자 역할과 상태 변경 Endpoint는 `DEC-OPEN-ADMIN-DISPUTE`가
+닫힐 때까지 제공하지 않습니다.
+
+### 정산·분쟁 오류
+
+| 상황 | HTTP | Code |
+| --- | ---: | --- |
+| 인증 없음 | 401 | `AUTH_REQUIRED` |
+| OWNER 역할 불일치 | 403 | `ROLE_MISMATCH` |
+| 다른 OWNER의 Work Case 또는 존재하지 않는 Work Case | 404 | `RESOURCE_NOT_FOUND` |
+| 열린 분쟁으로 지급·환불 보류 | 409 | `SETTLEMENT_ON_HOLD` |
+| Work·Settlement·Escrow가 승인 가능한 상태가 아님 | 409 | `SETTLEMENT_NOT_READY` |
+| 다른 Key 또는 Scheduler가 이미 처리함 | 409 | `SETTLEMENT_ALREADY_PROCESSED` |
+| 같은 Key가 같은 Fingerprint를 처리 중 | 409 | `CONFLICT` |
+| 같은 Key를 다른 Fingerprint에 재사용 | 409 | `IDEMPOTENCY_KEY_REUSED` |
+| 열린 분쟁 중복 등록 | 409 | `DISPUTE_ALREADY_OPEN` |
+| 제한 재시도 뒤 일시 장애 지속 | 503 | `SETTLEMENT_TEMPORARILY_UNAVAILABLE` |
+| 상태·금액·원장 무결성 모순 | 500 | `INTERNAL_ERROR` |
 
 ## 사업장 고정 QR과 근태
 
@@ -1415,69 +1553,201 @@ Secure Context에서 `navigator.mediaDevices.getUserMedia`, Geolocation API,
 때만 지원합니다. 하나라도 없거나 카메라·위치 권한이 거부되면 Token 직접 입력 없이 지원
 환경 안내를 표시합니다. Decoder 의존성 추가는 별도 승인 대상입니다.
 
-현재 좌표·근태·Settlement·범용 Claim Column과 Index로 기능 계약을 충족하므로 이번
-릴리스에는 Scheduler Index, 수동 보정 Column 또는 다른 Migration이 없습니다. 운영 규모의
-MySQL `EXPLAIN`에서 성능 문제가 확인될 때만 별도 관리자 승인 Migration을 검토합니다.
+현재 좌표·근태·Settlement·범용 Claim Column과 Index는 이 M5 근태 계약을 충족하므로
+M5 근태 전용 Migration은 추가하지 않습니다. 운영 규모의 MySQL `EXPLAIN`에서 성능 문제가
+확인될 때만 별도 관리자 승인 Index를 검토합니다. M6 7.0.0 Settlement 계약은 #72가 먼저
+현재 지급 동작을 `SCHEDULED` 기반으로 정합화한 뒤 #171 신규 immutable Migration을 적용합니다.
 
 ## 문서
 
-| Method | Path                                               | 권한          | 계약                                                |
-| ------ | -------------------------------------------------- | ------------- | --------------------------------------------------- |
-| GET    | `/api/documents`                                   | 문서 접근자   | 문서 Page                                           |
-| POST   | `/api/documents`                                   | WORKER        | 보건증 Multipart 업로드                             |
-| PATCH  | `/api/documents/{documentId}`                      | 보건증 소유자 | `{issuedDate}`                                      |
-| DELETE | `/api/documents/{documentId}`                      | 보건증 소유자 | `204`                                               |
-| GET    | `/api/documents/{documentId}/file`                 | 문서 접근자   | Query `mode=view` 또는 `mode=download`, 파일 Stream |
-| GET    | `/api/documents/{documentId}/shares`               | 보건증 소유자 | 공유 목록                                           |
-| POST   | `/api/documents/{documentId}/shares`               | 보건증 소유자 | `{workplaceId}` → `{shareId}`                       |
-| DELETE | `/api/documents/{documentId}/shares/{workplaceId}` | 보건증 소유자 | `204`                                               |
+| Method | Path                                               | 권한          | 계약                                                     |
+| ------ | -------------------------------------------------- | ------------- | -------------------------------------------------------- |
+| GET    | `/api/documents`                                   | 문서 접근자   | 문서 Page                                                |
+| GET    | `/api/documents/{documentId}`                      | 문서 접근자   | 문서 Item과 허용 `versions[]`                            |
+| POST   | `/api/documents`                                   | WORKER        | 보건증 Multipart 업로드                                  |
+| PATCH  | `/api/documents/{documentId}`                      | 보건증 소유자 | `{issuedDate}`                                           |
+| DELETE | `/api/documents/{documentId}`                      | 보건증 소유자 | `204`                                                    |
+| GET    | `/api/documents/{documentId}/file`                 | 문서 접근자   | Query `mode=view|download`, 파일 Stream                  |
+| GET    | `/api/documents/{documentId}/shares`               | 보건증 소유자 | 공유 이력                                                |
+| POST   | `/api/documents/{documentId}/shares`               | 보건증 소유자 | `{workplaceId}` → `201 {data:{shareId}}`                 |
+| DELETE | `/api/documents/{documentId}/shares/{workplaceId}` | 보건증 소유자 | 멱등 `204`                                               |
 
-`GET /api/documents`는 `workplaceId?`, `docType?`, `page?`, `size?` Query를 사용합니다.
+### 목록과 상세
 
-`POST /api/documents`의 Multipart Part는 다음과 같습니다.
+`GET /api/documents`는 `workplaceId?`, `docType?`, `page?`, `size?`만 Query로 받습니다.
+`source`는 Query가 아니라 서버가 현재 사용자 기준으로 계산합니다. OWN 문서는 문서당 한 행,
+공유 보건증은 `(documentId,workCaseId)`당 한 행이며 `totalElements`도 이 가시 행 수입니다.
+기본 정렬은 `createdAt DESC, documentId DESC, workCaseId DESC NULLS LAST`입니다.
 
-- `docType=HEALTH_CERTIFICATE`
-- `file`: JPG, PNG 또는 PDF
-- `issuedDate`: `LocalDate`
+`source=OWN`은 현재 사용자가 문서 소유자일 때이고, `source=SHARED`는 유효한 보건증 공유를
+받은 OWNER 또는 근로계약 당사자인 WORKER일 때입니다.
 
-사용자 업로드에서 `EMPLOYMENT_CONTRACT`를 받지 않습니다. 근로계약서는 초대 수락과 계약
-확정 과정에서 시스템이 자동 생성하므로 별도 업로드 Endpoint가 없습니다.
+단건 상세에서 같은 `documentId`가 현재 사용자에게 둘 이상의 유효한 SHARED Work Case
+관계로 보이는 경우 어느 `workCaseId` Item을 선택할지는 이번 승인에서 정하지 않았습니다.
+서버는 임의 관계를 고르거나 구현 완료로 표시하지 않고 후속 보호 계약이 선택 규칙 또는
+식별자를 확정할 때까지 이 복수 관계 경계를 Blocked로 유지합니다.
 
-PATCH와 DELETE는 보건증에만 적용합니다. 근로계약서를 직접 삭제하려는 요청은
-`409 CONTRACT_RETENTION_REQUIRED`입니다. 근로일 이후 3년 보존과 자동 삭제는 HTTP
-요청이 아니며, 기준일과 삭제 범위는 `DEC-OPEN-DOCUMENT-RETENTION-SCOPE`를 따릅니다.
+목록과 `GET /api/documents/{documentId}`는 다음 Item을 함께 사용하고 상세만 `versions[]`를
+추가합니다.
 
-문서 목록, 파일, 공유 응답의 전체 필드 집합은
-`DEC-OPEN-DOCUMENT-RESPONSE-SHAPES`를 따릅니다.
+```json
+{
+  "documentId": 5,
+  "docType": "HEALTH_CERTIFICATE",
+  "status": "ACTIVE",
+  "fileName": "보건증_20260601_김알바.jpg",
+  "mimeType": "image/jpeg",
+  "issuedDate": "2026-06-01",
+  "expiresDate": "2027-06-01",
+  "latestVersion": 1,
+  "source": "SHARED",
+  "sharedByName": "김알바",
+  "workplaceId": 1,
+  "workplaceName": "강남점",
+  "workCaseId": 201,
+  "capabilities": {
+    "canView": true,
+    "canDownload": true,
+    "canShare": false,
+    "canDelete": false
+  },
+  "createdAt": "2026-06-01T01:00:00Z"
+}
+```
 
-### `GET /api/documents/{documentId}/file` 계약서 규칙
+- DB 상태가 `ACTIVE`인 문서만 후보입니다. `DRAFT`, `AWAITING_SIGNATURE`, `SIGNED`,
+  `CANCELED`, `DELETED`는 목록·상세·파일에서 제외합니다.
+- 보건증 외부 상태는 서울 날짜 기준 `expiresDate < today`이면 `EXPIRED`, 아니면
+  `ACTIVE`입니다. 만료 보건증은 소유자에게만 계속 보이고 공유 대상에서는 숨깁니다.
+  근로계약서 외부 상태는 `ACTIVE`입니다.
+- 외부 만료 날짜 필드명은 `expiresDate`이며 `expiryDate`·`expiresOn`을 사용하지 않습니다.
+- OWN 보건증은 `sharedByName`, `workplaceId`, `workplaceName`, `workCaseId`가 모두 null이고,
+  SHARED 보건증은 모두 필수입니다. 근로계약서는 `expiresDate=null`이고 연결 사업장·Work
+  Case가 필수이며 OWN의 `sharedByName`은 null, SHARED의 `sharedByName`은 문서 소유자
+  이름입니다. `issuedDate`는 두 문서 유형 모두 필수입니다.
+- `fileName`은 정제한 이름으로 서버가 조립합니다. 보건증은
+  `보건증_{발급일}_{소유자이름}.{ext}`, 근로계약서는
+  `근로계약서_{사업장명}_{발급일}_{근로자이름}.pdf`이며 제어문자와 경로 구분자를 제거합니다.
+- `versions[]`는 최신순이며 보건증은 ORIGINAL Version 1, 근로계약서는 최신 SIGNED
+  Version만 포함합니다. Version Item은 `versionNo`, `versionType`, `mimeType`,
+  `sizeBytes`, `createdAt`만 반환합니다.
+- `latestVersion`, `mimeType`, `fileName`, Version Item과 파일 Stream은 같은 허용 Version을
+  기준으로 합니다. ORIGINAL 계약서, 전자동의 증거, Storage Key, 임시 Key, Checksum,
+  내부 사용자 ID는 외부에 노출하지 않습니다.
+- 목록에 포함된 행의 `canView`·`canDownload`는 true입니다. `canShare`는 ACTIVE OWN
+  보건증에 신규 공유 후보가 하나 이상일 때만 true이고, `canDelete`는 OWN 보건증만
+  true입니다. 실제 요청은 권한·관계를 다시 검증합니다.
 
-`EMPLOYMENT_CONTRACT`에는 다음 규칙을 추가합니다. 일반 문서 목록·Metadata Shape는 여전히
-`DEC-OPEN-DOCUMENT-RESPONSE-SHAPES`를 따릅니다.
+### 보건증 등록·수정·삭제
 
-- 수락 성공과 Replay의 `workCaseId`로 Work Case 상세를 다시 조회하고
-  `contract.documentId`를 얻어 호출합니다. 일반 문서 목록의 미승인 필드를 발견 경로로
-  추정하지 않습니다.
-- Work Case의 OWNER 또는 WORKER 당사자만 호출합니다.
-- `mode=view|download`를 지원하고 두 모드 모두 최신 SIGNED Version 2의 같은 Bytes를
-  반환합니다. ORIGINAL Version은 일반 사용자에게 반환하지 않습니다.
-- 최종 Object가 DB Checksum과 일치하면 사용합니다. 없거나 불일치하면 결정적 `.pending`
-  Object를 검사해 일치하는 Bytes를 반환하고 최종 승격을 재시도합니다. 둘 다 일치하지
-  않으면 Stream하지 않고 `500 INTERNAL_ERROR`를 반환합니다.
-- 인증 뒤 기존 문서 행을 식별한 요청은 접근 결정마다 `document_access_logs` 한 행을
-  Commit합니다. `actor_user_id`는 인증 사용자, `document_id`는 경로 문서,
-  `action`은 mode에 따라 `CONTRACT_FILE_VIEW` 또는 `CONTRACT_FILE_DOWNLOAD`, `result`는
-  `ALLOWED` 또는 `DENIED`, 시각은 서버 `created_at`입니다.
-- `ALLOWED`는 반환할 SIGNED Version 2의 `document_version_id`가 필수이고
-  `denial_reason=null`입니다. 감사 Commit에 실패하면 Header나 파일 Bytes를 보내지 않고
-  `500 INTERNAL_ERROR`와 같은 `traceId`의 보안 로그를 남깁니다.
-- 문서 식별 뒤 `DENIED`는 SIGNED Version을 찾았으면 그 `document_version_id`, 찾지 못한
-  경우만 `null`을 기록합니다. `denial_reason`은 `PARTY_ACCESS_DENIED`,
-  `DOCUMENT_UNAVAILABLE`, `SIGNED_VERSION_UNAVAILABLE`, `FILE_UNAVAILABLE`,
-  `CHECKSUM_MISMATCH` 중 하나입니다.
-- 인증·Query 검증에서 문서를 조회하기 전에 거부했거나 문서 행이 없으면 FK를 만족하는 가짜
-  감사 행을 만들지 않습니다. 대신 Token, 저장 Key와 파일 내용을 제외한 같은 `traceId`의
-  보안 로그를 남깁니다.
+`POST /api/documents`는 `docType=HEALTH_CERTIFICATE`, `file`, `issuedDate` Multipart를
+받습니다. 재등록은 기존 문서에 Version을 추가하지 않고 새 문서와 ORIGINAL Version 1을
+만듭니다. 기존 보건증은 자동 삭제하지 않고 만료 표시 규칙에 따라 문서함에 보존합니다.
+사용자 업로드에서 `EMPLOYMENT_CONTRACT`는 받지 않습니다.
+
+- `issuedDate`는 서울 서버 수신 날짜보다 미래일 수 없고, `expiresDate`는 서버가
+  `issuedDate.plusYears(1)`로 계산합니다. 윤년은 Java `LocalDate`를 따르며 이미 만료되는
+  과거 발급일도 허용합니다. 미래 값은 `400 VALIDATION_ERROR`와
+  `fieldErrors.field=issuedDate`이며 클라이언트 만료일은 받지 않습니다.
+- 파일은 정확히 10 MiB 이하 JPG·PNG·PDF이며 확장자·선언 MIME·Signature가 모두
+  일치해야 합니다. Checksum은 SHA-256 32byte이고 저장 확장자는 검증된 내용에 따라
+  소문자 `jpg`, `png`, `pdf` 중 하나로 정합니다.
+- 최종 Key는 `health-certificates/{ownerUserId}/{documentId}/v1.{ext}`, 임시 Key는
+  `health-certificates/{ownerUserId}/{documentId}/.pending/v1.{ext}`입니다. Key는 응답과
+  일반 로그에 노출하지 않습니다.
+- `PATCH /api/documents/{documentId}`는 소유 WORKER의 보건증 `issuedDate`만 수정합니다.
+  파일 교체·Version 추가는 받지 않으며 만료 상태가 되어도 공유 행의 저장 상태를 바꾸지
+  않고 매 요청 유효성으로 즉시 접근을 제거합니다.
+- 보건증의 DB `documents.status`는 `ACTIVE|DELETED`만 사용하고 외부 EXPIRED는 날짜로만
+  계산합니다.
+- `DELETE`는 문서 잠금 뒤 `documents.status=DELETED`와 모든 ACTIVE 공유의
+  `REVOKED/revoked_at`을 한 트랜잭션에서 Commit합니다. Version·파일·Checksum·감사는
+  보존하고 같은 소유자의 반복 삭제는 204입니다. 근로계약서 DELETE는
+  `409 CONTRACT_RETENTION_REQUIRED`, 없는 문서와 비소유 문서는 404입니다.
+
+이미 만료되는 `issuedDate`의 POST·PATCH 성공 응답은 서버가 계산한 `expiresDate`와
+`status=EXPIRED`를 포함합니다. 정확한 HTTP Status와 그 밖의 Body 필드는 승인 Patch가
+값을 정하지 않았으므로 구현 이슈에서 별도 보호 계약으로 확정하기 전까지 추정하지 않습니다.
+
+### 보건증 공유
+
+공유 생성 요청자는 Work Case ID나 OWNER ID를 보내지 않습니다. 서버는 ACTIVE OWN 보건증,
+미만료, ACTIVE 사업장, 정확히 하나의 `ACCEPTED`·`READY` Work Case를 검증해
+`work_case_id`와 `shared_with_user_id`를 결정합니다. 복수 후보는 409이며 임의 선택하지
+않습니다. 문서가 없거나 삭제·비소유·잘못된 유형이면 404이고, 사업장 없음·비활성·후보 없음·
+만료 보건증은 `400 VALIDATION_ERROR`의 `fieldErrors.field=workplaceId`입니다.
+
+- 새 행은 `purpose=HEALTH_CERTIFICATE`, `status=ACTIVE`입니다. 같은 문서·Work Case·OWNER·
+  목적의 ACTIVE 공유가 이미 있으면 409입니다. 철회 행은 되살리지 않고 재공유 시 새 행을
+  만듭니다.
+- 철회는 해당 사업장과 연결된 현재 문서의 모든 ACTIVE 공유를 REVOKED로 바꾸고 같은 서버
+  시각을 기록합니다. 대상이 없어도 소유자 요청이면 204입니다.
+- 접근 때마다 공유 ACTIVE, 문서 ACTIVE·미만료, 사업장 ACTIVE, Work Case 상태
+  `ACCEPTED|READY|IN_PROGRESS`, `now < endsAt`을 함께 검증합니다. 별도 만료 Batch나
+  저장 상태 전이는 사용하지 않으며 `document_shares.expires_at`은 접근 유효성이나
+  `effectiveUntil` 계산 근거로 사용하지 않습니다.
+- 공유 이력 Item은 `shareId`, `workplaceId`, `workplaceName`, `workCaseId`, 계산
+  `status`, `sharedAt`, `revokedAt`, `effectiveUntil`만 포함합니다. 상태는 REVOKED 우선,
+  저장 ACTIVE지만 관계가 끝났으면 EXPIRED, 모두 유효하면 ACTIVE입니다.
+  `effectiveUntil`은 Work Case 종료와 보건증 만료일 다음 서울 자정 중 빠른 시각입니다.
+  이력은 최신 생성순입니다.
+- 공유 이력 GET도 공통 `{data:{content,page}}` 목록 Envelope를 사용합니다.
+
+### 파일 응답·접근 감사
+
+`mode`는 `view` 또는 `download`이고 생략하면 `view`입니다. 다른 값은
+`400 VALIDATION_ERROR`입니다. 허용 MIME은 `image/jpeg`, `image/png`,
+`application/pdf`이며 그 밖의 저장 Metadata는
+`application/octet-stream`, `attachment`, `X-Content-Type-Options: nosniff`로 보냅니다.
+Disposition은 정제한 ASCII `filename`과 RFC 5987 `filename*`을 함께 사용합니다.
+`view`는 `inline`, `download`는 `attachment`를 사용합니다.
+`Cache-Control: private, no-store`, `Accept-Ranges: none`이며 Range 요청은 지원하지 않습니다.
+
+- 계약 당사자와 보건증 소유자·유효 공유자만 허용 Version을 받습니다. 보이지 않는 문서,
+  비당사자, 삭제·철회·만료는 모두 `404 RESOURCE_NOT_FOUND`이며 403·410으로 존재를
+  구분하지 않습니다.
+- 최종 Object Checksum을 먼저 검증하고 없거나 불일치하면 같은 Version의 결정적 임시
+  Object를 검증해 반환·승격을 재시도합니다. 둘 다 복구할 수 없으면 Bytes를 보내지 않고
+  `500 INTERNAL_ERROR`입니다.
+- 파일 action은 `HEALTH_CERT_FILE_VIEW|HEALTH_CERT_FILE_DOWNLOAD|CONTRACT_FILE_VIEW|`
+  `CONTRACT_FILE_DOWNLOAD`, 상세 action은 `DOCUMENT_DETAIL_VIEW`입니다. 목록과 공유 변경은
+  감사하지 않습니다.
+- 문서 식별 뒤 허용·거부마다 정확히 한 행을 먼저 Commit합니다. ALLOWED는 실제 허용
+  Version ID가 필수이고 사유는 null입니다. DENIED는 Version을 식별했으면 그 ID를 기록하고,
+  사유는 문서 유형·동작에 허용된 `PARTY_ACCESS_DENIED`, `DOCUMENT_UNAVAILABLE`,
+  `SIGNED_VERSION_UNAVAILABLE`, `FILE_UNAVAILABLE`, `CHECKSUM_MISMATCH` 중 하나입니다.
+- DENIED가 허용 Version을 식별하기 전이거나 허용 Version 자체가 없으면
+  `document_version_id=null`입니다.
+- 보건증 파일은 `SIGNED_VERSION_UNAVAILABLE`을 사용하지 않고, 문서 상세는 파일을 읽지
+  않으므로 `PARTY_ACCESS_DENIED|DOCUMENT_UNAVAILABLE`만 사용합니다.
+- 공유 만료·철회, 보건증 만료·삭제와 근무 관계 종료로 접근이 사라지면 감사 사유는
+  `DOCUMENT_UNAVAILABLE`이고 외부 응답은 404입니다.
+- 감사 Commit 실패 시 성공 Metadata Body·파일 응답 Header·파일 Bytes를 보내지 않고
+  공통 `500 INTERNAL_ERROR` 오류 Envelope를 반환합니다. 미인증이나 없는 문서는 DB 감사
+  대신 최소 `traceId` 보안 로그만 남깁니다. 일반 로그에는 사용자 ID, 파일명, Storage Key,
+  Checksum, 문서 개인정보를 남기지 않습니다.
+
+문서 API의 외부 오류는 `VALIDATION_ERROR`, `AUTH_REQUIRED`, `FORBIDDEN`, `ROLE_MISMATCH`,
+`RESOURCE_NOT_FOUND`, `CONFLICT`, `CONTRACT_RETENTION_REQUIRED`, `INTERNAL_ERROR`로 제한합니다.
+
+### 근로계약서 보존·폐기
+
+근로계약서 보존 기준일은 `work_cases.ends_at`의 서울 날짜이고 만료 시각은 그 날짜에 3년을
+더한 서울 자정입니다. 사용자는 계약서를 삭제할 수 없습니다. 매일 02:00 서울 시각 Job이
+`documentId ASC` Keyset 100건씩 처리합니다.
+
+각 대상은 짧은 트랜잭션에서 문서를 먼저 DELETED로 Commit해 접근을 차단한 뒤 모든
+Version의 최종·결정적 임시 Object를 멱등 삭제합니다. 실패해도 ACTIVE로 복원하지 않고 다음
+Job이 만료 DELETED 문서를 다시 선택합니다. `documents`, Version Metadata·Checksum,
+서명·공유·접근 감사·계약 관계 행은 기간 제한 없이 보존합니다. 별도 purge 이력 테이블이나
+Column은 추가하지 않고 `updated_at`을 완료 표시로 사용하지 않습니다.
+완료 Marker가 없더라도 모든 Keyset Page를 끝까지 순회해 앞의 100건이 뒤 대상의 처리를
+굶기지 않도록 합니다.
+
+시스템 생성 계약서에 `work_case_id`가 없으면 데이터 손상으로 격리하고 운영
+`INTERNAL_ERROR` 경보를 남깁니다. Object 미존재는 삭제 성공입니다. 운영 로그에는 traceId,
+documentId, versionId, 단계와 성공·실패 Enum만 남기고 Storage Key·Checksum·당사자 정보는
+남기지 않습니다.
 
 ## 알림과 외부 결제
 
