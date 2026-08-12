@@ -26,6 +26,19 @@
             <arg column="workerId" javaType="java.lang.Long"/>
             <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
             <arg column="termsVersion" javaType="java.lang.Integer"/>
+            <arg column="startsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="endsAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="workCaseEscrowContextResult"
+               type="com.gighub.work.contract.WorkCaseEscrowSnapshot">
+        <constructor>
+            <idArg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="employerId" javaType="java.lang.Long"/>
+            <arg column="workerId" javaType="java.lang.Long"/>
+            <arg column="agreedWage" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
         </constructor>
     </resultMap>
 
@@ -74,7 +87,9 @@
                workplace_id  AS workplaceId,
                worker_id     AS workerId,
                status        AS status,
-               terms_version AS termsVersion
+               terms_version AS termsVersion,
+               starts_at     AS startsAt,
+               ends_at       AS endsAt
         FROM work_cases
         WHERE id = #{workCaseId}
             FOR UPDATE
@@ -118,14 +133,6 @@
           AND status = 'DRAFT'
     </update>
 
-    <update id="revokePendingInvitations">
-        UPDATE work_invitations
-        SET status     = 'REVOKED',
-            revoked_at = CURRENT_TIMESTAMP(6)
-        WHERE work_case_id = #{workCaseId}
-          AND status = 'PENDING'
-    </update>
-
     <select id="countInvitations" resultType="int">
         SELECT COUNT(*)
         FROM work_invitations
@@ -144,6 +151,40 @@
             canceled_at = CURRENT_TIMESTAMP(6)
         WHERE id = #{workCaseId}
           AND status = 'DRAFT'
+    </update>
+
+    <update id="assignWorkerAndAccept">
+        UPDATE work_cases
+        SET worker_id = #{workerId},
+            status    = 'ACCEPTED'
+        WHERE id = #{workCaseId}
+          AND status = 'DRAFT'
+          AND worker_id IS NULL
+    </update>
+
+    <select id="getEscrowContextForUpdate" resultMap="workCaseEscrowContextResult">
+        SELECT id           AS workCaseId,
+               employer_id  AS employerId,
+               worker_id    AS workerId,
+               agreed_wage  AS agreedWage,
+               status       AS status
+        FROM work_cases
+        WHERE id = #{workCaseId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateWorkStatus">
+        UPDATE work_cases
+        SET status = #{toStatus},
+            canceled_at = CASE
+                WHEN #{toStatus} = 'CANCELED' THEN CURRENT_TIMESTAMP(6)
+                ELSE canceled_at
+            END
+        WHERE id = #{workCaseId}
+          AND status IN
+        <foreach item="s" collection="fromStatuses" open="(" separator="," close=")">
+            #{s}
+        </foreach>
     </update>
 
     <!--

@@ -1,5 +1,6 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
@@ -10,7 +11,10 @@ import com.gighub.idempotency.IdempotencyClaimResult;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.idempotency.IdempotencyKeys;
 import com.gighub.invitation.config.InvitationProperties;
-import com.gighub.invitation.dto.InvitationAcceptResponse;
+import com.gighub.invitation.application.InvitationAcceptanceCommand;
+import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.invitation.application.InvitationAcceptanceOutcome;
+import com.gighub.invitation.application.InvitationAcceptanceResult;
 import com.gighub.invitation.exception.InvitationNotFoundException;
 import com.gighub.invitation.exception.InvitationTermsChangedException;
 import com.gighub.invitation.mapper.InvitationMapperTestDouble;
@@ -19,6 +23,7 @@ import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.CannotAcquireLockException;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -61,8 +66,8 @@ class InvitationAcceptServiceImplTest {
         InvitationAcceptResult result = service().accept(worker(), token, KEY);
 
         assertFalse(result.isReplayed());
-        assertEquals(WORK_CASE_ID, result.getResponse().getWorkCaseId());
-        assertEquals("HELD", result.getResponse().getEscrowStatus());
+        assertEquals(WORK_CASE_ID, result.getResult().getWorkCaseId());
+        assertEquals("HELD", result.getResult().getEscrowStatus());
         assertEquals(1, executor.executions);
         // 성공 Claim은 본 처리 Transaction 안에서 이미 완료됐으므로 건드리지 않습니다.
         assertTrue(claimService.abandoned.isEmpty());
@@ -76,8 +81,8 @@ class InvitationAcceptServiceImplTest {
         InvitationAcceptResult result = service().accept(worker(), token, KEY);
 
         assertTrue(result.isReplayed());
-        assertEquals(WORK_CASE_ID, result.getResponse().getWorkCaseId());
-        assertEquals("HELD", result.getResponse().getEscrowStatus());
+        assertEquals(WORK_CASE_ID, result.getResult().getWorkCaseId());
+        assertEquals("HELD", result.getResult().getEscrowStatus());
         assertEquals(0, executor.executions, "Replay는 새 Aggregate를 만들지 않습니다.");
     }
 
@@ -118,6 +123,40 @@ class InvitationAcceptServiceImplTest {
 
         // 파일 쓰기는 Rollback되지 않으므로 남은 임시 Object를 따로 지웁니다.
         assertEquals(List.of(WORK_CASE_ID), artifactPort.discarded);
+        assertTrue(artifactPort.promoted.isEmpty());
+    }
+
+    @Test
+    void transientLockFailureRetriesTheWholeCommandWithTheSameClaim() {
+        mapper.invitation = pendingInvitation(3);
+        executor.transientFailuresRemaining = 1;
+
+        InvitationAcceptResult result = service().accept(worker(), token, KEY);
+
+        assertEquals(WORK_CASE_ID, result.getResult().getWorkCaseId());
+        assertEquals(2, executor.executions);
+        assertEquals(2, executor.commands.size());
+        assertEquals(CLAIM_ID, executor.commands.get(0).getClaimId());
+        assertEquals(CLAIM_ID, executor.commands.get(1).getClaimId());
+        assertEquals(List.of(WORK_CASE_ID), artifactPort.discarded);
+        assertEquals(List.of(WORK_CASE_ID), artifactPort.promoted);
+        assertTrue(claimService.abandoned.isEmpty());
+    }
+
+    @Test
+    void exhaustedLockRetriesAbandonTheClaimOnlyAfterTheLastAttempt() {
+        mapper.invitation = pendingInvitation(3);
+        executor.transientFailuresRemaining = 3;
+
+        assertThrows(
+                CannotAcquireLockException.class,
+                () -> service().accept(worker(), token, KEY));
+
+        assertEquals(3, executor.executions);
+        assertEquals(
+                List.of(WORK_CASE_ID, WORK_CASE_ID, WORK_CASE_ID),
+                artifactPort.discarded);
+        assertEquals(List.of(CLAIM_ID), claimService.abandoned);
         assertTrue(artifactPort.promoted.isEmpty());
     }
 
@@ -194,7 +233,7 @@ class InvitationAcceptServiceImplTest {
                 .id(INVITATION_ID)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash(token))
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(LocalDateTime.now().plusDays(1L))
                 .build();
@@ -273,29 +312,31 @@ class InvitationAcceptServiceImplTest {
     }
 
     /** 본 처리 성공·실패만 흉내 냅니다. */
-    private static final class StubAggregateExecutor extends AcceptAggregateExecutor {
+    private static final class StubAggregateExecutor extends InvitationAcceptanceOrchestrator {
 
         private int executions;
+        private int transientFailuresRemaining;
         private RuntimeException failure;
+        private final List<InvitationAcceptanceCommand> commands = new ArrayList<>();
 
         private StubAggregateExecutor() {
             super(null, null, null, null, null, null, null);
         }
 
         @Override
-        public AcceptAggregateOutcome execute(
-                AuthPrincipal principal,
-                long invitationId,
-                long workCaseId,
-                byte[] tokenHash,
-                long claimId) {
+        public InvitationAcceptanceOutcome execute(InvitationAcceptanceCommand command) {
             executions++;
+            commands.add(command);
+            if (transientFailuresRemaining > 0) {
+                transientFailuresRemaining--;
+                throw new CannotAcquireLockException("transient lock failure");
+            }
             if (failure != null) {
                 throw failure;
             }
-            return new AcceptAggregateOutcome(
-                    InvitationAcceptResponse.held(workCaseId),
-                    ContractArtifactHandle.of(workCaseId, 900L));
+            return new InvitationAcceptanceOutcome(
+                    InvitationAcceptanceResult.held(command.getWorkCaseId()),
+                    ContractArtifactHandle.of(command.getWorkCaseId(), 900L));
         }
     }
 

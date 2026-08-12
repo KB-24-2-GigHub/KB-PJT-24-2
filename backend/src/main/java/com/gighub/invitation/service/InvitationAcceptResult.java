@@ -1,6 +1,6 @@
 package com.gighub.invitation.service;
 
-import com.gighub.invitation.dto.InvitationAcceptResponse;
+import com.gighub.invitation.application.InvitationAcceptanceResult;
 
 import java.util.Objects;
 
@@ -12,26 +12,26 @@ import java.util.Objects;
  */
 public final class InvitationAcceptResult {
 
-    private final InvitationAcceptResponse response;
+    private final InvitationAcceptanceResult result;
     private final boolean replayed;
 
-    private InvitationAcceptResult(InvitationAcceptResponse response, boolean replayed) {
-        this.response = Objects.requireNonNull(response, "response");
+    private InvitationAcceptResult(InvitationAcceptanceResult result, boolean replayed) {
+        this.result = Objects.requireNonNull(result, "result");
         this.replayed = replayed;
     }
 
     /** 이 요청이 실제로 수락을 처리했습니다. */
-    public static InvitationAcceptResult first(InvitationAcceptResponse response) {
-        return new InvitationAcceptResult(response, false);
+    public static InvitationAcceptResult first(InvitationAcceptanceResult result) {
+        return new InvitationAcceptResult(result, false);
     }
 
     /** 같은 요청이 이미 성공했고 저장된 결과를 그대로 돌려줍니다. */
-    public static InvitationAcceptResult replayed(InvitationAcceptResponse response) {
-        return new InvitationAcceptResult(response, true);
+    public static InvitationAcceptResult replayed(InvitationAcceptanceResult result) {
+        return new InvitationAcceptResult(result, true);
     }
 
-    public InvitationAcceptResponse getResponse() {
-        return response;
+    public InvitationAcceptanceResult getResult() {
+        return result;
     }
 
     public boolean isReplayed() {

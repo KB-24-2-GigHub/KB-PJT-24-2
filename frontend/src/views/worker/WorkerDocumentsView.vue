@@ -45,6 +45,7 @@ const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'pdf']
 
 const docs = ref([])
 const loading = ref(true)
+const loadError = ref(null)
 
 const TABS = [
   { value: 'ALL', label: '전체' },
@@ -63,6 +64,7 @@ onMounted(load)
 
 async function load() {
   loading.value = true
+  loadError.value = null
   try {
     const { content } = await listDocuments()
     const list = content ?? []
@@ -79,8 +81,12 @@ async function load() {
         })
     )
     docs.value = list
-  } catch {
-    ui.toast('문서를 불러오지 못했어요.', { type: 'danger' })
+  } catch (error) {
+    loadError.value = error
+    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
+    ui.toast(unavailable ? '문서함은 현재 준비 중인 기능입니다.' : '문서를 불러오지 못했어요.', {
+      type: unavailable ? 'info' : 'danger'
+    })
   } finally {
     loading.value = false
   }
@@ -292,7 +298,12 @@ async function doRevoke(share) {
         </button>
       </div>
 
-      <button type="button" class="upload-btn" @click="openRegister">
+      <button
+        type="button"
+        class="upload-btn"
+        :disabled="loadError?.code === 'FEATURE_UNAVAILABLE'"
+        @click="openRegister"
+      >
         <Upload :size="16" /> 보건증 등록
       </button>
     </div>
@@ -300,7 +311,16 @@ async function doRevoke(share) {
     <p v-if="loading" class="loading">불러오는 중…</p>
 
     <template v-else>
-      <EmptyState v-if="filteredDocs.length === 0" message="표시할 문서가 없어요.">
+      <EmptyState
+        v-if="loadError"
+        :message="
+          loadError.code === 'FEATURE_UNAVAILABLE'
+            ? '문서함은 현재 준비 중인 기능입니다.'
+            : '문서를 불러오지 못했어요.'
+        "
+      />
+
+      <EmptyState v-else-if="filteredDocs.length === 0" message="표시할 문서가 없어요.">
         보건증을 등록하거나, 근무를 시작하면 근로계약서가 자동 저장돼요.
       </EmptyState>
 

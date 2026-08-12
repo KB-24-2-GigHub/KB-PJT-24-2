@@ -2,28 +2,32 @@
 
 > 저장소 원본: `docs/DATABASE_SCHEMA_ERD.md`
 >
-> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608061428`
+> 기준: 로컬 Docker MySQL 8.4, Flyway Schema Version `202608121403`
 >
 > 범위: 도메인 테이블 24개와 Flyway 내부 관리 테이블 1개, 총 25개입니다.
 >
-> 읽기용 통합 DDL: [`database/schema-snapshot-202608061428.sql`](database/schema-snapshot-202608061428.sql)
+> 읽기용 통합 DDL: [`database/schema-snapshot-202608121403.sql`](database/schema-snapshot-202608121403.sql)
 >
 > 편집 정책: Migration과 통합 DDL은 프로젝트 소유자 전용입니다. 에이전트는 소유자가 변경한
 > 스키마를 근거로 이 설명 문서만 갱신할 수 있습니다.
 
-현재 소유자 승인 기준은 Head `202608061428`의 Migration 12개·도메인 테이블 24개입니다.
+현재 소유자 승인 기준은 Head `202608121403`의 Migration 19개·도메인 테이블 24개입니다.
 사업장 고정 QR `202607311427`, 비밀번호 재설정 Token `202607311428`, 퇴근 누락 상태
 `202607311429`, OWNER Profile 제거 `202608041138`, 멱등 요청 Claim `202608041614`, Mock 계좌
-비귀속 PIN 전환 `202608051337`, 문서 접근 감사 상세 `202608061428`을 모두 현재 스키마로
-사용합니다.
+비귀속 PIN 전환 `202608051337`, 문서 접근 감사 상세 `202608061428`, 문서 감사 allowlist
+`202608111743`, 뱃지 유형 allowlist `202608111744`를 모두 현재 스키마로 사용합니다.
+정산 환불·재시도 생명주기와 분쟁 제목은 `202608112307`에서 추가합니다. 충전 주문과 출금
+요청의 `READY`·`COMPLETED` 결과 형태는 `202608121400`·`202608121401`, 에스크로의
+`UNFUNDED`·`HELD`·`RELEASED`·`REFUNDED` 시각 형태는 `202608121402`, 근무 취소 상태와
+`canceled_at` 결합은 `202608121403`에서 추가합니다.
 
 ## 한 장 요약
 
 Gig-Hub 데이터베이스는 `users`를 중심으로 회원, 사업장, 근무, 지갑, 근태와 문서 기능을 연결합니다. 사장님과 근로자는 별도 회원 테이블로 나누지 않고 `users.role`로 구분합니다. OWNER 식별정보는 `users`, 사업체·사업장 기준정보는 `workplaces`에 저장하며 한 사용자는 여러 사업장을 가질 수 있습니다. Mock 계좌는 사용자에게 소유·귀속되지 않는 합성 계좌입니다. 별도 OWNER Profile 테이블은 사용하지 않습니다. 로그인 아이디와 이메일은 각각 고유하고, 회원 탈퇴 상태에서는 `deleted_at`이 반드시 기록되어야 합니다. 비밀번호 재설정 원문 Token은 DB에 저장하지 않고 `password_reset_tokens.token_hash`로만 추적합니다. `flyway_schema_history`는 업무 데이터가 아니라 적용한 Migration의 버전·체크섬·성공 여부를 기록합니다.
 
-근무 흐름의 중심은 `work_cases`입니다. 한 근무 건은 사장님과 사업장을 반드시 가지며 근로자는 초대 전까지 비어 있을 수 있습니다. 초대 수락 후에는 `work_contracts`에 조건을 스냅샷으로 보존하고, 계약 당사자와 일급이 원래 근무 건과 달라질 수 없도록 복합 외래키로 묶습니다. `escrows`와 `settlements`는 근무 건당 최대 한 건이며 금액은 확정 일급과 같아야 합니다. `due_at`은 자동 정산 예정 시간을 저장할 뿐이고 DB Scheduler나 Trigger는 없습니다. 실제 자동 지급은 추후 Spring Scheduler가 수행합니다.
+근무 흐름의 중심은 `work_cases`입니다. 한 근무 건은 사장님과 사업장을 반드시 가지며 근로자는 초대 전까지 비어 있을 수 있습니다. 초대 수락 후에는 `work_contracts`에 조건을 스냅샷으로 보존하고, 계약 당사자와 일급이 원래 근무 건과 달라질 수 없도록 복합 외래키로 묶습니다. `CANCELED` 상태와 `canceled_at`은 반드시 함께 존재하고 다른 상태의 `canceled_at`은 비어 있어야 합니다. `escrows`와 `settlements`는 근무 건당 최대 한 건이며 금액은 확정 일급과 같아야 합니다. `escrows`는 확정된 네 상태의 시각 조합을, `settlements`는 상태별 시각·승인자·재시도 감사 필드 조합을 CHECK로 고정합니다. `due_at`은 자동 정산 예정 시간을 저장할 뿐이고 DB Scheduler나 Trigger는 없습니다. 실제 자동 지급은 후속 Spring Scheduler가 수행합니다.
 
-자금은 `mock_bank_accounts`, `wallets`, `escrows`로 분리합니다. Mock 계좌에는 숫자 네 자리 Demo PIN을 저장하며 사용자 FK는 없습니다. 지갑의 `available_balance`만 사용·출금 가능하고 `locked_balance`는 에스크로 예치액입니다. 충전·출금 요청과 지갑 원장은 멱등 키를 고유값으로 저장하여 같은 요청이 중복 반영되지 않게 설계했습니다. `idempotency_requests`는 사용자·Operation별 요청 Claim과 최초 성공 응답을 별도로 저장합니다. Mock 은행 거래와 지갑 거래는 서로 다른 원장이고, 실제 금융망과 연결되지 않습니다.
+자금은 `mock_bank_accounts`, `wallets`, `escrows`로 분리합니다. Mock 계좌에는 숫자 네 자리 Demo PIN을 저장하며 사용자 FK는 없습니다. 지갑의 `available_balance`만 사용·출금 가능하고 `locked_balance`는 에스크로 예치액입니다. 충전·출금 요청의 `READY`·`COMPLETED` 결과 필드 조합과 지갑 원장의 멱등 키를 DB가 방어합니다. `idempotency_requests`는 사용자·Operation별 요청 Claim과 최초 성공 응답을 별도로 저장합니다. Mock 은행 거래와 지갑 거래는 서로 다른 원장이고, 실제 금융망과 연결되지 않습니다.
 
 사업장에는 nonce 기반 고정 QR을 하나만 활성화할 수 있습니다. 재발급 시 기존 QR을 `REVOKED`로 남기며, 과거 근무·동작별 QR도 `legacy_*` 컬럼으로 보존합니다. 실제 출퇴근 시도와 조기 퇴근 확인 시각은 `attendance_records`에 기록합니다. 분쟁은 근무 건별 활성 건을 제한합니다. 문서는 논리 정보인 `documents`, 불변 파일 버전인 `document_versions`, 서명 증거인 `document_signatures`, 공유와 접근 감사 테이블로 나뉩니다. 모든 외래키 삭제 정책은 `RESTRICT`이므로 과거 계약·정산·문서 기록이 연결된 부모 행은 임의 삭제할 수 없습니다.
 
@@ -302,6 +306,9 @@ erDiagram
         datetime processing_at "NULL"
         datetime completed_at "NULL"
         varchar failure_code "NULL"
+        tinyint retry_count
+        datetime last_failure_at "NULL"
+        datetime next_retry_at "NULL"
         datetime created_at
         datetime updated_at
     }
@@ -311,6 +318,7 @@ erDiagram
         bigint work_case_id FK
         bigint requester_id FK
         varchar dispute_type
+        varchar title
         text content
         varchar status
         text resolution "NULL"
@@ -462,12 +470,12 @@ erDiagram
 | -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 회원·비밀번호 재설정 | `login_id`, `email` 고유. 역할은 `OWNER/WORKER/ADMIN`, 상태는 `ACTIVE/INACTIVE/LOCKED/WITHDRAWN`. Token Hash는 고유하고 사용자별 활성 재설정 Token은 1개 |
 | 사업장               | 사업자등록번호 10자리 고유. `(owner_user_id, id)`로 근무 건의 사업장 소유권 검증                                                                         |
-| 근무                 | 상태는 `DRAFT/ACCEPTED/READY/IN_PROGRESS/CHECK_OUT_MISSING/COMPLETED/NO_SHOW/CANCELED`. 종료 시각은 시작 이후이고 확정 이후 상태는 `worker_id` 필수      |
+| 근무                 | 상태는 `DRAFT/ACCEPTED/READY/IN_PROGRESS/CHECK_OUT_MISSING/COMPLETED/NO_SHOW/CANCELED`. 종료 시각은 시작 이후이고 확정 이후 상태는 `worker_id` 필수. `CANCELED` iff `canceled_at` |
 | 초대                 | Token Hash 고유. 생성 컬럼 `active_slot`으로 근무 건당 활성 초대 1개 제한                                                                                |
 | 계약                 | 근무 건당 1개. `(work_case_id, employer_id, worker_id, agreed_wage)`가 원 근무 건과 일치                                                                 |
-| 지갑·Mock 계좌       | Mock 계좌는 사용자 비귀속. 통화는 KRW 고정, PIN은 ASCII 숫자 4자리, 계좌 가용액은 총액 이하. 계좌·거래번호·멱등 키 고유                                  |
+| 지갑·Mock 계좌       | Mock 계좌는 사용자 비귀속. 통화는 KRW 고정, PIN은 ASCII 숫자 4자리, 계좌 가용액은 총액 이하. 계좌·거래번호·멱등 키 고유. 충전·출금 `READY/COMPLETED` 결과 형태 고정 |
 | 멱등 요청 Claim      | `(user_id, operation_code, idempotency_key)`별 1개. 완료 Claim은 2xx 상태와 JSON 응답 Snapshot을 함께 보존                                               |
-| 에스크로·정산        | 근무 건당 각각 1개. `(work_case_id, amount)`가 확정 일급과 일치                                                                                          |
+| 에스크로·정산        | 근무 건당 각각 1개. `(work_case_id, amount)`가 확정 일급과 일치. 에스크로의 확정된 네 상태와 정산의 상태별 시각 조합 고정                                  |
 | QR·근태·분쟁         | 사업장별 nonce 기반 활성 QR 1개. 발급자는 해당 사업장 소유자. 근무 건과 출퇴근 유형별 성공 기록 1개. 생성 컬럼으로 근무 건당 열린 분쟁 1개 제한          |
 | 문서                 | 근무 건과 문서 유형별 1개. 저장 키와 문서별 버전 번호 고유. 서명 원본·완성 버전은 서로 달라야 함                                                         |
 | 삭제                 | 모든 FK는 `ON DELETE RESTRICT`, `ON UPDATE RESTRICT`                                                                                                     |
@@ -480,6 +488,14 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 - 비밀번호 재설정은 `ACTIVE`, `USED`, `EXPIRED`, `REVOKED` 상태를 사용합니다. `USED`만 `used_at`, `REVOKED`만 `revoked_at`을 요구하며 사용자별 `ACTIVE` 행은 하나뿐입니다.
 - 멱등 요청 Claim은 `PROCESSING`, `COMPLETED` 상태를 사용합니다. `COMPLETED` 행만 2xx 상태·응답 Snapshot·완료 시각을 가지며 만료 시각은 생성 시각 이후여야 합니다.
 - `work_cases.status=CHECK_OUT_MISSING`은 허용되고 배정 근로자가 필수지만, DB는 성공 출근·퇴근 부재나 상태 판정 시점을 검증하지 않습니다.
+- `work_cases.status=CANCELED`이면 `canceled_at`이 필수이고, 다른 상태에서는 `canceled_at`이
+  반드시 `NULL`입니다.
+- `funding_orders`는 `READY`일 때 결과·실패·완료 필드가 비어 있고, `COMPLETED`일 때 이체액이
+  기대액과 같으며 은행 거래와 완료 시각이 있고 실패 코드는 없도록 제한합니다.
+- `withdrawal_requests`는 `READY`일 때 은행 거래·실패·완료 필드가 비어 있고,
+  `COMPLETED`일 때 은행 거래와 완료 시각이 있고 실패 코드는 없도록 제한합니다.
+- `escrows`는 `UNFUNDED`, `HELD`, `RELEASED`, `REFUNDED`의 시각 존재·순서와 Release/Refund
+  상호배타성을 제한합니다. `ON_HOLD`의 시각 형태는 아직 제한하지 않습니다.
 - `attendance_records.early_checkout_confirmed_at`은 성공한 `CHECK_OUT` 행에서만 기록할 수 있습니다.
 
 ### 상태 외 문자열 도메인 CHECK 목록
@@ -514,8 +530,11 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | `workplaces.business_registration_number`                         | 숫자 10자리                                | 불가 | `ck_workplaces_business_registration_number`                       |
 | `workplaces.name`, `representative_name`, `road_address`, `phone` | 각 값이 앞뒤 공백 제거 후 한 글자 이상     | 불가 | `ck_workplaces_required_text`                                      |
 | `workplaces.detail_address`                                       | `NULL` 또는 앞뒤 공백 제거 후 한 글자 이상 | 가능 | `ck_workplaces_detail_address`                                     |
+| `disputes.title`                                                  | 앞뒤 공백 없이 1~100자                      | 불가 | `ck_disputes_title`                                                |
 | `idempotency_requests.operation_code`, `idempotency_key`          | 빈 문자열 불가, ASCII 대소문자 구분        | 불가 | `ck_idempotency_requests_operation`, `ck_idempotency_requests_key` |
-| `document_access_logs.denial_reason`                              | NULL 또는 빈 문자열이 아닌 ASCII 사유 Code | 가능 | `ck_document_access_logs_denial_reason`                            |
+| `document_access_logs.action`                                     | 승인된 문서 접근 행위 다섯 종류             | 불가 | `ck_document_access_logs_action`                                   |
+| `document_access_logs.denial_reason`                              | NULL 또는 승인된 거부 사유 다섯 종류        | 가능 | `ck_document_access_logs_denial_reason`                            |
+| `user_badges.badge_type`                                          | `TRUST_OWNER` 또는 `TRUST_WORKER`          | 불가 | `ck_user_badges_type`                                              |
 
 ### 아직 유한값 CHECK가 없는 코드성 문자열
 
@@ -527,9 +546,6 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 | `wallet_transactions.reference_type`    | 지갑 원장이 참조하는 업무 종류 | 길이만 `VARCHAR(30)`       |
 | `idempotency_requests.operation_code`   | 멱등성 적용 Operation          | 빈 값이 아닌 `VARCHAR(64)` |
 | `disputes.dispute_type`                 | 분쟁 유형                      | 길이만 `VARCHAR(30)`       |
-| `document_access_logs.action`           | 문서 접근 행위                 | 길이만 `VARCHAR(30)`       |
-| `document_access_logs.denial_reason`    | DENIED 내부 사유 Code          | 빈 값이 아닌 `VARCHAR(50)` |
-| `user_badges.badge_type`                | 배지 유형                      | 길이만 `VARCHAR(40)`       |
 
 ### 복합키 목록
 
@@ -548,21 +564,27 @@ QR과 비밀번호 재설정의 상태·형태 제약은 다음과 같습니다.
 - 근태의 `worker_id`가 해당 근무 건의 배정 근로자인지, `qr_token_id`의 사업장이 근무 건 사업장과 같은지는 Service에서 검증해야 합니다.
 - 첫 성공 스캔을 출근, 두 번째 성공 스캔을 퇴근으로 선택하고 로그인 근로자·사업장에 처리 대상 근무가 최대 1개인지 확인하는 규칙은 DB가 아니라 Service 책임입니다.
 - 에스크로·정산·지갑 사이에는 직접 FK가 없으므로 잔액과 상태 변경의 원자성은 Spring Transaction이 보장해야 합니다.
+- 충전·출금의 허용 상태 전이와 `FAILED`·`RECONCILIATION_REQUIRED` 복구 의미, 출금
+  `PROCESSING`의 내부 단계, 에스크로 `ON_HOLD`의 시각 의미는 애플리케이션 계약과 후속 승인
+  범위입니다. 현재 CHECK가 이 상태들의 필드 조합을 확정하지 않습니다.
 - DB Event, Trigger, Scheduler는 없습니다. `settlements.due_at`을 읽는 자동 정산은 Spring Scheduler의 책임입니다.
 
-### 현재 DDL과 미결정 제품 Workflow
+### 현재 DDL과 제품 Workflow 경계
 
-아래 표는 현재 Head `202608061428`이 보장하는 사실과 제품 결정 또는 추가 DDL 검토가 남은
-부분을 분리합니다. Migration과 통합 DDL은 프로젝트 소유자만 변경합니다.
+아래 표는 현재 Head `202608121403`이 보장하는 사실과 승인된 제품 Workflow 또는 추가 DDL
+검토가 남은 부분을 분리합니다. Migration과 통합 DDL은 프로젝트 소유자만 변경합니다.
 
 | 기능                 | 현재 DB                                                                                           | 제품 Workflow·추가 검토                                                                                                      |
 | -------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
 | 퇴근 누락            | `CHECK_OUT_MISSING` 허용, 배정 근로자 필수. `attendance_records.result`는 `SUCCESS/REJECTED` 유지 | 판정 시점·실행 주체·늦은 QR·보정 권한과 증거·정산·장기 미해결 임금·기존 행 처리 미정. 실제 조회 확정 뒤 Scheduler Index 검토 |
 | 사업장 고정 반경     | `workplaces.radius_meters`와 근무 Snapshot `allowed_radius_meters`가 모든 양수를 허용             | 애플리케이션은 두 값에 항상 100m를 저장·검증. DB에서도 정확히 100을 강제할지는 소유자가 결정                                 |
 | 시스템 생성 계약서   | `EMPLOYMENT_CONTRACT`도 `work_case_id=NULL`을 가질 수 있음                                        | 계약서는 계약 확정 때 시스템만 생성하고 근무 건에 연결. DB 제약으로도 강제할지는 소유자가 결정                               |
-| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 기준일·삭제 범위와 전용 추적 컬럼·Index가 없음                | 시작일·종료일 기준과 파일·Metadata·Checksum·감사 삭제 범위를 먼저 확정한 뒤 소유자가 필요한 Schema 보강을 결정               |
-| 문서 접근 감사       | 문서와 선택적 Version, 행위·결과·구조화된 거부 사유를 저장. 기존 행의 신규 상세는 NULL            | 호환 Backend가 새 접근마다 확정 Version과 거부 사유를 기록하고 보관·조회 정책을 적용                                         |
+| 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존·완료·재시도 컬럼과 Index가 없음                       | 7.0.0은 `ends_at` 서울 날짜+3년, 02:00 Keyset Job, DB 선삭제, Object 멱등 삭제, Metadata·Checksum·감사 무기한 보존을 확정. #131이 추가 DDL 없이 Runtime을 구현 |
+| 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유를 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 확정 Version과 거부 사유를 기록하고 보관·조회 정책을 적용                                         |
+| 신뢰 뱃지            | `badge_type`은 `TRUST_OWNER`·`TRUST_WORKER`만 허용하고 등급·건수는 `evidence` JSON에만 존재      | 7.0.0은 누적 문턱과 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence 필드, 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime을 구현 |
 | 멱등 요청 처리       | 사용자·Operation·Key Claim, Fingerprint, 완료 응답과 만료 시각을 저장                             | Claim 획득·대기 없는 충돌 처리·중단 복구·응답 재전송·만료 정리는 애플리케이션에서 구현                                       |
+| 정산 환불·재시도     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index        | Scheduler·환불·분쟁 Service는 후속 이슈에서 구현하며, 기존 고착 `PROCESSING`·`FAILED`·분쟁 행은 추정 보정하지 않음             |
+| 핵심 lifecycle 형태  | 충전·출금 `READY/COMPLETED`, 에스크로의 확정된 네 상태, 근무 취소 시각을 이름 있는 CHECK로 제한     | 상태 전이·권한·금액 대사와 미확정 복구·`ON_HOLD` 의미는 애플리케이션이 유지하며 후속 DDL을 추정하지 않음                        |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                     | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                                             |
 
 퇴근 누락의 상태값과 근로자 필수 제약은 현재 DDL입니다. 반면 성공 출근과 퇴근 부재를 판정하는
@@ -632,7 +654,9 @@ erDiagram
 근무 조건은 `work_cases`, 수락 당시 불변 조건은 `work_contracts`에 저장합니다. 계약 확정 시
 에스크로와 정산 대기 행을 만들고 계약 Snapshot으로 근로계약서 파일을 시스템이 자동 생성해야
 합니다. 사용자 계약서·스캔 교체본 업로드는 허용하지 않습니다. 이 작업은 하나의
-애플리케이션 트랜잭션과 파일 저장 보상·재시도 경계를 명확히 해야 합니다.
+애플리케이션 트랜잭션과 파일 저장 보상·재시도 경계를 명확히 해야 합니다. 취소 상태와 시각,
+에스크로의 확정된 네 상태와 시각 형태는 DB CHECK도 방어하지만 허용 전이 자체는 애플리케이션
+책임입니다.
 
 ```mermaid
 erDiagram
@@ -679,6 +703,8 @@ erDiagram
         bigint amount FK
         varchar status
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
     }
 
     USERS ||--o{ WORKPLACES : "owns"
@@ -696,7 +722,7 @@ erDiagram
 
 ### 2.3 지갑·충전·출금·정산
 
-사용자 비귀속 Mock 계좌 잔액, Gig-Hub 지갑 잔액, 에스크로 잠금액을 서로 분리하고 금액 변경을 원장으로 남기도록 설계했습니다. Mock 계좌는 은행·계좌번호로 식별하며 충전 승인용 숫자 네 자리 PIN을 저장합니다.
+사용자 비귀속 Mock 계좌 잔액, Gig-Hub 지갑 잔액, 에스크로 잠금액을 서로 분리하고 금액 변경을 원장으로 남기도록 설계했습니다. Mock 계좌는 은행·계좌번호로 식별하며 충전 승인용 숫자 네 자리 PIN을 저장합니다. 충전과 출금의 `READY`·`COMPLETED` 결과 형태는 DB CHECK가 방어하고, 실패·대사 상태의 복구 의미와 허용 전이는 애플리케이션이 결정합니다.
 
 ```mermaid
 erDiagram
@@ -774,6 +800,8 @@ erDiagram
         bigint amount FK
         varchar status
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
     }
 
     USERS ||--o| WALLETS : "owns"
@@ -848,6 +876,8 @@ erDiagram
         bigint work_case_id FK, UK
         bigint approved_by_user_id FK "NULL"
         datetime due_at "NULL"
+        tinyint retry_count
+        datetime next_retry_at "NULL"
         varchar status
     }
     DISPUTES {
@@ -855,6 +885,7 @@ erDiagram
         bigint work_case_id FK
         bigint requester_id FK
         bigint resolved_by_user_id FK "NULL"
+        varchar title
         varchar status
     }
 
@@ -878,11 +909,12 @@ erDiagram
 
 파일 자체는 DB가 아니라 비공개 저장소에 두고, DB에는 버전·저장 키·체크섬·서명·공유·접근 이력을 보존합니다.
 
-근로계약서는 사용자 삭제를 허용하지 않고 근로일 이후 3년간 보존한 뒤 백엔드가 자동
-삭제합니다. 야간 근무의 시작일·종료일 중 기준일과 저장소 파일·문서 Metadata·Checksum·감사의
-삭제 범위는 아직 미정입니다. 저장소 파일을 멱등 폐기하고 `documents.status=DELETED`로 접근을
-차단하면서 감사 Metadata를 보존하는 방식은 현재 스키마와 잘 맞는 설계 제안이지만 팀 확정
-후에만 구현합니다.
+근로계약서는 사용자가 삭제할 수 없습니다. 7.0.0 계약은 `work_cases.ends_at`의 서울 날짜에
+3년을 더한 자정부터 매일 02:00 Job이 `documentId` Keyset으로 처리하도록 확정했습니다. 문서를
+먼저 `DELETED`로 Commit해 접근을 차단한 뒤 모든 Version의 최종·결정적 임시 Object를 멱등
+삭제하고 실패한 만료 DELETED 문서는 다시 선택합니다. 문서·Version Metadata·Checksum·서명·
+공유·접근 감사·계약 관계 행은 기간 제한 없이 보존하며 별도 완료 Marker나 purge 이력은 두지
+않습니다. 현재 스키마는 이 정책을 표현할 수 있지만 Job 자체는 #131의 애플리케이션 작업입니다.
 
 ```mermaid
 erDiagram

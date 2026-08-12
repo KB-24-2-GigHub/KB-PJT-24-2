@@ -11,7 +11,6 @@ import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
-import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import org.junit.jupiter.api.BeforeEach;
@@ -296,17 +295,16 @@ class WorkplaceControllerTest {
     }
 
     private WorkplaceListItemResponse listItem() {
-        return WorkplaceListItemResponse.from(WorkplaceListRow.builder()
-                .workplaceId(11L)
-                .businessRegistrationNumber("1234567890")
-                .name("강남점")
-                .representativeName("김사장")
-                .roadAddress("서울 강남구 테헤란로 1")
-                .detailAddress("2층")
-                .phone("0212345678")
-                .radiusMeters(new BigDecimal("100.00"))
-                .status("ACTIVE")
-                .build());
+        return WorkplaceListItemResponse.of(
+                11L,
+                "1234567890",
+                "강남점",
+                "김사장",
+                "서울 강남구 테헤란로 1",
+                "2층",
+                "0212345678",
+                new BigDecimal("100.00"),
+                "ACTIVE");
     }
 
     private Authentication ownerAuthentication() {

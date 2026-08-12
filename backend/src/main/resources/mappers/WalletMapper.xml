@@ -52,10 +52,11 @@
         WHERE user_id = #{userId}
     </select>
 
-    <select id="getWalletIdByUserId" resultType="java.lang.Long">
+    <select id="resolveWalletId" resultType="java.lang.Long">
         SELECT id
         FROM wallets
         WHERE user_id = #{userId}
+          AND currency = #{currency}
     </select>
 
     <!-- FOR UPDATE: 조회부터 수정까지 다른 트랜잭션을 대기시킨다 (따닥 방지) -->
@@ -77,6 +78,29 @@
         WHERE user_id = #{userId}
         FOR UPDATE
     </select>
+
+    <select id="getWalletSnapshotForUpdateByWalletId"
+            resultMap="walletBalanceSnapshotResult">
+        SELECT id                AS walletId,
+               user_id           AS userId,
+               available_balance AS availableBalance,
+               locked_balance    AS lockedBalance
+        FROM wallets
+        WHERE id = #{walletId}
+        FOR UPDATE
+    </select>
+
+    <update id="updateWalletBalanceByWalletId"
+            parameterType="com.gighub.wallet.mapper.param.WalletBalanceUpdateParam">
+        UPDATE wallets
+        SET available_balance = #{availableAfter},
+            locked_balance    = #{lockedAfter},
+            updated_at        = NOW(6)
+        WHERE id = #{walletId}
+          AND currency = #{currency}
+          AND available_balance = #{availableBefore}
+          AND locked_balance = #{lockedBefore}
+    </update>
 
     <update id="addAvailableBalance">
         UPDATE wallets
@@ -115,11 +139,25 @@
     </update>
 
     <!-- escrows는 work_case당 1행(uk_escrows_work_case_id) -->
-    <select id="getEscrowStatusForUpdate" resultType="java.lang.String">
-        SELECT status
+    <resultMap id="settlementEscrowSnapshotResult"
+               type="com.gighub.wallet.mapper.result.SettlementEscrowRow">
+        <constructor>
+            <idArg column="escrowId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="amount" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.wallet.domain.EscrowStatus"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSettlementEscrowForUpdate"
+            resultMap="settlementEscrowSnapshotResult">
+        SELECT id           AS escrowId,
+               work_case_id AS workCaseId,
+               amount       AS amount,
+               status       AS status
         FROM escrows
         WHERE work_case_id = #{workCaseId}
-            FOR UPDATE
+        FOR UPDATE
     </select>
 
     <!--
@@ -142,20 +180,6 @@
         WHERE work_case_id = #{workCaseId}
           AND status = 'HELD'
     </update>
-
-    <select id="getHeldEscrowAmount" resultType="java.lang.Long">
-        SELECT amount
-        FROM escrows
-        WHERE work_case_id = #{workCaseId}
-          AND status = 'HELD'
-    </select>
-
-    <select id="getEscrowIdByWorkCaseId" resultType="java.lang.Long">
-        SELECT id
-        FROM escrows
-        WHERE work_case_id = #{workCaseId}
-        FOR UPDATE
-    </select>
 
     <!-- ================= 3. 원장(Ledger) ================= -->
 
@@ -189,6 +213,16 @@
         FOR SHARE
     </select>
 
+    <!-- Settlement replay는 최신 committed 원장만 잠그고 wallets 행의 잠금 순서를 건드리지 않습니다. -->
+    <select id="findSettlementTransactionByIdempotencyKeyForShare"
+            resultMap="walletTransactionSnapshotResult">
+        SELECT <include refid="transactionSnapshotColumns"/>
+        FROM wallet_transactions wt
+        JOIN wallets w ON w.id = wt.wallet_id
+        WHERE wt.idempotency_key = #{idempotencyKey}
+        FOR SHARE OF wt
+    </select>
+
     <select id="findFundingTransactionSnapshot"
             resultMap="walletTransactionSnapshotResult">
         SELECT <include refid="transactionSnapshotColumns"/>
@@ -199,7 +233,7 @@
           AND wt.work_case_id IS NULL
           AND wt.reference_type = 'FUNDING_ORDER'
           AND wt.reference_id = #{fundingOrderId}
-          AND w.user_id = #{employerId}
+          AND wt.wallet_id = #{walletId}
         FOR SHARE OF wt
     </select>
 

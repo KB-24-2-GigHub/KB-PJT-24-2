@@ -48,7 +48,8 @@ npm run build
 npm run format:check
 ```
 
-저장소 루트에서는 다음 명령으로 전체 Guardrail과 lint를 실행합니다.
+저장소 루트에서는 다음 명령으로 전체 Guardrail·하네스, Frontend Vitest·Production build와
+Frontend·Backend lint를 실행합니다.
 
 ```powershell
 Set-Location ..

@@ -183,6 +183,20 @@ class CommonExceptionHandlerTest {
                         "INVITATION_ALREADY_ACCEPTED",
                         "INVITATION_TERMS_CHANGED",
                         "CONTRACT_RETENTION_REQUIRED",
+                        "QR_INVALID",
+                        "QR_REVOKED",
+                        "WORKPLACE_LOCATION_REQUIRED",
+                        "LOCATION_INVALID",
+                        "OUTSIDE_WORKPLACE_RADIUS",
+                        "ATTENDANCE_WORK_CASE_NOT_FOUND",
+                        "ATTENDANCE_WORK_CASE_AMBIGUOUS",
+                        "ATTENDANCE_ALREADY_COMPLETED",
+                        "ATTENDANCE_STATE_CONFLICT",
+                        "ATTENDANCE_TEMPORARILY_UNAVAILABLE",
+                        "SETTLEMENT_ON_HOLD",
+                        "SETTLEMENT_NOT_READY",
+                        "SETTLEMENT_ALREADY_PROCESSED",
+                        "SETTLEMENT_TEMPORARILY_UNAVAILABLE",
                         "INTERNAL_ERROR"
                 ),
                 Arrays.stream(ApiErrorCode.values())
@@ -193,6 +207,7 @@ class CommonExceptionHandlerTest {
         for (Method method : CommonExceptionHandler.class.getDeclaredMethods()) {
             for (Class<?> parameterType : method.getParameterTypes()) {
                 String packageName = parameterType.getPackageName();
+                assertFalse(packageName.startsWith("com.gighub.attendance"));
                 assertFalse(packageName.startsWith("com.gighub.bank"));
                 assertFalse(packageName.startsWith("com.gighub.document"));
                 assertFalse(packageName.startsWith("com.gighub.invitation"));

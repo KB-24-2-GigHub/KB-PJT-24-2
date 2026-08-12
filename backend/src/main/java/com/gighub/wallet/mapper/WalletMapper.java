@@ -2,7 +2,9 @@ package com.gighub.wallet.mapper;
 
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -15,7 +17,9 @@ public interface WalletMapper {
 
     Long getLockedBalance(@Param("userId") Long userId);
 
-    Long getWalletIdByUserId(@Param("userId") Long userId);
+    Long resolveWalletId(
+            @Param("userId") Long userId,
+            @Param("currency") String currency);
 
     int addAvailableBalance(@Param("userId") Long userId, @Param("amount") Long amount);
 
@@ -27,6 +31,11 @@ public interface WalletMapper {
     // 지갑 잔액 스냅샷 조회 및 행 잠금
     WalletBalanceSnapshot getWalletSnapshotForUpdate(@Param("userId") Long userId);
 
+    WalletBalanceSnapshot getWalletSnapshotForUpdateByWalletId(
+            @Param("walletId") Long walletId);
+
+    int updateWalletBalanceByWalletId(WalletBalanceUpdateParam param);
+
     // 예치: available >= amount 인 경우에만 1행 갱신
     int lockEmployerFunds(@Param("userId") Long userId, @Param("amount") Long amount);
 
@@ -34,7 +43,8 @@ public interface WalletMapper {
     int releaseLockedFunds(@Param("userId") Long userId, @Param("amount") Long amount);
 
     // 에스크로
-    String getEscrowStatusForUpdate(@Param("workCaseId") Long workCaseId);
+    SettlementEscrowRow findSettlementEscrowForUpdate(
+            @Param("workCaseId") Long workCaseId);
 
     /**
      * 수락 Aggregate가 공유하는 시각으로 에스크로를 HELD 상태로 만든다.
@@ -49,19 +59,18 @@ public interface WalletMapper {
 
     int releaseEscrow(@Param("workCaseId") Long workCaseId);
 
-    Long getHeldEscrowAmount(@Param("workCaseId") Long workCaseId);
-
-    Long getEscrowIdByWorkCaseId(@Param("workCaseId") Long workCaseId);
-
     // 원장
     int countTransactionByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 
     WalletTransactionSnapshot findTransactionByIdempotencyKey(
             @Param("idempotencyKey") String idempotencyKey);
 
+    WalletTransactionSnapshot findSettlementTransactionByIdempotencyKeyForShare(
+            @Param("idempotencyKey") String idempotencyKey);
+
     WalletTransactionSnapshot findFundingTransactionSnapshot(
             @Param("fundingOrderId") Long fundingOrderId,
-            @Param("employerId") Long employerId,
+            @Param("walletId") Long walletId,
             @Param("idempotencyKey") String idempotencyKey);
 
     WalletTransactionSnapshot findEscrowHoldTransactionSnapshot(

@@ -20,16 +20,23 @@ const ui = useUiStore()
 
 const workCases = ref([])
 const loading = ref(true)
+const loadError = ref(null)
 
 onMounted(load)
 
 async function load() {
   loading.value = true
+  loadError.value = null
   try {
     const { content } = await listWorkerWorkCases()
     workCases.value = content ?? []
-  } catch {
-    ui.toast('근무 내역을 불러오지 못했습니다.', { type: 'danger' })
+  } catch (error) {
+    loadError.value = error
+    const message =
+      error?.code === 'FEATURE_UNAVAILABLE'
+        ? '근무 내역은 현재 준비 중인 기능입니다.'
+        : '근무 내역을 불러오지 못했습니다.'
+    ui.toast(message, { type: error?.code === 'FEATURE_UNAVAILABLE' ? 'info' : 'danger' })
   } finally {
     loading.value = false
   }
@@ -45,6 +52,15 @@ function goDetail(workCase) {
     <h1 class="page-title">근무 내역</h1>
 
     <p v-if="loading" class="loading">불러오는 중…</p>
+
+    <EmptyState
+      v-else-if="loadError"
+      :message="
+        loadError.code === 'FEATURE_UNAVAILABLE'
+          ? '근무 내역은 현재 준비 중인 기능입니다.'
+          : '근무 내역을 불러오지 못했습니다.'
+      "
+    />
 
     <EmptyState v-else-if="workCases.length === 0" message="아직 근무 내역이 없어요." />
 

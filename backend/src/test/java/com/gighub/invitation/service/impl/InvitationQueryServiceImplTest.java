@@ -1,5 +1,7 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.invitation.domain.InvitationStatus;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ApiException;
 import com.gighub.common.exception.ConflictException;
@@ -170,6 +172,17 @@ class InvitationQueryServiceImplTest {
     }
 
     @Test
+    void expiryStopsWhenTheLockedPendingInvitationWasNotUpdated() {
+        mapper.invitation = pendingInvitation();
+        mapper.workCase = draftWorkCase(1);
+        mapper.markExpiredResult = 0;
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service(STARTS_AT).findByToken(worker(), token));
+    }
+
+    @Test
     void changedTermsBlockConfirmationWithoutShowingTheOldSnapshot() {
         mapper.invitation = invitation("PENDING", 1, STARTS_AT);
         mapper.workCase = draftWorkCase(2);
@@ -195,7 +208,7 @@ class InvitationQueryServiceImplTest {
                 .breakPaid(false)
                 .dailyWage(120_000L)
                 .termsVersion(1)
-                .status("ACCEPTED")
+                .status(WorkCaseStatus.ACCEPTED)
                 .build();
         assertThrows(
                 InvitationAlreadyAcceptedException.class,
@@ -215,7 +228,7 @@ class InvitationQueryServiceImplTest {
                 .breakPaid(false)
                 .dailyWage(120_000L)
                 .termsVersion(1)
-                .status("CANCELED")
+                .status(WorkCaseStatus.CANCELED)
                 .build();
         assertThrows(
                 ConflictException.class,
@@ -262,7 +275,7 @@ class InvitationQueryServiceImplTest {
                 .id(INVITATION_ID)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash(token))
-                .status(status)
+                .status(InvitationStatus.valueOf(status))
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(expiresAt)
                 .build();
@@ -281,7 +294,7 @@ class InvitationQueryServiceImplTest {
                 .breakPaid(false)
                 .dailyWage(120_000L)
                 .termsVersion(termsVersion)
-                .status("DRAFT")
+                .status(WorkCaseStatus.DRAFT)
                 .build();
     }
 
@@ -301,6 +314,7 @@ class InvitationQueryServiceImplTest {
 
         private InvitationRow invitation;
         private InvitationWorkCaseRow workCase;
+        private int markExpiredResult = 1;
 
         @Override
         public InvitationRow findByTokenHashForUpdate(byte[] tokenHash) {
@@ -315,8 +329,10 @@ class InvitationQueryServiceImplTest {
 
         @Override
         public int markExpired(long invitationId) {
-            expiredIds.add(invitationId);
-            return 1;
+            if (markExpiredResult == 1) {
+                expiredIds.add(invitationId);
+            }
+            return markExpiredResult;
         }
     }
 }

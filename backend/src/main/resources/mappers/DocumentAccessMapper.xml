@@ -4,37 +4,193 @@
 
 <mapper namespace="com.gighub.document.mapper.DocumentAccessMapper">
 
-    <resultMap id="documentFileVersionResult"
-               type="com.gighub.document.dto.DocumentFileVersion">
+    <resultMap id="documentFileAccessRowResult"
+               type="com.gighub.document.mapper.result.DocumentFileAccessRow">
         <constructor>
-            <idArg column="id" javaType="java.lang.Long"/>
-            <arg column="document_id" javaType="java.lang.Long"/>
+            <idArg column="document_id" javaType="java.lang.Long"/>
+            <arg column="owner_user_id" javaType="java.lang.Long"/>
             <arg column="work_case_id" javaType="java.lang.Long"/>
+            <arg column="doc_type" javaType="java.lang.String"/>
+            <arg column="status" javaType="java.lang.String"/>
+            <arg column="issued_date" javaType="java.time.LocalDate"/>
+            <arg column="expires_date" javaType="java.time.LocalDate"/>
+            <arg column="version_id" javaType="java.lang.Long"/>
             <arg column="version_no" javaType="java.lang.Integer"/>
             <arg column="version_type" javaType="java.lang.String"/>
             <arg column="storage_key" javaType="java.lang.String"/>
             <arg column="mime_type" javaType="java.lang.String"/>
+            <arg column="size_bytes" javaType="java.lang.Long"/>
             <arg column="checksum" javaType="_byte[]"/>
+            <arg column="version_created_at" javaType="java.time.LocalDateTime"/>
+            <arg column="document_created_at" javaType="java.time.LocalDateTime"/>
+            <arg column="contract_owner_user_id" javaType="java.lang.Long"/>
+            <arg column="contract_worker_user_id" javaType="java.lang.Long"/>
+            <arg column="owner_name" javaType="java.lang.String"/>
+            <arg column="worker_name" javaType="java.lang.String"/>
+            <arg column="workplace_id" javaType="java.lang.Long"/>
+            <arg column="workplace_name" javaType="java.lang.String"/>
         </constructor>
     </resultMap>
 
-    <!-- ORIGINAL은 사용자에게 내리지 않고 승인된 SIGNED Version 2만 고른다. -->
-    <select id="findSignedVersionForAccess" resultMap="documentFileVersionResult">
-        SELECT dv.id, dv.document_id, d.work_case_id, dv.version_no,
-               dv.version_type, dv.storage_key, dv.mime_type, dv.checksum
-        FROM document_versions dv
-        JOIN documents d ON d.id = dv.document_id
-        WHERE dv.document_id = #{documentId}
-          AND dv.version_type = 'SIGNED'
-          AND dv.version_no = 2
+    <resultMap id="documentHealthShareAccessRowResult"
+               type="com.gighub.document.mapper.result.DocumentHealthShareAccessRow">
+        <constructor>
+            <idArg column="share_id" javaType="java.lang.Long"/>
+            <arg column="work_case_id" javaType="java.lang.Long"/>
+            <arg column="workplace_id" javaType="java.lang.Long"/>
+            <arg column="workplace_name" javaType="java.lang.String"/>
+        </constructor>
+    </resultMap>
+
+    <!-- 문서와 허용 Version을 먼저 잠가 파일 반환과 동시 철회 사이의 판정 시점을 고정합니다. -->
+    <select id="lockFileAccessContext" resultMap="documentFileAccessRowResult">
+        SELECT d.id AS document_id,
+               d.owner_user_id AS owner_user_id,
+               d.work_case_id AS work_case_id,
+               d.document_type AS doc_type,
+               d.status AS status,
+               d.issued_on AS issued_date,
+               d.expires_on AS expires_date,
+               dv.id AS version_id,
+               dv.version_no AS version_no,
+               dv.version_type AS version_type,
+               dv.storage_key AS storage_key,
+               dv.mime_type AS mime_type,
+               dv.size_bytes AS size_bytes,
+               dv.checksum AS checksum,
+               dv.created_at AS version_created_at,
+               d.created_at AS document_created_at,
+               contract.employer_id AS contract_owner_user_id,
+               contract.worker_id AS contract_worker_user_id,
+               owner_user.name AS owner_name,
+               worker_user.name AS worker_name,
+               wp.id AS workplace_id,
+               wp.name AS workplace_name
+        FROM documents d
+        JOIN users owner_user ON owner_user.id = d.owner_user_id
+        LEFT JOIN document_versions dv
+          ON dv.document_id = d.id
+         AND (
+              (d.document_type = 'EMPLOYMENT_CONTRACT'
+               AND dv.version_type = 'SIGNED'
+               AND dv.version_no = 2)
+              OR
+              (d.document_type = 'HEALTH_CERTIFICATE'
+               AND dv.version_type = 'ORIGINAL'
+               AND dv.version_no = 1)
+         )
+        LEFT JOIN work_contracts contract ON contract.work_case_id = d.work_case_id
+        LEFT JOIN work_cases wc ON wc.id = d.work_case_id
+        LEFT JOIN workplaces wp ON wp.id = wc.workplace_id
+        LEFT JOIN users worker_user ON worker_user.id = contract.worker_id
+        WHERE d.id = #{documentId}
+        FOR UPDATE
     </select>
 
-    <select id="isContractParty" resultType="boolean">
-        SELECT COUNT(*) > 0
-        FROM documents d
-        JOIN work_contracts wc ON wc.work_case_id = d.work_case_id
-        WHERE d.id = #{documentId}
-          AND (wc.employer_id = #{userId} OR wc.worker_id = #{userId})
+    <!--
+      상세 응답은 요청한 Work Case 관계만 잠가 검증합니다.
+      다른 유효 관계로 fallback하거나 정렬의 첫 행을 자동 선택하지 않습니다.
+    -->
+    <select id="lockValidHealthShareContexts"
+            resultMap="documentHealthShareAccessRowResult">
+        SELECT share.id AS share_id,
+               wc.id AS work_case_id,
+               wp.id AS workplace_id,
+               wp.name AS workplace_name
+        FROM document_shares share
+        JOIN documents d ON d.id = share.document_id
+        JOIN work_cases wc ON wc.id = share.work_case_id
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        WHERE share.document_id = #{documentId}
+          AND share.shared_with_user_id = #{userId}
+          AND share.work_case_id = #{workCaseId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
+          AND share.status = 'ACTIVE'
+          AND d.owner_user_id = wc.worker_id
+          AND wc.employer_id = #{userId}
+          AND d.document_type = 'HEALTH_CERTIFICATE'
+          AND d.status = 'ACTIVE'
+          AND d.expires_on IS NOT NULL
+          AND d.expires_on &gt;= #{today}
+          AND wc.status IN ('ACCEPTED', 'READY', 'IN_PROGRESS')
+          AND #{now} &lt; wc.ends_at
+          AND wp.owner_user_id = #{userId}
+          AND wp.status = 'ACTIVE'
+        ORDER BY share.id DESC
+        FOR UPDATE
+    </select>
+
+    <!--
+      공유 행을 FOR UPDATE로 잠그므로 파일 검증·감사 트랜잭션이 끝나기 전에는 철회가 완료될 수 없습니다.
+      반대로 철회가 먼저 잠금을 얻었다면 대기 후 갱신된 상태를 읽어 접근을 거부합니다.
+    -->
+    <select id="lockValidHealthShare" resultType="long">
+        SELECT share.id
+        FROM document_shares share
+        JOIN documents d ON d.id = share.document_id
+        JOIN work_cases wc ON wc.id = share.work_case_id
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        WHERE share.document_id = #{documentId}
+          AND share.shared_with_user_id = #{userId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
+          AND share.status = 'ACTIVE'
+          AND d.owner_user_id = wc.worker_id
+          AND wc.employer_id = #{userId}
+          AND d.document_type = 'HEALTH_CERTIFICATE'
+          AND d.status = 'ACTIVE'
+          AND d.expires_on IS NOT NULL
+          AND d.expires_on &gt;= #{today}
+          AND wc.status IN ('ACCEPTED', 'READY', 'IN_PROGRESS')
+          AND #{now} &lt; wc.ends_at
+          AND wp.owner_user_id = #{userId}
+          AND wp.status = 'ACTIVE'
+        ORDER BY share.id DESC
+        LIMIT 1
+        FOR UPDATE
+    </select>
+
+    <select id="hasHealthShareHistory" resultType="boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM document_shares share
+        WHERE share.document_id = #{documentId}
+          AND share.shared_with_user_id = #{userId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
+    </select>
+
+    <select id="hasHealthShareHistoryForWorkCase" resultType="boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM document_shares share
+        WHERE share.document_id = #{documentId}
+          AND share.shared_with_user_id = #{userId}
+          AND share.work_case_id = #{workCaseId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
+    </select>
+
+    <select id="hasShareableHealthWorkCase" resultType="boolean">
+        SELECT COUNT(*) &gt; 0
+        FROM work_cases wc
+        JOIN workplaces wp
+          ON wp.id = wc.workplace_id
+         AND wp.status = 'ACTIVE'
+        JOIN documents d
+          ON d.id = #{documentId}
+         AND d.owner_user_id = #{ownerUserId}
+         AND d.document_type = 'HEALTH_CERTIFICATE'
+         AND d.status = 'ACTIVE'
+         AND d.expires_on IS NOT NULL
+         AND d.expires_on &gt;= #{today}
+        WHERE wc.worker_id = #{ownerUserId}
+          AND wc.status IN ('ACCEPTED', 'READY')
+          AND #{now} &lt; wc.ends_at
+          AND NOT EXISTS (
+              SELECT 1
+              FROM document_shares existing_share
+              WHERE existing_share.document_id = d.id
+                AND existing_share.work_case_id = wc.id
+                AND existing_share.shared_with_user_id = wc.employer_id
+                AND existing_share.purpose = 'HEALTH_CERTIFICATE'
+                AND existing_share.status = 'ACTIVE'
+          )
     </select>
 
     <insert id="insertAccessLog"

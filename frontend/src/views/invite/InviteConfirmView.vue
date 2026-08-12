@@ -275,7 +275,7 @@ function goHome() {
               장치일 뿐이라 'v3' 가 알바생에게 뜻하는 바가 없고, 수락 직전 화면에서는
               오히려 무엇을 놓쳤나 하는 오해를 준다. 서버 응답은 그대로 둔다.
             -->
-            <div class="row">
+            <div class="detail-row">
               <dt>초대 만료</dt>
               <dd>{{ formatSeoulDateTime(invite.expiresAt) }}</dd>
             </div>

@@ -4,23 +4,41 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.config.RootConfig;
+import com.gighub.contract.ContractArtifactCommand;
+import com.gighub.contract.ContractArtifactHandle;
+import com.gighub.contract.ContractArtifactPort;
 import com.gighub.document.service.DocumentFileAccessService;
 import com.gighub.document.service.DocumentFileResult;
 import com.gighub.document.storage.ContractStorageKeys;
+import com.gighub.document.storage.DocumentStorageAdapter;
+import com.gighub.document.storage.DocumentStorageIntegrityException;
+import com.gighub.document.storage.LocalFileDocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
 import com.gighub.idempotency.exception.IdempotencyClaimKeyReusedException;
+import com.gighub.idempotency.IdempotencyClaimService;
+import com.gighub.invitation.application.InvitationAcceptanceCommand;
+import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.invitation.application.InvitationAcceptanceOutcome;
+import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
+import com.gighub.invitation.exception.InvitationExpiredException;
+import com.gighub.invitation.service.AcceptanceWorkParticipant;
 import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.service.InvitationIssueService;
 import com.gighub.member.domain.UserRole;
 import com.gighub.document.storage.DocumentStorageProperties;
+import com.gighub.settlement.service.SettlementReservationService;
+import com.gighub.wallet.service.AcceptEscrowHold;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 
 import javax.sql.DataSource;
 
@@ -32,6 +50,7 @@ import java.io.IOException;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -40,6 +59,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
@@ -146,12 +167,306 @@ class InvitationAcceptDatabaseIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(120)
+    void expiredAcceptCommitsExpiryAcrossMandatoryParticipantBoundary() throws Exception {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            InvitationIssueService issueService = context.getBean(InvitationIssueService.class);
+            InvitationAcceptService acceptService = context.getBean(InvitationAcceptService.class);
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+
+            String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 8);
+            Fixture fixture = insertFixture(jdbcTemplate, suffix, INITIAL_AVAILABLE);
+            String token = issueToken(issueService, fixture);
+
+            try {
+                jdbcTemplate.update(
+                        "UPDATE work_invitations SET expires_at = ?"
+                                + " WHERE work_case_id = ? AND status = 'PENDING'",
+                        LocalDateTime.now().minusMinutes(1L),
+                        fixture.workCaseId);
+                Long expiredInvitationId = jdbcTemplate.queryForObject(
+                        "SELECT id FROM work_invitations"
+                                + " WHERE work_case_id = ? AND status = 'PENDING'",
+                        Long.class,
+                        fixture.workCaseId);
+
+                assertThrows(
+                        InvitationExpiredException.class,
+                        () -> acceptService.accept(
+                                fixture.worker(), token, "expired-" + fixture.suffix)
+                );
+
+                assertEquals(
+                        "EXPIRED",
+                        jdbcTemplate.queryForObject(
+                                "SELECT status FROM work_invitations WHERE id = ?",
+                                String.class,
+                                expiredInvitationId)
+                );
+                assertEquals("DRAFT", workCaseStatus(jdbcTemplate, fixture));
+                assertEquals(0, countRows(jdbcTemplate, "work_contracts", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "escrows", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "settlements", fixture));
+                assertEquals(0, countRows(jdbcTemplate, "wallet_transactions", fixture));
+                assertEquals(0, countClaims(jdbcTemplate, fixture.workerUserId));
+                assertEquals(INITIAL_AVAILABLE,
+                        availableBalance(jdbcTemplate, fixture.ownerUserId));
+                assertEquals(0L, lockedBalance(jdbcTemplate, fixture.ownerUserId));
+
+                assertNotNull(issueToken(issueService, fixture));
+                assertEquals(
+                        1,
+                        jdbcTemplate.queryForObject(
+                                "SELECT COUNT(*) FROM work_invitations"
+                                        + " WHERE work_case_id = ? AND status = 'PENDING'",
+                                Integer.class,
+                                fixture.workCaseId)
+                );
+            } finally {
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void documentPrepareFailureRollsBackEveryEarlierParticipant() throws Exception {
+        ContractArtifactPort failingDocument = new ContractArtifactPort() {
+            @Override
+            public ContractArtifactHandle prepare(ContractArtifactCommand command) {
+                throw new IllegalStateException("document failure injection");
+            }
+
+            @Override
+            public void promote(ContractArtifactHandle handle) {
+            }
+
+            @Override
+            public void discardPending(long workCaseId) {
+            }
+        };
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(RootConfig.class);
+            context.registerBean(
+                    "failingAcceptanceDocumentParticipant",
+                    ContractArtifactPort.class,
+                    () -> failingDocument,
+                    definition -> definition.setPrimary(true));
+            context.refresh();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+            Fixture fixture = insertFixture(
+                    jdbcTemplate,
+                    UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                    INITIAL_AVAILABLE);
+            try {
+                String token = issueToken(context.getBean(InvitationIssueService.class), fixture);
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> context.getBean(InvitationAcceptService.class).accept(
+                                fixture.worker(), token, "document-fail-" + fixture.suffix));
+                assertFailedAcceptanceLeavesNothing(jdbcTemplate, fixture);
+            } finally {
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void transientFailureAfterEveryParticipantRetriesTheWholeAggregateInANewTransaction()
+            throws Exception {
+        AtomicInteger attempts = new AtomicInteger();
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(RootConfig.class);
+            context.registerBean(
+                    "retryInjectingInvitationAcceptanceOrchestrator",
+                    InvitationAcceptanceOrchestrator.class,
+                    () -> new InvitationAcceptanceOrchestrator(
+                            context.getBean(AcceptanceWorkParticipant.class),
+                            context.getBean(AcceptEscrowHold.class),
+                            context.getBean(SettlementReservationService.class),
+                            context.getBean(IdempotencyClaimService.class),
+                            context.getBean(InvitationAcceptanceReplaySnapshotCodec.class),
+                            context.getBean(ContractArtifactPort.class)) {
+                        @Override
+                        @Transactional(
+                                propagation = Propagation.REQUIRES_NEW,
+                                noRollbackFor = InvitationExpiredException.class)
+                        public InvitationAcceptanceOutcome execute(
+                                InvitationAcceptanceCommand command) {
+                            InvitationAcceptanceOutcome outcome = super.execute(command);
+                            if (attempts.incrementAndGet() == 1) {
+                                throw new CannotAcquireLockException(
+                                        "transient failure after every participant");
+                            }
+                            return outcome;
+                        }
+                    },
+                    definition -> definition.setPrimary(true));
+            context.refresh();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            DocumentFileAccessService fileAccessService =
+                    context.getBean(DocumentFileAccessService.class);
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+            Fixture fixture = insertFixture(
+                    jdbcTemplate,
+                    UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                    INITIAL_AVAILABLE);
+            try {
+                verifyAcceptWritesEveryAggregate(
+                        jdbcTemplate,
+                        context.getBean(InvitationIssueService.class),
+                        context.getBean(InvitationAcceptService.class),
+                        fileAccessService,
+                        storageBasePath,
+                        fixture);
+                assertEquals(2, attempts.get());
+                assertEquals(1, countCompletedClaims(jdbcTemplate, fixture.workerUserId));
+            } finally {
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void settlementFailureRollsBackDocumentFilesAndEveryEarlierParticipant() throws Exception {
+        SettlementReservationService failingSettlement = new SettlementReservationService() {
+            @Override
+            public void reserveWaiting(long workCaseId, long amount) {
+                throw new IllegalStateException("settlement failure injection");
+            }
+
+            @Override
+            public void schedulePayout(long workCaseId, java.time.LocalDateTime dueAt) {
+                throw new UnsupportedOperationException();
+            }
+        };
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(RootConfig.class);
+            context.registerBean(
+                    "failingAcceptanceSettlementParticipant",
+                    SettlementReservationService.class,
+                    () -> failingSettlement,
+                    definition -> definition.setPrimary(true));
+            context.refresh();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+            Fixture fixture = insertFixture(
+                    jdbcTemplate,
+                    UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                    INITIAL_AVAILABLE);
+            try {
+                String token = issueToken(context.getBean(InvitationIssueService.class), fixture);
+                assertThrows(
+                        IllegalStateException.class,
+                        () -> context.getBean(InvitationAcceptService.class).accept(
+                                fixture.worker(), token, "settlement-fail-" + fixture.suffix));
+                assertFailedAcceptanceLeavesNothing(jdbcTemplate, fixture);
+                assertFalse(Files.exists(storageBasePath
+                        .resolve("contracts")
+                        .resolve(Long.toString(fixture.workCaseId))));
+            } finally {
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(120)
+    void promotionFailureKeepsCommittedSuccessPendingFallbackAndExactReplay() throws Exception {
+        AtomicReference<PromotionFailingStorageAdapter> storageRef = new AtomicReference<>();
+        try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+            context.register(RootConfig.class);
+            context.registerBean(
+                    "promotionFailingDocumentStorageAdapter",
+                    DocumentStorageAdapter.class,
+                    () -> {
+                        PromotionFailingStorageAdapter adapter =
+                                new PromotionFailingStorageAdapter(
+                                        new LocalFileDocumentStorageAdapter(
+                                                context.getBean(DocumentStorageProperties.class)));
+                        storageRef.set(adapter);
+                        return adapter;
+                    },
+                    definition -> definition.setPrimary(true));
+            context.refresh();
+
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
+            InvitationIssueService issueService = context.getBean(InvitationIssueService.class);
+            InvitationAcceptService acceptService = context.getBean(InvitationAcceptService.class);
+            DocumentFileAccessService fileAccessService =
+                    context.getBean(DocumentFileAccessService.class);
+            Path storageBasePath = context.getBean(DocumentStorageProperties.class).getBasePath();
+            Fixture fixture = insertFixture(
+                    jdbcTemplate,
+                    UUID.randomUUID().toString().replace("-", "").substring(0, 8),
+                    INITIAL_AVAILABLE);
+            try {
+                String token = issueToken(issueService, fixture);
+                InvitationAcceptResult first = acceptService.accept(
+                        fixture.worker(), token, fixture.acceptKey());
+                assertFalse(first.isReplayed());
+                assertEquals(fixture.workCaseId, first.getResult().getWorkCaseId());
+                assertEquals(1, countCompletedClaims(jdbcTemplate, fixture.workerUserId));
+
+                long documentId = jdbcTemplate.queryForObject(
+                        "SELECT id FROM documents WHERE work_case_id = ?",
+                        Long.class,
+                        fixture.workCaseId);
+                List<Map<String, Object>> versions = jdbcTemplate.queryForList(
+                        "SELECT version_no, storage_key, checksum FROM document_versions"
+                                + " WHERE document_id = ? ORDER BY version_no",
+                        documentId);
+                assertEquals(2, versions.size());
+                for (Map<String, Object> version : versions) {
+                    int versionNo = ((Number) version.get("version_no")).intValue();
+                    assertFalse(Files.exists(storageBasePath.resolve(
+                            version.get("storage_key").toString())));
+                    assertTrue(Files.exists(storageBasePath.resolve(
+                            ContractStorageKeys.pendingKey(
+                                    fixture.workCaseId, documentId, versionNo))));
+                }
+
+                DocumentFileResult fallback =
+                        fileAccessService.loadFile(
+                                documentId,
+                                fixture.workerUserId,
+                                UserRole.WORKER,
+                                "download");
+                assertArrayEquals(
+                        (byte[]) versions.get(1).get("checksum"),
+                        Sha256.digest(fallback.getContent()));
+
+                int promotionAttemptsBeforeReplay = storageRef.get().promotionAttempts.get();
+                InvitationAcceptResult replay = acceptService.accept(
+                        fixture.worker(), token, fixture.acceptKey());
+                assertTrue(replay.isReplayed());
+                assertEquals(first.getResult().getWorkCaseId(), replay.getResult().getWorkCaseId());
+                assertEquals(first.getResult().getEscrowStatus(), replay.getResult().getEscrowStatus());
+                assertEquals(promotionAttemptsBeforeReplay, storageRef.get().promotionAttempts.get());
+                assertEquals(1, countRows(jdbcTemplate, "wallet_transactions", fixture));
+                assertEquals(1, countRows(jdbcTemplate, "work_contracts", fixture));
+                assertEquals(1, countRows(jdbcTemplate, "settlements", fixture));
+            } finally {
+                cleanUp(jdbcTemplate, fixture, storageBasePath);
+            }
+        }
+    }
+
     /**
      * OWNER 계정은 역할 검사에서 먼저 걸립니다.
      *
      * <p>당사자 검사({@code 403 FORBIDDEN})는 그 뒤 Transaction 안에 있어, 역할이 WORKER인데
      * 같은 근무의 OWNER이기도 한 어긋난 데이터에서만 도달합니다. 그 방어선은
-     * {@code AcceptAggregateExecutorTest}가 확인합니다.</p>
+     * {@code InvitationAcceptanceOrchestratorTest}가 확인합니다.</p>
      */
     private void verifyOwnerCannotAcceptOwnWorkCase(
             InvitationIssueService issueService,
@@ -163,6 +478,26 @@ class InvitationAcceptDatabaseIntegrationTest {
                 RoleMismatchException.class,
                 () -> acceptService.accept(fixture.owner(), token, "owner-" + fixture.suffix)
         );
+    }
+
+    private void assertFailedAcceptanceLeavesNothing(
+            JdbcTemplate jdbcTemplate, Fixture fixture) {
+        assertEquals("DRAFT", workCaseStatus(jdbcTemplate, fixture));
+        assertEquals(
+                "PENDING",
+                jdbcTemplate.queryForObject(
+                        "SELECT status FROM work_invitations WHERE work_case_id = ?"
+                                + " ORDER BY id DESC LIMIT 1",
+                        String.class,
+                        fixture.workCaseId));
+        assertEquals(0, countRows(jdbcTemplate, "work_contracts", fixture));
+        assertEquals(0, countRows(jdbcTemplate, "escrows", fixture));
+        assertEquals(0, countRows(jdbcTemplate, "settlements", fixture));
+        assertEquals(0, countRows(jdbcTemplate, "wallet_transactions", fixture));
+        assertEquals(0, countRows(jdbcTemplate, "documents", fixture));
+        assertEquals(INITIAL_AVAILABLE, availableBalance(jdbcTemplate, fixture.ownerUserId));
+        assertEquals(0L, lockedBalance(jdbcTemplate, fixture.ownerUserId));
+        assertEquals(0, countClaims(jdbcTemplate, fixture.workerUserId));
     }
 
     /** 잔액이 모자라면 앞 단계의 매칭·계약까지 모두 사라져야 합니다. */
@@ -218,8 +553,8 @@ class InvitationAcceptDatabaseIntegrationTest {
                 acceptService.accept(fixture.worker(), token, fixture.acceptKey());
 
         assertFalse(result.isReplayed());
-        assertEquals(fixture.workCaseId, result.getResponse().getWorkCaseId());
-        assertEquals("HELD", result.getResponse().getEscrowStatus());
+        assertEquals(fixture.workCaseId, result.getResult().getWorkCaseId());
+        assertEquals("HELD", result.getResult().getEscrowStatus());
 
         Map<String, Object> workCase = jdbcTemplate.queryForMap(
                 "SELECT status, worker_id, terms_version FROM work_cases WHERE id = ?",
@@ -305,9 +640,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 (byte[]) signature.get("signed_checksum"));
 
         DocumentFileResult ownerFile =
-                fileAccessService.loadFile(documentId, fixture.ownerUserId, "view");
+                fileAccessService.loadFile(
+                        documentId, fixture.ownerUserId, UserRole.OWNER, "view");
         DocumentFileResult workerFile =
-                fileAccessService.loadFile(documentId, fixture.workerUserId, "download");
+                fileAccessService.loadFile(
+                        documentId, fixture.workerUserId, UserRole.WORKER, "download");
         assertArrayEquals(ownerFile.getContent(), workerFile.getContent());
         assertArrayEquals((byte[]) versions.get(1).get("checksum"),
                 Sha256.digest(ownerFile.getContent()));
@@ -360,8 +697,8 @@ class InvitationAcceptDatabaseIntegrationTest {
                 fixture.worker(), fixture.acceptedToken, fixture.acceptKey());
 
         assertTrue(replay.isReplayed());
-        assertEquals(fixture.workCaseId, replay.getResponse().getWorkCaseId());
-        assertEquals("HELD", replay.getResponse().getEscrowStatus());
+        assertEquals(fixture.workCaseId, replay.getResult().getWorkCaseId());
+        assertEquals("HELD", replay.getResult().getEscrowStatus());
 
         assertEquals(availableBefore, availableBalance(jdbcTemplate, fixture.ownerUserId));
         assertEquals(1, countRows(jdbcTemplate, "wallet_transactions", fixture));
@@ -453,6 +790,49 @@ class InvitationAcceptDatabaseIntegrationTest {
         return value instanceof LocalDateTime
                 ? (LocalDateTime) value
                 : ((java.sql.Timestamp) value).toLocalDateTime();
+    }
+
+    private static final class PromotionFailingStorageAdapter
+            implements DocumentStorageAdapter {
+
+        private final DocumentStorageAdapter delegate;
+        private final AtomicInteger promotionAttempts = new AtomicInteger();
+
+        private PromotionFailingStorageAdapter(DocumentStorageAdapter delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override
+        public void writePending(String pendingKey, byte[] content) {
+            delegate.writePending(pendingKey, content);
+        }
+
+        @Override
+        public void promote(String pendingKey, String finalKey, byte[] expectedSha256) {
+            promotionAttempts.incrementAndGet();
+            throw new DocumentStorageIntegrityException("promotion failure injection");
+        }
+
+        @Override
+        public byte[] read(String key) {
+            return delegate.read(key);
+        }
+
+        @Override
+        public boolean exists(String key) {
+            return delegate.exists(key);
+        }
+
+        @Override
+        public void deletePending(String pendingKey) {
+            delegate.deletePending(pendingKey);
+        }
+
+        @Override
+        public void deletePendingByWorkCaseId(
+                long workCaseId, Set<Long> retainedDocumentIds) {
+            delegate.deletePendingByWorkCaseId(workCaseId, retainedDocumentIds);
+        }
     }
 
     private Fixture insertFixture(JdbcTemplate jdbcTemplate, String suffix, long available) {

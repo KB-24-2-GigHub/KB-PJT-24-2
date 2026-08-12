@@ -29,5 +29,6 @@ public interface WorkplaceService {
      * @param size      Page 크기
      * @return 승인된 Page Envelope payload. 사업장이 없으면 빈 {@code content}
      */
-    PageResponse<WorkplaceListItemResponse> findOwnedWorkplaces(AuthPrincipal principal, int page, int size);
+    PageResponse<WorkplaceListItemResponse> findOwnedWorkplaces(
+            AuthPrincipal principal, int page, int size);
 }

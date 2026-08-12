@@ -90,4 +90,27 @@
         FOR UPDATE
     </select>
 
+    <resultMap id="workplaceLocationSnapshot"
+               type="com.gighub.workplace.service.result.WorkplaceLocationSnapshot">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="latitude" javaType="java.math.BigDecimal"/>
+            <arg column="longitude" javaType="java.math.BigDecimal"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        근태 스캔이 승인된 잠금 순서의 첫 단계로 사용합니다. 호출자는 사업장을 소유하지 않은
+        WORKER이므로 소유자 조건을 두지 않고 활성 여부만 확인합니다.
+    -->
+    <select id="findActiveLocationForUpdate" resultMap="workplaceLocationSnapshot">
+        SELECT id,
+               latitude,
+               longitude
+        FROM workplaces
+        WHERE id = #{workplaceId}
+          AND status = 'ACTIVE'
+        FOR UPDATE
+    </select>
+
 </mapper>

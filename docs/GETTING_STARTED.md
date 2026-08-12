@@ -18,7 +18,9 @@ git clone https://github.com/Flamingo7562/KB-PJT-24-2.git
 cd KB-PJT-24-2
 ```
 
-일반 개발의 통합 기준은 `dev`다. 작업 브랜치를 만들기 전 [`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)의 현재 브랜치 전략을 확인한다.
+일반 개발의 기본 통합 기준은 `dev`다. 작업 브랜치를 만들기 전 현재 Issue, Parent와 직접
+Native dependency가 별도 통합 브랜치를 선언하는지 확인하고,
+[`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)의 현재 브랜치 전략을 따른다.
 
 ## 2. 공통·Frontend 의존성 설치
 
@@ -99,7 +101,9 @@ Windows에서는 다음 명령을 사용할 수 있다.
 npm.cmd run check
 ```
 
-전체 검사는 Guardrail, 하네스 테스트, Frontend ESLint와 Backend Gradle `check`를 실행한다. Frontend build·Vitest와 Backend WAR처럼 작업별로 필요한 검증은 각 애플리케이션 README와 Lint·Hook 기준을 따른다.
+전체 검사는 Guardrail, 하네스 테스트, Frontend Vitest·Production build·ESLint와 Backend
+Gradle `check`를 실행한다. Backend WAR와 opt-in `databaseTest`처럼 추가 검증이 필요한 작업은
+각 애플리케이션 README와 Lint·Hook 기준을 따른다.
 
 ## 다음 작업
 

@@ -1,9 +1,12 @@
 package com.gighub.invitation.service.impl;
 
 import com.gighub.common.exception.ConflictException;
+import com.gighub.wallet.domain.Money;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.mapper.WalletMapper;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.service.impl.AcceptEscrowHoldImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
@@ -30,6 +33,7 @@ class AcceptEscrowHoldImplTest {
     private static final long WORK_CASE_ID = 101L;
     private static final long WAGE = 120_000L;
     private static final long CLAIM_ID = 55L;
+    private static final long WALLET_ID = 11L;
     private static final long ESCROW_ID = 900L;
     private static final LocalDateTime ACCEPTED_AT = LocalDateTime.of(2026, 8, 20, 10, 0);
 
@@ -43,7 +47,18 @@ class AcceptEscrowHoldImplTest {
         long escrowId = escrowHold.hold(EMPLOYER_ID, WORK_CASE_ID, WAGE, CLAIM_ID, ACCEPTED_AT);
 
         assertEquals(ESCROW_ID, escrowId);
-        verify(walletMapper).lockEmployerFunds(EMPLOYER_ID, WAGE);
+        verify(walletMapper).resolveWalletId(EMPLOYER_ID, Money.KRW);
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
+        ArgumentCaptor<WalletBalanceUpdateParam> balanceCaptor =
+                ArgumentCaptor.forClass(WalletBalanceUpdateParam.class);
+        verify(walletMapper).updateWalletBalanceByWalletId(balanceCaptor.capture());
+        WalletBalanceUpdateParam balanceUpdate = balanceCaptor.getValue();
+        assertEquals(WALLET_ID, balanceUpdate.getWalletId());
+        assertEquals(Money.KRW, balanceUpdate.getCurrency());
+        assertEquals(500_000L, balanceUpdate.getAvailableBefore());
+        assertEquals(380_000L, balanceUpdate.getAvailableAfter());
+        assertEquals(30_000L, balanceUpdate.getLockedBefore());
+        assertEquals(150_000L, balanceUpdate.getLockedAfter());
         // 에스크로는 Aggregate가 공유하는 시각으로 HELD가 됩니다.
         verify(walletMapper).insertHeldEscrowAt(WORK_CASE_ID, WAGE, ACCEPTED_AT);
 
@@ -90,7 +105,7 @@ class AcceptEscrowHoldImplTest {
         );
         // 잔액 수치는 메시지에 담지 않습니다.
         assertEquals(false, failure.getMessage().contains(String.valueOf(WAGE - 1L)));
-        verify(walletMapper, never()).lockEmployerFunds(any(), any());
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
         verify(walletMapper, never()).insertWalletTransaction(any());
     }
 
@@ -100,13 +115,13 @@ class AcceptEscrowHoldImplTest {
 
         escrowHold.hold(EMPLOYER_ID, WORK_CASE_ID, WAGE, CLAIM_ID, ACCEPTED_AT);
 
-        verify(walletMapper).lockEmployerFunds(EMPLOYER_ID, WAGE);
+        verify(walletMapper).updateWalletBalanceByWalletId(any());
     }
 
     @Test
     void unexpectedBalanceUpdateResultStopsTheAggregate() {
         givenWallet(500_000L, 0L);
-        when(walletMapper.lockEmployerFunds(EMPLOYER_ID, WAGE)).thenReturn(0);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(0);
 
         assertThrows(
                 IllegalStateException.class,
@@ -117,7 +132,8 @@ class AcceptEscrowHoldImplTest {
 
     @Test
     void missingOwnerWalletIsAnIntegrityFailure() {
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID)).thenReturn(null);
+        when(walletMapper.resolveWalletId(EMPLOYER_ID, Money.KRW)).thenReturn(WALLET_ID);
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID)).thenReturn(null);
 
         assertThrows(
                 IllegalStateException.class,
@@ -126,16 +142,22 @@ class AcceptEscrowHoldImplTest {
     }
 
     private void givenWallet(long available, long locked) {
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID)).thenReturn(
+        when(walletMapper.resolveWalletId(EMPLOYER_ID, Money.KRW)).thenReturn(WALLET_ID);
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID)).thenReturn(
                 WalletBalanceSnapshot.builder()
-                        .walletId(11L)
+                        .walletId(WALLET_ID)
                         .userId(EMPLOYER_ID)
                         .availableBalance(available)
                         .lockedBalance(locked)
                         .build());
-        when(walletMapper.lockEmployerFunds(EMPLOYER_ID, WAGE)).thenReturn(1);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
         when(walletMapper.insertHeldEscrowAt(eq(WORK_CASE_ID), eq(WAGE), any())).thenReturn(1);
-        when(walletMapper.getEscrowIdByWorkCaseId(WORK_CASE_ID)).thenReturn(ESCROW_ID);
+        when(walletMapper.findSettlementEscrowForUpdate(WORK_CASE_ID))
+                .thenReturn(new com.gighub.wallet.mapper.result.SettlementEscrowRow(
+                        ESCROW_ID,
+                        WORK_CASE_ID,
+                        WAGE,
+                        com.gighub.wallet.domain.EscrowStatus.HELD));
         when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
     }
 

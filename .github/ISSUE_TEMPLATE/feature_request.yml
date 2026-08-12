@@ -1,81 +1,111 @@
 name: 기능 개발
-description: 새로운 사용자 기능 또는 화면/ API 개발을 등록합니다.
+description: 새로운 사용자 기능 또는 화면/API 개발을 등록합니다.
 title: "feat: [AREA] "
 labels: ["type: feature"]
 body:
   - type: markdown
     attributes:
       value: |
-        기능 이슈 제목은 `feat: [AREA] 작업 요약` 형식으로 작성합니다.
-        예시: `feat: [FE] 로그인 화면 구현`
-
-        AREA tag: `[FE]`, `[BE]`, `[DB]`, `[COMMON]`, `[DOCS]`, `[GITHUB]`, `[HOOK]`, `[INFRA]`
-
-        기능 이슈는 구현 목적, 완료 기준, 기술 제약을 명확히 적습니다.
-  - type: input
-    id: summary
-    attributes:
-      label: 요약
-      description: 한 문장으로 구현할 기능을 설명합니다.
-      placeholder: 예) 사용자는 로그인 후 마이페이지로 이동할 수 있다.
-    validations:
-      required: true
-  - type: dropdown
-    id: area
-    attributes:
-      label: 영역
-      options:
-        - "[FE] Frontend"
-        - "[BE] Backend"
-        - "[DB] Database"
-        - "[COMMON] Common"
-        - "[DOCS] Docs"
-        - "[GITHUB] GitHub"
-        - "[HOOK] Hook"
-        - "[INFRA] Infra"
-    validations:
-      required: true
+        제목은 `feat: [AREA] 작업 요약` 형식으로 작성합니다.
+        이 카드는 구현 계약을 한 화면에 고정합니다. API나 DB에 영향이 있을 때만 해당 선택 필드를 작성합니다.
   - type: textarea
-    id: background
+    id: goal
     attributes:
-      label: 배경 / 목적
-      description: 왜 이 기능이 필요한지, 어떤 문제를 해결하는지 적습니다.
-    validations:
-      required: true
-  - type: textarea
-    id: requirements
-    attributes:
-      label: 요구사항
-      description: 구현해야 하는 동작을 체크리스트로 작성합니다.
-      placeholder: |
-        - [ ] 사용자가 수행할 수 있어야 하는 동작
-        - [ ] 실패하거나 예외인 상황에서의 동작
+      label: 목표
+      description: 사용자가 얻는 결과와 해결할 문제를 한 문단으로 적습니다.
+      placeholder: 예) WORKER는 저장된 초대를 재접속 후 확인하고 수락할 수 있다.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 완료 조건
-      description: PR 머지 전 확인 가능한 기준을 적습니다.
-      value: |
-        - [ ] 사용자가 기대한 흐름을 화면 또는 API로 확인할 수 있다.
-        - [ ] 예외 상황이 처리된다.
-        - [ ] 관련 테스트 또는 수동 검증 결과를 남긴다.
+      description: PR 병합 전에 관찰하거나 테스트할 수 있는 3~7개 조건을 적습니다.
+      placeholder: |
+        - [ ] 성공 결과를 화면 또는 API에서 확인할 수 있다.
+        - [ ] 대표 실패 결과가 계약대로 처리된다.
+        - [ ] 관련 검증 결과가 PR에 남는다.
+    validations:
+      required: true
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: 비범위
+      description: 이번 이슈에서 구현하지 않을 인접 기능이나 후속 작업을 적습니다.
+      placeholder: "- 이번 이슈가 대신 구현하지 않는 기능"
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 위험도
+      description: R3는 보안·금액·Schema처럼 전문 검토가 필요한 변경입니다.
+      options:
+        - R0 — 문구·비동작 메타데이터
+        - R1 — 국소 UI·문서·테스트
+        - R2 — 일반 애플리케이션 동작·구조
+        - R3 — 보안·금액·Schema·통합 경계
+    validations:
+      required: true
+  - type: input
+    id: primary_module
+    attributes:
+      label: 주 모듈
+      description: "`MODULE_BOUNDARIES.md`의 논리 모듈 또는 frontend/governance를 적습니다."
+      placeholder: work
+    validations:
+      required: true
+  - type: textarea
+    id: affected_modules
+    attributes:
+      label: 영향 모듈
+      description: 직접 변경하거나 계약 영향을 받는 모듈만 적습니다.
+      placeholder: |
+        - work
+        - frontend
+    validations:
+      required: true
+  - type: textarea
+    id: required_operations
+    attributes:
+      label: 관련 Operation (API 영향 시만)
+      description: 영향받는 Method/Path 또는 Operation ID를 적습니다. API 영향이 없으면 비워 둡니다.
+      placeholder: POST /api/work-invitations/{token}/accept
+  - type: textarea
+    id: migration_scope
+    attributes:
+      label: Migration 범위 (DB 영향 및 승인 시만)
+      description: PM/Admin이 승인한 table, invariant, 신규 Flyway 범위와 검증을 적습니다. 기능 요구만으로 권한을 추론하지 않습니다.
+      placeholder: |
+        - 승인 근거:
+        - 대상 table/invariant:
+        - 신규 Migration:
+        - disposable/local DB 검증:
+  - type: textarea
+    id: verification
+    attributes:
+      label: 검증
+      description: 변경 위험에 맞는 자동·수동 검증과 성공 기준을 적습니다.
+      placeholder: |
+        - focused unit/integration test
+        - production build
+    validations:
+      required: true
+  - type: textarea
+    id: depends_on
+    attributes:
+      label: 선행 이슈
+      description: 직접 blocked-by 이슈를 적고 GitHub native dependency도 연결합니다. 없으면 `N/A`를 적습니다.
+      placeholder: "#123 또는 N/A"
     validations:
       required: true
   - type: textarea
     id: references
     attributes:
-      label: 참고 자료
-      description: 화면 설계, API 명세, 관련 이슈, 문서 링크가 있다면 적습니다.
-  - type: input
-    id: related-issues
-    attributes:
-      label: 관련 이슈
-      description: GitHub 이슈 번호를 #12, #34 형식으로 적습니다.
-      placeholder: "#12, #34"
+      label: 기준 문서 / 참고
+      description: 관련 요구사항·결정·Patch·화면 설계·Parent 이슈를 직접 링크합니다.
   - type: checkboxes
-    id: title-convention
+    id: title_convention
     attributes:
       label: 제목 컨벤션 확인
       options:

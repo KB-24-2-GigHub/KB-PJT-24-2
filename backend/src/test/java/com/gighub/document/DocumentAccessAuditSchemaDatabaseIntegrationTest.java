@@ -71,7 +71,7 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                         firstDocumentId,
                         firstVersionId,
                         firstUserId,
-                        "IT_DOWNLOAD",
+                        "HEALTH_CERT_FILE_DOWNLOAD",
                         "ALLOWED",
                         null
                 );
@@ -80,9 +80,9 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                         firstDocumentId,
                         firstVersionId,
                         secondUserId,
-                        "IT_VIEW",
+                        "HEALTH_CERT_FILE_VIEW",
                         "DENIED",
-                        "ACCESS_DENIED"
+                        "PARTY_ACCESS_DENIED"
                 );
 
                 // 기존 감사 행은 복원할 수 없는 상세값을 NULL로 유지한 채 업그레이드되어야 한다.
@@ -91,7 +91,7 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                         firstDocumentId,
                         null,
                         firstUserId,
-                        "IT_METADATA",
+                        "DOCUMENT_DETAIL_VIEW",
                         "ALLOWED",
                         null
                 );
@@ -100,8 +100,7 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                         3,
                         jdbcTemplate.queryForObject(
                                 "SELECT COUNT(*) FROM document_access_logs"
-                                        + " WHERE document_id = ?"
-                                        + " AND action LIKE 'IT_%'",
+                                        + " WHERE document_id = ?",
                                 Integer.class,
                                 firstDocumentId
                         )
@@ -115,7 +114,7 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                                 testedFirstDocumentId,
                                 secondVersionId,
                                 firstUserId,
-                                "IT_VIEW",
+                                "HEALTH_CERT_FILE_VIEW",
                                 "ALLOWED",
                                 null
                         )
@@ -127,9 +126,9 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                                 testedFirstDocumentId,
                                 firstVersionId,
                                 firstUserId,
-                                "IT_VIEW",
+                                "HEALTH_CERT_FILE_VIEW",
                                 "ALLOWED",
-                                "ACCESS_DENIED"
+                                "PARTY_ACCESS_DENIED"
                         )
                 );
                 assertThrows(
@@ -139,9 +138,35 @@ class DocumentAccessAuditSchemaDatabaseIntegrationTest {
                                 testedFirstDocumentId,
                                 firstVersionId,
                                 secondUserId,
-                                "IT_VIEW",
+                                "HEALTH_CERT_FILE_VIEW",
                                 "DENIED",
                                 ""
+                        )
+                );
+
+                // 승인 목록 밖의 action과 거부 사유는 저장할 수 없어야 한다.
+                assertThrows(
+                        DataAccessException.class,
+                        () -> insertAudit(
+                                jdbcTemplate,
+                                testedFirstDocumentId,
+                                firstVersionId,
+                                firstUserId,
+                                "IT_UNLISTED_ACTION",
+                                "ALLOWED",
+                                null
+                        )
+                );
+                assertThrows(
+                        DataAccessException.class,
+                        () -> insertAudit(
+                                jdbcTemplate,
+                                testedFirstDocumentId,
+                                firstVersionId,
+                                secondUserId,
+                                "HEALTH_CERT_FILE_VIEW",
+                                "DENIED",
+                                "IT_UNLISTED_REASON"
                         )
                 );
             } finally {

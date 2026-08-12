@@ -481,16 +481,24 @@ class WorkCaseServiceDatabaseIntegrationTest {
 
     private void insertEscrow(JdbcTemplate jdbc, Long workCaseId, String status) {
         jdbc.update(
-                "INSERT INTO escrows (work_case_id, amount, status) VALUES (?, 120000, ?)",
-                workCaseId, status);
+                "INSERT INTO escrows"
+                        + " (work_case_id, amount, status, held_at, released_at, refunded_at)"
+                        + " VALUES (?, 120000, ?,"
+                        + " CASE WHEN ? IN ('HELD', 'RELEASED', 'REFUNDED') THEN NOW(6) END,"
+                        + " CASE WHEN ? = 'RELEASED' THEN NOW(6) END,"
+                        + " CASE WHEN ? = 'REFUNDED' THEN NOW(6) END)",
+                workCaseId, status, status, status, status);
     }
 
     private void insertSettlement(JdbcTemplate jdbc, Long workCaseId, String status) {
         jdbc.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at, completed_at)"
-                        + " VALUES (?, 120000, ?, ?, ?)",
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, status, due_at, processing_at, completed_at)"
+                        + " VALUES (?, 120000, ?, ?, ?, ?)",
                 workCaseId, status,
-                LocalDateTime.of(2026, 8, 21, 0, 0), LocalDateTime.of(2026, 8, 21, 0, 5));
+                LocalDateTime.of(2026, 8, 21, 0, 0),
+                LocalDateTime.of(2026, 8, 21, 0, 1),
+                LocalDateTime.of(2026, 8, 21, 0, 5));
     }
 
     private void insertAttendance(JdbcTemplate jdbc, Long workCaseId, Long workerId, String type) {

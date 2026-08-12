@@ -5,6 +5,8 @@ import com.gighub.bank.service.BankAccountPreflightCommand;
 import com.gighub.bank.service.BankTransferCommand;
 import com.gighub.bank.service.BankTransferGateway;
 import com.gighub.bank.service.BankTransferResult;
+import com.gighub.wallet.domain.Money;
+import com.gighub.wallet.domain.WalletBalance;
 import com.gighub.wallet.dto.FundingOrder;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
@@ -16,6 +18,7 @@ import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.mapper.FundingMapper;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.FundingOrderParam;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.service.FundingService;
 import com.gighub.wallet.service.command.FundingCommand;
@@ -50,6 +53,7 @@ public class FundingServiceImpl implements FundingService {
         String rawKey = WalletIdempotencyKeys.validateRawKey(command.getIdempotencyKey());
         String ledgerKey = WalletIdempotencyKeys.funding(rawKey);
 
+        // 잠금 충돌 시 일부 단계만 반복하지 않고, rollback된 자금 명령 전체를 새 트랜잭션에서 재시도합니다.
         int attemptCount = 0;
         while (true) {
             attemptCount++;
@@ -67,13 +71,20 @@ public class FundingServiceImpl implements FundingService {
 
     private FundingResult fundOnce(
             FundingCommand command, String rawKey, String ledgerKey) {
+        Long walletId = walletMapper.resolveWalletId(command.getEmployerId(), Money.KRW);
+        if (walletId == null || walletId <= 0) {
+            throw new InvalidWalletStateException("지갑을 찾을 수 없습니다.");
+        }
+
         // 지갑을 먼저 잠가 claim의 계좌 FK 잠금과 실제 계좌 잠금 순서를 일관되게 유지한다.
         WalletBalanceSnapshot wallet =
-                walletMapper.getWalletSnapshotForUpdate(command.getEmployerId());
+                walletMapper.getWalletSnapshotForUpdateByWalletId(walletId);
         if (wallet == null) {
             throw new InvalidWalletStateException("지갑을 찾을 수 없습니다.");
         }
-        validateWalletSnapshot(wallet, command.getEmployerId());
+        WalletBalance balance = validateWalletSnapshot(
+                wallet, command.getEmployerId(), walletId);
+        Money amount = Money.krw(command.getAmount());
 
         // bankCode+accountNo로 비귀속 Mock 계좌를 식별한다(Client가 보낸 내부 ID는 없다).
         // 상태·PIN은 여기서 검사하지 않는다 - Replay가 현재 계좌 상태와 무관하게 재응답해야 하므로
@@ -98,7 +109,8 @@ public class FundingServiceImpl implements FundingService {
                 throw new FundingIntegrityException("충전 주문을 선점하지 못했습니다.");
             }
         } catch (DuplicateKeyException duplicate) {
-            return replayClaimedOrder(command, rawKey, ledgerKey, linkedAccountId, duplicate);
+            return replayClaimedOrder(
+                    command, rawKey, ledgerKey, walletId, linkedAccountId, duplicate);
         } catch (DataIntegrityViolationException invalidOrder) {
             translateInvalidOrderReference(linkedAccountId, command.getPin(), invalidOrder);
         }
@@ -109,11 +121,13 @@ public class FundingServiceImpl implements FundingService {
                 .pin(command.getPin())
                 .build());
 
-        Long availableAfter = addExactly(
-                wallet.getAvailableBalance(),
-                command.getAmount(),
-                "지갑 충전 후 잔액이 허용 범위를 벗어났습니다."
-        );
+        WalletBalance balanceAfter;
+        try {
+            balanceAfter = balance.credit(amount);
+        } catch (ArithmeticException overflow) {
+            throw new FundingIntegrityException(
+                    "지갑 충전 후 잔액이 허용 범위를 벗어났습니다.", overflow);
+        }
 
         BankTransferResult transfer = bankTransferGateway.withdraw(BankTransferCommand.builder()
                 .accountId(linkedAccountId)
@@ -129,20 +143,20 @@ public class FundingServiceImpl implements FundingService {
             throw new FundingIntegrityException("충전 주문 완료 상태를 기록하지 못했습니다.");
         }
 
-        if (walletMapper.addAvailableBalance(
-                command.getEmployerId(), command.getAmount()) != 1) {
+        if (walletMapper.updateWalletBalanceByWalletId(
+                WalletBalanceUpdateParam.of(walletId, balance, balanceAfter)) != 1) {
             throw new FundingIntegrityException("지갑 충전 잔액을 반영하지 못했습니다.");
         }
 
         WalletTransactionParam transaction = WalletTransactionParam.builder()
-                .walletId(wallet.getWalletId())
+                .walletId(walletId)
                 .workCaseId(null)
                 .transactionType(TX_FUNDING)
                 .amount(command.getAmount())
-                .availableBefore(wallet.getAvailableBalance())
-                .availableAfter(availableAfter)
-                .lockedBefore(wallet.getLockedBalance())
-                .lockedAfter(wallet.getLockedBalance())
+                .availableBefore(balance.available())
+                .availableAfter(balanceAfter.available())
+                .lockedBefore(balance.locked())
+                .lockedAfter(balanceAfter.locked())
                 .referenceType(REF_FUNDING_ORDER)
                 .referenceId(order.getId())
                 .idempotencyKey(ledgerKey)
@@ -155,8 +169,8 @@ public class FundingServiceImpl implements FundingService {
                 .fundingOrderId(order.getId())
                 .status(STATUS_COMPLETED)
                 .bankTransactionId(transfer.getBankTransactionId())
-                .availableBalance(availableAfter)
-                .lockedBalance(wallet.getLockedBalance())
+                .availableBalance(balanceAfter.available())
+                .lockedBalance(balanceAfter.locked())
                 .replayed(false)
                 .build();
     }
@@ -165,6 +179,7 @@ public class FundingServiceImpl implements FundingService {
             FundingCommand command,
             String rawKey,
             String ledgerKey,
+            Long walletId,
             Long linkedAccountId,
             DuplicateKeyException duplicate) {
         FundingOrder existing = fundingMapper.findByIdempotencyKeyForShare(rawKey);
@@ -179,7 +194,7 @@ public class FundingServiceImpl implements FundingService {
 
         WalletTransactionSnapshot snapshot =
                 walletMapper.findFundingTransactionSnapshot(
-                        existing.getId(), command.getEmployerId(), ledgerKey);
+                        existing.getId(), walletId, ledgerKey);
         if (!isValidFundingSnapshot(snapshot, existing.getExpectedAmount())) {
             throw new FundingIntegrityException("저장된 충전 원장 스냅샷이 주문과 일치하지 않습니다.");
         }
@@ -253,23 +268,16 @@ public class FundingServiceImpl implements FundingService {
                 || snapshot.getId() <= 0
                 || snapshot.getWalletId() == null
                 || snapshot.getWalletId() <= 0
-                || !expectedAmount.equals(snapshot.getAmount())
-                || snapshot.getAvailableBefore() == null
-                || snapshot.getAvailableBefore() < 0
-                || snapshot.getAvailableAfter() == null
-                || snapshot.getAvailableAfter() < 0
-                || snapshot.getLockedBefore() == null
-                || snapshot.getLockedBefore() < 0
-                || snapshot.getLockedAfter() == null
-                || snapshot.getLockedAfter() < 0
-                || !snapshot.getLockedBefore().equals(snapshot.getLockedAfter())) {
+                || !expectedAmount.equals(snapshot.getAmount())) {
             return false;
         }
         try {
-            return Math.addExact(
-                    snapshot.getAvailableBefore(), expectedAmount
-            ) == snapshot.getAvailableAfter();
-        } catch (ArithmeticException overflow) {
+            WalletBalance before = WalletBalance.krw(
+                    snapshot.getAvailableBefore(), snapshot.getLockedBefore());
+            WalletBalance after = before.credit(Money.krw(expectedAmount));
+            return after.available() == snapshot.getAvailableAfter()
+                    && after.locked() == snapshot.getLockedAfter();
+        } catch (RuntimeException invalidSnapshot) {
             return false;
         }
     }
@@ -286,24 +294,20 @@ public class FundingServiceImpl implements FundingService {
         );
     }
 
-    private void validateWalletSnapshot(
-            WalletBalanceSnapshot wallet, Long expectedUserId) {
+    private WalletBalance validateWalletSnapshot(
+            WalletBalanceSnapshot wallet, Long expectedUserId, Long expectedWalletId) {
         if (wallet.getWalletId() == null
                 || wallet.getWalletId() <= 0
-                || !expectedUserId.equals(wallet.getUserId())
-                || wallet.getAvailableBalance() == null
-                || wallet.getAvailableBalance() < 0
-                || wallet.getLockedBalance() == null
-                || wallet.getLockedBalance() < 0) {
+                || !expectedWalletId.equals(wallet.getWalletId())
+                || !expectedUserId.equals(wallet.getUserId())) {
             throw new FundingIntegrityException("조회된 지갑 잔액 스냅샷이 올바르지 않습니다.");
         }
-    }
-
-    private Long addExactly(Long left, Long right, String failureMessage) {
         try {
-            return Math.addExact(left, right);
-        } catch (ArithmeticException overflow) {
-            throw new FundingIntegrityException(failureMessage, overflow);
+            return WalletBalance.krw(
+                    wallet.getAvailableBalance(), wallet.getLockedBalance());
+        } catch (RuntimeException invalidBalance) {
+            throw new FundingIntegrityException(
+                    "조회된 지갑 잔액 스냅샷이 올바르지 않습니다.", invalidBalance);
         }
     }
 

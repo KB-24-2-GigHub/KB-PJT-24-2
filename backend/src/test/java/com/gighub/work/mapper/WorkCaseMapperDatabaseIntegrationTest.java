@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import javax.sql.DataSource;
 
 import com.gighub.config.RootConfig;
+import com.gighub.invitation.mapper.InvitationMapper;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.mapper.param.WorkCaseInsertParam;
 import com.gighub.work.mapper.param.WorkCaseListQuery;
@@ -59,6 +60,7 @@ class WorkCaseMapperDatabaseIntegrationTest {
                      new AnnotationConfigApplicationContext(RootConfig.class)) {
             JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
             WorkCaseMapper mapper = context.getBean(WorkCaseMapper.class);
+            InvitationMapper invitationMapper = context.getBean(InvitationMapper.class);
 
             String suffix = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
             // 사업자등록번호는 Unique 숫자 10자리라 실행마다 앞자리를 다르게 만듭니다.
@@ -84,7 +86,7 @@ class WorkCaseMapperDatabaseIntegrationTest {
                 verifyUpdateBumpsVersionOnlyForDraft(jdbc, mapper, editedCaseId);
 
                 verifyRevokeTouchesOnlyPending(
-                        jdbc, mapper, ownerUserId, activeWorkplaceId, snapshot);
+                        jdbc, mapper, invitationMapper, ownerUserId, activeWorkplaceId, snapshot);
                 verifyDeleteAndCancelBranches(
                         jdbc, mapper, ownerUserId, activeWorkplaceId, snapshot);
                 verifyCountByStatusIsOwnerScoped(
@@ -211,6 +213,7 @@ class WorkCaseMapperDatabaseIntegrationTest {
     private void verifyRevokeTouchesOnlyPending(
             JdbcTemplate jdbc,
             WorkCaseMapper mapper,
+            InvitationMapper invitationMapper,
             Long ownerUserId,
             Long workplaceId,
             OwnedWorkplaceSnapshotRow snapshot) {
@@ -218,14 +221,14 @@ class WorkCaseMapperDatabaseIntegrationTest {
         insertInvitation(jdbc, workCaseId, "PENDING", "p");
         insertInvitation(jdbc, workCaseId, "EXPIRED", "e");
 
-        assertEquals(1, mapper.revokePendingInvitations(workCaseId));
+        assertEquals(1, invitationMapper.revokePendingByWorkCaseIdNow(workCaseId));
 
         assertEquals(1, countInvitations(jdbc, workCaseId, "REVOKED"));
         assertEquals(1, countInvitations(jdbc, workCaseId, "EXPIRED"));
         assertEquals(0, countInvitations(jdbc, workCaseId, "PENDING"));
         assertEquals(2, mapper.countInvitations(workCaseId), "이력은 상태와 무관하게 남아야 합니다.");
 
-        assertEquals(0, mapper.revokePendingInvitations(workCaseId));
+        assertEquals(0, invitationMapper.revokePendingByWorkCaseIdNow(workCaseId));
     }
 
     /** 초대 이력 유무가 물리 삭제와 취소 전이를 가릅니다. */

@@ -7,6 +7,7 @@ import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.DocumentStorageProperties;
 import com.gighub.document.storage.Sha256;
 import com.gighub.work.domain.WorkCaseStatus;
+import com.gighub.work.service.WorkLifecycleCommandService;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
@@ -94,6 +95,8 @@ class AttendanceLifecycleDatabaseIntegrationTest {
             try {
                 AttendanceLifecycleTransitionExecutor executor =
                         context.getBean(AttendanceLifecycleTransitionExecutor.class);
+                WorkLifecycleCommandService workLifecycleCommandService =
+                        context.getBean(WorkLifecycleCommandService.class);
                 List<Boolean> noShowResults = runConcurrently(
                         () -> executor.advanceToNoShow(noShow.workCaseId(), NOW));
                 List<Boolean> checkoutResults = runConcurrently(
@@ -221,24 +224,24 @@ class AttendanceLifecycleDatabaseIntegrationTest {
             FundsSnapshot before = fundsSnapshot(jdbcTemplate, fixture);
 
             try {
-                AttendanceLifecycleMapper mapper =
-                        context.getBean(AttendanceLifecycleMapper.class);
                 AttendanceLifecycleTransitionExecutor executor =
                         context.getBean(AttendanceLifecycleTransitionExecutor.class);
+                WorkLifecycleCommandService workLifecycleCommandService =
+                        context.getBean(WorkLifecycleCommandService.class);
                 TransactionTemplate transaction = new TransactionTemplate(
                         context.getBean(PlatformTransactionManager.class));
 
                 runConcurrently(
                         () -> Boolean.TRUE.equals(transaction.execute(status -> {
-                            var row = mapper.lockById(fixture.workCaseId());
-                            if (row == null || row.getStatus() != WorkCaseStatus.READY) {
+                            var row = workLifecycleCommandService.lock(fixture.workCaseId());
+                            if (row == null || row.status() != WorkCaseStatus.READY) {
                                 return false;
                             }
                             insertAttendance(jdbcTemplate, fixture, "CHECK_IN");
-                            return mapper.transitionStatus(
+                            return workLifecycleCommandService.transition(
                                     fixture.workCaseId(),
-                                    WorkCaseStatus.READY.name(),
-                                    WorkCaseStatus.IN_PROGRESS.name()) == 1;
+                                    WorkCaseStatus.READY,
+                                    WorkCaseStatus.IN_PROGRESS);
                         })),
                         () -> executor.advanceToNoShow(fixture.workCaseId(), NOW));
 

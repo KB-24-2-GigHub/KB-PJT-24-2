@@ -1,8 +1,8 @@
 package com.gighub.wallet.mapper;
 
-import com.gighub.wallet.dto.WalletSummary;
 import com.gighub.wallet.dto.WalletTransactionSearch;
-import com.gighub.wallet.dto.WalletTransactionView;
+import com.gighub.wallet.mapper.result.WalletSummaryRow;
+import com.gighub.wallet.mapper.result.WalletTransactionRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -16,9 +16,9 @@ import java.util.List;
 @Mapper
 public interface WalletQueryMapper {
     // available/locked를 한 번의 SELECT로 함께 읽어 두 값의 시점이 갈리지 않게 한다.
-    WalletSummary findWalletSummaryByUserId(@Param("userId") Long userId);
+    WalletSummaryRow findWalletSummaryByUserId(@Param("userId") Long userId);
 
-    List<WalletTransactionView> findTransactions(WalletTransactionSearch search);
+    List<WalletTransactionRow> findTransactions(WalletTransactionSearch search);
 
     long countTransactions(WalletTransactionSearch search);
 }

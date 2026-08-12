@@ -1,17 +1,15 @@
 package com.gighub.document.controller;
 
+import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.auth.security.AuthPrincipals;
 import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
-import com.gighub.document.dto.Document;
+import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
-import com.gighub.document.dto.DocumentShare;
-import com.gighub.document.dto.DocumentShareListResponse;
-import com.gighub.document.dto.DocumentVersion;
-import com.gighub.document.exception.DocumentNotFoundException;
-import com.gighub.document.mapper.DocumentQueryMapper;
+import com.gighub.document.dto.DocumentShareItem;
+import com.gighub.document.service.DocumentQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -20,64 +18,66 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import java.util.List;
+import javax.servlet.http.HttpServletRequest;
+import java.util.Set;
 
 @RestController
 @RequiredArgsConstructor
 public class DocumentController {
 
-    private final DocumentQueryMapper documentQueryMapper;
+    private static final Set<String> LIST_QUERY_PARAMETERS =
+            Set.of("workplaceId", "docType", "page", "size");
+
+    private final DocumentQueryService documentQueryService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
     public ResponseEntity<ApiResponse<PageResponse<DocumentListItem>>> getDocuments(
-            @RequestParam(required = false) String documentType,
-            @RequestParam(required = false) String source,
+            @RequestParam(required = false) Long workplaceId,
+            @RequestParam(required = false) String docType,
             @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_TEXT) int page,
             @RequestParam(defaultValue = PageRequests.DEFAULT_SIZE_TEXT) int size,
-            Authentication authentication) {
-        Long loginUserId = AuthPrincipals.resolve(authentication).getUserId();
-        PageRequests.validate(page, size);
-
-        List<DocumentListItem> content = documentQueryMapper.findDocuments(
-                loginUserId, documentType, PageRequests.offset(page, size), size);
-        int total = documentQueryMapper.countDocuments(loginUserId, documentType);
-
+            Authentication authentication,
+            HttpServletRequest request) {
+        requireApprovedListQuery(request);
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
         return ResponseEntity.ok(
-                ApiResponse.of(PageResponse.of(content, page, size, total)));
+                ApiResponse.of(documentQueryService.findDocuments(
+                        principal.getUserId(),
+                        principal.getRole(),
+                        workplaceId,
+                        docType,
+                        page,
+                        size)));
     }
 
-    // DOC-003: 문서 메타데이터 + 버전 목록
+    // DOC-003·DOC-011: 권한과 감사 Commit 뒤에만 반환하는 문서 상세
     @GetMapping("/api/documents/{documentId}")
     public ResponseEntity<ApiResponse<DocumentDetailResponse>> getDocument(
             @PathVariable Long documentId,
+            @RequestParam(required = false) Long workCaseId,
             Authentication authentication) {
-        AuthPrincipals.resolve(authentication);
-
-        Document document = documentQueryMapper.findDocumentById(documentId);
-        if (document == null) {
-            throw new DocumentNotFoundException("문서를 찾을 수 없습니다.");
-        }
-
-        // TODO: 접근 권한 검증(소유자/계약당사자/유효공유), document_access_logs 기록
-        List<DocumentVersion> versions =
-                documentQueryMapper.findVersionsByDocumentId(documentId);
-
-        return ResponseEntity.ok(
-                ApiResponse.of(DocumentDetailResponse.of(document, versions)));
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        return ResponseEntity.ok(ApiResponse.of(documentQueryService.findDocument(
+                principal.getUserId(), principal.getRole(), documentId, workCaseId)));
     }
 
     // SHARE-002: 문서 공유 현황
     @GetMapping("/api/documents/{documentId}/shares")
-    public ResponseEntity<ApiResponse<DocumentShareListResponse>> getDocumentShares(
+    public ResponseEntity<ApiResponse<PageResponse<DocumentShareItem>>> getDocumentShares(
             @PathVariable Long documentId,
+            @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_TEXT) int page,
+            @RequestParam(defaultValue = PageRequests.DEFAULT_SIZE_TEXT) int size,
             Authentication authentication) {
-        AuthPrincipals.resolve(authentication);
+        long actorUserId = AuthPrincipals.resolve(authentication).getUserId();
+        return ResponseEntity.ok(
+                ApiResponse.of(documentQueryService.findShares(
+                        actorUserId, documentId, page, size)));
+    }
 
-        // TODO: 문서 소유자 검증 (DOCUMENT_ACCESS_DENIED)
-        List<DocumentShare> shares =
-                documentQueryMapper.findSharesByDocumentId(documentId);
-
-        return ResponseEntity.ok(ApiResponse.of(DocumentShareListResponse.of(shares)));
+    private void requireApprovedListQuery(HttpServletRequest request) {
+        if (!LIST_QUERY_PARAMETERS.containsAll(request.getParameterMap().keySet())) {
+            throw new ValidationException("지원하지 않는 문서 목록 Query입니다.");
+        }
     }
 }

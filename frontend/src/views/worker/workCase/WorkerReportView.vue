@@ -37,8 +37,14 @@ async function onSubmit() {
     await createReport(workCaseId, { content: content.value.trim() })
     ui.toast('신고가 접수되었습니다.', { type: 'success' })
     router.back()
-  } catch {
-    ui.toast('신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.', { type: 'danger' })
+  } catch (error) {
+    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
+    ui.toast(
+      unavailable
+        ? '임금분쟁 신고는 현재 준비 중인 기능입니다.'
+        : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
+      { type: unavailable ? 'info' : 'danger' }
+    )
   } finally {
     submitting.value = false
   }

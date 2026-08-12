@@ -46,6 +46,15 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('아직 근무 내역이 없어요.')
   })
 
+  it('미구현 operation은 빈 목록으로 가장하지 않고 준비 중 상태를 보여준다', async () => {
+    listWorkerWorkCases.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('근무 내역은 현재 준비 중인 기능입니다.')
+    expect(wrapper.text()).not.toContain('아직 근무 내역이 없어요.')
+  })
+
   it('항목을 누르면 상세로 이동한다', async () => {
     listWorkerWorkCases.mockResolvedValueOnce({ content: [sampleWorkCase], totalPages: 1 })
     const wrapper = mount(WorkerWorkView)

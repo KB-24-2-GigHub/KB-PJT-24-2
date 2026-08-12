@@ -4,17 +4,18 @@
 
 <mapper namespace="com.gighub.badge.mapper.BadgeQueryMapper">
 
-    <!-- constructor 대신 기본 생성자와 리플렉션을 활용하는 유연한 방식으로 변경 -->
-    <resultMap id="userBadgeResult" type="com.gighub.badge.dto.UserBadge">
-        <id property="id" column="id"/>
-        <result property="userId" column="user_id"/>
-        <result property="badgeType" column="badge_type"/>
-        <result property="evidence" column="evidence"/>
-
-        <result property="createdAt" column="awarded_at"/>
+    <!-- SQL 열을 Mapper 전용 Row의 불변 생성자에 명시적으로 연결합니다. -->
+    <resultMap id="userBadgeRowResult" type="com.gighub.badge.mapper.result.UserBadgeRow">
+        <constructor>
+            <idArg column="id" javaType="java.lang.Long"/>
+            <arg column="user_id" javaType="java.lang.Long"/>
+            <arg column="badge_type" javaType="java.lang.String"/>
+            <arg column="evidence" javaType="java.lang.String"/>
+            <arg column="awarded_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
     </resultMap>
 
-    <select id="findBadgesByUserId" resultMap="userBadgeResult">
+    <select id="findBadgesByUserId" resultMap="userBadgeRowResult">
         SELECT id, user_id, badge_type, evidence, awarded_at
         FROM user_badges
         WHERE user_id = #{userId}

@@ -20,7 +20,7 @@ GitHub Projects는 이슈와 PR을 테이블, 보드, 로드맵 형태로 추적
 | `Size`        | Single select | `XS`, `S`, `M`, `L`, `XL`                                                      |
 | `Iteration`   | Iteration     | 주차 또는 스프린트                                                             |
 | `Target date` | Date          | 목표 완료일                                                                    |
-| `Risk`        | Single select | `Low`, `Medium`, `High`                                                        |
+| `Risk`        | Single select | `R0`, `R1`, `R2`, `R3`                                                         |
 
 Issue Form과 Project `Type`은 다음처럼 대응합니다.
 
@@ -44,6 +44,21 @@ Issue Form과 Project `Type`은 다음처럼 대응합니다.
 | `Done`        | 완료                          | PR 머지 및 검증 완료               |
 | `Blocked`     | 진행 불가                     | 외부 의존성 또는 결정이 필요함     |
 
+새 상태를 추가하지 않고 프로그램 통합 단계는 기존 상태에 다음처럼 매핑합니다.
+
+| 프로그램 의미        | 기존 Status                   | 적용 카드와 완료 사실                                     |
+| -------------------- | ----------------------------- | --------------------------------------------------------- |
+| Todo                 | `Ready`                       | 범위·AC·직접 선행조건이 준비됨                            |
+| In Progress          | `In Progress`                 | 승인 통합 브랜치에서 만든 작업 브랜치로 작업 중           |
+| In Review            | `In Review` 또는 검증 중 `QA` | 승인 통합 브랜치 대상 PR 검토·검증 중                     |
+| Integrated into dev2 | `Done`                        | 프로그램 서브 이슈가 `dev2`에 병합되고 AC 충족            |
+| Integrated into dev  | `Done`                        | Parent·Milestone이 최종 프로그램 브랜치 → `dev` 통합 완료 |
+| Released to main     | `Done`                        | 별도 Release item이 `main` 반영 완료                      |
+
+`Done`은 카드 종류가 선언한 승인 브랜치 통합 사실을 뜻한다. 서브 이슈의 `Done`을 전체
+프로그램의 `dev` 통합 또는 `main` Release로 해석하지 않는다. Backlog와 Blocked는 각각
+준비 전 후보와 실제 차단 상태로 계속 사용한다.
+
 ## 권장 View
 
 | View      | Layout                   | 용도                               |
@@ -62,7 +77,7 @@ Issue Form과 Project `Type`은 다음처럼 대응합니다.
 - 작업을 시작하면 `In Progress`로 이동합니다.
 - PR을 열면 `In Review`로 이동합니다.
 - 리뷰 반영 후 동작 확인이 필요하면 `QA`로 이동합니다.
-- 머지 후 검증이 끝나면 `Done`으로 이동합니다.
+- 카드 유형에 맞는 승인 브랜치 머지와 AC 검증이 끝나면 `Done`으로 이동합니다.
 - 막힌 작업은 `Blocked`로 이동하고, 댓글에 막힌 이유와 필요한 결정을 남깁니다.
 
 ## 자동화 권장 설정
@@ -74,6 +89,10 @@ Issue Form과 Project `Type`은 다음처럼 대응합니다.
 - PR이 연결되면 `Status`를 `In Review`로 설정
 - 이슈가 닫히면 `Status`를 `Done`으로 설정
 - 오래된 `Done` 항목은 일정 기간 후 archive
+
+자동화는 상태를 반영할 뿐 완료를 판정하지 않습니다. 통합 담당자가 AC, 필수 검증, 실제 PR
+base와 merge를 확인한 뒤 이슈를 닫아야 하며, 먼저 닫힌 이슈를 자동화가 `Done`으로 옮겼다는
+사실만으로 완료 처리하지 않습니다.
 
 ## 스프린트 운영
 

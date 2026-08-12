@@ -1,11 +1,15 @@
 package com.gighub.contract.mapper.param;
 
+import com.gighub.common.api.ApiTimes;
+import com.gighub.contract.domain.ContractTermsSnapshot;
+
 import lombok.Builder;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * 계약 Snapshot INSERT 파라미터입니다.
@@ -19,6 +23,35 @@ import java.time.LocalDateTime;
 @Getter
 @Builder
 public class WorkContractInsertParam {
+
+    /** Domain Snapshot 한 개를 관계형 Column과 JSON Column의 공통 원본으로 사용합니다. */
+    public static WorkContractInsertParam from(
+            long workCaseId,
+            ContractTermsSnapshot terms,
+            String termsSnapshotJson,
+            LocalDateTime acceptedAt) {
+        Objects.requireNonNull(terms, "terms");
+        return WorkContractInsertParam.builder()
+                .workCaseId(workCaseId)
+                .employerId(terms.getOwner().getUserId())
+                .workerId(terms.getWorker().getUserId())
+                .title(terms.getTitle())
+                .startsAt(ApiTimes.toLocalDateTime(terms.getStartsAt()))
+                .endsAt(ApiTimes.toLocalDateTime(terms.getEndsAt()))
+                .breakMinutes(terms.getBreakMinutes())
+                .breakPaid(terms.isBreakPaid())
+                .workplaceName(terms.getWorkplaceName())
+                .workplaceAddress(terms.getWorkplaceAddress())
+                .workplaceLatitude(terms.getWorkplaceLatitude())
+                .workplaceLongitude(terms.getWorkplaceLongitude())
+                .allowedRadiusMeters(terms.getAllowedRadiusMeters())
+                .dailyWage(terms.getDailyWage())
+                .sourceTermsVersion(terms.getTermsVersion())
+                .termsSnapshotJson(Objects.requireNonNull(
+                        termsSnapshotJson, "termsSnapshotJson"))
+                .acceptedAt(Objects.requireNonNull(acceptedAt, "acceptedAt"))
+                .build();
+    }
 
     /** MyBatis가 생성 Key를 되돌려 쓰기 위해 이 필드만 가변입니다. */
     @Setter

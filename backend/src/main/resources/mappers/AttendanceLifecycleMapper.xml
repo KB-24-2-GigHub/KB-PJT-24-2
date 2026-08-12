@@ -4,16 +4,6 @@
 
 <mapper namespace="com.gighub.attendance.mapper.AttendanceLifecycleMapper">
 
-    <resultMap id="lifecycleWorkCaseResult"
-               type="com.gighub.attendance.mapper.result.AttendanceLifecycleWorkCaseRow">
-        <constructor>
-            <idArg column="workCaseId" javaType="java.lang.Long"/>
-            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
-            <arg column="startsAt" javaType="java.time.LocalDateTime"/>
-            <arg column="endsAt" javaType="java.time.LocalDateTime"/>
-        </constructor>
-    </resultMap>
-
     <select id="findReadyCandidateIds" resultType="java.lang.Long">
         SELECT id
         FROM work_cases
@@ -61,16 +51,6 @@
           )
         ORDER BY wc.ends_at, wc.id
         LIMIT #{batchSize}
-    </select>
-
-    <select id="lockById" resultMap="lifecycleWorkCaseResult">
-        SELECT id        AS workCaseId,
-               status    AS status,
-               starts_at AS startsAt,
-               ends_at   AS endsAt
-        FROM work_cases
-        WHERE id = #{workCaseId}
-        FOR UPDATE
     </select>
 
     <!--
@@ -167,12 +147,5 @@
               AND result = 'SUCCESS'
         )
     </select>
-
-    <update id="transitionStatus">
-        UPDATE work_cases
-        SET status = #{status}
-        WHERE id = #{workCaseId}
-          AND status = #{expectedStatus}
-    </update>
 
 </mapper>

@@ -1,0 +1,158 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.work.mapper.WorkerMapper">
+
+    <!-- DTO가 setter를 갖지 않으므로 생성자 인자로 매핑한다. 인자 순서는 필드 선언 순서를 따른다 -->
+    <resultMap id="workerHomeCandidateResult"
+               type="com.gighub.work.mapper.result.WorkerHomeCandidateRow">
+        <constructor>
+            <idArg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="workplaceName" javaType="java.lang.String"/>
+            <arg column="startsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="endsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="breakMinutes" javaType="java.lang.Integer"/>
+            <arg column="breakPaid" javaType="java.lang.Boolean"/>
+            <arg column="dailyWage" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
+            <arg column="checkedInAt" javaType="java.time.LocalDateTime"/>
+            <arg column="checkInAttemptedAt" javaType="java.time.LocalDateTime"/>
+            <arg column="checkedOutAt" javaType="java.time.LocalDateTime"/>
+            <arg column="escrowStatus" javaType="java.lang.String"/>
+            <arg column="settlementStatus" javaType="java.lang.String"/>
+            <arg column="settlementDueAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="workerWorkCaseResult"
+               type="com.gighub.work.mapper.result.WorkerWorkCaseRow">
+        <constructor>
+            <idArg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="workplaceName" javaType="java.lang.String"/>
+            <arg column="startsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="endsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="breakMinutes" javaType="java.lang.Integer"/>
+            <arg column="breakPaid" javaType="java.lang.Boolean"/>
+            <arg column="dailyWage" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
+            <arg column="checkedInAt" javaType="java.time.LocalDateTime"/>
+            <arg column="checkInAttemptedAt" javaType="java.time.LocalDateTime"/>
+            <arg column="checkedOutAt" javaType="java.time.LocalDateTime"/>
+            <arg column="escrowStatus" javaType="java.lang.String"/>
+            <arg column="settlementStatus" javaType="java.lang.String"/>
+            <arg column="settlementDueAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        work_cases.workplace_name은 등록 시점 Snapshot이라 workplaces 조인 없이 바로 읽는다.
+        escrows·settlements는 work_case_id에 uk_escrows_work_case_id·
+        uk_settlements_work_case_id 유일 제약이 있어 LEFT JOIN으로 행이 늘지 않는다.
+        attendance_records도 uk_attendance_records_success가 근무당 유형별 SUCCESS 행을
+        하나로 제한해 같은 이유로 안전하다.
+    -->
+    <sql id="workerHomeAndHistorySelect">
+        SELECT wc.id                AS workCaseId,
+               wc.title              AS title,
+               wc.workplace_name     AS workplaceName,
+               wc.starts_at          AS startsAt,
+               wc.ends_at            AS endsAt,
+               wc.break_minutes      AS breakMinutes,
+               wc.break_paid         AS breakPaid,
+               wc.agreed_wage        AS dailyWage,
+               wc.status             AS status,
+               ar_in.captured_at     AS checkedInAt,
+               ar_in.attempted_at    AS checkInAttemptedAt,
+               ar_out.captured_at    AS checkedOutAt,
+               escrow.status         AS escrowStatus,
+               settlement.status     AS settlementStatus,
+               settlement.due_at     AS settlementDueAt
+        FROM work_cases wc
+        LEFT JOIN escrows escrow
+            ON escrow.work_case_id = wc.id
+        LEFT JOIN settlements settlement
+            ON settlement.work_case_id = wc.id
+        LEFT JOIN attendance_records ar_in
+            ON ar_in.work_case_id = wc.id
+           AND ar_in.attendance_type = 'CHECK_IN'
+           AND ar_in.result = 'SUCCESS'
+        LEFT JOIN attendance_records ar_out
+            ON ar_out.work_case_id = wc.id
+           AND ar_out.attendance_type = 'CHECK_OUT'
+           AND ar_out.result = 'SUCCESS'
+    </sql>
+
+    <!--
+        오늘 후보는 시작일이 오늘인 배정 근무와 전날부터 남은 IN_PROGRESS·CHECK_OUT_MISSING
+        입니다. 이월 하한을 두지 않으면 몇 달 전에 멈춘 IN_PROGRESS가 계속 "오늘 근무"로
+        올라옵니다.
+
+        starts_at에 DATE()를 씌우면 함수가 좌변에 걸려 idx_work_cases_worker_status_start를
+        타지 못하므로, 경계 값을 그대로 비교하는 범위 조건으로 씁니다. 두 구간의 합집합을
+        [carryOverStart, tomorrowStart) 하나로 두고 어제 구간에만 상태 조건을 덧붙여,
+        Index Range Scan 하나로 후보를 좁힙니다.
+
+        상태는 허용 목록으로 적습니다. 정렬 CASE의 ELSE는 순서만 뒤로 보낼 뿐 행을 걸러내지
+        않아, 후보가 그것뿐이면 LIMIT 1이 DRAFT·CANCELED를 그대로 오늘 근무로 돌려줍니다.
+        허용 목록으로 두면 나중에 상태가 추가돼도 검토 전에는 노출되지 않습니다.
+    -->
+    <select id="findTodayCandidate" resultMap="workerHomeCandidateResult">
+        <include refid="workerHomeAndHistorySelect"/>
+        WHERE wc.worker_id = #{workerId}
+          AND wc.status IN ('ACCEPTED', 'READY', 'IN_PROGRESS',
+                            'CHECK_OUT_MISSING', 'COMPLETED', 'NO_SHOW')
+          AND wc.starts_at &gt;= #{carryOverStart}
+          AND wc.starts_at &lt; #{tomorrowStart}
+          AND (
+                wc.starts_at &gt;= #{todayStart}
+                OR wc.status IN ('IN_PROGRESS', 'CHECK_OUT_MISSING')
+              )
+        ORDER BY CASE wc.status
+                     WHEN 'IN_PROGRESS' THEN 1
+                     WHEN 'CHECK_OUT_MISSING' THEN 2
+                     WHEN 'READY' THEN 3
+                     WHEN 'ACCEPTED' THEN 4
+                     WHEN 'COMPLETED' THEN 5
+                     WHEN 'NO_SHOW' THEN 6
+                 END,
+                 wc.starts_at ASC,
+                 wc.id ASC
+        LIMIT 1
+    </select>
+
+    <!--
+        근무 이력은 배정이 확정된 이후 상태만 보여줍니다. DRAFT는 OWNER가 아직 작성 중인
+        초안이고 CANCELED는 배정이 성립하지 않은 근무라, WORKER 본인 이력으로 세면
+        본인이 한 적 없는 근무가 건수와 Page 총계에 섞입니다.
+
+        오늘 근무 후보와 마찬가지로 허용 목록으로 적습니다. 제외 목록으로 두면 나중에
+        상태가 추가될 때 검토 없이 이력에 노출됩니다. 목록과 총계가 같은 조건을 봐야
+        totalElements와 실제 content가 어긋나지 않으므로 두 Query가 이 조각을 함께 씁니다.
+    -->
+    <sql id="workerWorkCaseCondition">
+        wc.worker_id = #{workerId}
+        AND wc.status IN ('ACCEPTED', 'READY', 'IN_PROGRESS',
+                          'CHECK_OUT_MISSING', 'COMPLETED', 'NO_SHOW')
+    </sql>
+
+    <sql id="workerWorkCaseScope">
+        FROM work_cases wc
+        WHERE <include refid="workerWorkCaseCondition"/>
+    </sql>
+
+    <select id="findPage" resultMap="workerWorkCaseResult">
+        <include refid="workerHomeAndHistorySelect"/>
+        WHERE <include refid="workerWorkCaseCondition"/>
+        ORDER BY wc.starts_at DESC, wc.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countByWorker" resultType="long">
+        SELECT COUNT(*)
+        <include refid="workerWorkCaseScope"/>
+    </select>
+
+</mapper>

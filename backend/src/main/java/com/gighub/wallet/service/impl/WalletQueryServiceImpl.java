@@ -5,11 +5,11 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.wallet.dto.WalletBalanceResponse;
-import com.gighub.wallet.dto.WalletSummary;
 import com.gighub.wallet.dto.WalletTransactionItem;
 import com.gighub.wallet.dto.WalletTransactionSearch;
-import com.gighub.wallet.dto.WalletTransactionView;
 import com.gighub.wallet.mapper.WalletQueryMapper;
+import com.gighub.wallet.mapper.result.WalletSummaryRow;
+import com.gighub.wallet.mapper.result.WalletTransactionRow;
 import com.gighub.wallet.service.WalletQueryService;
 import com.gighub.wallet.service.command.WalletTransactionCriteria;
 import lombok.RequiredArgsConstructor;
@@ -39,11 +39,14 @@ public class WalletQueryServiceImpl implements WalletQueryService {
 
     @Override
     public WalletBalanceResponse getWallet(Long userId) {
-        WalletSummary summary = walletQueryMapper.findWalletSummaryByUserId(userId);
+        WalletSummaryRow summary = walletQueryMapper.findWalletSummaryByUserId(userId);
         if (summary == null) {
             throw new ResourceNotFoundException("지갑을 찾을 수 없습니다.");
         }
-        return WalletBalanceResponse.from(CURRENCY_KRW, summary);
+        return WalletBalanceResponse.of(
+                CURRENCY_KRW,
+                summary.getAvailableBalance(),
+                summary.getLockedBalance());
     }
 
     @Override
@@ -122,15 +125,23 @@ public class WalletQueryServiceImpl implements WalletQueryService {
         return keyword.trim();
     }
 
-    private WalletTransactionItem toItem(WalletTransactionView row) {
-        return WalletTransactionItem.from(
-                row,
+    private WalletTransactionItem toItem(WalletTransactionRow row) {
+        // 원장 계산은 Row로 끝낸 뒤 기존 공개 필드만 응답에 복사합니다.
+        return WalletTransactionItem.of(
+                row.getTransactionId(),
+                row.getType(),
+                row.getAmount(),
                 resolveDirection(row),
-                resolveDisplayStatus(row.getType())
-        );
+                row.getAvailableAfter(),
+                row.getLockedAfter(),
+                row.getWorkCaseId(),
+                row.getWorkTitle(),
+                row.getWorkplaceName(),
+                resolveDisplayStatus(row.getType()),
+                row.getCreatedAt());
     }
 
-    private String resolveDirection(WalletTransactionView row) {
+    private String resolveDirection(WalletTransactionRow row) {
         BigInteger beforeTotal = sum(row.getAvailableBefore(), row.getLockedBefore());
         BigInteger afterTotal = sum(row.getAvailableAfter(), row.getLockedAfter());
         int totalChange = afterTotal.compareTo(beforeTotal);

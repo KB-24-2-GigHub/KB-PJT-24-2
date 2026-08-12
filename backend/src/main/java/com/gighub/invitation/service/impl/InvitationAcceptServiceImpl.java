@@ -6,7 +6,11 @@ import com.gighub.contract.ContractArtifactPort;
 import com.gighub.idempotency.IdempotencyClaimResult;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.idempotency.IdempotencyKeys;
-import com.gighub.invitation.dto.InvitationAcceptResponse;
+import com.gighub.invitation.application.InvitationAcceptanceCommand;
+import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.invitation.application.InvitationAcceptanceOutcome;
+import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec;
+import com.gighub.invitation.application.InvitationAcceptanceResult;
 import com.gighub.invitation.exception.InvitationNotFoundException;
 import com.gighub.invitation.mapper.InvitationMapper;
 import com.gighub.invitation.mapper.result.InvitationRow;
@@ -14,6 +18,8 @@ import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
+import lombok.RequiredArgsConstructor;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -30,32 +36,19 @@ import java.util.HexFormat;
  * 새 Transaction으로 같은 행을 지우려 하면 스스로 교착합니다.</p>
  */
 @Service
+@RequiredArgsConstructor
 public class InvitationAcceptServiceImpl implements InvitationAcceptService {
 
     /** 멱등 저장 범위를 나누는 Operation 표지입니다. */
     private static final String OPERATION_CODE = "INVITATION_ACCEPT";
+    private static final int MAX_TRANSACTION_ATTEMPTS = 3;
 
     private final InvitationMapper invitationMapper;
     private final InvitationTokenCodec tokenCodec;
     private final IdempotencyClaimService claimService;
-    private final AcceptAggregateExecutor aggregateExecutor;
-    private final AcceptJson acceptJson;
+    private final InvitationAcceptanceOrchestrator orchestrator;
+    private final InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec;
     private final ContractArtifactPort contractArtifactPort;
-
-    public InvitationAcceptServiceImpl(
-            InvitationMapper invitationMapper,
-            InvitationTokenCodec tokenCodec,
-            IdempotencyClaimService claimService,
-            AcceptAggregateExecutor aggregateExecutor,
-            AcceptJson acceptJson,
-            ContractArtifactPort contractArtifactPort) {
-        this.invitationMapper = invitationMapper;
-        this.tokenCodec = tokenCodec;
-        this.claimService = claimService;
-        this.aggregateExecutor = aggregateExecutor;
-        this.acceptJson = acceptJson;
-        this.contractArtifactPort = contractArtifactPort;
-    }
 
     @Override
     public InvitationAcceptResult accept(
@@ -88,10 +81,16 @@ public class InvitationAcceptServiceImpl implements InvitationAcceptService {
                 fingerprint(tokenHash, invitation.getExpectedTermsVersion()));
         if (claim.isReplay()) {
             return InvitationAcceptResult.replayed(
-                    acceptJson.readResponseBody(claim.getResponseBody()));
+                    replaySnapshotCodec.readResponseBody(claim.getResponseBody()));
         }
 
-        return InvitationAcceptResult.first(runAggregate(principal, invitation, tokenHash, claim));
+        InvitationAcceptanceCommand command = InvitationAcceptanceCommand.of(
+                principal.getUserId(),
+                invitation.getId(),
+                invitation.getWorkCaseId(),
+                tokenHash,
+                claim.getClaimId());
+        return InvitationAcceptResult.first(runAggregate(command));
     }
 
     /**
@@ -100,31 +99,36 @@ public class InvitationAcceptServiceImpl implements InvitationAcceptService {
      * <p>성공하면 임시 저장된 계약서 파일을 최종 위치로 승격시킵니다. Commit이 끝난 뒤라
      * 승격이 실패해도 수락을 되돌리지 않습니다.</p>
      *
-     * <p>실패하면 남은 임시 파일을 정리하고 Claim을 지웁니다. Claim을 남기면 같은 Key로 다시
-     * 시도할 수 없습니다. 반대로 성공 Claim은 본 처리 Transaction 안에서 이미 완료 상태로
-     * Commit됐으므로 손대지 않습니다.</p>
+     * <p>잠금 실패는 남은 임시 파일만 정리하고 같은 Claim으로 새 Transaction 전체를 최대
+     * 세 번 실행합니다. 중간 시도에서 Claim을 지우면 같은 요청의 재시도 단위가 깨집니다.
+     * 비재시도 실패나 최종 소진 때만 Claim을 지우며, 성공 Claim은 본 처리 Transaction 안에서
+     * 이미 완료 상태로 Commit됐으므로 손대지 않습니다.</p>
      */
-    private InvitationAcceptResponse runAggregate(
-            AuthPrincipal principal,
-            InvitationRow invitation,
-            byte[] tokenHash,
-            IdempotencyClaimResult claim) {
-        AcceptAggregateOutcome outcome;
-        try {
-            outcome = aggregateExecutor.execute(
-                    principal,
-                    invitation.getId(),
-                    invitation.getWorkCaseId(),
-                    tokenHash,
-                    claim.getClaimId());
-        } catch (RuntimeException failure) {
-            contractArtifactPort.discardPending(invitation.getWorkCaseId());
-            claimService.abandon(claim.getClaimId());
-            throw failure;
+    private InvitationAcceptanceResult runAggregate(InvitationAcceptanceCommand command) {
+        for (int attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt++) {
+            InvitationAcceptanceOutcome outcome;
+            try {
+                outcome = orchestrator.execute(command);
+            } catch (PessimisticLockingFailureException transientFailure) {
+                // 이 시도의 DB 변경은 새 outer Transaction과 함께 전부 Rollback됐습니다.
+                // 임시 파일만 정리하고 동일 Claim으로 명령 전체를 다시 실행합니다.
+                contractArtifactPort.discardPending(command.getWorkCaseId());
+                if (attempt == MAX_TRANSACTION_ATTEMPTS) {
+                    claimService.abandon(command.getClaimId());
+                    throw transientFailure;
+                }
+                continue;
+            } catch (RuntimeException failure) {
+                contractArtifactPort.discardPending(command.getWorkCaseId());
+                claimService.abandon(command.getClaimId());
+                throw failure;
+            }
+            // promote는 commit 뒤의 best-effort 경계입니다. 이 호출의 실패를 Aggregate 실패로
+            // 분류하거나 이미 COMPLETED인 Claim을 abandon해서는 안 됩니다.
+            contractArtifactPort.promote(outcome.getArtifact());
+            return outcome.getResult();
         }
-
-        contractArtifactPort.promote(outcome.getArtifact());
-        return outcome.getResponse();
+        throw new IllegalStateException("초대 수락 재시도 횟수 계산이 올바르지 않습니다.");
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.invitation.domain.InvitationStatus;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
@@ -74,6 +76,16 @@ class InvitationIssueServiceImplTest {
     }
 
     @Test
+    void issueStopsWhenTheInsertedInvitationTokenHashWasNotUpdated() {
+        mapper.workCase = draftWorkCase(3);
+        mapper.updateTokenHashResult = 0;
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service(STARTS_AT.minusDays(1L)).issue(owner(), WORK_CASE_ID));
+    }
+
+    @Test
     void lockOrderIsWorkCaseThenInvitation() {
         mapper.workCase = draftWorkCase(1);
 
@@ -115,6 +127,19 @@ class InvitationIssueServiceImplTest {
         assertTrue(result.isCreated());
         assertEquals(1, mapper.revokedAt.size(), "이전 Version의 활성 초대를 철회해야 합니다.");
         assertEquals(4, mapper.inserted.get(0).getExpectedTermsVersion());
+    }
+
+    @Test
+    void stalePendingReplacementStopsWhenTheLockedInvitationWasNotRevoked() {
+        mapper.workCase = draftWorkCase(4);
+        mapper.activePending = pendingInvitation(11L, 3, STARTS_AT);
+        mapper.revokeResult = 0;
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service(STARTS_AT.minusDays(1L)).issue(owner(), WORK_CASE_ID));
+
+        assertTrue(mapper.inserted.isEmpty());
     }
 
     @Test
@@ -162,10 +187,12 @@ class InvitationIssueServiceImplTest {
         mapper.workCase = draftWorkCase(1).toBuilder().workerId(9L).build();
         assertLocked(STARTS_AT.minusDays(1L));
 
-        mapper.workCase = draftWorkCase(1).toBuilder().status("ACCEPTED").build();
+        mapper.workCase = draftWorkCase(1).toBuilder()
+                .status(WorkCaseStatus.ACCEPTED).build();
         assertLocked(STARTS_AT.minusDays(1L));
 
-        mapper.workCase = draftWorkCase(1).toBuilder().status("CANCELED").build();
+        mapper.workCase = draftWorkCase(1).toBuilder()
+                .status(WorkCaseStatus.CANCELED).build();
         assertLocked(STARTS_AT.minusDays(1L));
 
         // 시작 시각과 같은 순간부터는 발급할 수 없습니다.
@@ -183,7 +210,7 @@ class InvitationIssueServiceImplTest {
                 .id(11L)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash("token-issued-with-a-retired-secret"))
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(1)
                 .expiresAt(STARTS_AT)
                 .build();
@@ -197,7 +224,8 @@ class InvitationIssueServiceImplTest {
 
     @Test
     void noFailureMessageEchoesAnIssuedToken() {
-        mapper.workCase = draftWorkCase(1).toBuilder().status("ACCEPTED").build();
+        mapper.workCase = draftWorkCase(1).toBuilder()
+                .status(WorkCaseStatus.ACCEPTED).build();
         String token = codec.deriveToken(NEW_INVITATION_ID);
 
         WorkCaseLockedException failure = assertThrows(
@@ -228,6 +256,19 @@ class InvitationIssueServiceImplTest {
                 response.getInviteUrl()
         );
         assertFalse(response.getInviteUrl().contains(codec.deriveToken(11L)));
+    }
+
+    @Test
+    void reissueStopsWhenTheLockedInvitationWasNotRevoked() {
+        mapper.workCase = draftWorkCase(3);
+        mapper.activePending = pendingInvitation(11L, 3, STARTS_AT);
+        mapper.revokeResult = 0;
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service(STARTS_AT.minusDays(1L)).reissue(owner(), WORK_CASE_ID));
+
+        assertTrue(mapper.inserted.isEmpty());
     }
 
     @Test
@@ -271,7 +312,8 @@ class InvitationIssueServiceImplTest {
                 () -> service(STARTS_AT.minusDays(1L)).reissue(owner(), WORK_CASE_ID)
         );
 
-        mapper.workCase = draftWorkCase(1).toBuilder().status("ACCEPTED").build();
+        mapper.workCase = draftWorkCase(1).toBuilder()
+                .status(WorkCaseStatus.ACCEPTED).build();
         assertThrows(
                 WorkCaseLockedException.class,
                 () -> service(STARTS_AT.minusDays(1L)).reissue(owner(), WORK_CASE_ID)
@@ -303,7 +345,7 @@ class InvitationIssueServiceImplTest {
                 .workCaseId(WORK_CASE_ID)
                 .employerId(OWNER_ID)
                 .workerId(null)
-                .status("DRAFT")
+                .status(WorkCaseStatus.DRAFT)
                 .termsVersion(termsVersion)
                 .startsAt(STARTS_AT)
                 .build();
@@ -317,7 +359,7 @@ class InvitationIssueServiceImplTest {
                 .id(invitationId)
                 .workCaseId(WORK_CASE_ID)
                 .tokenHash(codec.hash(codec.deriveToken(invitationId)))
-                .status("PENDING")
+                .status(InvitationStatus.PENDING)
                 .expectedTermsVersion(expectedTermsVersion)
                 .expiresAt(expiresAt)
                 .build();
@@ -342,6 +384,8 @@ class InvitationIssueServiceImplTest {
 
         private InvitationWorkCaseLockRow workCase;
         private InvitationRow activePending;
+        private int revokeResult = 1;
+        private int updateTokenHashResult = 1;
 
         @Override
         public InvitationWorkCaseLockRow lockWorkCaseForIssue(long workCaseId) {
@@ -361,7 +405,7 @@ class InvitationIssueServiceImplTest {
         public int updateTokenHash(long invitationId, byte[] tokenHash) {
             calls.add("updateTokenHash");
             storedTokenHashes.add(tokenHash);
-            return 1;
+            return updateTokenHashResult;
         }
 
         @Override
@@ -381,8 +425,10 @@ class InvitationIssueServiceImplTest {
         public int revokePendingByWorkCaseId(long workCaseId, LocalDateTime at) {
             calls.add("revoke");
             revokedAt.add(at);
-            activePending = null;
-            return 1;
+            if (revokeResult == 1) {
+                activePending = null;
+            }
+            return revokeResult;
         }
     }
 }

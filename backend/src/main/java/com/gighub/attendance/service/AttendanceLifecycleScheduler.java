@@ -1,5 +1,6 @@
 package com.gighub.attendance.service;
 
+import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,18 +55,21 @@ public class AttendanceLifecycleScheduler {
         processPhase(
                 "READY",
                 () -> lifecycleMapper.findReadyCandidateIds(
-                        now.plusMinutes(30), now.minusHours(1), BATCH_SIZE),
+                        AttendanceWindowPolicy.readyLatestStartsAt(now),
+                        AttendanceWindowPolicy.readyEarliestStartsAt(now),
+                        BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToReady);
         processPhase(
                 "NO_SHOW",
-                () -> lifecycleMapper.findNoShowCandidateIds(now.minusHours(1), BATCH_SIZE),
+                () -> lifecycleMapper.findNoShowCandidateIds(
+                        AttendanceWindowPolicy.readyEarliestStartsAt(now), BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToNoShow);
         processPhase(
                 "CHECK_OUT_MISSING",
                 () -> lifecycleMapper.findCheckoutMissingCandidateIds(
-                        now.minusHours(2), BATCH_SIZE),
+                        AttendanceWindowPolicy.checkOutEarliestEndsAt(now), BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToCheckoutMissing);
     }

@@ -20,6 +20,17 @@ public interface QrTokenMapper {
     QrTokenRow findActiveByWorkplaceId(@Param("workplaceId") Long workplaceId);
 
     /**
+     * 활성 고정 QR을 잠그고 읽습니다. 반드시 Transaction 안에서 부릅니다.
+     *
+     * <p>승인된 잠금 순서 {@code workplaces -> qr_tokens -> work_cases}의 두 번째
+     * 단계입니다. 재발급도 workplaces를 먼저 잠근 뒤 이 행을 바꾸므로, 스캔이 같은 순서로
+     * 줄을 서면 폐기된 QR이 뒤늦게 성공하지 않습니다.</p>
+     *
+     * @return 활성 QR이 없으면 {@code null}
+     */
+    QrTokenRow findActiveByWorkplaceIdForUpdate(@Param("workplaceId") Long workplaceId);
+
+    /**
      * 활성 고정 QR 한 건을 저장하고 생성된 식별자를 {@code param.id}에 채웁니다.
      *
      * <p>같은 사업장에 활성 QR이 이미 있으면 부분 유니크가 {@code DuplicateKeyException}을

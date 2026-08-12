@@ -5,8 +5,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gighub.common.api.ApiResponse;
 import com.gighub.config.ApiJsonMapper;
-import com.gighub.contract.dto.ContractTermsSnapshot;
-import com.gighub.invitation.dto.InvitationAcceptResponse;
+import com.gighub.contract.domain.ContractTermsSnapshot;
+import com.gighub.invitation.application.InvitationAcceptanceResult;
+import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -20,7 +21,7 @@ import java.time.Instant;
  * 다시 내보낸 값이 갈라지지 않습니다.</p>
  */
 @Component
-public class AcceptJson {
+public class AcceptJson implements InvitationAcceptanceReplaySnapshotCodec {
 
     private final ObjectMapper objectMapper = ApiJsonMapper.create();
 
@@ -65,8 +66,9 @@ public class AcceptJson {
     }
 
     /** 최초 성공 응답 전체를 Claim에 저장할 문자열로 만듭니다. */
-    public String writeResponseBody(InvitationAcceptResponse response) {
-        return write(ApiResponse.of(response), "수락 응답을 직렬화하지 못했습니다.");
+    @Override
+    public String writeResponseBody(InvitationAcceptanceResult result) {
+        return write(ApiResponse.of(result), "수락 응답을 직렬화하지 못했습니다.");
     }
 
     /**
@@ -74,13 +76,14 @@ public class AcceptJson {
      *
      * <p>Replay는 현재 도메인 상태를 다시 보지 않고 저장한 값만 씁니다.</p>
      */
-    public InvitationAcceptResponse readResponseBody(String storedBody) {
+    @Override
+    public InvitationAcceptanceResult readResponseBody(String storedBody) {
         try {
             JsonNode data = objectMapper.readTree(storedBody).get("data");
             if (data == null) {
                 throw new IllegalStateException("저장된 수락 응답에 data가 없습니다.");
             }
-            return InvitationAcceptResponse.of(
+            return InvitationAcceptanceResult.of(
                     data.get("workCaseId").asLong(),
                     data.get("escrowStatus").asText()
             );

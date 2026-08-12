@@ -90,7 +90,11 @@ public class IdempotencyClaimServiceImpl implements IdempotencyClaimService {
     @Override
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public void abandon(long claimId) {
-        claimMapper.deleteProcessing(claimId);
+        if (claimMapper.deleteProcessing(claimId) != 1) {
+            // 새 Aggregate 실행을 허용하려면 이 요청이 선점한 PROCESSING 행 하나가 반드시
+            // 사라져야 합니다. 0행을 성공으로 넘기면 같은 Key가 24시간 막힐 수 있습니다.
+            throw new IllegalStateException("처리 중인 멱등 Claim을 정리하지 못했습니다.");
+        }
     }
 
     private long insert(

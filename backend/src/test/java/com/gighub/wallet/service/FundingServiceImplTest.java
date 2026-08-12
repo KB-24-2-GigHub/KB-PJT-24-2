@@ -6,6 +6,7 @@ import com.gighub.bank.service.BankAccountPreflightCommand;
 import com.gighub.bank.service.BankTransferCommand;
 import com.gighub.bank.service.BankTransferGateway;
 import com.gighub.bank.service.BankTransferResult;
+import com.gighub.wallet.domain.Money;
 import com.gighub.wallet.dto.FundingOrder;
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
@@ -16,6 +17,7 @@ import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.mapper.FundingMapper;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.FundingOrderParam;
+import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.service.command.FundingCommand;
 import com.gighub.wallet.service.impl.FundingServiceImpl;
@@ -60,6 +62,7 @@ class FundingServiceImplTest {
     private static final String ACCOUNT_NO = "1234567890";
     private static final String PIN = "0000";
     private static final Long AMOUNT = 300_000L;
+    private static final Long WALLET_ID = 50L;
     private static final Long ORDER_ID = 21L;
     private static final Long BANK_TRANSACTION_ID = 31L;
     private static final String KEY = "FUNDING-TEST-001";
@@ -88,7 +91,10 @@ class FundingServiceImplTest {
                     return attempt.get();
                 });
         org.mockito.Mockito.lenient()
-                .when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID))
+                .when(walletMapper.resolveWalletId(EMPLOYER_ID, Money.KRW))
+                .thenReturn(WALLET_ID);
+        org.mockito.Mockito.lenient()
+                .when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
                 .thenReturn(wallet(50L, 700_000L, 20_000L));
         org.mockito.Mockito.lenient()
                 .when(bankTransferGateway.resolveAccountId(BANK_CODE, ACCOUNT_NO))
@@ -113,12 +119,12 @@ class FundingServiceImplTest {
             param.setId(ORDER_ID);
             return 1;
         });
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID))
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
                 .thenReturn(wallet(50L, 700_000L, 20_000L));
         when(bankTransferGateway.withdraw(any())).thenReturn(successfulTransfer());
         when(fundingMapper.completeFundingOrder(
                 ORDER_ID, AMOUNT, BANK_TRANSACTION_ID)).thenReturn(1);
-        when(walletMapper.addAvailableBalance(EMPLOYER_ID, AMOUNT)).thenReturn(1);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
         when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
 
         FundingResult result = fundingService.fund(command(AMOUNT, KEY));
@@ -132,7 +138,8 @@ class FundingServiceImplTest {
         // 호출 순서를 계약으로 고정해 내부 재시도가 잠금 순서 회귀를 가리지 않도록 한다.
         InOrder order =
                 inOrder(fundingMapper, bankTransferGateway, walletMapper);
-        order.verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
+        order.verify(walletMapper).resolveWalletId(EMPLOYER_ID, Money.KRW);
+        order.verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
         order.verify(fundingMapper).insertFundingOrder(any());
         order.verify(bankTransferGateway).preflight(any(BankAccountPreflightCommand.class));
         order.verify(bankTransferGateway).withdraw(any(BankTransferCommand.class));
@@ -141,6 +148,17 @@ class FundingServiceImplTest {
                 ArgumentCaptor.forClass(FundingOrderParam.class);
         verify(fundingMapper).insertFundingOrder(orderCaptor.capture());
         assertEquals(KEY, orderCaptor.getValue().getIdempotencyKey());
+
+        ArgumentCaptor<WalletBalanceUpdateParam> balanceCaptor =
+                ArgumentCaptor.forClass(WalletBalanceUpdateParam.class);
+        verify(walletMapper).updateWalletBalanceByWalletId(balanceCaptor.capture());
+        WalletBalanceUpdateParam balanceUpdate = balanceCaptor.getValue();
+        assertEquals(WALLET_ID, balanceUpdate.getWalletId());
+        assertEquals(Money.KRW, balanceUpdate.getCurrency());
+        assertEquals(700_000L, balanceUpdate.getAvailableBefore());
+        assertEquals(1_000_000L, balanceUpdate.getAvailableAfter());
+        assertEquals(20_000L, balanceUpdate.getLockedBefore());
+        assertEquals(20_000L, balanceUpdate.getLockedAfter());
 
         ArgumentCaptor<WalletTransactionParam> ledgerCaptor =
                 ArgumentCaptor.forClass(WalletTransactionParam.class);
@@ -154,7 +172,7 @@ class FundingServiceImplTest {
 
         verify(walletMapper, never()).getAvailableBalance(anyLong());
         verify(walletMapper, never()).getLockedBalance(anyLong());
-        verify(walletMapper, never()).getWalletIdByUserId(anyLong());
+        verify(walletMapper).resolveWalletId(EMPLOYER_ID, Money.KRW);
     }
 
     @Test
@@ -165,7 +183,7 @@ class FundingServiceImplTest {
         when(fundingMapper.findByIdempotencyKeyForShare(KEY))
                 .thenReturn(completedOrder(AMOUNT));
         when(walletMapper.findFundingTransactionSnapshot(
-                ORDER_ID, EMPLOYER_ID, WalletIdempotencyKeys.funding(KEY)))
+                ORDER_ID, WALLET_ID, WalletIdempotencyKeys.funding(KEY)))
                 .thenReturn(fundingSnapshot(1_000_000L, 20_000L, AMOUNT));
 
         FundingResult result = fundingService.fund(command(AMOUNT, KEY));
@@ -176,8 +194,28 @@ class FundingServiceImplTest {
         assertEquals(BANK_TRANSACTION_ID, result.getBankTransactionId());
         verify(bankTransferGateway, never()).preflight(any());
         verify(bankTransferGateway, never()).withdraw(any());
-        verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
-        verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
+    }
+
+    @Test
+    @DisplayName("충전 Replay는 현재 지갑의 산술 가능 범위와 무관하게 저장 원장을 응답한다")
+    void duplicateReplayIgnoresCurrentWalletOverflow() {
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
+                .thenReturn(wallet(WALLET_ID, Long.MAX_VALUE, 20_000L));
+        when(fundingMapper.insertFundingOrder(any()))
+                .thenThrow(new DuplicateKeyException("duplicate"));
+        when(fundingMapper.findByIdempotencyKeyForShare(KEY))
+                .thenReturn(completedOrder(AMOUNT));
+        when(walletMapper.findFundingTransactionSnapshot(
+                ORDER_ID, WALLET_ID, WalletIdempotencyKeys.funding(KEY)))
+                .thenReturn(fundingSnapshot(1_000_000L, 20_000L, AMOUNT));
+
+        FundingResult result = fundingService.fund(command(AMOUNT, KEY));
+
+        assertTrue(result.isReplayed());
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
+        verify(bankTransferGateway, never()).withdraw(any());
     }
 
     @Test
@@ -195,8 +233,8 @@ class FundingServiceImplTest {
 
         verify(bankTransferGateway, never()).preflight(any());
         verify(bankTransferGateway, never()).withdraw(any());
-        verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
-        verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
     }
 
     @Test
@@ -233,8 +271,8 @@ class FundingServiceImplTest {
 
         verify(bankTransferGateway, never()).preflight(any());
         verify(bankTransferGateway, never()).withdraw(any());
-        verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
-        verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
     }
 
     @Test
@@ -245,7 +283,7 @@ class FundingServiceImplTest {
         when(fundingMapper.findByIdempotencyKeyForShare(KEY))
                 .thenReturn(completedOrder(AMOUNT));
         when(walletMapper.findFundingTransactionSnapshot(
-                ORDER_ID, EMPLOYER_ID, WalletIdempotencyKeys.funding(KEY)))
+                ORDER_ID, WALLET_ID, WalletIdempotencyKeys.funding(KEY)))
                 .thenReturn(null);
 
         assertThrows(
@@ -274,7 +312,7 @@ class FundingServiceImplTest {
                 () -> fundingService.fund(command(AMOUNT, KEY))
         );
 
-        verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
         verify(bankTransferGateway, never()).withdraw(any());
     }
 
@@ -292,7 +330,7 @@ class FundingServiceImplTest {
                 () -> fundingService.fund(command(AMOUNT, KEY))
         );
 
-        verify(walletMapper).getWalletSnapshotForUpdate(EMPLOYER_ID);
+        verify(walletMapper).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
         verify(bankTransferGateway, never()).withdraw(any());
     }
 
@@ -302,7 +340,7 @@ class FundingServiceImplTest {
         WalletBalanceSnapshot corrupted = wallet(50L, 700_000L, 20_000L).toBuilder()
                 .userId(EMPLOYER_ID + 1)
                 .build();
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID))
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
                 .thenReturn(corrupted);
 
         assertThrows(
@@ -312,7 +350,7 @@ class FundingServiceImplTest {
 
         verify(bankTransferGateway, never()).withdraw(any());
         verify(fundingMapper, never()).insertFundingOrder(any());
-        verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
     }
 
     @Test
@@ -330,7 +368,7 @@ class FundingServiceImplTest {
     @Test
     @DisplayName("잠금 충돌 후에는 새 시도로 충전을 완료한다")
     void retryableLockFailureStartsAnotherAttempt() {
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID))
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
                 .thenThrow(new CannotAcquireLockException("lock"))
                 .thenReturn(wallet(50L, 700_000L, 20_000L));
         when(fundingMapper.insertFundingOrder(any()))
@@ -342,14 +380,14 @@ class FundingServiceImplTest {
         when(bankTransferGateway.withdraw(any())).thenReturn(successfulTransfer());
         when(fundingMapper.completeFundingOrder(
                 ORDER_ID, AMOUNT, BANK_TRANSACTION_ID)).thenReturn(1);
-        when(walletMapper.addAvailableBalance(EMPLOYER_ID, AMOUNT)).thenReturn(1);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
         when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
 
         FundingResult result = fundingService.fund(command(AMOUNT, KEY));
 
         assertFalse(result.isReplayed());
         verify(transactionExecutor, times(2)).execute(any());
-        verify(walletMapper, times(2)).getWalletSnapshotForUpdate(EMPLOYER_ID);
+        verify(walletMapper, times(2)).getWalletSnapshotForUpdateByWalletId(WALLET_ID);
         verify(fundingMapper).insertFundingOrder(any());
         verify(bankTransferGateway).withdraw(any());
     }
@@ -360,7 +398,7 @@ class FundingServiceImplTest {
         stubNewFundingUntilTransfer(successfulTransfer());
         when(fundingMapper.completeFundingOrder(
                 ORDER_ID, AMOUNT, BANK_TRANSACTION_ID)).thenReturn(1);
-        when(walletMapper.addAvailableBalance(EMPLOYER_ID, AMOUNT)).thenReturn(1);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
         when(walletMapper.insertWalletTransaction(any()))
                 .thenThrow(new DuplicateKeyException("ledger duplicate"));
 
@@ -440,7 +478,7 @@ class FundingServiceImplTest {
                         .availableBefore(999_999L)
                         .build();
         when(walletMapper.findFundingTransactionSnapshot(
-                ORDER_ID, EMPLOYER_ID, WalletIdempotencyKeys.funding(KEY)))
+                ORDER_ID, WALLET_ID, WalletIdempotencyKeys.funding(KEY)))
                 .thenReturn(snapshot);
 
         assertThrows(
@@ -461,7 +499,7 @@ class FundingServiceImplTest {
                         .lockedBefore(19_999L)
                         .build();
         when(walletMapper.findFundingTransactionSnapshot(
-                ORDER_ID, EMPLOYER_ID, WalletIdempotencyKeys.funding(KEY)))
+                ORDER_ID, WALLET_ID, WalletIdempotencyKeys.funding(KEY)))
                 .thenReturn(snapshot);
 
         assertThrows(
@@ -476,7 +514,7 @@ class FundingServiceImplTest {
             param.setId(ORDER_ID);
             return 1;
         });
-        when(walletMapper.getWalletSnapshotForUpdate(EMPLOYER_ID))
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(WALLET_ID))
                 .thenReturn(wallet(50L, 700_000L, 20_000L));
         when(bankTransferGateway.withdraw(any())).thenReturn(transfer);
     }
@@ -488,7 +526,7 @@ class FundingServiceImplTest {
         );
 
         verify(fundingMapper, never()).completeFundingOrder(anyLong(), anyLong(), anyLong());
-        verify(walletMapper, never()).addAvailableBalance(anyLong(), anyLong());
+        verify(walletMapper, never()).updateWalletBalanceByWalletId(any());
         verify(walletMapper, never()).insertWalletTransaction(any());
     }
 

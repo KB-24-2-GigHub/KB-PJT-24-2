@@ -161,6 +161,13 @@ class IdempotencyClaimServiceImplTest {
         assertEquals(List.of(CLAIM_ID), mapper.abandoned);
     }
 
+    @Test
+    void abandoningFailsWhenTheOwnedProcessingClaimWasNotDeleted() {
+        mapper.deleteProcessingResult = 0;
+
+        assertThrows(IllegalStateException.class, () -> service().abandon(CLAIM_ID));
+    }
+
     private IdempotencyClaimServiceImpl service() {
         return new IdempotencyClaimServiceImpl(
                 mapper, Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL));
@@ -206,6 +213,7 @@ class IdempotencyClaimServiceImplTest {
 
         private IdempotencyClaimRow existing;
         private int completeResult = 1;
+        private int deleteProcessingResult = 1;
 
         @Override
         public int insertProcessing(IdempotencyClaimInsertParam param) {
@@ -237,7 +245,7 @@ class IdempotencyClaimServiceImplTest {
         @Override
         public int deleteProcessing(long claimId) {
             abandoned.add(claimId);
-            return 1;
+            return deleteProcessingResult;
         }
 
         @Override

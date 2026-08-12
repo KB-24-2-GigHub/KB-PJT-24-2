@@ -9,9 +9,15 @@
 /docs/database/ @Flamingo7562
 
 # Governance controls
+/.gitignore @Flamingo7562
 /.github/CODEOWNERS @Flamingo7562
+/.github/ISSUE_TEMPLATE/ @Flamingo7562
 /.github/pull_request_template.md @Flamingo7562
-/docs/agent/PROJECT_RULES.md @Flamingo7562
+/docs/README.md @Flamingo7562
+/docs/GETTING_STARTED.md @Flamingo7562
+/docs/PROJECT_MANAGEMENT_GUIDE.md @Flamingo7562
+/docs/GITHUB_PROJECTS_PANEL_GUIDE.md @Flamingo7562
+/docs/agent/ @Flamingo7562
 /scripts/check-project-guardrails.js @Flamingo7562
 /scripts/check-project-guardrails.test.js @Flamingo7562
 /docs/specs/SPEC_LOCK.json @Flamingo7562

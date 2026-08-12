@@ -1,0 +1,407 @@
+{
+  "schemaVersion": 1,
+  "decisionId": "ADR-RF-02",
+  "sourceIssue": 283,
+  "integrationBranch": "dev2",
+  "logicalModules": [
+    {
+      "id": "member-auth",
+      "packageRoots": ["auth", "member", "badge", "support"],
+      "ownedTables": ["users", "password_reset_tokens", "user_badges"]
+    },
+    {
+      "id": "workplace",
+      "packageRoots": ["workplace"],
+      "ownedTables": ["workplaces"]
+    },
+    {
+      "id": "work",
+      "packageRoots": ["work", "invitation", "contract"],
+      "ownedTables": ["work_cases", "work_invitations", "work_contracts"]
+    },
+    {
+      "id": "attendance",
+      "packageRoots": ["attendance"],
+      "ownedTables": ["qr_tokens", "attendance_records"]
+    },
+    {
+      "id": "wallet",
+      "packageRoots": ["wallet"],
+      "ownedTables": [
+        "wallets",
+        "funding_orders",
+        "withdrawal_requests",
+        "wallet_transactions",
+        "escrows"
+      ]
+    },
+    {
+      "id": "bank-adapter",
+      "packageRoots": ["bank"],
+      "ownedTables": ["mock_bank_accounts", "mock_bank_transactions"]
+    },
+    {
+      "id": "settlement",
+      "packageRoots": ["settlement"],
+      "ownedTables": ["settlements", "disputes"]
+    },
+    {
+      "id": "document",
+      "packageRoots": ["document"],
+      "ownedTables": [
+        "documents",
+        "document_versions",
+        "document_signatures",
+        "document_shares",
+        "document_access_logs"
+      ]
+    },
+    {
+      "id": "idempotency-common",
+      "packageRoots": ["idempotency", "common", "config", "health"],
+      "ownedTables": ["idempotency_requests"]
+    }
+  ],
+  "tableOwnership": [
+    {
+      "table": "users",
+      "owner": "member-auth",
+      "allowedWriterPackage": "com.gighub.member.mapper",
+      "allowedWriterType": "com.gighub.member.mapper.UserMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "password_reset_tokens",
+      "owner": "member-auth",
+      "allowedWriterPackage": "com.gighub.auth.mapper",
+      "allowedWriterType": "com.gighub.auth.mapper.PasswordResetTokenMapper",
+      "currentWriteState": "missing"
+    },
+    {
+      "table": "user_badges",
+      "owner": "member-auth",
+      "allowedWriterPackage": "com.gighub.badge.mapper",
+      "allowedWriterType": "com.gighub.badge.mapper.UserBadgeMapper",
+      "currentWriteState": "missing"
+    },
+    {
+      "table": "workplaces",
+      "owner": "workplace",
+      "allowedWriterPackage": "com.gighub.workplace.mapper",
+      "allowedWriterType": "com.gighub.workplace.mapper.WorkplaceMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "work_cases",
+      "owner": "work",
+      "allowedWriterPackage": "com.gighub.work.mapper",
+      "allowedWriterType": "com.gighub.work.mapper.WorkCaseMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "work_invitations",
+      "owner": "work",
+      "allowedWriterPackage": "com.gighub.invitation.mapper",
+      "allowedWriterType": "com.gighub.invitation.mapper.InvitationMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "work_contracts",
+      "owner": "work",
+      "allowedWriterPackage": "com.gighub.contract.mapper",
+      "allowedWriterType": "com.gighub.contract.mapper.WorkContractMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "qr_tokens",
+      "owner": "attendance",
+      "allowedWriterPackage": "com.gighub.attendance.mapper",
+      "allowedWriterType": "com.gighub.attendance.mapper.QrTokenMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "attendance_records",
+      "owner": "attendance",
+      "allowedWriterPackage": "com.gighub.attendance.mapper",
+      "allowedWriterType": "com.gighub.attendance.mapper.AttendanceRecordMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "wallets",
+      "owner": "wallet",
+      "allowedWriterPackage": "com.gighub.wallet.mapper",
+      "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "funding_orders",
+      "owner": "wallet",
+      "allowedWriterPackage": "com.gighub.wallet.mapper",
+      "allowedWriterType": "com.gighub.wallet.mapper.FundingMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "withdrawal_requests",
+      "owner": "wallet",
+      "allowedWriterPackage": "com.gighub.wallet.mapper",
+      "allowedWriterType": "com.gighub.wallet.mapper.WithdrawalMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "wallet_transactions",
+      "owner": "wallet",
+      "allowedWriterPackage": "com.gighub.wallet.mapper",
+      "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "escrows",
+      "owner": "wallet",
+      "allowedWriterPackage": "com.gighub.wallet.mapper",
+      "allowedWriterType": "com.gighub.wallet.mapper.WalletMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "mock_bank_accounts",
+      "owner": "bank-adapter",
+      "allowedWriterPackage": "com.gighub.bank.mapper",
+      "allowedWriterType": "com.gighub.bank.mapper.MockBankMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "mock_bank_transactions",
+      "owner": "bank-adapter",
+      "allowedWriterPackage": "com.gighub.bank.mapper",
+      "allowedWriterType": "com.gighub.bank.mapper.MockBankMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "settlements",
+      "owner": "settlement",
+      "allowedWriterPackage": "com.gighub.settlement.mapper",
+      "allowedWriterType": "com.gighub.settlement.mapper.SettlementMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "disputes",
+      "owner": "settlement",
+      "allowedWriterPackage": "com.gighub.settlement.mapper",
+      "allowedWriterType": "com.gighub.settlement.mapper.DisputeMapper",
+      "currentWriteState": "missing"
+    },
+    {
+      "table": "documents",
+      "owner": "document",
+      "allowedWriterPackage": "com.gighub.document.mapper",
+      "allowedWriterType": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "document_versions",
+      "owner": "document",
+      "allowedWriterPackage": "com.gighub.document.mapper",
+      "allowedWriterType": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "document_signatures",
+      "owner": "document",
+      "allowedWriterPackage": "com.gighub.document.mapper",
+      "allowedWriterType": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "document_shares",
+      "owner": "document",
+      "allowedWriterPackage": "com.gighub.document.mapper",
+      "allowedWriterType": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "document_access_logs",
+      "owner": "document",
+      "allowedWriterPackage": "com.gighub.document.mapper",
+      "allowedWriterType": "com.gighub.document.mapper.DocumentAccessMapper",
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "idempotency_requests",
+      "owner": "idempotency-common",
+      "allowedWriterPackage": "com.gighub.idempotency.mapper",
+      "allowedWriterType": "com.gighub.idempotency.mapper.IdempotencyClaimMapper",
+      "currentWriteState": "owned"
+    }
+  ],
+  "allowedProviderCalls": [
+    {
+      "consumer": "member-auth",
+      "provider": "workplace",
+      "kind": "query"
+    },
+    {
+      "consumer": "member-auth",
+      "provider": "wallet",
+      "kind": "command-participant"
+    },
+    {
+      "consumer": "workplace",
+      "provider": "attendance",
+      "kind": "command-participant"
+    },
+    {
+      "consumer": "work",
+      "provider": "member-auth",
+      "kind": "query"
+    },
+    {
+      "consumer": "work",
+      "provider": "workplace",
+      "kind": "query"
+    },
+    {
+      "consumer": "attendance",
+      "provider": "work",
+      "kind": "command"
+    },
+    {
+      "consumer": "attendance",
+      "provider": "workplace",
+      "kind": "query"
+    },
+    {
+      "consumer": "attendance",
+      "provider": "document",
+      "kind": "query"
+    },
+    {
+      "consumer": "wallet",
+      "provider": "bank-adapter",
+      "kind": "adapter"
+    },
+    {
+      "consumer": "settlement",
+      "provider": "work",
+      "kind": "query-command-participant"
+    },
+    {
+      "consumer": "settlement",
+      "provider": "wallet",
+      "kind": "command-participant"
+    },
+    {
+      "consumer": "document",
+      "provider": "work",
+      "kind": "query"
+    }
+  ],
+  "orchestrators": [
+    {
+      "id": "signup",
+      "transactionOwner": "member-auth.application",
+      "participants": ["member-auth", "wallet"]
+    },
+    {
+      "id": "workplace-create",
+      "transactionOwner": "workplace.application",
+      "participants": ["workplace", "attendance"]
+    },
+    {
+      "id": "invitation-acceptance",
+      "transactionOwner": "work.application.orchestration",
+      "participants": [
+        "idempotency-common",
+        "work",
+        "wallet",
+        "document",
+        "settlement"
+      ]
+    },
+    {
+      "id": "settlement-payout",
+      "transactionOwner": "settlement.application.orchestration",
+      "participants": ["idempotency-common", "work", "settlement", "wallet"]
+    }
+  ],
+  "queryExceptions": [
+    {
+      "id": "QX-001",
+      "mapper": "com.gighub.work.mapper.WorkCaseMapper",
+      "crossModuleTables": [
+        "users",
+        "workplaces",
+        "attendance_records",
+        "escrows",
+        "settlements",
+        "documents"
+      ],
+      "purpose": "work list and detail projection",
+      "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-002",
+      "mapper": "com.gighub.wallet.mapper.WalletQueryMapper",
+      "crossModuleTables": ["work_cases", "workplaces"],
+      "purpose": "wallet transaction projection",
+      "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-003",
+      "mapper": "com.gighub.document.mapper.DocumentQueryMapper",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "role-scoped document list and share history projection",
+      "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-004",
+      "mapper": "com.gighub.document.mapper.DocumentAccessMapper",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "contract-party and health-share access authorization projection",
+      "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-005",
+      "mapper": "com.gighub.attendance.mapper.AttendanceLifecycleMapper",
+      "crossModuleTables": [
+        "work_cases",
+        "work_invitations",
+        "work_contracts",
+        "escrows",
+        "settlements",
+        "workplaces",
+        "documents",
+        "document_versions",
+        "document_signatures",
+        "document_shares"
+      ],
+      "purpose": "attendance lifecycle candidate and readiness projection",
+      "crossTableWriteAllowed": false
+    }
+  ],
+  "temporaryViolations": [
+    {
+      "id": "TV-010",
+      "kind": "acceptance-client-replay-recovery-gap",
+      "target": "client reload and response-loss replay key recovery; implementation issue missing",
+      "ownerIssues": [160, 267]
+    }
+  ],
+  "guardRules": {
+    "controllerMayImportMapper": false,
+    "crossModuleMapperImport": false,
+    "queryExceptionMayWrite": false,
+    "domainForbiddenImportPrefixes": [
+      "org.springframework",
+      "org.apache.ibatis",
+      "javax.servlet",
+      "jakarta.servlet",
+      "javax.validation",
+      "jakarta.validation",
+      "com.fasterxml.jackson"
+    ],
+    "domainForbiddenImportRegexes": [
+      "^com\\.gighub\\..*\\.controller\\.",
+      "^com\\.gighub\\..*\\.dto\\.",
+      "^com\\.gighub\\..*\\.mapper\\."
+    ]
+  }
+}

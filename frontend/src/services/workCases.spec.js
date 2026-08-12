@@ -129,20 +129,24 @@ describe('workCases service', () => {
   })
 })
 
-describe('workCases service — M6 범위(정산·연락처·분쟁)는 항상 Mock', () => {
+describe('workCases service — 미구현 정산·연락처·분쟁은 fail-closed', () => {
   beforeEach(() => {
     http.get.mockReset()
     http.post.mockReset()
   })
 
-  it('실행 환경과 무관하게 정산·연락처·분쟁은 실제 HTTP를 호출하지 않는다', async () => {
+  it('Production 기본 선택은 fake success 대신 명시 Unavailable을 반환한다', async () => {
     const { approveSettlement, getOwnerContact, listReports, createReport } =
       await import('@/services/workCases')
 
-    await approveSettlement(1)
-    await getOwnerContact(1)
-    await listReports(1)
-    await createReport(1, { content: '내용' })
+    for (const action of [
+      () => approveSettlement(1),
+      () => getOwnerContact(1),
+      () => listReports(1),
+      () => createReport(1, { content: '내용' })
+    ]) {
+      await expect(action()).rejects.toMatchObject({ code: 'FEATURE_UNAVAILABLE' })
+    }
 
     expect(http.get).not.toHaveBeenCalled()
     expect(http.post).not.toHaveBeenCalled()

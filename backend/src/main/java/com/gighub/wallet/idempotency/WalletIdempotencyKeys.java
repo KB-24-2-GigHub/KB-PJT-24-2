@@ -25,12 +25,12 @@ public final class WalletIdempotencyKeys {
         return encode("EHLD", rawKey);
     }
 
-    public static String escrowReleaseEmployer(String rawKey) {
-        return encode("ERLO", rawKey);
+    public static String settlementReleaseOwner(long settlementId) {
+        return encodeSettlement("SETTLEMENT_RELEASE_OWNER", settlementId);
     }
 
-    public static String escrowReleaseWorker(String rawKey) {
-        return encode("ERLI", rawKey);
+    public static String settlementReleaseWorker(long settlementId) {
+        return encodeSettlement("SETTLEMENT_RELEASE_WORKER", settlementId);
     }
 
     public static String withdrawal(String rawKey) {
@@ -50,6 +50,14 @@ public final class WalletIdempotencyKeys {
         String validatedKey = validateRawKey(rawKey);
         String source = scope + '\0' + validatedKey;
         return scope + ':' + sha256(source);
+    }
+
+    private static String encodeSettlement(String namespace, long settlementId) {
+        if (settlementId <= 0) {
+            throw new IllegalArgumentException("정산 식별자는 양수여야 합니다.");
+        }
+        String source = namespace + '\0' + settlementId;
+        return namespace + ':' + sha256(source);
     }
 
     private static String sha256(String value) {

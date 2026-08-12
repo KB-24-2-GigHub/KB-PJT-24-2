@@ -6,91 +6,105 @@ body:
   - type: markdown
     attributes:
       value: |
-        버그 이슈 제목은 `fix: [AREA] 작업 요약` 형식으로 작성합니다.
-        예시: `fix: [BE] 세션 만료 시 리다이렉트 오류`
-
-        AREA tag: `[FE]`, `[BE]`, `[DB]`, `[COMMON]`, `[DOCS]`, `[GITHUB]`, `[HOOK]`, `[INFRA]`
-  - type: input
-    id: summary
+        제목은 `fix: [AREA] 작업 요약` 형식으로 작성합니다.
+        재현 사실과 수정 완료 조건을 분리하고, API나 DB에 영향이 있을 때만 해당 선택 필드를 작성합니다.
+  - type: textarea
+    id: goal
     attributes:
-      label: 요약
-      description: 어떤 문제가 발생했는지 한 문장으로 적습니다.
-      placeholder: 예) 로그인 실패 시 에러 메시지가 표시되지 않는다.
-    validations:
-      required: true
-  - type: dropdown
-    id: area
-    attributes:
-      label: 영역
-      options:
-        - "[FE] Frontend"
-        - "[BE] Backend"
-        - "[DB] Database"
-        - "[COMMON] Common"
-        - "[DOCS] Docs"
-        - "[GITHUB] GitHub"
-        - "[HOOK] Hook"
-        - "[INFRA] Infra"
+      label: 수정 목표
+      description: 어떤 기대 동작을 복원할지 한 문단으로 적습니다.
     validations:
       required: true
   - type: textarea
-    id: steps
+    id: reproduction
     attributes:
-      label: 재현 절차
-      description: 누구나 같은 문제를 재현할 수 있도록 단계별로 적습니다.
+      label: 재현 절차와 현재 결과
       placeholder: |
-        1. 문제가 발생하기 전 상태를 준비한다.
-        2. 문제가 발생하는 동작을 수행한다.
-        3. 화면, 응답 또는 로그를 확인한다.
-    validations:
-      required: true
-  - type: textarea
-    id: expected
-    attributes:
-      label: 기대 결과
-      description: 정상이라면 어떤 동작이어야 하는지 적습니다.
-    validations:
-      required: true
-  - type: textarea
-    id: actual
-    attributes:
-      label: 실제 결과
-      description: 실제로 발생한 동작, 에러 메시지, 로그를 적습니다.
+        1. 선행 상태를 준비한다.
+        2. 문제 동작을 수행한다.
+        3. 실제 응답·화면·로그를 기록한다.
     validations:
       required: true
   - type: textarea
     id: acceptance
     attributes:
       label: 완료 조건
-      description: 문제 해결 여부를 PR 머지 전에 확인할 수 있는 기준을 적습니다.
+      description: 수정과 회귀 방지를 확인할 3~7개 조건을 적습니다.
       placeholder: |
-        - [ ] 같은 절차에서 문제가 다시 발생하지 않는다.
-        - [ ] 관련 정상 흐름에 회귀가 없다.
+        - [ ] 같은 절차에서 기대 결과가 나온다.
+        - [ ] 인접 정상 흐름에 회귀가 없다.
+        - [ ] 관련 검증 결과가 PR에 남는다.
     validations:
       required: true
   - type: textarea
-    id: environment
+    id: non_goals
     attributes:
-      label: 실행 환경
-      value: |
-        - OS:
-        - Browser:
-        - Java:
-        - WAS:
-        - DB:
-  - type: textarea
-    id: logs
+      label: 비범위
+      description: 재현 문제와 함께 바꾸지 않을 인접 동작을 적습니다.
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
     attributes:
-      label: 로그 / 스크린샷
-      description: 필요한 경우 에러 로그나 화면 캡처를 첨부합니다.
+      label: 위험도
+      options:
+        - R0 — 문구·비동작 메타데이터
+        - R1 — 국소 UI·문서·테스트
+        - R2 — 일반 애플리케이션 동작·구조
+        - R3 — 보안·금액·Schema·통합 경계
+    validations:
+      required: true
   - type: input
-    id: related-issues
+    id: primary_module
     attributes:
-      label: 관련 이슈
-      description: GitHub 이슈 번호를 #12, #34 형식으로 적습니다.
-      placeholder: "#12, #34"
+      label: 주 모듈
+      placeholder: wallet
+    validations:
+      required: true
+  - type: textarea
+    id: affected_modules
+    attributes:
+      label: 영향 모듈
+      description: 직접 수정되거나 회귀 검증이 필요한 모듈만 적습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: required_operations
+    attributes:
+      label: 관련 Operation (API 영향 시만)
+      description: 영향받는 Method/Path 또는 Operation ID를 적습니다. API 영향이 없으면 비워 둡니다.
+  - type: textarea
+    id: migration_scope
+    attributes:
+      label: Migration 범위 (DB 영향 및 승인 시만)
+      description: PM/Admin이 승인한 table, invariant, 신규 Flyway 범위와 검증을 적습니다. 버그 자체로 권한을 추론하지 않습니다.
+      placeholder: |
+        - 승인 근거:
+        - 대상 table/invariant:
+        - 신규 Migration:
+        - disposable/local DB 검증:
+  - type: textarea
+    id: verification
+    attributes:
+      label: 검증
+      description: 재현 테스트, 회귀 테스트와 필요한 build/DB 검증을 적습니다.
+    validations:
+      required: true
+  - type: textarea
+    id: depends_on
+    attributes:
+      label: 선행 이슈
+      description: 직접 blocked-by 이슈를 적고 GitHub native dependency도 연결합니다. 없으면 `N/A`를 적습니다.
+      placeholder: "#123 또는 N/A"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 로그 / 스크린샷 / 참고
+      description: 민감정보를 제거한 재현 증거와 관련 계약·Parent 이슈를 링크합니다.
   - type: checkboxes
-    id: title-convention
+    id: title_convention
     attributes:
       label: 제목 컨벤션 확인
       options:

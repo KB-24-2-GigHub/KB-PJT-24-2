@@ -4,6 +4,8 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
+import com.gighub.invitation.domain.InvitationDecision;
+import com.gighub.invitation.domain.InvitationPolicy;
 import com.gighub.invitation.dto.InvitationDetailResponse;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
@@ -16,6 +18,8 @@ import com.gighub.invitation.mapper.result.InvitationWorkCaseRow;
 import com.gighub.invitation.service.InvitationQueryService;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,12 +41,6 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
 
     /** DB의 DATETIME은 Asia/Seoul 벽시계 값이므로 비교 기준 시각도 같은 지역으로 만듭니다. */
     private static final ZoneId DATABASE_ZONE = ZoneId.of("Asia/Seoul");
-
-    private static final String PENDING = "PENDING";
-    private static final String ACCEPTED = "ACCEPTED";
-    private static final String REVOKED = "REVOKED";
-    private static final String EXPIRED = "EXPIRED";
-    private static final String WORK_CASE_DRAFT = "DRAFT";
 
     private static final String UNUSABLE_INVITATION = "초대 상태를 다시 확인해 주세요.";
 
@@ -94,8 +92,7 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
             throw new InvitationNotFoundException();
         }
 
-        requireUsableStatus(invitation);
-        requireNotExpired(invitation);
+        requireUsableInvitation(invitation);
 
         InvitationWorkCaseRow workCase = Objects.requireNonNull(
                 invitationMapper.findWorkCaseForInvitation(invitation.getWorkCaseId()),
@@ -127,34 +124,25 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
      * <p>어떤 경우에도 근무 조건은 응답에 담기지 않으므로, 상태를 구분해도 초대 내용이
      * 새지 않습니다.</p>
      */
-    private void requireUsableStatus(InvitationRow invitation) {
-        String status = invitation.getStatus();
-        if (ACCEPTED.equals(status)) {
-            throw new InvitationAlreadyAcceptedException();
-        }
-        if (REVOKED.equals(status)) {
-            throw new InvitationRevokedException();
-        }
-        if (EXPIRED.equals(status)) {
-            throw new InvitationExpiredException();
-        }
-        if (!PENDING.equals(status)) {
-            // 승인 계약에 없는 상태는 조용히 통과시키지 않고 공통 충돌로 끊습니다.
-            throw new ConflictException(UNUSABLE_INVITATION);
-        }
-    }
-
-    /**
-     * 만료 시각을 지난 {@code PENDING}은 이 Transaction에서 {@code EXPIRED}로 확정합니다.
-     *
-     * <p>상태를 바꾸지 않고 오류만 내면 만료된 초대가 활성 Slot을 계속 차지해 OWNER가 새
-     * 초대를 발급할 수 없습니다.</p>
-     */
-    private void requireNotExpired(InvitationRow invitation) {
-        LocalDateTime now = LocalDateTime.now(clock);
-        if (!now.isBefore(invitation.getExpiresAt())) {
-            invitationMapper.markExpired(invitation.getId());
-            throw new InvitationExpiredException();
+    private void requireUsableInvitation(InvitationRow invitation) {
+        InvitationDecision decision = InvitationPolicy.decideUse(
+                invitation.getStatus(), invitation.getExpiresAt(), LocalDateTime.now(clock));
+        switch (decision) {
+            case USABLE -> {
+                return;
+            }
+            case ALREADY_ACCEPTED -> throw new InvitationAlreadyAcceptedException();
+            case REVOKED -> throw new InvitationRevokedException();
+            case EXPIRED -> throw new InvitationExpiredException();
+            case EXPIRE_NOW -> {
+                // 410과 함께 전이를 보존해 활성 PENDING Slot을 해제합니다.
+                if (invitationMapper.markExpired(invitation.getId()) != 1) {
+                    throw new IllegalStateException("잠근 PENDING 초대를 만료시키지 못했습니다.");
+                }
+                throw new InvitationExpiredException();
+            }
+            case TERMS_CHANGED, UNSUPPORTED_STATUS ->
+                    throw new ConflictException(UNUSABLE_INVITATION);
         }
     }
 
@@ -165,17 +153,24 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
      * 실제 계약 내용과 화면이 어긋납니다.</p>
      */
     private void requireUnchangedTerms(InvitationRow invitation, InvitationWorkCaseRow workCase) {
-        if (!workCase.getTermsVersion().equals(invitation.getExpectedTermsVersion())) {
+        InvitationDecision decision = InvitationPolicy.decideTerms(
+                invitation.getExpectedTermsVersion(), workCase.getTermsVersion());
+        if (decision == InvitationDecision.TERMS_CHANGED) {
             throw new InvitationTermsChangedException();
         }
     }
 
     /** 이미 당사자가 정해졌거나 확정할 수 없는 상태의 근무는 조건을 보여 주지 않습니다. */
     private void requireAcceptableWorkCase(InvitationWorkCaseRow workCase) {
-        if (workCase.getWorkerId() != null) {
+        WorkCaseDecision decision = WorkCasePolicy.decideInvitationAccept(
+                workCase.getStatus(),
+                workCase.getWorkerId(),
+                workCase.getStartsAt(),
+                LocalDateTime.now(clock));
+        if (decision == WorkCaseDecision.WORKER_ALREADY_ASSIGNED) {
             throw new InvitationAlreadyAcceptedException();
         }
-        if (!WORK_CASE_DRAFT.equals(workCase.getStatus())) {
+        if (decision != WorkCaseDecision.ALLOWED) {
             throw new ConflictException(UNUSABLE_INVITATION);
         }
     }

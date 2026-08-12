@@ -2,7 +2,9 @@ package com.gighub.work.service.impl;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import com.gighub.auth.security.AuthPrincipal;
@@ -14,6 +16,8 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.common.exception.WorkCaseLockedException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.work.domain.WorkCaseAddress;
+import com.gighub.work.domain.WorkCaseDecision;
+import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.domain.WorkCaseTimes;
 import com.gighub.work.dto.WorkCaseDetailResponse;
@@ -23,26 +27,31 @@ import com.gighub.work.mapper.WorkCaseMapper;
 import com.gighub.work.mapper.param.WorkCaseInsertParam;
 import com.gighub.work.mapper.param.WorkCaseListQuery;
 import com.gighub.work.mapper.param.WorkCaseTermsUpdateParam;
+import com.gighub.work.mapper.result.AttendanceSummaryRow;
 import com.gighub.work.mapper.result.ContractDetailRow;
+import com.gighub.work.mapper.result.EscrowSummaryRow;
+import com.gighub.work.mapper.result.LatestInvitationRow;
 import com.gighub.work.mapper.result.OwnedWorkplaceSnapshotRow;
+import com.gighub.work.mapper.result.SettlementSummaryRow;
 import com.gighub.work.mapper.result.WorkCaseDetailRow;
+import com.gighub.work.mapper.result.WorkCaseListRow;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.service.WorkCaseService;
 import com.gighub.work.service.command.WorkCaseCreateCommand;
 import com.gighub.work.service.command.WorkCaseUpdateCommand;
+import com.gighub.invitation.mapper.InvitationMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 승인된 근무 {@code DRAFT} 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
-
-    public WorkCaseServiceImpl(WorkCaseMapper workCaseMapper) {
-        this.workCaseMapper = workCaseMapper;
-    }
+    private final InvitationMapper invitationMapper;
 
     @Override
     @Transactional
@@ -107,10 +116,12 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
         // 행을 이미 잠그고 DRAFT임을 확인했으므로 이 UPDATE는 반드시 1행을 바꿉니다. 0이면
         // 잠금과 갱신 사이의 가정이 깨진 것이라 방어적으로 다루지 않고 그대로 드러냅니다.
-        workCaseMapper.updateDraftTerms(param);
+        if (workCaseMapper.updateDraftTerms(param) != 1) {
+            throw new IllegalStateException("잠근 DRAFT 근무 조건을 갱신하지 못했습니다.");
+        }
         // 조건이 바뀌면 이전 조건으로 발급된 PENDING 초대는 더 이상 유효하지 않습니다.
         // 활성 PENDING은 근무당 하나뿐이라 Version별 조건 없이 그대로 철회합니다.
-        workCaseMapper.revokePendingInvitations(command.getWorkCaseId());
+        invitationMapper.revokePendingByWorkCaseIdNow(command.getWorkCaseId());
     }
 
     @Override
@@ -127,10 +138,12 @@ public class WorkCaseServiceImpl implements WorkCaseService {
             return;
         }
 
-        workCaseMapper.revokePendingInvitations(workCaseId);
+        invitationMapper.revokePendingByWorkCaseIdNow(workCaseId);
         // CANCELED 전이는 status 등 일부 컬럼만 바꾸는 UPDATE라 자식 테이블의 FK RESTRICT를
         // 건드리지 않습니다. 행 자체를 지우는 DELETE만 참조 무결성 위반 가능성이 있습니다.
-        workCaseMapper.cancelDraft(workCaseId);
+        if (workCaseMapper.cancelDraft(workCaseId) != 1) {
+            throw new IllegalStateException("잠근 DRAFT 근무를 취소하지 못했습니다.");
+        }
     }
 
     @Override
@@ -143,8 +156,10 @@ public class WorkCaseServiceImpl implements WorkCaseService {
             throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
         }
 
-        return WorkCaseSummaryResponse.from(
-                workCaseMapper.countByStatus(workplaceId, principal.getUserId()));
+        Map<WorkCaseStatus, Long> counts = new EnumMap<>(WorkCaseStatus.class);
+        workCaseMapper.countByStatus(workplaceId, principal.getUserId())
+                .forEach(row -> counts.put(row.getStatus(), row.getCaseCount()));
+        return WorkCaseSummaryResponse.of(counts);
     }
 
     @Override
@@ -180,7 +195,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
         long totalElements = workCaseMapper.countByFilters(query);
         List<WorkCaseListItemResponse> content = workCaseMapper.findPageByFilters(query).stream()
-                .map(WorkCaseListItemResponse::from)
+                .map(this::toListItemResponse)
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
@@ -195,13 +210,78 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
         requireParty(principal, row);
 
-        return WorkCaseDetailResponse.from(
+        return toDetailResponse(
                 row,
                 workCaseMapper.findLatestInvitation(workCaseId),
                 requireContractIntegrity(workCaseId),
                 workCaseMapper.findAttendanceTimestamps(workCaseId),
                 workCaseMapper.findEscrow(workCaseId),
                 workCaseMapper.findSettlement(workCaseId));
+    }
+
+    /** SQL Row를 API 응답으로 바꾸는 책임을 persistence DTO 밖의 Application 경계에 둡니다. */
+    private WorkCaseListItemResponse toListItemResponse(WorkCaseListRow row) {
+        return WorkCaseListItemResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getWorkerId(),
+                row.getWorkerName());
+    }
+
+    private WorkCaseDetailResponse toDetailResponse(
+            WorkCaseDetailRow row,
+            LatestInvitationRow invitation,
+            ContractDetailRow contract,
+            AttendanceSummaryRow attendance,
+            EscrowSummaryRow escrow,
+            SettlementSummaryRow settlement) {
+        return WorkCaseDetailResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getBreakMinutes(),
+                row.getBreakPaid(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getTermsVersion(),
+                row.getWorkplaceName(),
+                row.getWorkplaceAddress(),
+                row.getWorkerId() == null
+                        ? null
+                        : WorkCaseDetailResponse.WorkerSummary.of(
+                                row.getWorkerId(), row.getWorkerName()),
+                invitation == null
+                        ? null
+                        : WorkCaseDetailResponse.InvitationSummary.of(
+                                invitation.getStatus(),
+                                invitation.getTermsVersion(),
+                                invitation.getExpiresAt()),
+                contract == null
+                        ? null
+                        : WorkCaseDetailResponse.ContractSummary.of(
+                                contract.getContractId(),
+                                contract.getDocumentId(),
+                                contract.getSourceTermsVersion(),
+                                contract.getAcceptedAt()),
+                WorkCaseDetailResponse.AttendanceSummary.of(
+                        attendance == null ? null : attendance.getCheckedInAt(),
+                        attendance == null ? null : attendance.getCheckedOutAt()),
+                escrow == null
+                        ? null
+                        : WorkCaseDetailResponse.EscrowSummary.of(
+                                escrow.getStatus(), escrow.getAmount()),
+                settlement == null
+                        ? null
+                        : WorkCaseDetailResponse.SettlementSummary.of(
+                                settlement.getStatus(),
+                                settlement.getAmount(),
+                                settlement.getDueAt(),
+                                settlement.getCompletedAt()));
     }
 
     /**
@@ -260,7 +340,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
      */
     private void deleteOrReportLocked(Long workCaseId) {
         try {
-            workCaseMapper.deleteDraft(workCaseId);
+            if (workCaseMapper.deleteDraft(workCaseId) != 1) {
+                throw new IllegalStateException("잠근 DRAFT 근무를 삭제하지 못했습니다.");
+            }
         } catch (DataIntegrityViolationException referenced) {
             throw new WorkCaseLockedException("참조 중인 근무는 삭제할 수 없습니다.");
         }
@@ -292,7 +374,8 @@ public class WorkCaseServiceImpl implements WorkCaseService {
     }
 
     private void requireDraft(WorkCaseLockRow lock) {
-        if (lock.getStatus() != WorkCaseStatus.DRAFT) {
+        WorkCaseDecision decision = WorkCasePolicy.decideDraftMutation(lock.getStatus());
+        if (decision != WorkCaseDecision.ALLOWED) {
             throw new WorkCaseLockedException("DRAFT 상태의 근무만 처리할 수 있습니다.");
         }
     }
