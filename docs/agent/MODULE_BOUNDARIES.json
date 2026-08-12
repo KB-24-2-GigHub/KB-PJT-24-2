@@ -389,12 +389,6 @@
       "kind": "acceptance-client-replay-recovery-gap",
       "target": "client reload and response-loss replay key recovery; implementation issue missing",
       "ownerIssues": [160, 267]
-    },
-    {
-      "id": "TV-011",
-      "kind": "database-lifecycle-constraint-gap",
-      "target": "state-dependent nullable and timestamp combinations",
-      "ownerIssues": [292]
     }
   ],
   "guardRules": {

@@ -9,7 +9,7 @@
 | 소유 이슈          | GitHub #283                                        |
 | 적용 브랜치        | `dev2`                                             |
 | 기준 코드          | `7e45ad3e8227de56298b2f5ceafb5a4b5933c060`         |
-| 기준 Schema        | Flyway `202608061428`, 24개 Domain table           |
+| 기준 Schema        | Flyway `202608121403`, 24개 Domain table           |
 | 기계 판독 Manifest | [`MODULE_BOUNDARIES.json`](MODULE_BOUNDARIES.json) |
 
 이 문서는 업무 책임, 테이블 쓰기 소유권, 공개 Application 경계, Transaction 조정 위치의
@@ -309,7 +309,6 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 | -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
 | `TV-009` | Work/Invitation Service와 SQL의 상태 문자열                                           | 장기 생명주기 정책 분산                            | #286                      |
 | `TV-010` | 새로고침·재로그인 뒤 client replay key                                               | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
-| `TV-011` | lifecycle별 nullable/timestamp 조합                                                   | Application 정책과 DB 구조 방어 간 공백            | #292                      |
 
 `attendance_records`, `disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의
 리팩터링 위반을 고치기 위한 신규 기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를

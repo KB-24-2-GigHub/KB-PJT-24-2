@@ -10,23 +10,26 @@ This is the compact database context for repository agents. Read it before chang
 | Last verified          | 2026-08-12                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
-| Migration head         | `202608112307`                                                                                                 |
-| Versioned migrations   | 15                                                                                                             |
+| Migration head         | `202608121403`                                                                                                 |
+| Versioned migrations   | 19                                                                                                             |
 | Domain tables          | 24, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
-| Readable DDL snapshot  | [`schema-snapshot-202608112307.sql`](../database/schema-snapshot-202608112307.sql), owner-maintained reference |
+| Readable DDL snapshot  | [`schema-snapshot-202608121403.sql`](../database/schema-snapshot-202608121403.sql), owner-maintained reference |
 
 When this summary and executable configuration disagree, inspect the owner-authored or
 owner-adopted migrations, Git tracking, `compose.yaml`, `DatabaseConfig.java`, and
-`backend/build.gradle`. Versions `202607311427` through `202608112307` are approved parts of the
+`backend/build.gradle`. Versions `202607311427` through `202608121403` are approved parts of the
 current schema. Version `202608041614` adds the independent idempotency Claim store, and version
 `202608051337` replaces Mock bank-account user ownership with a four-digit Demo PIN while preserving
 account IDs and finance references. Version `202608061428` adds document-Version and structured
 denial-reason detail to document access audit rows without rewriting historical rows. Version
 `202608111743` closes the audit `action` and `denial_reason` value sets, and `202608111744` separately
-closes the `user_badges.badge_type` value set. Keeping one MySQL `ALTER TABLE` statement per Flyway
-version makes a cross-table failure visible and retryable by version. Update this document when those
-authoritative sources prove the summary is stale.
+closes the `user_badges.badge_type` value set. Versions `202608121400` through `202608121403` add the
+currently proven funding, withdrawal, escrow, and work-cancellation lifecycle shapes. Each of those
+versions performs a count-only preflight, makes no guessed backfill, and owns one table-level
+`ALTER TABLE`. Recovery accepts an already present constraint only when its name, type, enforced state,
+and normalized MySQL CHECK-clause SHA-256 exactly match the migration. Update this document when those authoritative
+sources prove the summary is stale.
 If the executable schema itself needs correction, report the required change to the owner and do
 not edit or regenerate SQL.
 
@@ -60,6 +63,10 @@ not edit or regenerate SQL.
 | `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql` | Restrict audit `action` and audit `denial_reason` to the approved value sets                            |
 | `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`        | Restrict `user_badges.badge_type` to `TRUST_OWNER` and `TRUST_WORKER`                                  |
 | `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql` | Add settlement refund/retry lifecycle constraints and the required dispute title                        |
+| `202608121400` | `V202608121400__add_funding_order_lifecycle_check.sql`    | Constrain proven `READY` and `COMPLETED` funding-order result shapes                                   |
+| `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql` | Constrain proven `READY` and `COMPLETED` withdrawal result shapes                                    |
+| `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`           | Constrain timestamp shapes for `UNFUNDED`, `HELD`, `RELEASED`, and `REFUNDED` escrow states            |
+| `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`     | Require `canceled_at` exactly for `CANCELED` work cases                                                |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
 
@@ -95,6 +102,7 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - A `work_case` has one employer, an optional worker until assignment, one workplace, positive agreed wage, valid start/end times, and a lifecycle status constrained to `DRAFT`, `ACCEPTED`, `READY`, `IN_PROGRESS`, `CHECK_OUT_MISSING`, `COMPLETED`, `NO_SHOW`, or `CANCELED`.
 - Invitation delivery and response states belong to `work_invitations`; an unaccepted work case remains `DRAFT`.
 - `ACCEPTED`, `READY`, `IN_PROGRESS`, `CHECK_OUT_MISSING`, `COMPLETED`, and `NO_SHOW` work-case states require a worker.
+- `CANCELED` requires `canceled_at`, while every other work-case state requires `canceled_at` to be null.
 - The database permits `CHECK_OUT_MISSING` and requires its worker, but it does not prove that the work case has a successful check-in and no successful check-out or decide when that state transition occurs.
 - Generated active-slot uniqueness permits at most one pending `work_invitation` per work case while preserving terminal invitation history.
 - `work_contracts.work_case_id` is unique. A composite foreign key proves that contract parties and agreed wage match the work case.
@@ -105,6 +113,14 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - A user has at most one KRW `wallet`; balances are unsigned.
 - `mock_bank_accounts` rows are not owned by users. Their four-digit ASCII `pin` defaults to `0000`, `available_amount` cannot exceed `balance`, and bank/account and fintech identifiers are unique.
 - Funding orders, withdrawal requests, and wallet transactions use globally unique idempotency keys in their respective tables.
+- A `READY` funding order has no transferred amount, bank transaction, failure code, or completion
+  timestamp. A `COMPLETED` funding order requires the transferred amount to equal the expected amount,
+  a bank transaction, and a completion timestamp, with no failure code. `FAILED` and
+  `RECONCILIATION_REQUIRED` remain outside this state-shape constraint until their recovery meaning is
+  fixed.
+- A `READY` withdrawal request has no bank transaction, failure code, or completion timestamp. A
+  `COMPLETED` withdrawal requires a bank transaction and completion timestamp with no failure code.
+  `PROCESSING`, `FAILED`, and `RECONCILIATION_REQUIRED` remain outside this state-shape constraint.
 - `idempotency_requests` permits one Claim per `(user_id, operation_code, idempotency_key)`. It stores
   a 32-byte request fingerprint and either an in-progress Claim or a completed 2xx response Snapshot.
   The composite unique key is its only non-primary index and also supports the user foreign key.
@@ -113,6 +129,11 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
   remain application responsibilities.
 - `wallet_transactions` records before/after snapshots, but the database does not validate ledger arithmetic or the polymorphic reference target.
 - `escrows.work_case_id` and `settlements.work_case_id` are each unique. Composite foreign keys require their amounts to equal the work case's agreed wage.
+- Escrow timestamps are constrained for the currently proven states: `UNFUNDED` has no lifecycle
+  timestamps; `HELD` has only `held_at`; `RELEASED` has `held_at` and a non-earlier `released_at`;
+  `REFUNDED` has `held_at` and a non-earlier `refunded_at`. Release and refund evidence are mutually
+  exclusive in those terminal states. `ON_HOLD` deliberately remains unconstrained because its timestamp
+  meaning is not yet fixed.
 - There is no direct foreign key between a settlement and an escrow.
 - `settlements` accepts `WAITING`, `SCHEDULED`, `ON_HOLD`, `PROCESSING`, `COMPLETED`, `REFUNDED`,
   and `FAILED` only in approved column shapes. `retry_count`, `last_failure_at`, and
@@ -189,8 +210,10 @@ indefinitely. The approved workflow deliberately adds no purge-history table, co
 `updated_at` completion meaning; the schema does not implement the job by itself.
 
 Within the RF program, product-scope reclassification belongs to #282, module ownership belongs to #283,
-and lifecycle DDL reinforcement belongs to #292. This summary records the current approved contract and
-schema gap without pre-deciding those follow-up issues.
+and #292 adds only the lifecycle shapes proven by current writers and/or the accepted schema and product
+contract. The `REFUNDED` escrow shape is approved before its #174 writer exists; #292 does not implement
+that writer. Unconstrained recovery and hold states remain application-owned until a later approved
+contract and immutable migration define them.
 
 ## Application-enforced responsibilities
 

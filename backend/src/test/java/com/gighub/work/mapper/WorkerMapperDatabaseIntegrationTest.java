@@ -301,11 +301,12 @@ class WorkerMapperDatabaseIntegrationTest {
                         + " (employer_id, worker_id, workplace_id, title, starts_at, ends_at,"
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " workplace_latitude, workplace_longitude, allowed_radius_meters,"
-                        + " agreed_wage, terms_version, status)"
+                        + " agreed_wage, terms_version, status, canceled_at)"
                         + " VALUES (?, ?, ?, ?, ?, ?, 60, 0, '강남점', '서울 강남구 테헤란로 1 2층',"
-                        + " ?, ?, 100.00, ?, 1, ?)",
+                        + " ?, ?, 100.00, ?, 1, ?,"
+                        + " CASE WHEN ? = 'CANCELED' THEN CURRENT_TIMESTAMP(6) ELSE NULL END)",
                 ownerUserId, workerUserId, workplaceId, title, startsAt, endsAt,
-                LATITUDE, LONGITUDE, DAILY_WAGE, status);
+                LATITUDE, LONGITUDE, DAILY_WAGE, status, status);
         return jdbc.queryForObject(
                 "SELECT id FROM work_cases WHERE workplace_id = ? AND title = ? AND starts_at = ?",
                 Long.class, workplaceId, title, startsAt);
@@ -329,8 +330,13 @@ class WorkerMapperDatabaseIntegrationTest {
     /** {@code fk_escrows_case_wage} 때문에 금액이 {@code agreed_wage}와 같아야 합니다. */
     private void insertEscrow(JdbcTemplate jdbc, Long workCaseId, String status) {
         jdbc.update(
-                "INSERT INTO escrows (work_case_id, amount, status) VALUES (?, ?, ?)",
-                workCaseId, DAILY_WAGE, status);
+                "INSERT INTO escrows"
+                        + " (work_case_id, amount, status, held_at, released_at, refunded_at)"
+                        + " VALUES (?, ?, ?,"
+                        + " CASE WHEN ? IN ('HELD', 'RELEASED', 'REFUNDED') THEN NOW(6) END,"
+                        + " CASE WHEN ? = 'RELEASED' THEN NOW(6) END,"
+                        + " CASE WHEN ? = 'REFUNDED' THEN NOW(6) END)",
+                workCaseId, DAILY_WAGE, status, status, status, status);
     }
 
     /** {@code fk_settlements_case_wage} 때문에 금액이 {@code agreed_wage}와 같아야 합니다. */
