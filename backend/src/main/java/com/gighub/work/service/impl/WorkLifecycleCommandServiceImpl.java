@@ -7,6 +7,7 @@ import com.gighub.work.mapper.WorkCaseMapper;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,13 +16,10 @@ import java.util.List;
 
 /** Work 상태 정책과 단일 owner Mapper를 함께 캡슐화합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkLifecycleCommandServiceImpl implements WorkLifecycleCommandService {
 
     private final WorkCaseMapper workCaseMapper;
-
-    public WorkLifecycleCommandServiceImpl(WorkCaseMapper workCaseMapper) {
-        this.workCaseMapper = workCaseMapper;
-    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

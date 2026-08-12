@@ -19,6 +19,7 @@ import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -26,15 +27,11 @@ import org.springframework.transaction.annotation.Propagation;
 
 /** 승인된 사업장 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershipService {
 
     private final WorkplaceMapper workplaceMapper;
     private final WorkplaceQrIssuer qrIssuer;
-
-    public WorkplaceServiceImpl(WorkplaceMapper workplaceMapper, WorkplaceQrIssuer qrIssuer) {
-        this.workplaceMapper = workplaceMapper;
-        this.qrIssuer = qrIssuer;
-    }
 
     @Override
     @Transactional

@@ -29,6 +29,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 모든 저장소 작업   | [`agent/PROJECT_RULES.md`](agent/PROJECT_RULES.md)                 | 공통 기술·소유권·검증 계약                         |
 | 기능 구현 시작     | [`agent/ARCHITECTURE_OVERVIEW.md`](agent/ARCHITECTURE_OVERVIEW.md) | 런타임 구조와 책임 경계                            |
 | 모듈·테이블 경계   | [`agent/MODULE_BOUNDARIES.md`](agent/MODULE_BOUNDARIES.md)         | 논리 모듈, Write owner, 공개 Service와 Tx 계약     |
+| Java 모델링·정리   | [`agent/JAVA_MODELING_GUIDE.md`](agent/JAVA_MODELING_GUIDE.md)     | Lombok, 타입, interface, Exception, 복잡성 기준    |
 | 위험 기반 검증     | [`agent/VERIFICATION_GUIDE.md`](agent/VERIFICATION_GUIDE.md)       | R0~R3, Characterization, 장기 생명주기와 실행 명령 |
 | 코드 진입점 탐색   | [`agent/IMPLEMENTATION_GUIDE.md`](agent/IMPLEMENTATION_GUIDE.md)   | Route, API, Backend, DB 작업별 안정적인 탐색 순서  |
 | 최상위 제품 목표 확인 | [`specs/MVP_SCOPE.md`](specs/MVP_SCOPE.md)                       | 원본 시연 시나리오, Priority와 화면 성공 판정      |

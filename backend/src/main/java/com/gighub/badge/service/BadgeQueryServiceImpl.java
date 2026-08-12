@@ -3,18 +3,16 @@ package com.gighub.badge.service;
 import com.gighub.badge.dto.UserBadge;
 import com.gighub.badge.dto.UserBadgeListResponse;
 import com.gighub.badge.mapper.BadgeQueryMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** Badge read model을 소유 Mapper에서 조회합니다. */
 @Service
+@RequiredArgsConstructor
 public class BadgeQueryServiceImpl implements BadgeQueryService {
 
     private final BadgeQueryMapper badgeQueryMapper;
-
-    public BadgeQueryServiceImpl(BadgeQueryMapper badgeQueryMapper) {
-        this.badgeQueryMapper = badgeQueryMapper;
-    }
 
     @Override
     @Transactional(readOnly = true)

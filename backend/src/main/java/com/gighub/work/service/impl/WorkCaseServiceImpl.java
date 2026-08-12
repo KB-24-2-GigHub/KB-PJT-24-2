@@ -40,23 +40,18 @@ import com.gighub.work.service.WorkCaseService;
 import com.gighub.work.service.command.WorkCaseCreateCommand;
 import com.gighub.work.service.command.WorkCaseUpdateCommand;
 import com.gighub.invitation.mapper.InvitationMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 승인된 근무 {@code DRAFT} 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
     private final InvitationMapper invitationMapper;
-
-    public WorkCaseServiceImpl(
-            WorkCaseMapper workCaseMapper,
-            InvitationMapper invitationMapper) {
-        this.workCaseMapper = workCaseMapper;
-        this.invitationMapper = invitationMapper;
-    }
 
     @Override
     @Transactional
