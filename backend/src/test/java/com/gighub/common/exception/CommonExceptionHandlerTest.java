@@ -193,6 +193,10 @@ class CommonExceptionHandlerTest {
                         "ATTENDANCE_ALREADY_COMPLETED",
                         "ATTENDANCE_STATE_CONFLICT",
                         "ATTENDANCE_TEMPORARILY_UNAVAILABLE",
+                        "SETTLEMENT_ON_HOLD",
+                        "SETTLEMENT_NOT_READY",
+                        "SETTLEMENT_ALREADY_PROCESSED",
+                        "SETTLEMENT_TEMPORARILY_UNAVAILABLE",
                         "INTERNAL_ERROR"
                 ),
                 Arrays.stream(ApiErrorCode.values())

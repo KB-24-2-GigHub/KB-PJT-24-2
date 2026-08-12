@@ -1,18 +1,20 @@
 package com.gighub.settlement.service;
 
 import com.gighub.config.RootConfig;
+import com.gighub.common.exception.ConflictException;
+import com.gighub.member.domain.UserRole;
+import com.gighub.settlement.exception.SettlementAlreadyProcessedException;
+import com.gighub.settlement.exception.SettlementOnHoldException;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.exception.EscrowIntegrityException;
-import com.gighub.wallet.exception.InvalidEscrowStateException;
+import com.gighub.wallet.exception.IdempotencyKeyReusedException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -58,8 +60,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertEquals("COMPLETED", first.getStatus());
                 assertNotNull(first.getCompletedAt());
                 assertFalse(first.isReplayed());
+                assertFullPayoutAmounts(first);
                 assertEquals(first.getSettlementId(), replay.getSettlementId());
                 assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(replay);
                 assertTrue(replay.isReplayed());
                 assertCompletedState(jdbcTemplate, fixture, first.getCompletedAt());
             } finally {
@@ -70,7 +74,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
     @Test
     @Timeout(25)
-    void concurrentSameKeyPaysOnlyOnceAndReplaysOnce() throws Exception {
+    void concurrentSameKeyPaysOnlyOnceAndThenConflictsOrReplays() throws Exception {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementService settlementService =
@@ -100,22 +104,33 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertTrue(ready.await(5, TimeUnit.SECONDS));
                 start.countDown();
 
-                SettlementResult first = firstFuture.get(10, TimeUnit.SECONDS);
-                SettlementResult second = secondFuture.get(10, TimeUnit.SECONDS);
+                int firstSuccesses = 0;
+                int replayOrInProgress = 0;
+                SettlementResult completed = null;
+                for (Future<SettlementResult> future : List.of(firstFuture, secondFuture)) {
+                    try {
+                        SettlementResult result = future.get(10, TimeUnit.SECONDS);
+                        if (result.isReplayed()) {
+                            replayOrInProgress++;
+                        } else {
+                            firstSuccesses++;
+                            completed = result;
+                        }
+                    } catch (ExecutionException executionException) {
+                        assertTrue(executionException.getCause() instanceof ConflictException);
+                        replayOrInProgress++;
+                    }
+                }
 
-                assertEquals(first.getSettlementId(), second.getSettlementId());
-                assertEquals(first.getCompletedAt(), second.getCompletedAt());
-                assertEquals(
-                        1,
-                        List.of(first, second).stream()
-                                .filter(SettlementResult::isReplayed)
-                                .count()
-                );
-                assertCompletedState(
-                        jdbcTemplate,
-                        fixture,
-                        first.getCompletedAt()
-                );
+                assertEquals(1, firstSuccesses);
+                assertEquals(1, replayOrInProgress);
+                assertNotNull(completed);
+                assertFullPayoutAmounts(completed);
+                SettlementResult replay = settlementService.approve(command);
+                assertTrue(replay.isReplayed());
+                assertEquals(completed.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(replay);
+                assertCompletedState(jdbcTemplate, fixture, completed.getCompletedAt());
             } finally {
                 executor.shutdownNow();
                 executor.awaitTermination(5, TimeUnit.SECONDS);
@@ -167,7 +182,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                     } catch (ExecutionException executionException) {
                         assertTrue(
                                 executionException.getCause()
-                                        instanceof InvalidEscrowStateException
+                                        instanceof SettlementAlreadyProcessedException
                         );
                         conflicts++;
                     }
@@ -176,6 +191,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertEquals(1, successes);
                 assertEquals(1, conflicts);
                 assertNotNull(completed);
+                assertFullPayoutAmounts(completed);
                 assertCompletedState(
                         jdbcTemplate,
                         fixture,
@@ -192,56 +208,29 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
     @Test
     @Timeout(25)
-    void replayReadsCommittedLedgersInsideOlderTransactionReadView()
-            throws Exception {
+    void completedClaimReplaysTheCommittedResponse() throws Exception {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementService settlementService =
                     context.getBean(SettlementService.class);
-            PlatformTransactionManager transactionManager =
-                    context.getBean(PlatformTransactionManager.class);
-            TransactionTemplate transaction =
-                    new TransactionTemplate(transactionManager);
             SettlementFixture fixture = createFixture(jdbcTemplate);
             ExecutorService executor = Executors.newSingleThreadExecutor();
 
             try {
-                SettlementResult replay = transaction.execute(status -> {
-                    count(
-                            jdbcTemplate,
-                            "SELECT COUNT(*) FROM wallet_transactions"
-                                    + " WHERE work_case_id = ?",
-                            fixture.workCaseId()
-                    );
-                    Future<SettlementResult> first = executor.submit(
-                            () -> settlementService.approve(command(
-                                    fixture,
-                                    fixture.approvalKey()
-                            ))
-                    );
-                    try {
-                        SettlementResult completed =
-                                first.get(10, TimeUnit.SECONDS);
-                        SettlementResult storedReplay =
-                                settlementService.approve(command(
-                                        fixture,
-                                        fixture.approvalKey()
-                                ));
-                        assertEquals(
-                                completed.getCompletedAt(),
-                                storedReplay.getCompletedAt()
-                        );
-                        return storedReplay;
-                    } catch (Exception executionFailure) {
-                        throw new IllegalStateException(
-                                "오래된 read view replay 검증에 실패했습니다.",
-                                executionFailure
-                        );
-                    }
-                });
+                Future<SettlementResult> first = executor.submit(
+                        () -> settlementService.approve(command(
+                                fixture,
+                                fixture.approvalKey())));
+                SettlementResult completed = first.get(10, TimeUnit.SECONDS);
+                SettlementResult replay = settlementService.approve(command(
+                        fixture,
+                        fixture.approvalKey()));
 
                 assertNotNull(replay);
                 assertTrue(replay.isReplayed());
+                assertEquals(completed.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(completed);
+                assertFullPayoutAmounts(replay);
                 assertCompletedState(
                         jdbcTemplate,
                         fixture,
@@ -257,30 +246,47 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
     @Test
     @Timeout(20)
-    void outerTransactionFailureRollsBackEverySettlementMutation() {
+    void deterministicLedgerCollisionRollsBackEverySettlementMutation() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementService settlementService =
                     context.getBean(SettlementService.class);
-            PlatformTransactionManager transactionManager =
-                    context.getBean(PlatformTransactionManager.class);
-            TransactionTemplate transaction =
-                    new TransactionTemplate(transactionManager);
             SettlementFixture fixture = createFixture(jdbcTemplate);
 
             try {
+                jdbcTemplate.update(
+                        "INSERT INTO wallet_transactions"
+                                + " (wallet_id, work_case_id, transaction_type, amount,"
+                                + " available_before, available_after, locked_before,"
+                                + " locked_after, reference_type, reference_id,"
+                                + " idempotency_key)"
+                                + " VALUES (?, ?, 'ESCROW_RELEASE', ?, 0, 0, ?, 0,"
+                                + " 'ESCROW', ?, ?)",
+                        fixture.employerWalletId(),
+                        fixture.workCaseId(),
+                        WAGE,
+                        WAGE,
+                        fixture.escrowId(),
+                        WalletIdempotencyKeys.settlementReleaseOwner(
+                                fixture.settlementId()));
                 assertThrows(
-                        ForcedRollbackException.class,
-                        () -> transaction.execute(status -> {
-                            settlementService.approve(command(
-                                    fixture,
-                                    fixture.approvalKey()
-                            ));
-                            throw new ForcedRollbackException();
-                        })
+                        IdempotencyKeyReusedException.class,
+                        () -> settlementService.approve(command(
+                                fixture,
+                                fixture.approvalKey()))
                 );
 
+                jdbcTemplate.update(
+                        "DELETE FROM wallet_transactions WHERE idempotency_key = ?",
+                        WalletIdempotencyKeys.settlementReleaseOwner(
+                                fixture.settlementId()));
                 assertInitialState(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code = 'SETTLEMENT_APPROVE'",
+                        fixture.employerId()));
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }
@@ -320,7 +326,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                         blockedFixture.settlementId()
                 );
                 assertThrows(
-                        InvalidEscrowStateException.class,
+                        SettlementOnHoldException.class,
                         () -> settlementService.approve(command(
                                 blockedFixture,
                                 blockedFixture.approvalKey()
@@ -341,6 +347,45 @@ class SettlementIntegrityDatabaseIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(20)
+    void openDisputeBlocksScheduledPayoutWithoutChangingMoney() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO disputes"
+                                + " (work_case_id, requester_id, dispute_type, content, status)"
+                                + " VALUES (?, ?, 'WAGE', '통합 테스트 분쟁', 'OPEN')",
+                        fixture.workCaseId(),
+                        fixture.workerId());
+
+                assertThrows(
+                        SettlementOnHoldException.class,
+                        () -> settlementService.approve(command(
+                                fixture,
+                                fixture.approvalKey())));
+
+                assertFundsUnchanged(jdbcTemplate, fixture);
+                assertEquals("SCHEDULED", text(
+                        jdbcTemplate,
+                        "SELECT status FROM settlements WHERE id = ?",
+                        fixture.settlementId()));
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code = 'SETTLEMENT_APPROVE'",
+                        fixture.employerId()));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
     private AnnotationConfigApplicationContext applicationContext() {
         return new AnnotationConfigApplicationContext(RootConfig.class);
     }
@@ -356,6 +401,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
         return SettlementApproveCommand.builder()
                 .workCaseId(fixture.workCaseId())
                 .approverUserId(fixture.employerId())
+                .approverRole(UserRole.OWNER)
                 .idempotencyKey(idempotencyKey)
                 .build();
     }
@@ -458,7 +504,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                         + " AND wt.available_after = 0"
                         + " AND wt.locked_before = ?"
                         + " AND wt.locked_after = 0"
-                        + " AND wt.idempotency_key LIKE 'ERLO:%'",
+                        + " AND wt.idempotency_key LIKE 'SETTLEMENT_RELEASE_OWNER:%'",
                 fixture.workCaseId(),
                 fixture.employerId(),
                 WAGE
@@ -475,7 +521,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                         + " AND wt.available_after = ?"
                         + " AND wt.locked_before = 0"
                         + " AND wt.locked_after = 0"
-                        + " AND wt.idempotency_key LIKE 'ERLI:%'",
+                        + " AND wt.idempotency_key LIKE 'SETTLEMENT_RELEASE_WORKER:%'",
                 fixture.workCaseId(),
                 fixture.workerId(),
                 WAGE
@@ -489,11 +535,23 @@ class SettlementIntegrityDatabaseIntegrationTest {
         ));
     }
 
+    private void assertFullPayoutAmounts(SettlementResult result) {
+        assertEquals(WAGE, result.getSettlementAmount());
+        assertEquals(WAGE, result.getOriginalEscrowAmount());
+        assertEquals(WAGE, result.getWorkerPaidAmount());
+        assertEquals(0L, result.getOwnerRefundAmount());
+        assertEquals(
+                result.getOriginalEscrowAmount().longValue(),
+                Math.addExact(
+                        result.getWorkerPaidAmount(),
+                        result.getOwnerRefundAmount()));
+    }
+
     private void assertInitialState(
             JdbcTemplate jdbcTemplate,
             SettlementFixture fixture) {
         assertFundsUnchanged(jdbcTemplate, fixture);
-        assertEquals("WAITING", text(
+        assertEquals("SCHEDULED", text(
                 jdbcTemplate,
                 "SELECT status FROM settlements WHERE id = ?",
                 fixture.settlementId()
@@ -502,6 +560,11 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 jdbcTemplate,
                 "SELECT COUNT(*) FROM settlements"
                         + " WHERE id = ? AND approved_by_user_id IS NOT NULL",
+                fixture.settlementId()
+        ));
+        assertNotNull(dateTime(
+                jdbcTemplate,
+                "SELECT due_at FROM settlements WHERE id = ?",
                 fixture.settlementId()
         ));
         assertEquals(0, count(
@@ -531,7 +594,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 "SELECT status FROM escrows WHERE id = ?",
                 fixture.escrowId()
         ));
-        assertEquals("ACCEPTED", text(
+        assertEquals("COMPLETED", text(
                 jdbcTemplate,
                 "SELECT status FROM work_cases WHERE id = ?",
                 fixture.workCaseId()
@@ -612,7 +675,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                         + " '2030-01-01 09:00:00',"
                         + " '2030-01-01 18:00:00', 60, 0,"
                         + " '통합 테스트 사업장', '서울특별시 테스트로 1',"
-                        + " 100, ?, 1, 'ACCEPTED')",
+                        + " 100, ?, 1, 'COMPLETED')",
                 employerId,
                 workerId,
                 workplaceId,
@@ -637,8 +700,8 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 idBy(jdbcTemplate, "escrows", "work_case_id", workCaseId);
 
         jdbcTemplate.update(
-                "INSERT INTO settlements (work_case_id, amount, status)"
-                        + " VALUES (?, ?, 'WAITING')",
+                "INSERT INTO settlements (work_case_id, amount, status, due_at)"
+                        + " VALUES (?, ?, 'SCHEDULED', DATE_ADD(NOW(6), INTERVAL 1 DAY))",
                 workCaseId,
                 WAGE
         );
@@ -719,6 +782,15 @@ class SettlementIntegrityDatabaseIntegrationTest {
     private void deleteFixture(
             JdbcTemplate jdbcTemplate,
             SettlementFixture fixture) {
+        jdbcTemplate.update(
+                "DELETE FROM idempotency_requests WHERE user_id IN (?, ?)",
+                fixture.employerId(),
+                fixture.workerId()
+        );
+        jdbcTemplate.update(
+                "DELETE FROM disputes WHERE work_case_id = ?",
+                fixture.workCaseId()
+        );
         jdbcTemplate.update(
                 "DELETE FROM wallet_transactions WHERE work_case_id = ?",
                 fixture.workCaseId()
@@ -818,9 +890,6 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 LocalDateTime.class,
                 argument
         );
-    }
-
-    private static class ForcedRollbackException extends RuntimeException {
     }
 
     private record SettlementFixture(

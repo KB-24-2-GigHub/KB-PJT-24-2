@@ -35,6 +35,26 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
+    public long lockHeldEscrow(SettlementWalletCommand command) {
+        if (!ESCROW_HELD.equals(
+                walletMapper.getEscrowStatusForUpdate(command.getWorkCaseId()))) {
+            throw new InvalidEscrowStateException("정산 가능한 에스크로가 없습니다.");
+        }
+        Long storedAmount = walletMapper.getHeldEscrowAmount(command.getWorkCaseId());
+        if (storedAmount == null || storedAmount != command.getAmount()) {
+            throw new EscrowIntegrityException("정산 원장, 에스크로, 약정 임금의 금액이 일치하지 않습니다.");
+        }
+        long escrowId = requireEscrowId(command.getWorkCaseId());
+        validateHeldEscrowOwnership(
+                walletMapper.findEscrowHoldTransactionSnapshot(
+                        command.getWorkCaseId(), escrowId),
+                command,
+                escrowId);
+        return escrowId;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public boolean verifyReplay(SettlementWalletCommand command) {
         WalletTransactionSnapshot employer =
                 walletMapper.findSettlementTransactionByIdempotencyKeyForShare(
@@ -67,20 +87,15 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void release(SettlementWalletCommand command) {
+    public SettlementAmounts release(SettlementWalletCommand command, long escrowId) {
+        if (escrowId <= 0) {
+            throw new EscrowIntegrityException("정산 대상 에스크로 식별자가 올바르지 않습니다.");
+        }
         Map<Long, WalletBalanceSnapshot> wallets = lockWalletsInOrder(
                 command.getEmployerId(), command.getWorkerId());
         WalletBalanceSnapshot employer = wallets.get(command.getEmployerId());
         WalletBalanceSnapshot worker = wallets.get(command.getWorkerId());
 
-        if (!ESCROW_HELD.equals(
-                walletMapper.getEscrowStatusForUpdate(command.getWorkCaseId()))) {
-            throw new InvalidEscrowStateException("정산 가능한 에스크로가 없습니다.");
-        }
-        Long storedAmount = walletMapper.getHeldEscrowAmount(command.getWorkCaseId());
-        if (storedAmount == null || storedAmount != command.getAmount()) {
-            throw new EscrowIntegrityException("정산 원장, 에스크로, 약정 임금의 금액이 일치하지 않습니다.");
-        }
         if (employer.getLockedBalance() < command.getAmount()) {
             throw new EscrowIntegrityException("고용주의 잠금 금액이 정산 금액보다 적습니다.");
         }
@@ -91,13 +106,6 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         long workerAvailableAfter = addExactly(
                 worker.getAvailableBalance(), command.getAmount(),
                 "정산 후 근로자 지갑 금액이 허용 범위를 벗어납니다.");
-        long escrowId = requireEscrowId(command.getWorkCaseId());
-        validateHeldEscrowOwnership(
-                walletMapper.findEscrowHoldTransactionSnapshot(
-                        command.getWorkCaseId(), escrowId),
-                command,
-                escrowId);
-
         if (walletMapper.releaseEscrow(command.getWorkCaseId()) != 1) {
             throw new EscrowIntegrityException("에스크로 지급 상태를 반영하지 못했습니다.");
         }
@@ -136,6 +144,9 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 .referenceId(escrowId)
                 .idempotencyKey(command.getWorkerLedgerKey())
                 .build(), "근로자 정산 원장을 기록하지 못했습니다.");
+
+        // 응답 금액은 요청을 다시 계산하지 않고, 방금 검증·반영한 전액 지급 결과에서 만듭니다.
+        return SettlementAmounts.fullPayout(command.getAmount());
     }
 
     private Map<Long, WalletBalanceSnapshot> lockWalletsInOrder(long employerId, long workerId) {
