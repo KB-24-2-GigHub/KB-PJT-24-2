@@ -25,6 +25,7 @@ public class DocumentFileAccessService {
     private static final String HEALTH_DOCUMENT_TYPE = "HEALTH_CERTIFICATE";
     private static final String SIGNED_VERSION_TYPE = "SIGNED";
     private static final String ORIGINAL_VERSION_TYPE = "ORIGINAL";
+    private static final int CONTRACT_SIGNED_VERSION = 2;
     private static final int HEALTH_ORIGINAL_VERSION = 1;
     private static final Set<String> SAFE_MIME_TYPES =
             Set.of("application/pdf", "image/jpeg", "image/png");
@@ -67,11 +68,17 @@ public class DocumentFileAccessService {
     }
 
     private DocumentFileReadResult readVerifiedContent(DocumentFileAccessRow row) {
+        StorageKeyPlan storageKeyPlan = verifiedStorageKeyPlan(row);
+        if (storageKeyPlan == null) {
+            // 승인된 경로가 아니면 DB의 Key가 실제로 존재하더라도 저장소를 탐색하지 않습니다.
+            return DocumentFileReadResult.fileUnavailable();
+        }
+
         boolean checksumMismatch = false;
 
         try {
-            if (storageAdapter.exists(row.getStorageKey())) {
-                byte[] content = storageAdapter.read(row.getStorageKey());
+            if (storageAdapter.exists(storageKeyPlan.finalKey())) {
+                byte[] content = storageAdapter.read(storageKeyPlan.finalKey());
                 if (matchesChecksum(content, row.getChecksum())) {
                     return DocumentFileReadResult.verified(content);
                 }
@@ -82,20 +89,17 @@ public class DocumentFileAccessService {
             log.warn("문서 파일 최종 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
         }
 
-        String pendingKey = deterministicPendingKey(row);
-        if (pendingKey != null) {
-            try {
-                if (storageAdapter.exists(pendingKey)) {
-                    byte[] pendingContent = storageAdapter.read(pendingKey);
-                    if (matchesChecksum(pendingContent, row.getChecksum())) {
-                        promoteFallbackQuietly(row, pendingKey);
-                        return DocumentFileReadResult.verified(pendingContent);
-                    }
-                    checksumMismatch = true;
+        try {
+            if (storageAdapter.exists(storageKeyPlan.pendingKey())) {
+                byte[] pendingContent = storageAdapter.read(storageKeyPlan.pendingKey());
+                if (matchesChecksum(pendingContent, row.getChecksum())) {
+                    promoteFallbackQuietly(row, storageKeyPlan);
+                    return DocumentFileReadResult.verified(pendingContent);
                 }
-            } catch (DocumentStorageIntegrityException failure) {
-                log.warn("문서 파일 임시 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
+                checksumMismatch = true;
             }
+        } catch (DocumentStorageIntegrityException failure) {
+            log.warn("문서 파일 임시 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
         }
 
         return checksumMismatch
@@ -103,20 +107,29 @@ public class DocumentFileAccessService {
                 : DocumentFileReadResult.fileUnavailable();
     }
 
-    private void promoteFallbackQuietly(DocumentFileAccessRow row, String pendingKey) {
+    private void promoteFallbackQuietly(
+            DocumentFileAccessRow row,
+            StorageKeyPlan storageKeyPlan) {
         try {
-            storageAdapter.promote(pendingKey, row.getStorageKey(), row.getChecksum());
+            storageAdapter.promote(
+                    storageKeyPlan.pendingKey(),
+                    storageKeyPlan.finalKey(),
+                    row.getChecksum());
         } catch (RuntimeException failure) {
             // 검증된 Bytes는 반환할 수 있고 다음 조회에서 복구를 재시도할 수 있습니다.
             log.warn("문서 파일 조회 중 최종 Object 승격에 실패했습니다. result=ALLOWED");
         }
     }
 
-    private String deterministicPendingKey(DocumentFileAccessRow row) {
-        // DB의 문서·Version·최종 Key가 승인된 규칙과 모두 맞을 때만 한 임시 Key를 계산합니다.
+    private StorageKeyPlan verifiedStorageKeyPlan(DocumentFileAccessRow row) {
+        // 문서·Version·MIME·최종 Key를 한 번에 검증해 final과 pending 판단이 엇갈리지 않게 합니다.
         if (isCanonicalContractVersion(row)) {
-            return ContractStorageKeys.pendingKey(
+            String finalKey = ContractStorageKeys.finalKey(
                     row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo());
+            return new StorageKeyPlan(
+                    finalKey,
+                    ContractStorageKeys.pendingKey(
+                            row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo()));
         }
         if (!isCanonicalHealthVersion(row)) {
             return null;
@@ -131,17 +144,23 @@ public class DocumentFileAccessService {
         if (!finalKey.equals(row.getStorageKey())) {
             return null;
         }
-        return "health-certificates/%d/%d/.pending/v1.%s".formatted(
-                row.getOwnerUserId(), row.getDocumentId(), extension);
+        return new StorageKeyPlan(
+                finalKey,
+                "health-certificates/%d/%d/.pending/v1.%s".formatted(
+                        row.getOwnerUserId(), row.getDocumentId(), extension));
     }
 
     private boolean isCanonicalContractVersion(DocumentFileAccessRow row) {
         if (!CONTRACT_DOCUMENT_TYPE.equals(row.getDocType())
                 || !SIGNED_VERSION_TYPE.equals(row.getVersionType())
+                || !"application/pdf".equals(normalizedMime(row.getMimeType()))
                 || row.getWorkCaseId() == null
+                || row.getWorkCaseId() <= 0
                 || row.getDocumentId() == null
-                || row.getVersionNo() == null
-                || row.getVersionNo() < 1) {
+                || row.getDocumentId() <= 0
+                || row.getVersionId() == null
+                || row.getVersionId() <= 0
+                || !Integer.valueOf(CONTRACT_SIGNED_VERSION).equals(row.getVersionNo())) {
             return false;
         }
         return ContractStorageKeys.finalKey(
@@ -156,7 +175,9 @@ public class DocumentFileAccessService {
                 && row.getOwnerUserId() != null
                 && row.getOwnerUserId() > 0
                 && row.getDocumentId() != null
-                && row.getDocumentId() > 0;
+                && row.getDocumentId() > 0
+                && row.getVersionId() != null
+                && row.getVersionId() > 0;
     }
 
     private String healthStorageExtension(String mimeType) {
@@ -166,6 +187,9 @@ public class DocumentFileAccessService {
             case "application/pdf" -> "pdf";
             default -> null;
         };
+    }
+
+    private record StorageKeyPlan(String finalKey, String pendingKey) {
     }
 
     private boolean matchesChecksum(byte[] content, byte[] expectedChecksum) {

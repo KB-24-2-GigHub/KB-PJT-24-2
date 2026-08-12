@@ -25,7 +25,6 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
@@ -335,32 +334,53 @@ class DocumentFileAccessServiceTest {
     }
 
     @Test
-    void healthFallbackDoesNotProbePendingStorageForANonCanonicalFinalKey() {
+    void nonCanonicalHealthFinalObjectIsNotReadEvenWhenItsChecksumMatches() {
         DocumentFileAccessRow row = healthRow(
                 LocalDate.of(2027, 8, 11),
                 "image/jpeg",
                 "health-certificates/4/10/unexpected/v1.jpg");
         when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
-        when(storageAdapter.exists(row.getStorageKey())).thenReturn(false);
+        lenient().when(storageAdapter.exists(row.getStorageKey())).thenReturn(true);
+        lenient().when(storageAdapter.read(row.getStorageKey())).thenReturn(CONTENT);
 
         assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
                 DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view"));
 
-        verify(storageAdapter, never()).exists(HEALTH_PENDING_KEY);
+        verify(storageAdapter, never()).exists(any());
+        verify(storageAdapter, never()).read(any());
         assertAudit("HEALTH_CERT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
                 VERSION_ID, WORKER_ID);
     }
 
     @Test
-    void unsupportedMimeFallsBackToOctetStreamAndAttachment() {
-        givenReadable(contractRow("ACTIVE", "text/html"));
+    void nonCanonicalContractFinalObjectIsNotReadEvenWhenItsChecksumMatches() {
+        DocumentFileAccessRow row = contractRow(
+                "ACTIVE", "application/pdf", "contracts/1/10/unexpected/v2.pdf");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        lenient().when(storageAdapter.exists(row.getStorageKey())).thenReturn(true);
+        lenient().when(storageAdapter.read(row.getStorageKey())).thenReturn(CONTENT);
 
-        DocumentFileResult result = service.loadFile(
-                DOCUMENT_ID, OWNER_ID, UserRole.OWNER, "view");
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, OWNER_ID, UserRole.OWNER, "view"));
 
-        assertEquals("application/octet-stream", result.getMimeType());
-        assertEquals("employment-contract.bin", result.getAsciiFileName());
-        assertTrue(result.isForceAttachment());
+        verify(storageAdapter, never()).exists(any());
+        verify(storageAdapter, never()).read(any());
+        assertAudit("CONTRACT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, OWNER_ID);
+    }
+
+    @Test
+    void unsupportedContractMimeDoesNotProbeStorage() {
+        DocumentFileAccessRow row = contractRow("ACTIVE", "text/html");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, OWNER_ID, UserRole.OWNER, "view"));
+
+        verify(storageAdapter, never()).exists(any());
+        verify(storageAdapter, never()).read(any());
+        assertAudit("CONTRACT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, OWNER_ID);
     }
 
     @Test
@@ -379,6 +399,13 @@ class DocumentFileAccessServiceTest {
     }
 
     private DocumentFileAccessRow contractRow(String status, String mimeType) {
+        return contractRow(status, mimeType, CONTRACT_FINAL_KEY);
+    }
+
+    private DocumentFileAccessRow contractRow(
+            String status,
+            String mimeType,
+            String storageKey) {
         return DocumentFileAccessRow.builder()
                 .documentId(DOCUMENT_ID)
                 .ownerUserId(OWNER_ID)
@@ -389,7 +416,7 @@ class DocumentFileAccessServiceTest {
                 .versionId(VERSION_ID)
                 .versionNo(2)
                 .versionType("SIGNED")
-                .storageKey(CONTRACT_FINAL_KEY)
+                .storageKey(storageKey)
                 .mimeType(mimeType)
                 .checksum(Sha256.digest(CONTENT))
                 .contractOwnerUserId(OWNER_ID)
@@ -414,7 +441,16 @@ class DocumentFileAccessServiceTest {
     }
 
     private DocumentFileAccessRow healthRow(LocalDate expiresDate, String mimeType) {
-        return healthRow(expiresDate, mimeType, "health-certificates/4/10/v1.jpg");
+        String extension = switch (mimeType) {
+            case "image/jpeg" -> "jpg";
+            case "image/png" -> "png";
+            case "application/pdf" -> "pdf";
+            default -> "bin";
+        };
+        return healthRow(
+                expiresDate,
+                mimeType,
+                "health-certificates/4/10/v1." + extension);
     }
 
     private DocumentFileAccessRow healthRow(
