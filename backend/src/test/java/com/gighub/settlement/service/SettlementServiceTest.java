@@ -46,7 +46,7 @@ class SettlementServiceTest {
     private IdempotencyClaimService claimService;
 
     @Mock
-    private SettlementPayoutExecutor payoutExecutor;
+    private SettlementApprovalTransaction approvalTransaction;
 
     @Mock
     private SettlementReplayCodec replayCodec;
@@ -60,11 +60,11 @@ class SettlementServiceTest {
         SettlementResult expected = completed(false);
         when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
                 .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
-        when(payoutExecutor.execute(command, CLAIM_ID)).thenReturn(expected);
+        when(approvalTransaction.execute(command, CLAIM_ID)).thenReturn(expected);
 
         assertSame(expected, settlementService.approve(command));
 
-        verify(payoutExecutor).execute(command, CLAIM_ID);
+        verify(approvalTransaction).execute(command, CLAIM_ID);
         verify(claimService, never()).abandon(anyLong());
     }
 
@@ -79,7 +79,7 @@ class SettlementServiceTest {
 
         assertSame(expected, settlementService.approve(command));
 
-        verify(payoutExecutor, never()).execute(any(), anyLong());
+        verify(approvalTransaction, never()).execute(any(), anyLong());
     }
 
     @Test
@@ -88,7 +88,7 @@ class SettlementServiceTest {
         SettlementNotReadyException failure = new SettlementNotReadyException();
         when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
                 .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
-        when(payoutExecutor.execute(command, CLAIM_ID)).thenThrow(failure);
+        when(approvalTransaction.execute(command, CLAIM_ID)).thenThrow(failure);
 
         assertSame(failure, assertThrows(
                 SettlementNotReadyException.class,
@@ -101,14 +101,14 @@ class SettlementServiceTest {
         SettlementApproveCommand command = command(WORK_CASE_ID, KEY, UserRole.OWNER);
         when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
                 .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
-        when(payoutExecutor.execute(command, CLAIM_ID))
+        when(approvalTransaction.execute(command, CLAIM_ID))
                 .thenThrow(new PessimisticLockingFailureException("lock"));
 
         assertThrows(
                 SettlementTemporarilyUnavailableException.class,
                 () -> settlementService.approve(command));
 
-        verify(payoutExecutor, times(3)).execute(command, CLAIM_ID);
+        verify(approvalTransaction, times(3)).execute(command, CLAIM_ID);
         verify(claimService).abandon(CLAIM_ID);
     }
 
@@ -132,7 +132,7 @@ class SettlementServiceTest {
         SettlementApproveCommand second = command(WORK_CASE_ID, "ANOTHER-KEY", UserRole.OWNER);
         when(claimService.claim(anyLong(), any(), any(), any()))
                 .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
-        when(payoutExecutor.execute(any(), eq(CLAIM_ID))).thenReturn(completed(false));
+        when(approvalTransaction.execute(any(), eq(CLAIM_ID))).thenReturn(completed(false));
 
         settlementService.approve(first);
         settlementService.approve(second);

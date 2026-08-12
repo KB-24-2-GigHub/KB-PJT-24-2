@@ -185,9 +185,9 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | Workplace          | 사업장 생성·허용 변경, 소유권/좌표 Snapshot → workplace ID·검증 값                                     | 없음, 비소유, 비활성, 좌표 미확정                 | 단일 명령 owner; Work/Attendance에는 Query만 제공                           |
 | Work               | Work 생성·조건 변경, Invitation 발급/수락 part, Contract Snapshot, 의미 상태 전이 → IDs·version·status | 만료, 폐기, version 충돌, 잘못된 상태, 이미 배정  | 단일 명령 owner; acceptance에서는 participant, Work Case를 먼저 lock        |
 | Attendance         | QR 발급/재발급, scan fact 기록, 근태 Query → attendance fact/status                                    | QR 무효, 위치 실패, 중복 성공, 적용 근무 불명확   | Attendance 명령 owner; Work 상태는 Work Command participant에 요청          |
-| Wallet             | 지갑 생성, funding/withdrawal, Escrow hold/release/refund와 ledger → wallet/escrow ID·금액 Snapshot    | 잔액 부족, currency/actor 불일치, ledger conflict | 금융 명령 owner 또는 Orchestrator participant; 현행 user ID 오름차순 조회 lock (#289에서 wallet ID 경계 정규화) |
+| Wallet             | 지갑 생성, funding/withdrawal, Escrow hold/release/refund와 ledger → wallet/escrow ID·금액 Snapshot    | 잔액 부족, currency/actor 불일치, ledger integrity | 금융 명령 owner 또는 Orchestrator participant; `(userId, KRW)`를 wallet ID로 한 번 해석한 뒤 wallet ID 오름차순 lock |
 | Bank Adapter       | 계좌 resolve/lock, debit/credit → adapter result/reference                                             | 계좌 없음, PIN 실패, 잔액 부족, adapter 실패      | Wallet Transaction에 참여하는 Adapter; 내부 table만 write                   |
-| Settlement         | 예약, payout/refund 선점·완료, 상태 Query → settlement ID·status·amount                                | 지급 불가 상태, 이미 처리, replay 불일치          | 예약은 acceptance participant; payout Orchestrator가 outer owner            |
+| Settlement         | 예약, payout 선점·완료, 상태 Query → settlement ID·status·amount                                       | 지급 불가 상태, 이미 처리, replay·원장 불일치     | 예약은 acceptance participant; 수동 승인 또는 Scheduler 건별 Tx가 payout outer owner |
 | Document           | Contract artifact prepare, metadata/version/share/signature, access audit → document/version handle    | 접근 거부, checksum/storage 실패                  | acceptance participant; commit 전 pending, commit 후 promotion              |
 | Idempotency/Common | claim, complete, abandon, replay → claim ID 또는 저장 응답                                             | key/fingerprint 충돌, 처리 중, 만료               | claim/abandon은 별도 짧은 Tx; complete는 업무 outer Tx의 마지막 participant |
 
@@ -197,9 +197,9 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | ------------ | ------------------------------------------------------------------------------------------------------ | -------------------- |
 | Member/Auth  | `MemberIdentityQueryService`                                                                           | Work 계약 Snapshot에 필요한 최소 `userId/name` Query |
 | Workplace    | `WorkplaceOwnershipService`의 active/owner Query와 owner lock                                          | Auth onboarding, Attendance QR 검증·재발급 |
-| Work         | `AcceptanceWorkParticipant`, `WorkLifecycleCommandService`, `WorkSettlementService`                    | 수락 확정, Attendance 상태 전이, Settlement Work lock·완료 전환 |
+| Work         | `AcceptanceWorkParticipant`, `WorkLifecycleCommandService`, `WorkSettlementService`                    | 수락 확정, Attendance 상태 전이, Settlement의 COMPLETED Work 조회·lock |
 | Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`                                 | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger |
-| Settlement   | `SettlementReservationService`                                                                         | 수락 Transaction 안의 WAITING 예약 |
+| Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                                             | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
 | Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                                           | Attendance artifact 검증과 Controller 조회 경계 |
 | Member/Badge | `BadgeQueryService`                                                                                     | Controller의 badge Projection 조회 경계 |
 
@@ -225,7 +225,7 @@ Orchestrator Transaction에 참여한다.
 | Attendance Application             | Workplace, Document                             | Consumer-owned Query Port   | 사업장 권한/좌표와 signed artifact 준비 여부         |
 | Wallet Application                 | Bank Adapter                                    | Adapter command             | Mock 계좌 lock과 debit/credit                        |
 | Invitation Acceptance Orchestrator | Idempotency, Work, Wallet, Document, Settlement | Command participant         | 수락 순간의 원자 확정                                |
-| Settlement Payout Orchestrator     | Idempotency, Work, Settlement, Wallet           | Query + Command participant | 완료 상태 소비와 원자 지급                           |
+| Settlement approval / scheduled payout | Idempotency, Work, Settlement, Wallet       | Query + Command participant | 완료 상태 소비와 원자 지급; 외부 오류 변환은 호출자 소유 |
 | Document Application               | Work                                            | Consumer-owned Query Port   | 계약 당사자 파일 접근 판정                           |
 
 Workplace→Attendance와 Attendance→Workplace처럼 데이터 흐름이 양방향이어도 구현 package의
@@ -253,8 +253,8 @@ read projection으로 끝나는 요청에 Orchestrator를 만들지 않는다.
 | --------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
 | Signup                | Member/Auth Application        | Member uniqueness/insert → Wallet provision participant                                                            | 사용자와 기본 Wallet을 한 짧은 Tx로 commit                                       |
 | Workplace creation    | Workplace Application          | Workplace 검증·insert → Attendance initial QR participant                                                          | 사업장과 최초 고정 QR을 한 짧은 Tx로 commit                                      |
-| Invitation acceptance | `InvitationAcceptanceOrchestrator` | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → 현행 user ID 오름차순 지갑 조회 → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 `REQUIRES_NEW` Tx |
-| Settlement payout     | Settlement Payout Orchestrator | `work_cases` → `settlements` → `escrows` → 현행 user ID 오름차순 지갑 조회 → expected-state·자금·양측 ledger             | 지급 관련 상태와 금액을 한 Tx; Work 완료 상태를 새로 만들지 않음                 |
+| Invitation acceptance | `InvitationAcceptanceOrchestrator` | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → KRW wallet ID 해석·lock → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 `REQUIRES_NEW` Tx |
+| Settlement payout     | 수동 `SettlementApprovalTransaction` 또는 #172 건별 Tx | `work_cases` → `settlements` → `disputes` → `escrows` → KRW wallet ID 해석 → wallet ID 오름차순 lock → expected-state·자금·양측 ledger | `SettlementPayoutExecutor`는 `MANDATORY`; 수동 Claim complete는 같은 `REQUIRES_NEW` Tx의 마지막 단계이며 Scheduler는 `approved_by_user_id=null` |
 
 participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데이터를 `REQUIRES_NEW`로
 독립 commit하면 안 된다. Claim 선점·abandon처럼 별도 commit이 계약상 필요한 예외만 역할

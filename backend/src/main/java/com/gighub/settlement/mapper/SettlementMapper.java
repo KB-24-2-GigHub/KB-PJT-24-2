@@ -53,6 +53,11 @@ public interface SettlementMapper {
             @Param("settlementId") Long settlementId,
             @Param("approvedByUserId") Long approvedByUserId);
 
+    // 상태 전이: Scheduler가 잠근 행의 due/retry 자격을 같은 DB 시각으로 다시 확인한다.
+    int transitionEligibleScheduledToProcessing(
+            @Param("settlementId") Long settlementId,
+            @Param("eligibilityTime") LocalDateTime eligibilityTime);
+
     // 상태 전이: 같은 승인자가 처리 중인 정산만 완료한다.
     int transitionProcessingToCompleted(
             @Param("settlementId") Long settlementId,
