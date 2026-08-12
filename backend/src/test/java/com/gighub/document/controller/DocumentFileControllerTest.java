@@ -2,7 +2,6 @@ package com.gighub.document.controller;
 
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.CommonExceptionHandler;
-import com.gighub.document.exception.DocumentAccessDeniedException;
 import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.service.DocumentFileAccessService;
 import com.gighub.document.service.DocumentFileResult;
@@ -20,9 +19,11 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.hamcrest.Matchers.allOf;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
+import static org.hamcrest.Matchers.startsWith;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -32,11 +33,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** {@link DocumentFileController}의 인증, 접근 오류 매핑과 응답 Header를 검증합니다. */
+/** 파일 응답 Header와 비가시 접근의 404 통일을 검증합니다. */
 @ExtendWith(MockitoExtension.class)
 class DocumentFileControllerTest {
 
-    private static final Long USER_ID = 3L;
     private static final Long DOCUMENT_ID = 10L;
 
     @Mock
@@ -44,6 +44,7 @@ class DocumentFileControllerTest {
 
     private MockMvc mockMvc;
     private Authentication authentication;
+    private AuthPrincipal principal;
 
     @BeforeEach
     void setUp() {
@@ -52,70 +53,79 @@ class DocumentFileControllerTest {
                 .setControllerAdvice(new CommonExceptionHandler())
                 .build();
 
-        AuthPrincipal principal = new AuthPrincipal(USER_ID, UserRole.OWNER, "김사장");
+        principal = new AuthPrincipal(3L, UserRole.OWNER, "김사장");
         authentication = new UsernamePasswordAuthenticationToken(principal, null, List.of());
     }
 
-    private DocumentFileResult result() {
-        return DocumentFileResult.builder()
-                .content("PDF-BYTES".getBytes(StandardCharsets.UTF_8))
-                .mimeType("application/pdf")
-                .fileName("근로계약서_v2.pdf")
-                .build();
-    }
-
     @Test
-    void returnsInlineDispositionForViewMode() throws Exception {
-        when(documentFileAccessService.loadFile(DOCUMENT_ID, USER_ID, "view"))
-                .thenReturn(result());
+    void returnsSafeInlineHeadersForView() throws Exception {
+        when(documentFileAccessService.loadFile(
+                DOCUMENT_ID, 3L, UserRole.OWNER, "view"))
+                .thenReturn(pdfResult(false));
 
         mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
                         .principal(authentication))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Content-Disposition",
-                        org.hamcrest.Matchers.startsWith("inline;")))
+                .andExpect(header().string("Content-Disposition", allOf(
+                        startsWith("inline; filename=\"employment-contract.pdf\""),
+                        containsString("filename*=UTF-8''"),
+                        not(containsString("contracts/")))))
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(header().string("Accept-Ranges", "none"))
+                .andExpect(header().string("X-Content-Type-Options", "nosniff"))
+                .andExpect(header().longValue("Content-Length", 9L))
                 .andExpect(content().contentType("application/pdf"))
                 .andExpect(content().bytes("PDF-BYTES".getBytes(StandardCharsets.UTF_8)));
     }
 
     @Test
-    void returnsAttachmentDispositionForDownloadMode() throws Exception {
-        when(documentFileAccessService.loadFile(DOCUMENT_ID, USER_ID, "download"))
-                .thenReturn(result());
+    void forcesAttachmentForUnsupportedMimeFallback() throws Exception {
+        DocumentFileResult result = DocumentFileResult.builder()
+                .content(new byte[]{1})
+                .mimeType("application/octet-stream")
+                .fileName("문서.bin")
+                .asciiFileName("document.bin")
+                .forceAttachment(true)
+                .build();
+        when(documentFileAccessService.loadFile(
+                DOCUMENT_ID, 3L, UserRole.OWNER, "view"))
+                .thenReturn(result);
+
+        mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Content-Disposition", startsWith("attachment;")))
+                .andExpect(content().contentType("application/octet-stream"));
+    }
+
+    @Test
+    void downloadUsesAttachment() throws Exception {
+        when(documentFileAccessService.loadFile(
+                DOCUMENT_ID, 3L, UserRole.OWNER, "download"))
+                .thenReturn(pdfResult(false));
 
         mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
                         .param("mode", "download")
                         .principal(authentication))
                 .andExpect(status().isOk())
-                .andExpect(header().string("Content-Disposition",
-                        org.hamcrest.Matchers.startsWith("attachment;")));
+                .andExpect(header().string("Content-Disposition", startsWith("attachment;")));
     }
 
     @Test
-    void rejectsUnknownModeBeforeCallingTheService() throws Exception {
+    void rejectsUnknownModeBeforeServiceCall() throws Exception {
         mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
                         .param("mode", "edit")
                         .principal(authentication))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
-        verify(documentFileAccessService, never()).loadFile(any(), any(), any());
+        verify(documentFileAccessService, never()).loadFile(any(), any(), any(), any());
     }
 
     @Test
-    void translatesAccessDeniedToForbidden() throws Exception {
-        when(documentFileAccessService.loadFile(eq(DOCUMENT_ID), eq(USER_ID), any()))
-                .thenThrow(new DocumentAccessDeniedException("문서에 접근할 권한이 없습니다."));
-
-        mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
-                        .principal(authentication))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
-    }
-
-    @Test
-    void translatesMissingDocumentToNotFound() throws Exception {
-        when(documentFileAccessService.loadFile(eq(DOCUMENT_ID), eq(USER_ID), any()))
+    void everyInvisibleDocumentIsReturnedAsNotFound() throws Exception {
+        when(documentFileAccessService.loadFile(
+                DOCUMENT_ID, 3L, UserRole.OWNER, "view"))
                 .thenThrow(new DocumentNotFoundException("문서를 찾을 수 없습니다."));
 
         mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
@@ -130,18 +140,16 @@ class DocumentFileControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
 
-        verify(documentFileAccessService, never()).loadFile(any(), any(), any());
+        verify(documentFileAccessService, never()).loadFile(any(), any(), any(), any());
     }
 
-    @Test
-    void doesNotExposeStorageKeyInTheResponse() throws Exception {
-        when(documentFileAccessService.loadFile(DOCUMENT_ID, USER_ID, "view"))
-                .thenReturn(result());
-
-        String responseHeader = mockMvc.perform(get("/api/documents/{documentId}/file", DOCUMENT_ID)
-                        .principal(authentication))
-                .andReturn().getResponse().getHeader("Content-Disposition");
-
-        assertEquals(true, responseHeader != null && !responseHeader.contains("contracts/"));
+    private DocumentFileResult pdfResult(boolean forceAttachment) {
+        return DocumentFileResult.builder()
+                .content("PDF-BYTES".getBytes(StandardCharsets.UTF_8))
+                .mimeType("application/pdf")
+                .fileName("근로계약서_강남점_2026-08-11_김근로.pdf")
+                .asciiFileName("employment-contract.pdf")
+                .forceAttachment(forceAttachment)
+                .build();
     }
 }

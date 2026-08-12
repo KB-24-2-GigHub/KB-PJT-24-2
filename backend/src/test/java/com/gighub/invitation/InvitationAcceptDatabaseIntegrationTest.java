@@ -436,7 +436,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 }
 
                 DocumentFileResult fallback =
-                        fileAccessService.loadFile(documentId, fixture.workerUserId, "download");
+                        fileAccessService.loadFile(
+                                documentId,
+                                fixture.workerUserId,
+                                UserRole.WORKER,
+                                "download");
                 assertArrayEquals(
                         (byte[]) versions.get(1).get("checksum"),
                         Sha256.digest(fallback.getContent()));
@@ -636,9 +640,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 (byte[]) signature.get("signed_checksum"));
 
         DocumentFileResult ownerFile =
-                fileAccessService.loadFile(documentId, fixture.ownerUserId, "view");
+                fileAccessService.loadFile(
+                        documentId, fixture.ownerUserId, UserRole.OWNER, "view");
         DocumentFileResult workerFile =
-                fileAccessService.loadFile(documentId, fixture.workerUserId, "download");
+                fileAccessService.loadFile(
+                        documentId, fixture.workerUserId, UserRole.WORKER, "download");
         assertArrayEquals(ownerFile.getContent(), workerFile.getContent());
         assertArrayEquals((byte[]) versions.get(1).get("checksum"),
                 Sha256.digest(ownerFile.getContent()));

@@ -347,15 +347,15 @@
     {
       "id": "QX-003",
       "mapper": "com.gighub.document.mapper.DocumentQueryMapper",
-      "crossModuleTables": ["users"],
-      "purpose": "document list projection",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "role-scoped document list and share history projection",
       "crossTableWriteAllowed": false
     },
     {
       "id": "QX-004",
       "mapper": "com.gighub.document.mapper.DocumentAccessMapper",
-      "crossModuleTables": ["work_contracts"],
-      "purpose": "document access authorization projection",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "contract-party and health-share access authorization projection",
       "crossTableWriteAllowed": false
     },
     {
