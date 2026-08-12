@@ -53,6 +53,7 @@ public class FundingServiceImpl implements FundingService {
         String rawKey = WalletIdempotencyKeys.validateRawKey(command.getIdempotencyKey());
         String ledgerKey = WalletIdempotencyKeys.funding(rawKey);
 
+        // 잠금 충돌 시 일부 단계만 반복하지 않고, rollback된 자금 명령 전체를 새 트랜잭션에서 재시도합니다.
         int attemptCount = 0;
         while (true) {
             attemptCount++;

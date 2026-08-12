@@ -1,290 +1,172 @@
 package com.gighub.settlement.service;
 
-import com.gighub.settlement.domain.SettlementStatus;
-import com.gighub.settlement.dto.SettlementSnapshot;
-import com.gighub.settlement.mapper.SettlementMapper;
+import com.gighub.common.exception.RoleMismatchException;
+import com.gighub.idempotency.IdempotencyClaimResult;
+import com.gighub.idempotency.IdempotencyClaimService;
+import com.gighub.member.domain.UserRole;
+import com.gighub.settlement.exception.SettlementNotReadyException;
+import com.gighub.settlement.exception.SettlementTemporarilyUnavailableException;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.impl.SettlementServiceImpl;
 import com.gighub.settlement.service.result.SettlementResult;
-import com.gighub.wallet.exception.EscrowAccessDeniedException;
-import com.gighub.wallet.exception.EscrowIntegrityException;
-import com.gighub.wallet.exception.InvalidEscrowStateException;
-import com.gighub.wallet.service.SettlementWalletService;
-import com.gighub.wallet.service.command.SettlementWalletCommand;
-import com.gighub.work.contract.WorkCaseEscrowSnapshot;
-import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.work.service.WorkSettlementService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
-import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.PessimisticLockingFailureException;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.Mockito.inOrder;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-/** Settlement outer Transaction의 owner/participant 순서와 상태 방어를 고정합니다. */
+/** 외부 Key Claim과 지급 Transaction의 분리된 생명주기를 고정합니다. */
 @ExtendWith(MockitoExtension.class)
 class SettlementServiceTest {
 
-    private static final Long EMPLOYER_ID = 3L;
-    private static final Long WORKER_ID = 4L;
-    private static final Long WORK_CASE_ID = 1L;
-    private static final Long SETTLEMENT_ID = 12L;
-    private static final Long AGREED_WAGE = 300_000L;
+    private static final long EMPLOYER_ID = 3L;
+    private static final long WORK_CASE_ID = 1L;
+    private static final long CLAIM_ID = 77L;
+    private static final long WAGE = 300_000L;
     private static final String KEY = "SETTLEMENT-KEY-001";
-    private static final LocalDateTime PROCESSING_AT =
-            LocalDateTime.of(2026, 7, 24, 17, 10);
-    private static final LocalDateTime COMPLETED_AT =
-            LocalDateTime.of(2026, 7, 24, 17, 10, 1, 123_456_000);
 
     @Mock
-    private SettlementMapper settlementMapper;
+    private IdempotencyClaimService claimService;
 
     @Mock
-    private WorkSettlementService workSettlementService;
+    private SettlementApprovalTransaction approvalTransaction;
 
     @Mock
-    private SettlementWalletService settlementWalletService;
+    private SettlementReplayCodec replayCodec;
 
     @InjectMocks
     private SettlementServiceImpl settlementService;
 
     @Test
-    void approveCallsParticipantsInLockAndCommitOrder() {
-        WorkCaseEscrowSnapshot context = context(WorkCaseStatus.ACCEPTED);
-        stubHappy(context);
+    void firstRequestClaimsTheExternalKeyAndExecutesOnePayoutTransaction() {
+        SettlementApproveCommand command = command(WORK_CASE_ID, KEY, UserRole.OWNER);
+        SettlementResult expected = completed(false);
+        when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
+                .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
+        when(approvalTransaction.execute(command, CLAIM_ID)).thenReturn(expected);
 
-        SettlementResult result = settlementService.approve(command(EMPLOYER_ID));
+        assertSame(expected, settlementService.approve(command));
 
-        assertEquals(SETTLEMENT_ID, result.getSettlementId());
-        assertEquals("COMPLETED", result.getStatus());
-        assertEquals(COMPLETED_AT, result.getCompletedAt());
-        assertFalse(result.isReplayed());
-
-        InOrder order = inOrder(
-                workSettlementService, settlementMapper, settlementWalletService);
-        order.verify(workSettlementService).lockEscrowContext(WORK_CASE_ID);
-        order.verify(settlementMapper).findByWorkCaseIdForUpdate(WORK_CASE_ID);
-        order.verify(settlementWalletService).verifyReplay(any());
-        order.verify(settlementMapper)
-                .transitionWaitingToProcessing(SETTLEMENT_ID, EMPLOYER_ID);
-        order.verify(settlementWalletService).release(any());
-        order.verify(workSettlementService).completeForPayout(context);
-        order.verify(settlementMapper)
-                .transitionProcessingToCompleted(SETTLEMENT_ID, EMPLOYER_ID);
-
-        ArgumentCaptor<SettlementWalletCommand> commandCaptor =
-                ArgumentCaptor.forClass(SettlementWalletCommand.class);
-        verify(settlementWalletService).release(commandCaptor.capture());
-        assertEquals(WORK_CASE_ID.longValue(), commandCaptor.getValue().getWorkCaseId());
-        assertEquals(EMPLOYER_ID.longValue(), commandCaptor.getValue().getEmployerId());
-        assertEquals(WORKER_ID.longValue(), commandCaptor.getValue().getWorkerId());
-        assertEquals(AGREED_WAGE.longValue(), commandCaptor.getValue().getAmount());
+        verify(approvalTransaction).execute(command, CLAIM_ID);
+        verify(claimService, never()).abandon(anyLong());
     }
 
     @Test
-    void approveReplaysOnlyCompletedSettlementAndWalletState() {
-        WorkCaseEscrowSnapshot context = context(WorkCaseStatus.COMPLETED);
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID)).thenReturn(context);
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.COMPLETED));
-        when(settlementWalletService.verifyReplay(any())).thenReturn(true);
+    void completedClaimReplaysTheStoredResponseWithoutReadingCurrentSettlementState() {
+        SettlementApproveCommand command = command(WORK_CASE_ID, KEY, UserRole.OWNER);
+        SettlementResult expected = completed(true);
+        when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
+                .thenReturn(IdempotencyClaimResult.replay(200, "{\"data\":{}}"));
+        when(replayCodec.readResponseBody("{\"data\":{}}"))
+                .thenReturn(expected);
 
-        SettlementResult result = settlementService.approve(command(EMPLOYER_ID));
+        assertSame(expected, settlementService.approve(command));
 
-        assertTrue(result.isReplayed());
-        verify(settlementWalletService, never()).release(any());
-        verify(settlementMapper, never()).transitionWaitingToProcessing(anyLong(), anyLong());
+        verify(approvalTransaction, never()).execute(any(), anyLong());
     }
 
     @Test
-    void approveRejectsMissingOrMismatchedSettlementBeforeWalletMutation() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED));
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-        verify(settlementWalletService, never()).release(any());
+    void failedPayoutAbandonsTheClaimAfterTheTransactionReturns() {
+        SettlementApproveCommand command = command(WORK_CASE_ID, KEY, UserRole.OWNER);
+        SettlementNotReadyException failure = new SettlementNotReadyException();
+        when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
+                .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
+        when(approvalTransaction.execute(command, CLAIM_ID)).thenThrow(failure);
 
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.WAITING).toBuilder()
-                        .amount(AGREED_WAGE - 1)
-                        .build());
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
+        assertSame(failure, assertThrows(
+                SettlementNotReadyException.class,
+                () -> settlementService.approve(command)));
+        verify(claimService).abandon(CLAIM_ID);
     }
 
     @Test
-    void approvePreservesLegacyAllowedStates() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.CHECK_OUT_MISSING));
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.WAITING));
+    void lockFailuresRetryTheWholeTransactionThenReleaseTheExternalKey() {
+        SettlementApproveCommand command = command(WORK_CASE_ID, KEY, UserRole.OWNER);
+        when(claimService.claim(eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), eq(KEY), any()))
+                .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
+        when(approvalTransaction.execute(command, CLAIM_ID))
+                .thenThrow(new PessimisticLockingFailureException("lock"));
 
         assertThrows(
-                InvalidEscrowStateException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-        verify(settlementWalletService, never()).release(any());
+                SettlementTemporarilyUnavailableException.class,
+                () -> settlementService.approve(command));
+
+        verify(approvalTransaction, times(3)).execute(command, CLAIM_ID);
+        verify(claimService).abandon(CLAIM_ID);
     }
 
     @Test
-    void approveRejectsOnHoldProcessingAndCompletedWithoutReplay() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED));
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.ON_HOLD));
+    void roleAndKeyValidationHappenBeforeAClaimIsStored() {
         assertThrows(
-                InvalidEscrowStateException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
+                RoleMismatchException.class,
+                () -> settlementService.approve(
+                        command(WORK_CASE_ID, KEY, UserRole.WORKER)));
+        assertThrows(
+                com.gighub.common.exception.ValidationException.class,
+                () -> settlementService.approve(
+                        command(WORK_CASE_ID, "contains space", UserRole.OWNER)));
 
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.PROCESSING));
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.COMPLETED));
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.COMPLETED));
-        assertThrows(
-                InvalidEscrowStateException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
+        verify(claimService, never()).claim(anyLong(), any(), any(), any());
     }
 
     @Test
-    void approveRejectsBlockingDisputeBeforeProcessing() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED));
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.WAITING));
-        when(settlementMapper.findBlockingDisputeIdsForUpdate(WORK_CASE_ID))
-                .thenReturn(List.of(9L));
+    void fingerprintUsesWorkCaseIdentityButNeverTheExternalKey() {
+        SettlementApproveCommand first = command(WORK_CASE_ID, KEY, UserRole.OWNER);
+        SettlementApproveCommand second = command(WORK_CASE_ID, "ANOTHER-KEY", UserRole.OWNER);
+        when(claimService.claim(anyLong(), any(), any(), any()))
+                .thenReturn(IdempotencyClaimResult.started(CLAIM_ID));
+        when(approvalTransaction.execute(any(), eq(CLAIM_ID))).thenReturn(completed(false));
 
-        assertThrows(
-                InvalidEscrowStateException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-        verify(settlementMapper, never()).transitionWaitingToProcessing(anyLong(), anyLong());
+        settlementService.approve(first);
+        settlementService.approve(second);
+
+        ArgumentCaptor<byte[]> fingerprints = ArgumentCaptor.forClass(byte[].class);
+        verify(claimService, times(2)).claim(
+                eq(EMPLOYER_ID), eq("SETTLEMENT_APPROVE"), any(), fingerprints.capture());
+        assertArrayEquals(
+                fingerprints.getAllValues().get(0),
+                fingerprints.getAllValues().get(1));
+        assertEquals(32, fingerprints.getValue().length);
+        assertTrue(fingerprints.getValue().length < KEY.length() * 4);
     }
 
-    @Test
-    void approveRejectsUnauthorizedOrSamePartyBeforeSettlementLock() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED));
-        assertThrows(
-                EscrowAccessDeniedException.class,
-                () -> settlementService.approve(command(99L)));
-        verify(settlementMapper, never()).findByWorkCaseIdForUpdate(anyLong());
-
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED).toBuilder()
-                        .workerId(EMPLOYER_ID)
-                        .build());
-        assertThrows(
-                InvalidEscrowStateException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-    }
-
-    @Test
-    void approveStopsOnExpectedStateFailuresAndReliesOnOuterRollback() {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
-                .thenReturn(context(WorkCaseStatus.ACCEPTED));
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.WAITING));
-
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-        verify(settlementWalletService, never()).release(any());
-
-        when(settlementMapper.transitionWaitingToProcessing(SETTLEMENT_ID, EMPLOYER_ID))
-                .thenReturn(1);
-        when(workSettlementService.completeForPayout(any())).thenReturn(true);
-        when(settlementMapper.transitionProcessingToCompleted(SETTLEMENT_ID, EMPLOYER_ID))
-                .thenReturn(0);
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-        verify(settlementWalletService).release(any());
-        verify(workSettlementService).completeForPayout(any());
-    }
-
-    @Test
-    void approveStopsWhenWorkCompletionParticipantRejectsTheExpectedState() {
-        WorkCaseEscrowSnapshot context = context(WorkCaseStatus.ACCEPTED);
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID)).thenReturn(context);
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(settlement(SettlementStatus.WAITING));
-        when(settlementMapper.transitionWaitingToProcessing(SETTLEMENT_ID, EMPLOYER_ID))
-                .thenReturn(1);
-        when(workSettlementService.completeForPayout(context)).thenReturn(false);
-
-        assertThrows(
-                EscrowIntegrityException.class,
-                () -> settlementService.approve(command(EMPLOYER_ID)));
-
-        verify(settlementWalletService).release(any());
-        verify(settlementMapper, never())
-                .transitionProcessingToCompleted(anyLong(), anyLong());
-    }
-
-    private void stubHappy(WorkCaseEscrowSnapshot context) {
-        when(workSettlementService.lockEscrowContext(WORK_CASE_ID)).thenReturn(context);
-        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
-                .thenReturn(
-                        settlement(SettlementStatus.WAITING),
-                        settlement(SettlementStatus.COMPLETED));
-        when(settlementMapper.transitionWaitingToProcessing(SETTLEMENT_ID, EMPLOYER_ID))
-                .thenReturn(1);
-        when(workSettlementService.completeForPayout(context)).thenReturn(true);
-        when(settlementMapper.transitionProcessingToCompleted(SETTLEMENT_ID, EMPLOYER_ID))
-                .thenReturn(1);
-    }
-
-    private SettlementApproveCommand command(Long approverId) {
+    private SettlementApproveCommand command(
+            long workCaseId, String key, UserRole role) {
         return SettlementApproveCommand.builder()
-                .workCaseId(WORK_CASE_ID)
-                .approverUserId(approverId)
-                .idempotencyKey(KEY)
+                .workCaseId(workCaseId)
+                .approverUserId(EMPLOYER_ID)
+                .approverRole(role)
+                .idempotencyKey(key)
                 .build();
     }
 
-    private WorkCaseEscrowSnapshot context(WorkCaseStatus status) {
-        return WorkCaseEscrowSnapshot.builder()
-                .workCaseId(WORK_CASE_ID)
-                .employerId(EMPLOYER_ID)
-                .workerId(WORKER_ID)
-                .agreedWage(AGREED_WAGE)
-                .status(status)
+    private SettlementResult completed(boolean replayed) {
+        return SettlementResult.builder()
+                .settlementId(12L)
+                .status("COMPLETED")
+                .settlementAmount(WAGE)
+                .originalEscrowAmount(WAGE)
+                .workerPaidAmount(WAGE)
+                .ownerRefundAmount(0L)
+                .completedAt(LocalDateTime.of(2026, 8, 12, 10, 0))
+                .replayed(replayed)
                 .build();
-    }
-
-    private SettlementSnapshot settlement(SettlementStatus status) {
-        SettlementSnapshot.SettlementSnapshotBuilder builder = SettlementSnapshot.builder()
-                .settlementId(SETTLEMENT_ID)
-                .workCaseId(WORK_CASE_ID)
-                .amount(AGREED_WAGE)
-                .status(status);
-        if (status == SettlementStatus.COMPLETED) {
-            builder.approvedByUserId(EMPLOYER_ID)
-                    .processingAt(PROCESSING_AT)
-                    .completedAt(COMPLETED_AT);
-        }
-        return builder.build();
     }
 }

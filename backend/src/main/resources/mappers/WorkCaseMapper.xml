@@ -175,7 +175,11 @@
 
     <update id="updateWorkStatus">
         UPDATE work_cases
-        SET status = #{toStatus}
+        SET status = #{toStatus},
+            canceled_at = CASE
+                WHEN #{toStatus} = 'CANCELED' THEN CURRENT_TIMESTAMP(6)
+                ELSE canceled_at
+            END
         WHERE id = #{workCaseId}
           AND status IN
         <foreach item="s" collection="fromStatuses" open="(" separator="," close=")">

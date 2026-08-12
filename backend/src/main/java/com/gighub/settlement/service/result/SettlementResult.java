@@ -10,6 +10,10 @@ import java.time.LocalDateTime;
 public class SettlementResult {
     Long settlementId;
     String status;
+    Long settlementAmount;
+    Long originalEscrowAmount;
+    Long workerPaidAmount;
+    Long ownerRefundAmount;
     LocalDateTime completedAt;
     boolean replayed;
 }

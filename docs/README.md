@@ -29,6 +29,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 모든 저장소 작업   | [`agent/PROJECT_RULES.md`](agent/PROJECT_RULES.md)                 | 공통 기술·소유권·검증 계약                         |
 | 기능 구현 시작     | [`agent/ARCHITECTURE_OVERVIEW.md`](agent/ARCHITECTURE_OVERVIEW.md) | 런타임 구조와 책임 경계                            |
 | 모듈·테이블 경계   | [`agent/MODULE_BOUNDARIES.md`](agent/MODULE_BOUNDARIES.md)         | 논리 모듈, Write owner, 공개 Service와 Tx 계약     |
+| Java 모델링·정리   | [`agent/JAVA_MODELING_GUIDE.md`](agent/JAVA_MODELING_GUIDE.md)     | Lombok, 타입, interface, Exception, 복잡성 기준    |
 | 위험 기반 검증     | [`agent/VERIFICATION_GUIDE.md`](agent/VERIFICATION_GUIDE.md)       | R0~R3, Characterization, 장기 생명주기와 실행 명령 |
 | 코드 진입점 탐색   | [`agent/IMPLEMENTATION_GUIDE.md`](agent/IMPLEMENTATION_GUIDE.md)   | Route, API, Backend, DB 작업별 안정적인 탐색 순서  |
 | 최상위 제품 목표 확인 | [`specs/MVP_SCOPE.md`](specs/MVP_SCOPE.md)                       | 원본 시연 시나리오, Priority와 화면 성공 판정      |
@@ -71,7 +72,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 로컬 실행·검증·장애 대응 | [`runbooks/DATABASE_RUNBOOK.md`](runbooks/DATABASE_RUNBOOK.md)                               |
 | 핵심 테이블·제약 요약    | [`agent/SCHEMA_OVERVIEW.md`](agent/SCHEMA_OVERVIEW.md)                                       |
 | 전체 관계·기능별 ERD     | [`DATABASE_SCHEMA_ERD.md`](DATABASE_SCHEMA_ERD.md)                                           |
-| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608061428.sql`](database/schema-snapshot-202608061428.sql)     |
+| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608121403.sql`](database/schema-snapshot-202608121403.sql)     |
 
 Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시된 Flyway Head를 새 빈 DB에
 재현하기 위한 참고 산출물이며 기존 DB 업그레이드에 사용하지 않습니다. Migration과

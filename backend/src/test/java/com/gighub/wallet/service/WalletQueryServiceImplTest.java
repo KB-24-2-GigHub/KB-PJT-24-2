@@ -4,11 +4,11 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.wallet.dto.WalletBalanceResponse;
-import com.gighub.wallet.dto.WalletSummary;
 import com.gighub.wallet.dto.WalletTransactionItem;
 import com.gighub.wallet.dto.WalletTransactionSearch;
-import com.gighub.wallet.dto.WalletTransactionView;
 import com.gighub.wallet.mapper.WalletQueryMapper;
+import com.gighub.wallet.mapper.result.WalletSummaryRow;
+import com.gighub.wallet.mapper.result.WalletTransactionRow;
 import com.gighub.wallet.service.command.WalletTransactionCriteria;
 import com.gighub.wallet.service.impl.WalletQueryServiceImpl;
 import org.junit.jupiter.api.BeforeEach;
@@ -48,7 +48,7 @@ class WalletQueryServiceImplTest {
     @Test
     void returnsApprovedWalletBalance() {
         when(walletQueryMapper.findWalletSummaryByUserId(USER_ID)).thenReturn(
-                WalletSummary.builder()
+                WalletSummaryRow.builder()
                         .walletId(30L)
                         .availableBalance(400_000L)
                         .lockedBalance(300_000L)
@@ -111,7 +111,7 @@ class WalletQueryServiceImplTest {
 
     @Test
     void derivesDirectionStatusAndUtcFromLedgerBalances() {
-        List<WalletTransactionView> rows = List.of(
+        List<WalletTransactionRow> rows = List.of(
                 view(1L, "FUNDING", 0, 100, 0, 0),
                 view(2L, "ESCROW_HOLD", 100, 0, 0, 100),
                 view(3L, "ESCROW_RELEASE", 0, 0, 100, 0),
@@ -201,14 +201,14 @@ class WalletQueryServiceImplTest {
                 .size(20);
     }
 
-    private WalletTransactionView view(
+    private WalletTransactionRow view(
             Long id,
             String type,
             long availableBefore,
             long availableAfter,
             long lockedBefore,
             long lockedAfter) {
-        return WalletTransactionView.builder()
+        return WalletTransactionRow.builder()
                 .transactionId(id)
                 .type(type)
                 .amount(100L)

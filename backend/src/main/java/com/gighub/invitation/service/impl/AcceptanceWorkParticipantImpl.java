@@ -25,6 +25,7 @@ import com.gighub.member.service.result.MemberIdentitySnapshot;
 import com.gighub.work.domain.WorkCaseDecision;
 import com.gighub.work.domain.WorkCasePolicy;
 import com.gighub.work.mapper.WorkCaseMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +36,7 @@ import java.util.Objects;
 
 /** Work 논리 모듈의 세 owner Mapper를 수락 의미 명령 뒤에 캡슐화합니다. */
 @Service
+@RequiredArgsConstructor
 public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant {
 
     private static final String NOT_ACCEPTABLE = "확정할 수 없는 근무입니다.";
@@ -45,19 +47,6 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
     private final WorkContractMapper workContractMapper;
     private final MemberIdentityQueryService memberIdentityQueryService;
     private final AcceptJson acceptJson;
-
-    public AcceptanceWorkParticipantImpl(
-            InvitationMapper invitationMapper,
-            WorkCaseMapper workCaseMapper,
-            WorkContractMapper workContractMapper,
-            MemberIdentityQueryService memberIdentityQueryService,
-            AcceptJson acceptJson) {
-        this.invitationMapper = invitationMapper;
-        this.workCaseMapper = workCaseMapper;
-        this.workContractMapper = workContractMapper;
-        this.memberIdentityQueryService = memberIdentityQueryService;
-        this.acceptJson = acceptJson;
-    }
 
     @Override
     @Transactional(

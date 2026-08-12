@@ -4,18 +4,16 @@ import com.gighub.member.domain.User;
 import com.gighub.member.mapper.UserMapper;
 import com.gighub.member.service.MemberIdentityQueryService;
 import com.gighub.member.service.result.MemberIdentitySnapshot;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@RequiredArgsConstructor
 public class MemberIdentityQueryServiceImpl implements MemberIdentityQueryService {
 
     private final UserMapper userMapper;
-
-    public MemberIdentityQueryServiceImpl(UserMapper userMapper) {
-        this.userMapper = userMapper;
-    }
 
     @Override
     @Transactional(readOnly = true, propagation = Propagation.MANDATORY)

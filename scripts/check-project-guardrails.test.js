@@ -19,6 +19,7 @@ const {
   parsePatchDocument,
   parseMode,
   parseSpecManifest,
+  selectBlockingArchitectureViolations,
   selectIntegrationBaseBranch,
   splitNullSeparated,
   verifyPatchSnapshot,
@@ -45,6 +46,16 @@ const ARCHITECTURE_MANIFEST = {
       id: "document",
       packageRoots: ["document"],
       ownedTables: ["documents"],
+    },
+    {
+      id: "idempotency-common",
+      packageRoots: ["common"],
+      ownedTables: [],
+    },
+    {
+      id: "test-support",
+      packageRoots: ["support"],
+      ownedTables: [],
     },
   ],
   tableOwnership: [
@@ -268,6 +279,63 @@ function guardrailEnvironment(overrides = {}) {
   delete environment.GITHUB_BASE_REF;
   delete environment.GIGHUB_GUARDRAIL_BASE_REF;
   return { ...environment, ...overrides };
+}
+
+function specFixtureForVersion(version) {
+  return {
+    "docs/specs/README.md": [
+      "# Product specification",
+      "",
+      "| Item | Value |",
+      "| --- | --- |",
+      `| Release | \`${version}\` |`,
+      "",
+      "## Release history",
+      "",
+      "| Version | Date |",
+      "| --- | --- |",
+      `| \`${version}\` | 2026-08-12 |`,
+      "",
+    ].join("\n"),
+    "docs/specs/API_SPEC.md": `# API contract\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+    "docs/specs/DECISIONS.md": `# Decisions\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+    "docs/specs/REQUIREMENTS.md": `# Requirements\n\n| Release | \`${version}\` |\n\nProtected acceptance criteria.\n`,
+    "docs/specs/SPEC_TRACEABILITY.md": `# Traceability\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+  };
+}
+
+function initializePatchHistoryRepository(prefix, { draft = false } = {}) {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  execFileSync("git", ["init", "--quiet"], { cwd: repository });
+  execFileSync("git", ["config", "user.name", "Guardrail Test"], {
+    cwd: repository,
+  });
+  execFileSync("git", ["config", "user.email", "guardrail@example.com"], {
+    cwd: repository,
+  });
+  writeSpecFixture(repository, specFixtureForVersion("3.0.0"));
+  for (const [file, content] of Object.entries(PATCH_SCAFFOLD)) {
+    writeRepositoryFile(repository, file, content);
+  }
+  if (draft) {
+    writeRepositoryFile(
+      repository,
+      patchPath("wallet-contract"),
+      createPatchDocument(),
+    );
+  }
+  execFileSync("git", ["add", "."], { cwd: repository });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: repository,
+  });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: repository,
+    encoding: "utf8",
+  }).trim();
+  execFileSync("git", ["update-ref", "refs/remotes/origin/dev", base], {
+    cwd: repository,
+  });
+  return repository;
 }
 
 test("parses explicit staged and all modes", () => {
@@ -674,6 +742,27 @@ test("blocks only architecture violations added beyond the frozen baseline", () 
   );
 });
 
+test("keeps RF-10 reverse type dependencies at current zero", () => {
+  const files = new Map([
+    [
+      "backend/src/main/java/com/gighub/work/dto/WorkCaseResponse.java",
+      "package com.gighub.work.dto;\n" +
+        "import com.gighub.work.mapper.result.WorkCaseRow;\n" +
+        "public final class WorkCaseResponse { private WorkCaseRow row; }\n",
+    ],
+  ]);
+  const baseline = findArchitectureViolations(files, ARCHITECTURE_MANIFEST);
+  const candidate = findArchitectureViolations(files, ARCHITECTURE_MANIFEST);
+
+  assert.deepEqual(compareArchitectureViolations(baseline, candidate), []);
+  assert.deepEqual(
+    selectBlockingArchitectureViolations(baseline, candidate).map(
+      ({ kind }) => kind,
+    ),
+    ["api-dto-mapper-type-import"],
+  );
+});
+
 test("fails closed for unmapped package roots and lowercase Mock flags", () => {
   const violations = findArchitectureViolations(
     new Map([
@@ -695,6 +784,182 @@ test("fails closed for unmapped package roots and lowercase Mock flags", () => {
     "unmapped-mapper-package-root",
     "unmapped-source-package-root",
   ]);
+});
+
+test("fails closed when API, Domain, and Mapper persistence type boundaries regress", () => {
+  const violations = findArchitectureViolations(
+    new Map([
+      [
+        "backend/src/main/java/com/gighub/work/dto/WorkCaseResponse.java",
+        "package com.gighub.work.dto;\n" +
+          "public class WorkCaseResponse {" +
+          " private com.gighub.work.mapper.result.WorkCaseRow row; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/dto/WorkCaseRequest.java",
+        "package com.gighub.work.dto;\n" +
+          "import com.gighub.work.mapper.param.*;\n" +
+          "public class WorkCaseRequest { private WorkCaseParam param; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/dto/WorkPersistenceSnapshot.java",
+        "package com.gighub.work.dto;\n" +
+          "import com.gighub.work.mapper.result.WorkCaseRow;\n" +
+          "public class WorkPersistenceSnapshot {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/dto/WorkEnvelopeResponse.java",
+        "package com.gighub.work.dto;\n" +
+          "public class WorkEnvelopeResponse {" +
+          " private com.gighub.work.dto.item.WorkNestedItem item;" +
+          " private WorkCaseItem caseItem; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/dto/WorkCaseItem.java",
+        "package com.gighub.work.dto;\npublic class WorkCaseItem {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/dto/item/WorkNestedItem.java",
+        "package com.gighub.work.dto.item;\n" +
+          "import com.gighub.work.mapper.result.WorkCaseRow;\n" +
+          "public class WorkNestedItem {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/mapper/WorkCaseMapper.java",
+        "package com.gighub.work.mapper;\n" +
+          "public interface WorkCaseMapper {" +
+          " com.gighub.work.dto.WorkCaseRequest find(); }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/common/api/PageResponse.java",
+        "package com.gighub.common.api;\n" +
+          "import com.gighub.work.mapper.result.WorkCaseRow;\n" +
+          "public class PageResponse { private WorkCaseRow row; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/mapper/WorkPageMapper.java",
+        "package com.gighub.work.mapper;\n" +
+          "import com.gighub.common.api.PageResponse;\n" +
+          "public interface WorkPageMapper { PageResponse find(); }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/support/TestLoginResponse.java",
+        "package com.gighub.support;\n" +
+          "public final class TestLoginResponse {" +
+          " private com.gighub.work.mapper.result.WorkCaseRow row; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/support/mapper/TestLoginMapper.java",
+        "package com.gighub.support.mapper;\n" +
+          "public interface TestLoginMapper {" +
+          " com.gighub.support.TestLoginResponse find(); }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/dto/AttendanceScanView.java",
+        "package com.gighub.attendance.dto;\n" +
+          "import com.gighub.attendance.mapper.result.AttendanceScanRow;\n" +
+          "public class AttendanceScanView {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/dto/AttendanceScanResult.java",
+        "package com.gighub.attendance.dto;\n" +
+          "import com.fasterxml.jackson.annotation.JsonTypeInfo;\n" +
+          "@JsonTypeInfo(use = JsonTypeInfo.Id.NAME)\n" +
+          "public interface AttendanceScanResult {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/dto/AttendanceRecordedView.java",
+        "package com.gighub.attendance.dto;\n" +
+          "import com.gighub.attendance.mapper.result.AttendanceScanRow;\n" +
+          "public final class AttendanceRecordedView implements AttendanceScanResult {}\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/domain/AttendancePolicy.java",
+        "package com.gighub.attendance.domain;\n" +
+          "public class AttendancePolicy {" +
+          " private com.gighub.attendance.dto.AttendanceScanResponse response; }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/attendance/controller/AttendanceController.java",
+          "package com.gighub.attendance.controller;\n" +
+          "import com.gighub.attendance.dto.AttendanceScanResponse;\n" +
+          "import com.gighub.attendance.dto.AttendanceScanResult;\n" +
+          "import com.gighub.attendance.dto.AttendanceScanView;\n" +
+          "public class AttendanceController {}\n",
+      ],
+      [
+        "backend/src/main/resources/mappers/AttendanceMapper.xml",
+        '<mapper namespace="com.gighub.attendance.mapper.AttendanceRecordMapper">' +
+          '<resultMap id="response" type="com.gighub.attendance.dto.AttendanceScanResponse" />' +
+          '<insert id="insert" parameterType="com.gighub.work.dto.WorkCaseRequest">' +
+          "INSERT INTO attendance_records (id) VALUES (1)" +
+          "</insert>" +
+          '<select id="page" resultType="com.gighub.common.api.PageResponse">' +
+          "SELECT 1" +
+          "</select>" +
+          '<select id="nested" resultType="com.gighub.work.dto.WorkEnvelopeResponse$WorkerSummary">' +
+          "SELECT 1" +
+          "</select>" +
+          '<resultMap id="nestedObjects" type="com.gighub.attendance.mapper.result.AttendanceScanRow">' +
+          '<association property="response" javaType="com.gighub.work.dto.WorkEnvelopeResponse" />' +
+          '<collection property="items" ofType="com.gighub.work.dto.WorkCaseItem" />' +
+          '<discriminator javaType="string" column="kind">' +
+          '<case value="worker" resultType="com.gighub.work.dto.WorkEnvelopeResponse$WorkerSummary" />' +
+          "</discriminator>" +
+          "<constructor>" +
+          '<arg javaType="com.gighub.work.dto.WorkCaseItem" />' +
+          "</constructor>" +
+          "</resultMap>" +
+          "</mapper>\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/service/WorkApplicationPort.java",
+        "package com.gighub.work.service;\n" +
+          "public interface WorkApplicationPort {" +
+          " javax.servlet.http.HttpServletRequest request();" +
+          " org.springframework.http.ResponseEntity<?> response();" +
+          " com.fasterxml.jackson.databind.JsonNode json(); }\n",
+      ],
+      [
+        "backend/src/main/java/com/gighub/work/service/WorkApplicationServiceImpl.java",
+        "package com.gighub.work.service;\n" +
+          "import javax.servlet.http.HttpServletRequest;\n" +
+          "import org.springframework.http.ResponseEntity;\n" +
+          "import com.fasterxml.jackson.databind.JsonNode;\n" +
+          "public class WorkApplicationServiceImpl {}\n",
+      ],
+    ]),
+    ARCHITECTURE_MANIFEST,
+  );
+
+  assert.deepEqual(
+    [...violations.values()].map(({ kind }) => kind).sort(),
+    [
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "api-dto-mapper-type-import",
+      "application-interface-web-import",
+      "application-interface-web-import",
+      "application-interface-web-import",
+      "cross-module-mapper-import",
+      "domain-forbidden-import",
+      "mapper-api-dto-import",
+      "mapper-api-dto-import",
+      "mapper-api-dto-import",
+      "mapper-api-request-dto-parameter",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+      "mapper-api-response-dto-result",
+    ],
+  );
 });
 
 test("freezes Mapper XML API DTO coupling without flagging persistence-only DTOs", () => {
@@ -1560,6 +1825,88 @@ test("all mode rejects a Patch committed directly as accepted", () => {
   }
 });
 
+test("all mode accepts an atomic draft-to-SPEC release followed by app work", () => {
+  const repository = initializePatchHistoryRepository(
+    "gighub-atomic-spec-history-",
+    { draft: true },
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+  const draft = patchPath("wallet-contract");
+  const archive = patchPath("wallet-contract", "archive");
+
+  try {
+    fs.rmSync(path.join(repository, ...draft.split("/")));
+    writeRepositoryFile(
+      repository,
+      archive,
+      createPatchDocument({ status: "accepted" }),
+    );
+    writeSpecFixture(repository, specFixtureForVersion("3.0.1"));
+    execFileSync("git", ["add", "-A"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "accept patch"], {
+      cwd: repository,
+    });
+    writeRepositoryFile(
+      repository,
+      "frontend/src/feature.js",
+      "export const feature = true;\n",
+    );
+    execFileSync("git", ["add", "frontend/src/feature.js"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "implement feature"], {
+      cwd: repository,
+    });
+
+    const result = spawnSync(process.execPath, [script, "--all"], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("all mode rejects application code mixed into an accepted release", () => {
+  const repository = initializePatchHistoryRepository(
+    "gighub-mixed-spec-history-",
+    { draft: true },
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+  const draft = patchPath("wallet-contract");
+  const archive = patchPath("wallet-contract", "archive");
+
+  try {
+    fs.rmSync(path.join(repository, ...draft.split("/")));
+    writeRepositoryFile(
+      repository,
+      archive,
+      createPatchDocument({ status: "accepted" }),
+    );
+    writeSpecFixture(repository, specFixtureForVersion("3.0.1"));
+    writeRepositoryFile(
+      repository,
+      "frontend/src/release.js",
+      "export const mixedRelease = true;\n",
+    );
+    execFileSync("git", ["add", "-A"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "mixed acceptance"], {
+      cwd: repository,
+    });
+
+    const result = spawnSync(process.execPath, [script, "--all"], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /accepted transition must not include application code/,
+    );
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
 test("detects forbidden frontend dependencies without flagging Vue reactivity", () => {
   const violations = findViolations([
     {
@@ -1689,6 +2036,116 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
     '<mapper namespace="attendance"><select id="find" resultType="com.gighub.attendance.mapper.result.AttendanceRow" /></mapper>\n';
   const violatingMapper =
     '<mapper namespace="attendance"><select id="find" resultType="com.gighub.attendance.dto.AttendanceResponse" /></mapper>\n';
+  const controllerFile =
+    "backend/src/main/java/com/gighub/work/controller/WorkController.java";
+  const unchangedController =
+    "package com.gighub.work.controller;\n" +
+    "import com.gighub.work.dto.WorkCaseEnvelopeResponse;\n" +
+    "import com.gighub.work.dto.WorkCaseView;\n" +
+    "public class WorkController {}\n";
+  const envelopeResponseFile =
+    "backend/src/main/java/com/gighub/work/dto/WorkCaseEnvelopeResponse.java";
+  const unchangedEnvelopeResponse =
+    "package com.gighub.work.dto;\n" +
+    "public final class WorkCaseEnvelopeResponse { private WorkCaseItem item; }\n";
+  const itemFile =
+    "backend/src/main/java/com/gighub/work/dto/WorkCaseItem.java";
+  const safeItem =
+    "package com.gighub.work.dto;\npublic final class WorkCaseItem {}\n";
+  const violatingItem =
+    "package com.gighub.work.dto;\n" +
+    "public final class WorkCaseItem {" +
+    " private com.gighub.work.mapper.result.WorkCaseRow row; }\n";
+  const viewFile =
+    "backend/src/main/java/com/gighub/work/dto/WorkCaseView.java";
+  const safeView =
+    "package com.gighub.work.dto;\npublic class WorkCaseView {}\n";
+  const violatingView =
+    "package com.gighub.work.dto;\n" +
+    "import com.gighub.work.mapper.result.WorkCaseRow;\n" +
+    "public class WorkCaseView {}\n";
+  const mapperInterfaceFile =
+    "backend/src/main/java/com/gighub/work/mapper/WorkCaseQueryMapper.java";
+  const safeMapperInterface =
+    "package com.gighub.work.mapper;\npublic interface WorkCaseQueryMapper {}\n";
+  const violatingMapperInterface =
+    "package com.gighub.work.mapper;\n" +
+    "public interface WorkCaseQueryMapper {" +
+    " com.gighub.work.dto.WorkCaseItem find(); }\n";
+  const workMapperFile =
+    "backend/src/main/resources/mappers/WorkCaseCharacterizationMapper.xml";
+  const safeWorkMapper =
+    '<mapper namespace="work"><select id="find" resultType="com.gighub.work.mapper.result.WorkCaseRow" /></mapper>\n';
+  const violatingWorkMapper =
+    '<mapper namespace="work">' +
+    '<select id="find" resultType="com.gighub.work.dto.WorkCaseItem" parameterType="com.gighub.work.dto.WorkCaseEnvelopeResponse" />' +
+    "</mapper>\n";
+  const nestedWorkMapper =
+    '<mapper namespace="work"><select id="find" resultType="com.gighub.work.dto.WorkCaseEnvelopeResponse$WorkerSummary" /></mapper>\n';
+  const commonApiWorkMapper =
+    '<mapper namespace="work"><select id="find" resultType="com.gighub.common.api.PageResponse" parameterType="com.gighub.common.api.PageResponse" /></mapper>\n';
+  const commonApiMapperInterface =
+    "package com.gighub.work.mapper;\n" +
+    "public interface WorkCaseQueryMapper {" +
+    " com.gighub.common.api.PageResponse find(); }\n";
+  const commonPageResponseFile =
+    "backend/src/main/java/com/gighub/common/api/PageResponse.java";
+  const safeCommonPageResponse =
+    "package com.gighub.common.api;\npublic final class PageResponse {}\n";
+  const violatingCommonPageResponse =
+    "package com.gighub.common.api;\n" +
+    "public final class PageResponse {" +
+    " private com.gighub.work.mapper.result.WorkCaseRow row; }\n";
+  const supportControllerFile =
+    "backend/src/main/java/com/gighub/support/TestLoginController.java";
+  const unchangedSupportController =
+    "package com.gighub.support;\n" +
+    "public final class TestLoginController {" +
+    " public TestLoginResponse login() { return null; } }\n";
+  const supportResponseFile =
+    "backend/src/main/java/com/gighub/support/TestLoginResponse.java";
+  const safeSupportResponse =
+    "package com.gighub.support;\npublic final class TestLoginResponse {}\n";
+  const violatingSupportResponse =
+    "package com.gighub.support;\n" +
+    "public final class TestLoginResponse {" +
+    " private com.gighub.work.mapper.result.WorkCaseRow row; }\n";
+  const scanControllerFile =
+    "backend/src/main/java/com/gighub/attendance/controller/AttendanceScanController.java";
+  const unchangedScanController =
+    "package com.gighub.attendance.controller;\n" +
+    "import com.gighub.attendance.dto.AttendanceScanResult;\n" +
+    "public final class AttendanceScanController {" +
+    " public AttendanceScanResult scan() { return null; } }\n";
+  const scanResultFile =
+    "backend/src/main/java/com/gighub/attendance/dto/AttendanceScanResult.java";
+  const safeScanResult =
+    "package com.gighub.attendance.dto;\npublic interface AttendanceScanResult {}\n";
+  const recordedViewFile =
+    "backend/src/main/java/com/gighub/attendance/dto/AttendanceRecordedView.java";
+  const safeRecordedView =
+    "package com.gighub.attendance.dto;\n" +
+    "public final class AttendanceRecordedView implements AttendanceScanResult {}\n";
+  const violatingRecordedView =
+    "package com.gighub.attendance.dto;\n" +
+    "public final class AttendanceRecordedView implements AttendanceScanResult {" +
+    " private com.gighub.attendance.mapper.result.AttendanceScanRow row; }\n";
+  const domainPolicyFile =
+    "backend/src/main/java/com/gighub/attendance/domain/AttendancePolicy.java";
+  const safeDomainPolicy =
+    "package com.gighub.attendance.domain;\npublic final class AttendancePolicy {}\n";
+  const violatingDomainPolicy =
+    "package com.gighub.attendance.domain;\n" +
+    "public final class AttendancePolicy {" +
+    " private com.gighub.attendance.mapper.result.AttendanceScanRow row; }\n";
+  const applicationPortFile =
+    "backend/src/main/java/com/gighub/work/service/WorkApplicationPort.java";
+  const safeApplicationPort =
+    "package com.gighub.work.service;\npublic interface WorkApplicationPort {}\n";
+  const violatingApplicationPort =
+    "package com.gighub.work.service;\n" +
+    "public interface WorkApplicationPort {" +
+    " org.springframework.http.ResponseEntity<?> call(); }\n";
   const environment = guardrailEnvironment({
     GIGHUB_GUARDRAIL_BASE_REF: "dev2",
   });
@@ -1719,6 +2176,48 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
     );
     writeRepositoryFile(temporaryRepository, sourceFile, safeSource);
     writeRepositoryFile(temporaryRepository, mapperFile, safeMapper);
+    writeRepositoryFile(temporaryRepository, controllerFile, unchangedController);
+    writeRepositoryFile(
+      temporaryRepository,
+      envelopeResponseFile,
+      unchangedEnvelopeResponse,
+    );
+    writeRepositoryFile(temporaryRepository, itemFile, safeItem);
+    writeRepositoryFile(temporaryRepository, viewFile, safeView);
+    writeRepositoryFile(
+      temporaryRepository,
+      mapperInterfaceFile,
+      safeMapperInterface,
+    );
+    writeRepositoryFile(temporaryRepository, workMapperFile, safeWorkMapper);
+    writeRepositoryFile(
+      temporaryRepository,
+      commonPageResponseFile,
+      safeCommonPageResponse,
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      supportControllerFile,
+      unchangedSupportController,
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      supportResponseFile,
+      safeSupportResponse,
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      scanControllerFile,
+      unchangedScanController,
+    );
+    writeRepositoryFile(temporaryRepository, scanResultFile, safeScanResult);
+    writeRepositoryFile(temporaryRepository, recordedViewFile, safeRecordedView);
+    writeRepositoryFile(temporaryRepository, domainPolicyFile, safeDomainPolicy);
+    writeRepositoryFile(
+      temporaryRepository,
+      applicationPortFile,
+      safeApplicationPort,
+    );
     execFileSync("git", ["add", "."], {
       cwd: temporaryRepository,
       stdio: "ignore",
@@ -1787,6 +2286,358 @@ test("architecture CLI separates staged index, working tree, and untracked sourc
       cwd: temporaryRepository,
       stdio: "ignore",
     });
+
+    // Controller가 바뀌지 않아도 그 Controller가 노출하는 비표준명 DTO Registry를 읽어야 합니다.
+    writeRepositoryFile(temporaryRepository, viewFile, violatingView);
+    execFileSync("git", ["add", viewFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedView = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(stagedView.status, 1);
+    assert.match(stagedView.stderr, /api-dto-mapper-type-import/);
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", viewFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, viewFile, safeView);
+
+    // Response가 같은 package의 Item을 import 없이 참조해도 API DTO closure에 포함됩니다.
+    writeRepositoryFile(temporaryRepository, itemFile, violatingItem);
+    execFileSync("git", ["add", itemFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedNestedItem = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    const workingNestedItem = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(stagedNestedItem.status, 1);
+    assert.match(stagedNestedItem.stderr, /api-dto-mapper-type-import/);
+    assert.equal(workingNestedItem.status, 1);
+    assert.match(workingNestedItem.stderr, /api-dto-mapper-type-import/);
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", itemFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, itemFile, safeItem);
+
+    writeRepositoryFile(
+      temporaryRepository,
+      mapperInterfaceFile,
+      violatingMapperInterface,
+    );
+    const workingMapperInterface = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(workingMapperInterface.status, 1);
+    assert.match(workingMapperInterface.stderr, /mapper-api-dto-import/);
+    writeRepositoryFile(
+      temporaryRepository,
+      mapperInterfaceFile,
+      safeMapperInterface,
+    );
+
+    writeRepositoryFile(temporaryRepository, workMapperFile, violatingWorkMapper);
+    execFileSync("git", ["add", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedNestedItemMapper = spawnSync(
+      process.execPath,
+      [script, "--staged"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    const workingNestedItemMapper = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(stagedNestedItemMapper.status, 1);
+    assert.match(
+      stagedNestedItemMapper.stderr,
+      /mapper-api-response-dto-result/,
+    );
+    assert.equal(workingNestedItemMapper.status, 1);
+    assert.match(
+      workingNestedItemMapper.stderr,
+      /mapper-api-response-dto-result/,
+    );
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, workMapperFile, safeWorkMapper);
+
+    writeRepositoryFile(temporaryRepository, workMapperFile, nestedWorkMapper);
+    execFileSync("git", ["add", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedNestedApiType = spawnSync(
+      process.execPath,
+      [script, "--staged"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(stagedNestedApiType.status, 1);
+    assert.match(
+      stagedNestedApiType.stderr,
+      /mapper-api-response-dto-result/,
+    );
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, workMapperFile, safeWorkMapper);
+
+    // 공통 Page/Envelope 타입도 dto 디렉터리 밖의 공개 API 경계입니다.
+    writeRepositoryFile(
+      temporaryRepository,
+      commonPageResponseFile,
+      violatingCommonPageResponse,
+    );
+    execFileSync("git", ["add", commonPageResponseFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedCommonApi = spawnSync(process.execPath, [script, "--staged"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    const workingCommonApi = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(stagedCommonApi.status, 1);
+    assert.match(stagedCommonApi.stderr, /api-dto-mapper-type-import/);
+    assert.equal(workingCommonApi.status, 1);
+    assert.match(workingCommonApi.stderr, /api-dto-mapper-type-import/);
+    execFileSync(
+      "git",
+      ["reset", "--quiet", "HEAD", "--", commonPageResponseFile],
+      { cwd: temporaryRepository, stdio: "ignore" },
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      commonPageResponseFile,
+      safeCommonPageResponse,
+    );
+
+    writeRepositoryFile(
+      temporaryRepository,
+      mapperInterfaceFile,
+      commonApiMapperInterface,
+    );
+    const workingCommonApiMapper = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(workingCommonApiMapper.status, 1);
+    assert.match(workingCommonApiMapper.stderr, /mapper-api-dto-import/);
+    writeRepositoryFile(
+      temporaryRepository,
+      mapperInterfaceFile,
+      safeMapperInterface,
+    );
+
+    writeRepositoryFile(
+      temporaryRepository,
+      workMapperFile,
+      commonApiWorkMapper,
+    );
+    execFileSync("git", ["add", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedCommonApiMapper = spawnSync(
+      process.execPath,
+      [script, "--staged"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(stagedCommonApiMapper.status, 1);
+    assert.match(
+      stagedCommonApiMapper.stderr,
+      /mapper-api-(?:request-dto-parameter|response-dto-result)/,
+    );
+    execFileSync("git", ["reset", "--quiet", "HEAD", "--", workMapperFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    writeRepositoryFile(temporaryRepository, workMapperFile, safeWorkMapper);
+
+    // support package의 *Response도 디렉터리 이름과 무관하게 API 경계로 취급합니다.
+    writeRepositoryFile(
+      temporaryRepository,
+      supportResponseFile,
+      violatingSupportResponse,
+    );
+    execFileSync("git", ["add", supportResponseFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedSupportResponse = spawnSync(
+      process.execPath,
+      [script, "--staged"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    const workingSupportResponse = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(stagedSupportResponse.status, 1);
+    assert.match(stagedSupportResponse.stderr, /api-dto-mapper-type-import/);
+    assert.equal(workingSupportResponse.status, 1);
+    assert.match(workingSupportResponse.stderr, /api-dto-mapper-type-import/);
+    execFileSync(
+      "git",
+      ["reset", "--quiet", "HEAD", "--", supportResponseFile],
+      { cwd: temporaryRepository, stdio: "ignore" },
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      supportResponseFile,
+      safeSupportResponse,
+    );
+
+    // 공개 interface 응답의 concrete 구현도 전이적으로 API 계약에 포함됩니다.
+    writeRepositoryFile(
+      temporaryRepository,
+      recordedViewFile,
+      violatingRecordedView,
+    );
+    execFileSync("git", ["add", recordedViewFile], {
+      cwd: temporaryRepository,
+      stdio: "ignore",
+    });
+    const stagedPolymorphicResponse = spawnSync(
+      process.execPath,
+      [script, "--staged"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    const workingPolymorphicResponse = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(stagedPolymorphicResponse.status, 1);
+    assert.match(
+      stagedPolymorphicResponse.stderr,
+      /api-dto-mapper-type-import/,
+    );
+    assert.equal(workingPolymorphicResponse.status, 1);
+    assert.match(
+      workingPolymorphicResponse.stderr,
+      /api-dto-mapper-type-import/,
+    );
+    execFileSync(
+      "git",
+      ["reset", "--quiet", "HEAD", "--", recordedViewFile],
+      { cwd: temporaryRepository, stdio: "ignore" },
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      recordedViewFile,
+      safeRecordedView,
+    );
+
+    writeRepositoryFile(
+      temporaryRepository,
+      domainPolicyFile,
+      violatingDomainPolicy,
+    );
+    const workingDomainFqcn = spawnSync(process.execPath, [script, "--all"], {
+      cwd: temporaryRepository,
+      encoding: "utf8",
+      env: environment,
+    });
+    assert.equal(workingDomainFqcn.status, 1);
+    assert.match(workingDomainFqcn.stderr, /domain-forbidden-import/);
+    writeRepositoryFile(
+      temporaryRepository,
+      domainPolicyFile,
+      safeDomainPolicy,
+    );
+
+    writeRepositoryFile(
+      temporaryRepository,
+      applicationPortFile,
+      violatingApplicationPort,
+    );
+    const workingApplicationFqcn = spawnSync(
+      process.execPath,
+      [script, "--all"],
+      {
+        cwd: temporaryRepository,
+        encoding: "utf8",
+        env: environment,
+      },
+    );
+    assert.equal(workingApplicationFqcn.status, 1);
+    assert.match(
+      workingApplicationFqcn.stderr,
+      /application-interface-web-import/,
+    );
+    writeRepositoryFile(
+      temporaryRepository,
+      applicationPortFile,
+      safeApplicationPort,
+    );
 
     const untrackedSource =
       "backend/src/main/java/com/gighub/newmodule/service/NewService.java";

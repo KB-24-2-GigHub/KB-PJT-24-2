@@ -53,15 +53,16 @@ public class WithdrawalServiceImpl implements WithdrawalService {
         String rawKey = WalletIdempotencyKeys.validateRawKey(command.getIdempotencyKey());
         String ledgerKey = WalletIdempotencyKeys.withdrawal(rawKey);
 
+        // 잠금 충돌 시 일부 단계만 반복하지 않고, rollback된 자금 명령 전체를 새 트랜잭션에서 재시도합니다.
         int attemptCount = 0;
-        while(true){
+        while (true) {
             attemptCount++;
-            try{
+            try {
                 return transactionExecutor.execute(
                         () -> withdrawOnce(command, rawKey, ledgerKey)
                 );
-            }catch (PessimisticLockingFailureException retryable){
-                if(attemptCount >= MAX_TRANSACTION_ATTEMPTS){
+            } catch (PessimisticLockingFailureException retryable) {
+                if (attemptCount >= MAX_TRANSACTION_ATTEMPTS) {
                     throw retryable;
                 }
             }
@@ -106,13 +107,14 @@ public class WithdrawalServiceImpl implements WithdrawalService {
                 .idempotencyKey(rawKey)
                 .build();
 
-        try{
-            if(withdrawalMapper.insertWithdrawalRequest(order) != 1 || order.getId() == null || order.getId() <= 0){
+        try {
+            if (withdrawalMapper.insertWithdrawalRequest(order) != 1
+                    || order.getId() == null || order.getId() <= 0) {
                 throw new WithdrawalIntegrityException("출금 요청을 선점하지 못했습니다.");
             }
-        }catch (DuplicateKeyException duplicate){
+        } catch (DuplicateKeyException duplicate) {
             return replayClaimedRequest(command, rawKey, ledgerKey, linkedAccountId, duplicate);
-        }catch (DataIntegrityViolationException invalidOrder){
+        } catch (DataIntegrityViolationException invalidOrder) {
             translateInvalidOrderReference(linkedAccountId, invalidOrder);
         }
 

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.attendance.mapper.AttendanceRecordMapper">
+
+    <resultMap id="scanCandidateRow"
+               type="com.gighub.attendance.mapper.result.AttendanceScanCandidateRow">
+        <constructor>
+            <arg column="work_case_id" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
+            <arg column="starts_at" javaType="java.time.LocalDateTime"/>
+            <arg column="ends_at" javaType="java.time.LocalDateTime"/>
+            <arg column="scan_type" javaType="com.gighub.attendance.domain.AttendanceType"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        활성 후보를 승인된 두 조건으로만 고릅니다.
+
+        - READY이고 starts_at - 30분 <= attemptedAt < starts_at + 1시간이면 CHECK_IN
+        - 성공 CHECK_IN이 있는 IN_PROGRESS이고 attemptedAt < ends_at + 2시간이면 CHECK_OUT
+
+        경계는 컬럼에 함수를 씌우지 않고 attemptedAt 쪽을 옮겨 계산해 넘기므로
+        idx_work_cases_worker_workplace_status_start_end를 그대로 탑니다.
+
+        NO_SHOW와 CHECK_OUT_MISSING은 늦은 스캔 후보가 아니므로 상태 조건에서 제외합니다.
+
+        유형 판정을 SQL에 두는 이유는 후보 선택 조건과 유형 조건이 어긋나지 않게 하기
+        위해서입니다. LIMIT 2는 "정확히 한 건"만 판정하면 되기 때문입니다.
+    -->
+    <select id="findActiveScanCandidates" resultMap="scanCandidateRow">
+        SELECT wc.id      AS work_case_id,
+               wc.status  AS status,
+               wc.starts_at,
+               wc.ends_at,
+               CASE WHEN wc.status = 'READY' THEN 'CHECK_IN' ELSE 'CHECK_OUT' END AS scan_type
+        FROM work_cases wc
+        WHERE wc.worker_id = #{workerId}
+          AND wc.workplace_id = #{workplaceId}
+          AND (
+              (
+                  wc.status = 'READY'
+                  AND wc.starts_at &lt;= #{readyLatestStartsAt}
+                  AND wc.starts_at &gt; #{readyEarliestStartsAt}
+              )
+              OR (
+                  wc.status = 'IN_PROGRESS'
+                  AND wc.ends_at &gt; #{checkOutEarliestEndsAt}
+                  AND EXISTS (
+                      SELECT 1
+                      FROM attendance_records ar
+                      WHERE ar.work_case_id = wc.id
+                        AND ar.attendance_type = 'CHECK_IN'
+                        AND ar.result = 'SUCCESS'
+                  )
+              )
+          )
+        ORDER BY wc.starts_at, wc.id
+        LIMIT 2
+    </select>
+
+    <!--
+        활성 후보가 0건일 때만 같은 시간 범위의 완료 후보를 확인합니다. 한 건이면
+        "이미 완료"로, 두 건 이상이면 "복수"로 구분해 404와 409를 가릅니다.
+    -->
+    <select id="countCompletedScanCandidates" resultType="int">
+        SELECT COUNT(*)
+        FROM (
+            SELECT wc.id
+            FROM work_cases wc
+            WHERE wc.worker_id = #{workerId}
+              AND wc.workplace_id = #{workplaceId}
+              AND wc.status = 'COMPLETED'
+              AND wc.starts_at &lt;= #{readyLatestStartsAt}
+              AND wc.ends_at &gt; #{checkOutEarliestEndsAt}
+            LIMIT 2
+        ) completed
+    </select>
+
+    <resultMap id="successTimestampsRow"
+               type="com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow">
+        <constructor>
+            <arg column="checked_in_at" javaType="java.time.LocalDateTime"/>
+            <arg column="checked_out_at" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSuccessTimestamps" resultMap="successTimestampsRow">
+        SELECT
+            MAX(CASE WHEN attendance_type = 'CHECK_IN' AND result = 'SUCCESS'
+                     THEN attempted_at END) AS checked_in_at,
+            MAX(CASE WHEN attendance_type = 'CHECK_OUT' AND result = 'SUCCESS'
+                     THEN attempted_at END) AS checked_out_at
+        FROM attendance_records
+        WHERE work_case_id = #{workCaseId}
+    </select>
+
+    <insert id="insertAttempt">
+        INSERT INTO attendance_records (
+            work_case_id, worker_id, qr_token_id, attendance_type,
+            captured_at, attempted_at, distance_meters, accuracy_meters,
+            result, failure_reason, early_checkout_confirmed_at
+        ) VALUES (
+            #{workCaseId}, #{workerId}, #{qrTokenId}, #{attendanceType},
+            #{capturedAt}, #{attemptedAt}, #{distanceMeters}, #{accuracyMeters},
+            #{result}, #{failureReason}, #{earlyCheckoutConfirmedAt}
+        )
+    </insert>
+
+</mapper>

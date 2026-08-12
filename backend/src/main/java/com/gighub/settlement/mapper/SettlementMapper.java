@@ -4,6 +4,7 @@ import com.gighub.settlement.dto.SettlementSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
@@ -33,10 +34,29 @@ public interface SettlementMapper {
     List<Long> findBlockingDisputeIdsForUpdate(
             @Param("workCaseId") Long workCaseId);
 
-    // 상태 전이: 수동 승인 가능한 WAITING 정산만 처리 중으로 바꾼다.
-    int transitionWaitingToProcessing(
+    /**
+     * M5 퇴근 완료가 지급을 예약한다.
+     *
+     * <p>{@code WAITING}이면서 아직 예약되지 않은 행만 {@code SCHEDULED}로 옮기고 지급 예정
+     * 시각을 채운다. 금액은 바꾸지 않고 자금도 움직이지 않는다. 같은 요청의 재시도는 멱등
+     * Claim이 Replay로 흡수하므로 이 문장을 다시 부르지 않는다. 정상 경로에서는 항상
+     * 정확히 1행이 바뀌어야 하며, 0행은 호출부가 이상 상태로 처리한다.</p>
+     *
+     * @return 변경된 행 수
+     */
+    int scheduleWaitingPayout(
+            @Param("workCaseId") Long workCaseId,
+            @Param("dueAt") LocalDateTime dueAt);
+
+    // 상태 전이: 수동 승인 가능한 SCHEDULED 정산만 처리 중으로 바꾼다.
+    int transitionScheduledToProcessing(
             @Param("settlementId") Long settlementId,
             @Param("approvedByUserId") Long approvedByUserId);
+
+    // 상태 전이: Scheduler가 잠근 행의 due/retry 자격을 같은 DB 시각으로 다시 확인한다.
+    int transitionEligibleScheduledToProcessing(
+            @Param("settlementId") Long settlementId,
+            @Param("eligibilityTime") LocalDateTime eligibilityTime);
 
     // 상태 전이: 같은 승인자가 처리 중인 정산만 완료한다.
     int transitionProcessingToCompleted(

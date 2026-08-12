@@ -7,7 +7,9 @@ import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.AcceptEscrowHold;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ import java.util.Objects;
 
 /** Wallet 소유 SQL을 사용해 수락 예치를 원자적으로 수행합니다. */
 @Service
+@RequiredArgsConstructor
 public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
 
     private static final String TRANSACTION_TYPE = "ESCROW_HOLD";
@@ -31,10 +34,6 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
             "사장님의 예치 가능 잔액이 부족하여 근무를 확정할 수 없습니다.";
 
     private final WalletMapper walletMapper;
-
-    public AcceptEscrowHoldImpl(WalletMapper walletMapper) {
-        this.walletMapper = walletMapper;
-    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -78,8 +77,11 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
             throw new IllegalStateException("에스크로를 생성하지 못했습니다.");
         }
 
+        SettlementEscrowRow escrow = Objects.requireNonNull(
+                walletMapper.findSettlementEscrowForUpdate(workCaseId),
+                "생성된 에스크로 식별자");
         long escrowId = Objects.requireNonNull(
-                walletMapper.getEscrowIdByWorkCaseId(workCaseId), "생성된 에스크로 식별자");
+                escrow.getEscrowId(), "생성된 에스크로 식별자");
         int recorded = walletMapper.insertWalletTransaction(WalletTransactionParam.builder()
                 .walletId(walletId)
                 .workCaseId(workCaseId)

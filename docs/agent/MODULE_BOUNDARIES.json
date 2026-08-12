@@ -124,7 +124,7 @@
       "owner": "attendance",
       "allowedWriterPackage": "com.gighub.attendance.mapper",
       "allowedWriterType": "com.gighub.attendance.mapper.AttendanceRecordMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
     },
     {
       "table": "wallets",
@@ -347,15 +347,15 @@
     {
       "id": "QX-003",
       "mapper": "com.gighub.document.mapper.DocumentQueryMapper",
-      "crossModuleTables": ["users"],
-      "purpose": "document list projection",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "role-scoped document list and share history projection",
       "crossTableWriteAllowed": false
     },
     {
       "id": "QX-004",
       "mapper": "com.gighub.document.mapper.DocumentAccessMapper",
-      "crossModuleTables": ["work_contracts"],
-      "purpose": "document access authorization projection",
+      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "purpose": "contract-party and health-share access authorization projection",
       "crossTableWriteAllowed": false
     },
     {
@@ -379,28 +379,10 @@
   ],
   "temporaryViolations": [
     {
-      "id": "TV-008",
-      "kind": "persistence-type-cross-module-import",
-      "target": "Attendance/Work persistence DTO and Row imports",
-      "ownerIssues": [291]
-    },
-    {
-      "id": "TV-009",
-      "kind": "distributed-lifecycle-status-policy",
-      "target": "Work and Invitation services and SQL",
-      "ownerIssues": [286]
-    },
-    {
       "id": "TV-010",
       "kind": "acceptance-client-replay-recovery-gap",
       "target": "client reload and response-loss replay key recovery; implementation issue missing",
       "ownerIssues": [160, 267]
-    },
-    {
-      "id": "TV-011",
-      "kind": "database-lifecycle-constraint-gap",
-      "target": "state-dependent nullable and timestamp combinations",
-      "ownerIssues": [292]
     }
   ],
   "guardRules": {

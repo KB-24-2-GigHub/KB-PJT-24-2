@@ -18,6 +18,7 @@ import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.token.InvitationTokenCodec;
 import com.gighub.member.domain.UserRole;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +36,7 @@ import java.util.HexFormat;
  * 새 Transaction으로 같은 행을 지우려 하면 스스로 교착합니다.</p>
  */
 @Service
+@RequiredArgsConstructor
 public class InvitationAcceptServiceImpl implements InvitationAcceptService {
 
     /** 멱등 저장 범위를 나누는 Operation 표지입니다. */
@@ -47,21 +49,6 @@ public class InvitationAcceptServiceImpl implements InvitationAcceptService {
     private final InvitationAcceptanceOrchestrator orchestrator;
     private final InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec;
     private final ContractArtifactPort contractArtifactPort;
-
-    public InvitationAcceptServiceImpl(
-            InvitationMapper invitationMapper,
-            InvitationTokenCodec tokenCodec,
-            IdempotencyClaimService claimService,
-            InvitationAcceptanceOrchestrator orchestrator,
-            InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec,
-            ContractArtifactPort contractArtifactPort) {
-        this.invitationMapper = invitationMapper;
-        this.tokenCodec = tokenCodec;
-        this.claimService = claimService;
-        this.orchestrator = orchestrator;
-        this.replaySnapshotCodec = replaySnapshotCodec;
-        this.contractArtifactPort = contractArtifactPort;
-    }
 
     @Override
     public InvitationAcceptResult accept(

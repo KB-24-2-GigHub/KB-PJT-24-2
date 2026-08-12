@@ -35,9 +35,11 @@ Hook shim이 없거나 실행되지 않을 때만 `npm run prepare`로 `.husky/_
 | `npm run check:guardrails`        | 실제 통합 base 대비 PR 범위와 작업 트리의 Guardrail 검사  |
 | `npm run check:guardrails:staged` | Git index의 staged 내용만 기술 제약 검사                  |
 | `npm run check:precommit`         | 실제 pre-commit 실행 계획 수행                            |
-| `npm run check`                   | 전체 Guardrail, 하네스 테스트, Frontend·Backend Lint 실행 |
+| `npm run check`                   | Guardrail, 하네스, Frontend Vitest·Production build, Frontend·Backend Lint 실행 |
 
-`npm run check`는 Frontend build·Vitest나 Backend WAR 생성을 포함하지 않는다. 기능·의존성·패키징 변경은 해당 영역의 build와 test를 별도로 실행한다.
+`npm run check`는 Frontend Vitest와 Production build를 포함하지만 Backend WAR 생성과 opt-in
+`databaseTest`는 포함하지 않는다. Backend 패키징이나 DB 경계를 바꾼 작업은 해당 검증을 별도로
+실행한다.
 
 ## 영역별 Lint와 Format
 

@@ -28,6 +28,9 @@
             <arg column="processingAt" javaType="java.time.LocalDateTime"/>
             <arg column="completedAt" javaType="java.time.LocalDateTime"/>
             <arg column="failureCode" javaType="java.lang.String"/>
+            <arg column="retryCount" javaType="java.lang.Integer"/>
+            <arg column="lastFailureAt" javaType="java.time.LocalDateTime"/>
+            <arg column="nextRetryAt" javaType="java.time.LocalDateTime"/>
         </constructor>
     </resultMap>
 
@@ -40,7 +43,10 @@
         due_at              AS dueAt,
         processing_at       AS processingAt,
         completed_at        AS completedAt,
-        failure_code        AS failureCode
+        failure_code        AS failureCode,
+        retry_count         AS retryCount,
+        last_failure_at     AS lastFailureAt,
+        next_retry_at       AS nextRetryAt
     </sql>
 
     <!-- 정산 원장: 상태 검사와 갱신이 끝날 때까지 같은 행을 잠근다. -->
@@ -60,16 +66,50 @@
         FOR UPDATE
     </select>
 
-    <update id="transitionWaitingToProcessing">
+    <!--
+        M5 퇴근 완료가 정산 지급을 예약한다. WAITING이면서 아직 예약되지 않은 행만
+        SCHEDULED로 옮기고 지급 예정 시각을 함께 채운다. 금액과 승인·처리·완료 필드는
+        건드리지 않으며 자금은 M6가 이 예약을 소비해 옮긴다.
+
+        조건부 UPDATE로 정확히 1행만 바꿔야 정상이다. 같은 요청의 재시도는 멱등 Claim이
+        Replay로 흡수하므로 이 문장을 다시 부르지 않는다. 0행은 호출부가 예외로 다룬다.
+    -->
+    <update id="scheduleWaitingPayout">
+        UPDATE settlements
+        SET status     = 'SCHEDULED',
+            due_at     = #{dueAt},
+            updated_at = NOW(6)
+        WHERE work_case_id = #{workCaseId}
+          AND status = 'WAITING'
+          AND due_at IS NULL
+    </update>
+
+    <update id="transitionScheduledToProcessing">
         UPDATE settlements
         SET status              = 'PROCESSING',
             approved_by_user_id = #{approvedByUserId},
             processing_at       = NOW(6),
             failure_code        = NULL,
+            next_retry_at       = NULL,
             updated_at          = NOW(6)
         WHERE id = #{settlementId}
-          AND status = 'WAITING'
-          AND approved_by_user_id IS NULL
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+    </update>
+
+    <update id="transitionEligibleScheduledToProcessing">
+        UPDATE settlements
+        SET status              = 'PROCESSING',
+            approved_by_user_id = NULL,
+            processing_at       = NOW(6),
+            failure_code        = NULL,
+            next_retry_at       = NULL,
+            updated_at          = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND due_at &lt;= #{eligibilityTime}
+          AND (next_retry_at IS NULL OR next_retry_at &lt;= #{eligibilityTime})
           AND processing_at IS NULL
           AND completed_at IS NULL
     </update>
@@ -81,7 +121,7 @@
             updated_at   = NOW(6)
         WHERE id = #{settlementId}
           AND status = 'PROCESSING'
-          AND approved_by_user_id = #{approvedByUserId}
+          AND approved_by_user_id &lt;=&gt; #{approvedByUserId}
           AND processing_at IS NOT NULL
           AND completed_at IS NULL
     </update>

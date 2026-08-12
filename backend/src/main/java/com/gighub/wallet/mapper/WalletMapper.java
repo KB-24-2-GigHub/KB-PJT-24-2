@@ -4,6 +4,7 @@ import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
 import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -42,7 +43,8 @@ public interface WalletMapper {
     int releaseLockedFunds(@Param("userId") Long userId, @Param("amount") Long amount);
 
     // 에스크로
-    String getEscrowStatusForUpdate(@Param("workCaseId") Long workCaseId);
+    SettlementEscrowRow findSettlementEscrowForUpdate(
+            @Param("workCaseId") Long workCaseId);
 
     /**
      * 수락 Aggregate가 공유하는 시각으로 에스크로를 HELD 상태로 만든다.
@@ -56,10 +58,6 @@ public interface WalletMapper {
             @Param("heldAt") java.time.LocalDateTime heldAt);
 
     int releaseEscrow(@Param("workCaseId") Long workCaseId);
-
-    Long getHeldEscrowAmount(@Param("workCaseId") Long workCaseId);
-
-    Long getEscrowIdByWorkCaseId(@Param("workCaseId") Long workCaseId);
 
     // 원장
     int countTransactionByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);

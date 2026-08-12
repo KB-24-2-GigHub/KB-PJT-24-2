@@ -2,10 +2,10 @@ package com.gighub.work.dto;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.gighub.common.api.ApiTimes;
 import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.work.mapper.result.WorkCaseListRow;
 
 import lombok.Getter;
 
@@ -27,22 +27,39 @@ public final class WorkCaseListItemResponse {
     private final WorkCaseStatus status;
     private final WorkerSummary worker;
 
-    private WorkCaseListItemResponse(WorkCaseListRow row) {
-        this.workCaseId = row.getWorkCaseId();
-        this.title = row.getTitle();
+    private WorkCaseListItemResponse(
+            Long workCaseId,
+            String title,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Long dailyWage,
+            WorkCaseStatus status,
+            Long workerId,
+            String workerName) {
+        this.workCaseId = workCaseId;
+        this.title = title;
         // workDate는 저장 컬럼이 아니라 startsAt에서 파생합니다(API_SPEC 4.0.0).
-        this.workDate = row.getStartsAt().toLocalDate();
-        this.startsAt = ApiTimes.toInstant(row.getStartsAt());
-        this.endsAt = ApiTimes.toInstant(row.getEndsAt());
-        this.dailyWage = row.getDailyWage();
-        this.status = row.getStatus();
-        this.worker = row.getWorkerId() == null
+        this.workDate = startsAt.toLocalDate();
+        this.startsAt = ApiTimes.toInstant(startsAt);
+        this.endsAt = ApiTimes.toInstant(endsAt);
+        this.dailyWage = dailyWage;
+        this.status = status;
+        this.worker = workerId == null
                 ? null
-                : new WorkerSummary(row.getWorkerId(), row.getWorkerName());
+                : new WorkerSummary(workerId, workerName);
     }
 
-    public static WorkCaseListItemResponse from(WorkCaseListRow row) {
-        return new WorkCaseListItemResponse(row);
+    public static WorkCaseListItemResponse of(
+            Long workCaseId,
+            String title,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Long dailyWage,
+            WorkCaseStatus status,
+            Long workerId,
+            String workerName) {
+        return new WorkCaseListItemResponse(
+                workCaseId, title, startsAt, endsAt, dailyWage, status, workerId, workerName);
     }
 
     @Getter

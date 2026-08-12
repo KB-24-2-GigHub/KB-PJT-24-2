@@ -152,7 +152,12 @@ class AcceptEscrowHoldImplTest {
                         .build());
         when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
         when(walletMapper.insertHeldEscrowAt(eq(WORK_CASE_ID), eq(WAGE), any())).thenReturn(1);
-        when(walletMapper.getEscrowIdByWorkCaseId(WORK_CASE_ID)).thenReturn(ESCROW_ID);
+        when(walletMapper.findSettlementEscrowForUpdate(WORK_CASE_ID))
+                .thenReturn(new com.gighub.wallet.mapper.result.SettlementEscrowRow(
+                        ESCROW_ID,
+                        WORK_CASE_ID,
+                        WAGE,
+                        com.gighub.wallet.domain.EscrowStatus.HELD));
         when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
     }
 

@@ -139,11 +139,25 @@
     </update>
 
     <!-- escrows는 work_case당 1행(uk_escrows_work_case_id) -->
-    <select id="getEscrowStatusForUpdate" resultType="java.lang.String">
-        SELECT status
+    <resultMap id="settlementEscrowSnapshotResult"
+               type="com.gighub.wallet.mapper.result.SettlementEscrowRow">
+        <constructor>
+            <idArg column="escrowId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="amount" javaType="java.lang.Long"/>
+            <arg column="status" javaType="com.gighub.wallet.domain.EscrowStatus"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findSettlementEscrowForUpdate"
+            resultMap="settlementEscrowSnapshotResult">
+        SELECT id           AS escrowId,
+               work_case_id AS workCaseId,
+               amount       AS amount,
+               status       AS status
         FROM escrows
         WHERE work_case_id = #{workCaseId}
-            FOR UPDATE
+        FOR UPDATE
     </select>
 
     <!--
@@ -166,20 +180,6 @@
         WHERE work_case_id = #{workCaseId}
           AND status = 'HELD'
     </update>
-
-    <select id="getHeldEscrowAmount" resultType="java.lang.Long">
-        SELECT amount
-        FROM escrows
-        WHERE work_case_id = #{workCaseId}
-          AND status = 'HELD'
-    </select>
-
-    <select id="getEscrowIdByWorkCaseId" resultType="java.lang.Long">
-        SELECT id
-        FROM escrows
-        WHERE work_case_id = #{workCaseId}
-        FOR UPDATE
-    </select>
 
     <!-- ================= 3. 원장(Ledger) ================= -->
 

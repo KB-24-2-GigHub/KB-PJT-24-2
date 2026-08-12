@@ -56,16 +56,16 @@ Production Mock 신규 유입은 Guardrail이 막고, 기존 Mock과 미구현 �
 | Selector                                                                                                       | 위험  | Scenario·요구사항                                 | 현재 보장                                                                                        | Target와의 관계                                             | 판단 |
 | -------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ----------------------------------------------------------- | ---- |
 | `AuthControllerTest`, `AuthFlowSecurityIntegrationTest`, `AuthFlowDatabaseIntegrationTest`                     | R0~R3 | 1-1~1-2, AUTH-001·002·004~007                     | 가입 원자성, Session 복원, 역할·CSRF·리소스 거부                                                 | 현재 구현된 범위의 기준선                                   | 유지 |
-| `WorkCaseControllerTest`, `WorkCaseServiceImplTest`, `WorkCaseServiceDatabaseIntegrationTest`                  | R0~R3 | 2-1~2-3·2-6, WORK-001~006                         | DRAFT CRUD, Version 증가, PENDING 철회, 소유권, 동시 수정                                        | `dailyWage` 직접 입력은 WORK-008 목표가 아닌 Partial legacy | 유지 |
+| `WorkCaseControllerTest`, `WorkCaseServiceImplTest`, `WorkCaseServiceDatabaseIntegrationTest`                  | R0~R3 | 2-1~2-3·2-6, WORK-001~006·008                     | DRAFT CRUD, Version 증가, PENDING 철회, 소유권, 동시 수정, `dailyWage` 직접 저장                  | 생성 응답 등 Target 차이는 별도 계약 대조가 필요            | 유지 |
 | `InvitationIssue*`, `InvitationLifecycleDatabaseIntegrationTest`                                               | R1~R3 | 2-5·3-2, INVITE-001~004                           | 발급/기존 Link/재발급, Token 상태·만료·Version                                                   | 목표 필드 공백은 완료로 보지 않음                           | 유지 |
 | `InvitationAccept*`, `IdempotencyClaim*`, `AcceptAggregateRowsDatabaseIntegrationTest`                         | R1~R3 | 3-3, CONTRACT-001~003, WALLET-005·006, SETTLE-001 | Claim, 원자 수락, Replay, 동시 1승, 계약·문서·예치·정산 제약                                     | 수락 Aggregate의 현재 구현 증거                             | 유지 |
 | `LongLivedWorkLifecycleDatabaseIntegrationTest`                                                                | R2~R3 | 2-2→2-5→3-2→3-3                                   | 실제 DRAFT commit, Clock 전진, 초대 commit, Context·Principal 재구성, 수락 commit, 재조회·Replay | Thread·장기 Transaction 없이 DB 상태로 재개                 | 유지 |
 | `FundingServiceImplTest`, `FundingIntegrityDatabaseIntegrationTest`                                            | R1~R3 | 1-5, WALLET-002·005·006                           | 정상/동시/Replay/Rollback/PIN 실패/원장                                                          | 현재 충전 계약과 정합                                       | 유지 |
 | `WithdrawalServiceImplTest`, `WithdrawalIntegrityDatabaseIntegrationTest`                                      | R1~R3 | 5A-8, WALLET-003·005·006                          | 잔액·계좌 상태, Replay, 동시성, Rollback, 원장                                                   | 실제 DB 잔액 부족 무변경은 보강 후보                        | 유지 |
-| `SettlementServiceTest`, `SettlementIntegrityDatabaseIntegrationTest`                                          | R1~R3 | 5A-6~8, SETTLE-002·004, WALLET-005·006            | 정상 전액 지급, 양측 원장, 보존식, Replay, Rollback, 동시성                                      | 지각 분할·노쇼 환불 구현 증거가 아님                        | 유지 |
+| `SettlementPayoutPolicyTest`, `SettlementPayoutExecutorTest`, `SettlementApprovalTransactionTest`, `SettlementWalletServiceImplTest`, `SettlementServiceTest`, `SettlementIntegrityDatabaseIntegrationTest` | R1~R3 | 5A-6~8, SETTLE-002·004, WALLET-005·006 | COMPLETED Work·SCHEDULED Settlement 정책, 분쟁 보류, 수동/자동 공용 Executor, Claim 완료 순서, wallet ID lock, 양측 원장, Replay, Rollback, 동시성 | 자동 Job·노쇼 환불의 구현 증거가 아님                      | 유지 |
 | `AttendanceLifecycleDatabaseIntegrationTest`                                                                   | R2~R3 | 5C-1~2, ATT-005·006                               | Terminal 전이 상호배타·멱등, 자동 자금 이동 없음                                                 | Scan UI/API·환불 구현 증거가 아님                           | 유지 |
 | `Document*ControllerTest`, `DocumentFileAccessServiceTest`, `DocumentAccessAuditSchemaDatabaseIntegrationTest` | R1~R3 | 3-6, DOC-002·004·009                              | 접근자 격리, 파일 Header, Checksum, 비공개 Key, 감사 행                                          | 목록 Item 전체 필드 고정은 보강 후보                        | 유지 |
-| Frontend `*.spec.js`와 `*.test.js` 전체                                                                        | R0~R2 | P0 화면·Route·Service 현재 동작                   | 요청 Shape, Redirect, 중복 클릭, 일부 Mock 경계                                                  | Production build와 실제 API 활성은 별도 판정                | 유지 |
+| Frontend `*.spec.js`와 `*.test.js` 전체                                                                        | R0~R2 | P0 화면·Route·Service 현재 동작                   | 요청 Shape, Redirect, 중복 클릭, 일부 Mock 경계                                                  | Production build·실제 API·시간 경과 금액 표시는 별도 판정   | 유지 |
 
 ### Direct SQL 증거의 한계
 
@@ -81,11 +81,11 @@ Production Mock 신규 유입은 Guardrail이 막고, 기존 Mock과 미구현 �
 | Operation                | 현재 Characterization                                                                         | Target 판정                                                                                    |
 | ------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | Auth 가입·로그인·Session | Status와 공통 `data/error/meta`, Session·CSRF·역할 경계를 MockMvc와 Security 통합 Test로 고정 | 구현 확인 범위는 유지                                                                          |
-| Work 생성·수정·삭제      | 생성 201, 수정·삭제 204, 소유권/상태 4xx, 현재 7필드 `dailyWage` 입력                         | WORK-008의 `hourlyWage` 서버 산정은 Partial이며 #285에서 구현하지 않음                         |
-| 초대 발급·조회           | 최초 201/기존 200, Bearer Token, 현재 조회의 정확한 필드 집합                                 | `hourlyWage`, `healthCertificateRequired` 공백과 내부 `termsVersion` 노출은 INVITE-003 Partial |
+| Work 생성·수정·삭제      | 생성 201, 수정·삭제 204, 소유권/상태 4xx, 현재 7필드 `dailyWage` 입력                         | 저장 성공과 생성 응답의 Target 필드는 각각 검증                                                |
+| 초대 발급·조회           | 최초 201/기존 200, Bearer Token, 약정 일급과 현재 조회 필드 집합                              | 내부 Version·보건증 요구 등 Target 필드는 별도 대조                                            |
 | 초대 수락                | 200, 같은 Body Replay, `Idempotency-Replayed` Header, 0byte Body와 오류 Catalog               | 현재 Aggregate는 고정하되 재접속 UI Key 보존 공백은 담당 기능 이슈에 남김                      |
 | 충전·출금                | 최초 201/Replay 200, Replay Header, 금액·계좌 오류와 공통 Envelope                            | 현재 구현된 WALLET 범위와 정합                                                                 |
-| 정상 정산                | 200, OWNER 권한, 현재 전액 지급 Aggregate                                                     | SETTLE-004 legacy 기반. 지각·노쇼 계약과 혼동 금지                                             |
+| 정상·지각 정산           | 200, OWNER 권한, COMPLETED Work·SCHEDULED Settlement 전액 지급, 분쟁 보류, 정확한 Replay      | 자동 실행·노쇼 환불의 구현 증거가 아님                                                        |
 | 문서 파일                | 200, `Content-Type`, inline/attachment, Checksum·권한·404/403                                 | 문서 목록·공유의 Target 전체 필드 공백은 별도 기능 이슈                                        |
 
 P0 Target와 현재 응답이 다르면 테스트를 삭제하거나 목표를 낮추지 않는다. 현재 테스트에는
@@ -108,26 +108,28 @@ P0 Target와 현재 응답이 다르면 테스트를 삭제하거나 목표를 �
 ## Architecture Gate
 
 `scripts/check-project-guardrails.js`는 비교 기준선에 이미 있던 위반을 안정적인 ID로 고정하고
-신규 증가만 실패시킨다.
+신규 증가를 실패시킨다. 다만 #291에서 0건으로 해소한 API DTO↔Mapper 타입, Domain 금지 의존,
+Application interface Web 타입의 여섯 역방향 결합은 기준선과 관계없이 현재 0건을 요구한다.
 
 - 새 cross-module Mapper import
 - 새 Controller→Mapper import
+- 새 API DTO→Mapper Row/Param import
+- 새 Mapper Java interface→API Request/Response import
+- 새 Mapper XML→API Request/Response parameter/result type
+- 새 Application interface→Servlet/Spring MVC·HTTP/Jackson import
 - 새 Domain→Spring/MyBatis/Web DTO·persistence import
 - 새 Production hardcoded Mock
-- 새 Mapper XML→API Response DTO `resultType` 또는 `resultMap type`
 
-마지막 규칙은 아래 다섯 실명 타입의 동결 Registry, Controller가 import하는 DTO와
-`*Response` 타입을 API 경계로 분류한다. 위반 ID에는 Mapper Tag 종류와 `id`를 포함하므로
-같은 파일에서 같은 DTO를 쓰는 새 Statement도 신규 위반이다. Controller import가 Service
-경계로 이동해도 동결 Registry는 사라지지 않는다. 현재 기준선은 새 사용을 정당화하지 않는다.
-
-| Mapper                    | 기존 API 경계 DTO                          |
-| ------------------------- | ------------------------------------------ |
-| `BadgeQueryMapper.xml`    | `com.gighub.badge.dto.UserBadge`           |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.Document`         |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentVersion`  |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentListItem` |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentShare`    |
+Mapper Java/XML의 API DTO 규칙은 제거된 Badge·Document 결합의 실명 타입, 공통
+Envelope·Page·Error 타입, 모든 package의 `*Request`·`*Response`, Controller가 노출하는 타입을
+API 경계 Registry로 분류한다. Backend 경계가 바뀌면 변경되지 않은 Controller까지 전체
+조회한다. 공개 타입의 import·FQCN·같은 package 단순 이름 참조와 interface의 concrete 구현을
+전이적으로 따라가므로 중첩·다형성 API 타입도 포함한다. Mapper XML의 `resultType`, resultMap
+`type`, `association javaType`, `collection ofType`, discriminator `case resultType`, constructor
+`arg javaType`, statement `parameterType`에서 이 Registry를 직접 사용하는 결합을 막는다. XML
+위반 ID에는 Mapper Tag 종류와 `id` 또는 property를 포함한다. 실명 Registry는 기존 위반을
+허용하는 목록이 아니라 제거된 결합의 재유입을 막는 회귀 규칙이다. #132와 #291 이후 해당
+Mapper Java/XML→API DTO 현재 위반은 0건이다.
 
 그 밖의 기존 Mapper·Controller·Production Mock 위반과 후속 소유자는
 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)의 `TV-*` 표를 따른다. 기준선 ID를 바꾸어

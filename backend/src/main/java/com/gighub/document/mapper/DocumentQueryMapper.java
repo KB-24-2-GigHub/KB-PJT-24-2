@@ -1,30 +1,44 @@
 package com.gighub.document.mapper;
 
-import com.gighub.document.dto.Document;
-import com.gighub.document.dto.DocumentListItem;
-import com.gighub.document.dto.DocumentShare;
-import com.gighub.document.dto.DocumentVersion;
+import com.gighub.document.mapper.result.DocumentListRow;
+import com.gighub.document.mapper.result.DocumentShareRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 @Mapper
 public interface DocumentQueryMapper {
-    Document findDocumentById(@Param("documentId") Long documentId);
-
-    List<DocumentVersion> findVersionsByDocumentId(@Param("documentId") Long documentId);
-
-    List<DocumentListItem> findDocuments(
+    List<DocumentListRow> findDocuments(
             @Param("userId") Long userId,
-            @Param("documentType") String documentType,
+            @Param("role") String role,
+            @Param("workplaceId") Long workplaceId,
+            @Param("docType") String docType,
+            @Param("now") LocalDateTime now,
+            @Param("today") LocalDate today,
             @Param("offset") long offset,
             @Param("size") int size);
 
-    int countDocuments(
+    long countDocuments(
             @Param("userId") Long userId,
-            @Param("documentType") String documentType);
+            @Param("role") String role,
+            @Param("workplaceId") Long workplaceId,
+            @Param("docType") String docType,
+            @Param("now") LocalDateTime now,
+            @Param("today") LocalDate today);
 
-    List<DocumentShare> findSharesByDocumentId(
-            @Param("documentId") Long documentId);
+    boolean isOwnedActiveHealthDocument(
+            @Param("documentId") Long documentId,
+            @Param("ownerUserId") Long ownerUserId);
+
+    List<DocumentShareRow> findSharesByDocumentId(
+            @Param("documentId") Long documentId,
+            @Param("now") LocalDateTime now,
+            @Param("today") LocalDate today,
+            @Param("offset") long offset,
+            @Param("size") int size);
+
+    long countSharesByDocumentId(@Param("documentId") Long documentId);
 }

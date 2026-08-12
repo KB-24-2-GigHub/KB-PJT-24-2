@@ -337,8 +337,16 @@ class InvitationAcceptDatabaseIntegrationTest {
     @Test
     @Timeout(120)
     void settlementFailureRollsBackDocumentFilesAndEveryEarlierParticipant() throws Exception {
-        SettlementReservationService failingSettlement = (workCaseId, amount) -> {
-            throw new IllegalStateException("settlement failure injection");
+        SettlementReservationService failingSettlement = new SettlementReservationService() {
+            @Override
+            public void reserveWaiting(long workCaseId, long amount) {
+                throw new IllegalStateException("settlement failure injection");
+            }
+
+            @Override
+            public void schedulePayout(long workCaseId, java.time.LocalDateTime dueAt) {
+                throw new UnsupportedOperationException();
+            }
         };
         try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
             context.register(RootConfig.class);
@@ -428,7 +436,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 }
 
                 DocumentFileResult fallback =
-                        fileAccessService.loadFile(documentId, fixture.workerUserId, "download");
+                        fileAccessService.loadFile(
+                                documentId,
+                                fixture.workerUserId,
+                                UserRole.WORKER,
+                                "download");
                 assertArrayEquals(
                         (byte[]) versions.get(1).get("checksum"),
                         Sha256.digest(fallback.getContent()));
@@ -628,9 +640,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 (byte[]) signature.get("signed_checksum"));
 
         DocumentFileResult ownerFile =
-                fileAccessService.loadFile(documentId, fixture.ownerUserId, "view");
+                fileAccessService.loadFile(
+                        documentId, fixture.ownerUserId, UserRole.OWNER, "view");
         DocumentFileResult workerFile =
-                fileAccessService.loadFile(documentId, fixture.workerUserId, "download");
+                fileAccessService.loadFile(
+                        documentId, fixture.workerUserId, UserRole.WORKER, "download");
         assertArrayEquals(ownerFile.getContent(), workerFile.getContent());
         assertArrayEquals((byte[]) versions.get(1).get("checksum"),
                 Sha256.digest(ownerFile.getContent()));

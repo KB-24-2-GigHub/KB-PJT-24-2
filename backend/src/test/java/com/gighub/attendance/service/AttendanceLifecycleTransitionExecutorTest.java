@@ -2,6 +2,7 @@ package com.gighub.attendance.service;
 
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.document.service.SignedContractArtifactQueryService;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -28,7 +29,7 @@ class AttendanceLifecycleTransitionExecutorTest {
     private AttendanceLifecycleMapper lifecycleMapper;
 
     @Mock
-    private SignedContractArtifactVerifier artifactVerifier;
+    private SignedContractArtifactQueryService artifactQueryService;
 
     @Mock
     private WorkLifecycleCommandService workLifecycleCommandService;
@@ -38,7 +39,7 @@ class AttendanceLifecycleTransitionExecutorTest {
         when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.plusMinutes(30), NOW.plusHours(8)));
         when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(completeReadiness());
-        when(artifactVerifier.isReadable(WORK_CASE_ID)).thenReturn(true);
+        when(artifactQueryService.isReadable(WORK_CASE_ID)).thenReturn(true);
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY))
                 .thenReturn(true);
@@ -56,7 +57,7 @@ class AttendanceLifecycleTransitionExecutorTest {
 
         assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
 
-        verify(artifactVerifier, never()).isReadable(WORK_CASE_ID);
+        verify(artifactQueryService, never()).isReadable(WORK_CASE_ID);
         verify(workLifecycleCommandService, never()).transition(
                 WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.READY);
     }
@@ -147,7 +148,7 @@ class AttendanceLifecycleTransitionExecutorTest {
 
     private AttendanceLifecycleTransitionExecutor executor() {
         return new AttendanceLifecycleTransitionExecutor(
-                lifecycleMapper, artifactVerifier, workLifecycleCommandService);
+                lifecycleMapper, artifactQueryService, workLifecycleCommandService);
     }
 
     private WorkLifecycleSnapshot row(

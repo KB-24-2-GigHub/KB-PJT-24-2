@@ -17,7 +17,9 @@ import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
+import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,15 +27,11 @@ import org.springframework.transaction.annotation.Propagation;
 
 /** 승인된 사업장 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershipService {
 
     private final WorkplaceMapper workplaceMapper;
     private final WorkplaceQrIssuer qrIssuer;
-
-    public WorkplaceServiceImpl(WorkplaceMapper workplaceMapper, WorkplaceQrIssuer qrIssuer) {
-        this.workplaceMapper = workplaceMapper;
-        this.qrIssuer = qrIssuer;
-    }
 
     @Override
     @Transactional
@@ -82,10 +80,24 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 ownerUserId, size, PageRequests.offset(page, size));
 
         List<WorkplaceListItemResponse> content = rows.stream()
-                .map(WorkplaceListItemResponse::from)
+                .map(this::toListItemResponse)
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
+    }
+
+    /** Mapper Row의 저장 정밀도와 상태를 기존 공개 응답 값으로 옮깁니다. */
+    private WorkplaceListItemResponse toListItemResponse(WorkplaceListRow row) {
+        return WorkplaceListItemResponse.of(
+                row.getWorkplaceId(),
+                row.getBusinessRegistrationNumber(),
+                row.getName(),
+                row.getRepresentativeName(),
+                row.getRoadAddress(),
+                row.getDetailAddress(),
+                row.getPhone(),
+                row.getRadiusMeters(),
+                row.getStatus());
     }
 
     @Override
@@ -114,6 +126,20 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 || workplaceMapper.findOwnedActiveIdForUpdate(workplaceId, ownerUserId) == null) {
             throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
         }
+    }
+
+    /**
+     * 결과가 없어도 예외로 끝내지 않습니다. 호출자인 근태 스캔은 "활성 사업장 아님"을
+     * 자신의 승인된 QR 오류로 바꿔야 하는데, 여기서 사업장 조회 실패를 던지면 그 구분이
+     * 사라집니다.
+     */
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public WorkplaceLocationSnapshot lockActiveWorkplaceLocation(Long workplaceId) {
+        if (workplaceId == null) {
+            return null;
+        }
+        return workplaceMapper.findActiveLocationForUpdate(workplaceId);
     }
 
     /**

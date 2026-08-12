@@ -2,7 +2,9 @@ package com.gighub.work.service.impl;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 import com.gighub.auth.security.AuthPrincipal;
@@ -25,31 +27,31 @@ import com.gighub.work.mapper.WorkCaseMapper;
 import com.gighub.work.mapper.param.WorkCaseInsertParam;
 import com.gighub.work.mapper.param.WorkCaseListQuery;
 import com.gighub.work.mapper.param.WorkCaseTermsUpdateParam;
+import com.gighub.work.mapper.result.AttendanceSummaryRow;
 import com.gighub.work.mapper.result.ContractDetailRow;
+import com.gighub.work.mapper.result.EscrowSummaryRow;
+import com.gighub.work.mapper.result.LatestInvitationRow;
 import com.gighub.work.mapper.result.OwnedWorkplaceSnapshotRow;
+import com.gighub.work.mapper.result.SettlementSummaryRow;
 import com.gighub.work.mapper.result.WorkCaseDetailRow;
+import com.gighub.work.mapper.result.WorkCaseListRow;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.service.WorkCaseService;
 import com.gighub.work.service.command.WorkCaseCreateCommand;
 import com.gighub.work.service.command.WorkCaseUpdateCommand;
 import com.gighub.invitation.mapper.InvitationMapper;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 승인된 근무 {@code DRAFT} 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
     private final InvitationMapper invitationMapper;
-
-    public WorkCaseServiceImpl(
-            WorkCaseMapper workCaseMapper,
-            InvitationMapper invitationMapper) {
-        this.workCaseMapper = workCaseMapper;
-        this.invitationMapper = invitationMapper;
-    }
 
     @Override
     @Transactional
@@ -154,8 +156,10 @@ public class WorkCaseServiceImpl implements WorkCaseService {
             throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
         }
 
-        return WorkCaseSummaryResponse.from(
-                workCaseMapper.countByStatus(workplaceId, principal.getUserId()));
+        Map<WorkCaseStatus, Long> counts = new EnumMap<>(WorkCaseStatus.class);
+        workCaseMapper.countByStatus(workplaceId, principal.getUserId())
+                .forEach(row -> counts.put(row.getStatus(), row.getCaseCount()));
+        return WorkCaseSummaryResponse.of(counts);
     }
 
     @Override
@@ -191,7 +195,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
         long totalElements = workCaseMapper.countByFilters(query);
         List<WorkCaseListItemResponse> content = workCaseMapper.findPageByFilters(query).stream()
-                .map(WorkCaseListItemResponse::from)
+                .map(this::toListItemResponse)
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
@@ -206,13 +210,78 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
         requireParty(principal, row);
 
-        return WorkCaseDetailResponse.from(
+        return toDetailResponse(
                 row,
                 workCaseMapper.findLatestInvitation(workCaseId),
                 requireContractIntegrity(workCaseId),
                 workCaseMapper.findAttendanceTimestamps(workCaseId),
                 workCaseMapper.findEscrow(workCaseId),
                 workCaseMapper.findSettlement(workCaseId));
+    }
+
+    /** SQL Row를 API 응답으로 바꾸는 책임을 persistence DTO 밖의 Application 경계에 둡니다. */
+    private WorkCaseListItemResponse toListItemResponse(WorkCaseListRow row) {
+        return WorkCaseListItemResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getWorkerId(),
+                row.getWorkerName());
+    }
+
+    private WorkCaseDetailResponse toDetailResponse(
+            WorkCaseDetailRow row,
+            LatestInvitationRow invitation,
+            ContractDetailRow contract,
+            AttendanceSummaryRow attendance,
+            EscrowSummaryRow escrow,
+            SettlementSummaryRow settlement) {
+        return WorkCaseDetailResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getBreakMinutes(),
+                row.getBreakPaid(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getTermsVersion(),
+                row.getWorkplaceName(),
+                row.getWorkplaceAddress(),
+                row.getWorkerId() == null
+                        ? null
+                        : WorkCaseDetailResponse.WorkerSummary.of(
+                                row.getWorkerId(), row.getWorkerName()),
+                invitation == null
+                        ? null
+                        : WorkCaseDetailResponse.InvitationSummary.of(
+                                invitation.getStatus(),
+                                invitation.getTermsVersion(),
+                                invitation.getExpiresAt()),
+                contract == null
+                        ? null
+                        : WorkCaseDetailResponse.ContractSummary.of(
+                                contract.getContractId(),
+                                contract.getDocumentId(),
+                                contract.getSourceTermsVersion(),
+                                contract.getAcceptedAt()),
+                WorkCaseDetailResponse.AttendanceSummary.of(
+                        attendance == null ? null : attendance.getCheckedInAt(),
+                        attendance == null ? null : attendance.getCheckedOutAt()),
+                escrow == null
+                        ? null
+                        : WorkCaseDetailResponse.EscrowSummary.of(
+                                escrow.getStatus(), escrow.getAmount()),
+                settlement == null
+                        ? null
+                        : WorkCaseDetailResponse.SettlementSummary.of(
+                                settlement.getStatus(),
+                                settlement.getAmount(),
+                                settlement.getDueAt(),
+                                settlement.getCompletedAt()));
     }
 
     /**
