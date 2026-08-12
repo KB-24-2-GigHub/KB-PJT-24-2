@@ -124,7 +124,7 @@
       "owner": "attendance",
       "allowedWriterPackage": "com.gighub.attendance.mapper",
       "allowedWriterType": "com.gighub.attendance.mapper.AttendanceRecordMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
     },
     {
       "table": "wallets",
@@ -378,12 +378,6 @@
     }
   ],
   "temporaryViolations": [
-    {
-      "id": "TV-009",
-      "kind": "distributed-lifecycle-status-policy",
-      "target": "Work and Invitation services and SQL",
-      "ownerIssues": [286]
-    },
     {
       "id": "TV-010",
       "kind": "acceptance-client-replay-recovery-gap",

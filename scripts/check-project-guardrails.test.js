@@ -281,6 +281,63 @@ function guardrailEnvironment(overrides = {}) {
   return { ...environment, ...overrides };
 }
 
+function specFixtureForVersion(version) {
+  return {
+    "docs/specs/README.md": [
+      "# Product specification",
+      "",
+      "| Item | Value |",
+      "| --- | --- |",
+      `| Release | \`${version}\` |`,
+      "",
+      "## Release history",
+      "",
+      "| Version | Date |",
+      "| --- | --- |",
+      `| \`${version}\` | 2026-08-12 |`,
+      "",
+    ].join("\n"),
+    "docs/specs/API_SPEC.md": `# API contract\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+    "docs/specs/DECISIONS.md": `# Decisions\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+    "docs/specs/REQUIREMENTS.md": `# Requirements\n\n| Release | \`${version}\` |\n\nProtected acceptance criteria.\n`,
+    "docs/specs/SPEC_TRACEABILITY.md": `# Traceability\n\n| Release | \`${version}\` |\n\nProtected.\n`,
+  };
+}
+
+function initializePatchHistoryRepository(prefix, { draft = false } = {}) {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
+  execFileSync("git", ["init", "--quiet"], { cwd: repository });
+  execFileSync("git", ["config", "user.name", "Guardrail Test"], {
+    cwd: repository,
+  });
+  execFileSync("git", ["config", "user.email", "guardrail@example.com"], {
+    cwd: repository,
+  });
+  writeSpecFixture(repository, specFixtureForVersion("3.0.0"));
+  for (const [file, content] of Object.entries(PATCH_SCAFFOLD)) {
+    writeRepositoryFile(repository, file, content);
+  }
+  if (draft) {
+    writeRepositoryFile(
+      repository,
+      patchPath("wallet-contract"),
+      createPatchDocument(),
+    );
+  }
+  execFileSync("git", ["add", "."], { cwd: repository });
+  execFileSync("git", ["commit", "--quiet", "-m", "baseline"], {
+    cwd: repository,
+  });
+  const base = execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: repository,
+    encoding: "utf8",
+  }).trim();
+  execFileSync("git", ["update-ref", "refs/remotes/origin/dev", base], {
+    cwd: repository,
+  });
+  return repository;
+}
+
 test("parses explicit staged and all modes", () => {
   assert.equal(parseMode(["--staged"]), "staged");
   assert.equal(parseMode(["--all"]), "all");
@@ -1765,6 +1822,88 @@ test("all mode rejects a Patch committed directly as accepted", () => {
     assert.match(invalid.stderr, /new Patch must start in draft/);
   } finally {
     fs.rmSync(temporaryRepository, { recursive: true, force: true });
+  }
+});
+
+test("all mode accepts an atomic draft-to-SPEC release followed by app work", () => {
+  const repository = initializePatchHistoryRepository(
+    "gighub-atomic-spec-history-",
+    { draft: true },
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+  const draft = patchPath("wallet-contract");
+  const archive = patchPath("wallet-contract", "archive");
+
+  try {
+    fs.rmSync(path.join(repository, ...draft.split("/")));
+    writeRepositoryFile(
+      repository,
+      archive,
+      createPatchDocument({ status: "accepted" }),
+    );
+    writeSpecFixture(repository, specFixtureForVersion("3.0.1"));
+    execFileSync("git", ["add", "-A"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "accept patch"], {
+      cwd: repository,
+    });
+    writeRepositoryFile(
+      repository,
+      "frontend/src/feature.js",
+      "export const feature = true;\n",
+    );
+    execFileSync("git", ["add", "frontend/src/feature.js"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "implement feature"], {
+      cwd: repository,
+    });
+
+    const result = spawnSync(process.execPath, [script, "--all"], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, result.stderr);
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
+  }
+});
+
+test("all mode rejects application code mixed into an accepted release", () => {
+  const repository = initializePatchHistoryRepository(
+    "gighub-mixed-spec-history-",
+    { draft: true },
+  );
+  const script = path.resolve(__dirname, "check-project-guardrails.js");
+  const draft = patchPath("wallet-contract");
+  const archive = patchPath("wallet-contract", "archive");
+
+  try {
+    fs.rmSync(path.join(repository, ...draft.split("/")));
+    writeRepositoryFile(
+      repository,
+      archive,
+      createPatchDocument({ status: "accepted" }),
+    );
+    writeSpecFixture(repository, specFixtureForVersion("3.0.1"));
+    writeRepositoryFile(
+      repository,
+      "frontend/src/release.js",
+      "export const mixedRelease = true;\n",
+    );
+    execFileSync("git", ["add", "-A"], { cwd: repository });
+    execFileSync("git", ["commit", "--quiet", "-m", "mixed acceptance"], {
+      cwd: repository,
+    });
+
+    const result = spawnSync(process.execPath, [script, "--all"], {
+      cwd: repository,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 1);
+    assert.match(
+      result.stderr,
+      /accepted transition must not include application code/,
+    );
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true });
   }
 });
 

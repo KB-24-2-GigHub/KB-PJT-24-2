@@ -101,7 +101,9 @@ Windows에서는 다음 명령을 사용할 수 있다.
 npm.cmd run check
 ```
 
-전체 검사는 Guardrail, 하네스 테스트, Frontend ESLint와 Backend Gradle `check`를 실행한다. Frontend build·Vitest와 Backend WAR처럼 작업별로 필요한 검증은 각 애플리케이션 README와 Lint·Hook 기준을 따른다.
+전체 검사는 Guardrail, 하네스 테스트, Frontend Vitest·Production build·ESLint와 Backend
+Gradle `check`를 실행한다. Backend WAR와 opt-in `databaseTest`처럼 추가 검증이 필요한 작업은
+각 애플리케이션 README와 Lint·Hook 기준을 따른다.
 
 ## 다음 작업
 

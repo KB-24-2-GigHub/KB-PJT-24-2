@@ -112,6 +112,19 @@ qr.hmac.key.k1=<이전 값>
 
 교체가 아닐 때는 `qr.hmac.key-ids`를 생략합니다. 활성 키 하나만 등록됩니다. 구 식별자를 목록에서 지우면 그 키로 서명된 인쇄물이 그 시점부터 동작하지 않으므로, 해당 사업장들이 새 QR을 재출력해 교체한 뒤에만 지웁니다.
 
+### 계약 문서 비공개 저장 경로
+
+같은 `database-local.properties`에 `document.storage.base-path`도 반드시 설정합니다. 이 키가
+없거나 빈 값이면 Spring Root Context가 생성되지 않습니다.
+
+| 키                           | 값                                                                                  |
+| ---------------------------- | ----------------------------------------------------------------------------------- |
+| `document.storage.base-path` | 계약 PDF를 저장할 로컬 절대경로. Web Root·Tomcat `webapps`·Frontend 공개 경로 밖에 둡니다. |
+
+예제 파일의 `/absolute/path/to/local-data/documents`는 자리표시자이므로 실제 머신 경로로
+바꿉니다. 하위 디렉터리는 첫 쓰기 때 생성되며, Tomcat 실행 계정이 기준 경로의 상위 디렉터리에
+쓰기 권한을 가져야 합니다. 실제 경로와 문서 파일은 Git에 커밋하지 않습니다.
+
 새 clone, Connector/J 버전 변경 또는 Gradle `clean` 실행 후에는 Flyway 컨테이너가 마운트할 JDBC Driver를 먼저 준비합니다.
 
 ```powershell
@@ -638,7 +651,7 @@ Head `202608121403`은 문서 접근 감사의 Version·거부 사유와 그 승
 
 | 기능                 | 현재 DDL                                                                                      | 승인된 제품 Workflow·후속 사항                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 퇴근 누락 상태       | `CHECK_OUT_MISSING` 허용, 해당 상태의 `worker_id` 필수. `attendance_records.result` 변경 없음 | 판정 시점·실행 주체·늦은 QR·보정·정산·장기 미해결 임금·기존 행 처리와 실제 조회에 맞춘 Scheduler Index |
+| 퇴근 누락 상태       | `CHECK_OUT_MISSING` 허용, 해당 상태의 `worker_id` 필수. `attendance_records.result` 변경 없음 | 서버 Scheduler가 종료 2시간 뒤 `IN_PROGRESS`·성공 출근·성공 퇴근 없음 조건을 재검증해 전이. 늦은 QR·수동 보정 없음, Settlement는 `WAITING/due_at=null`, 자금 불변 |
 | 100m 고정 반경       | 반경 기본값은 100이지만 두 반경 CHECK는 모든 양수를 허용                                      | 애플리케이션 강제로 충분한지, DB CHECK도 정확히 100으로 바꿀지 결정                                    |
 | 시스템 생성 계약서   | `EMPLOYMENT_CONTRACT`도 `work_case_id=NULL` 허용                                              | 근무 건 필수 연결을 DB에서도 강제할지 결정                                                             |
 | 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존·완료·재시도 컬럼과 Index 없음                    | 7.0.0은 `ends_at` 서울 날짜+3년, 02:00 Keyset Job, DB 선삭제, Object 멱등 삭제와 Metadata·감사 무기한 보존을 확정. #131이 추가 DDL 없이 Runtime 구현 |
@@ -649,9 +662,12 @@ Head `202608121403`은 문서 접근 감사의 Version·거부 사유와 그 승
 | 핵심 lifecycle 형태  | 충전·출금 `READY/COMPLETED`, 에스크로의 확정된 네 상태, 근무 취소 시각을 이름 있는 CHECK로 제한 | 허용 전이·권한·금액 대사와 실패·대사·`ON_HOLD` 의미는 애플리케이션이 유지하고 후속 DDL을 추정하지 않음   |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                 | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                       |
 
-퇴근 누락 상태의 판정 시점·실행 주체, 늦은 퇴근·보정·정산 정책과 기존 `IN_PROGRESS`
-데이터 처리는 여전히 미정입니다. 이 Workflow가 확정되기 전에는 Scheduler, 해소 API,
-Backfill이나 Scheduler 전용 Index를 현재 DDL만 보고 구현하지 않습니다. 계약서 자동 삭제는
+퇴근 누락 판정은 `AttendanceLifecycleScheduler`가 1분 주기로 후보를 읽고 근무별 짧은
+Transaction에서 Work owner Command를 호출합니다. 경계 시각은 `ends_at + 2시간`을 포함하며,
+스캔과 같은 Work Case 잠금·조건부 전이로 경쟁 승자를 하나로 만듭니다. 현재 DDL 자체는 성공
+출근·퇴근 사실이나 실행 시점을 증명하지 않으며, Scheduler 전용 Index는 운영 `EXPLAIN`에서
+필요성이 확인될 때만 별도 관리자 승인 Migration으로 검토합니다. `CHECK_OUT_MISSING`의 해소·
+지급 정책은 후속 계약 범위이며 현재 상태에서 임의 지급·환불하지 않습니다. 계약서 자동 삭제는
 기준일과 삭제 범위를 확정한 뒤 Schema 보강 여부를 판단합니다.
 
 소유자가 후속 Migration을 만든 뒤 이 Runbook의 Head·개수·파일 목록, `SCHEMA_OVERVIEW.md`,
@@ -710,6 +726,30 @@ WAR를 실행하는 Tomcat에도 같은 설정 파일 경로가 필요합니다.
 ```
 
 이 속성에는 비밀번호가 아니라 로컬 설정 파일의 절대경로만 넣습니다. 속성이 없거나 파일을 읽지 못하면 Spring Root Context가 생성되지 않아 애플리케이션이 시작되지 않습니다.
+
+### Vite·Tomcat 수동 통합 실행
+
+문서화된 로컬 URL은 Backend를 Tomcat Root Context(`/`)에 배포하는 것을 전제로 합니다.
+일반 파일명 `gig-hub.war`로 배포해 `/gig-hub` Context가 되면 Frontend의 `/api` 요청과 E2E
+Fixture 경로가 맞지 않습니다.
+
+1. `npm.cmd run db:migrate`와 Flyway `validate`를 완료하고 위의 JDBC·초대·QR·문서 저장소
+   설정을 모두 채웁니다.
+2. `.\backend\gradlew.bat -p backend war`로 `backend/build/libs/gig-hub.war`를 만듭니다.
+3. IntelliJ Tomcat은 Deployment의 Application context를 `/`로 지정합니다. 독립 Tomcat은
+   다른 애플리케이션이 없는 전용 로컬 인스턴스에서 이 Artifact를 `ROOT.war`라는 이름으로
+   배포합니다. 기존 Root 애플리케이션을 덮어쓰지 않습니다.
+4. Tomcat JVM에 `-Dgighub.database.config=<database-local.properties 절대경로>`를 넣고
+   `http://localhost:8080/api/health`가 응답하는지 확인합니다.
+5. `frontend/.env`의 `VITE_API_BASE_URL=/api`,
+   `DEV_PROXY_TARGET=http://localhost:8080`을 확인한 뒤 `npm.cmd --prefix frontend run dev`를
+   실행합니다. Vite 환경값은 기동·build 시 읽으므로 바꾼 뒤에는 Vite를 다시 시작합니다.
+6. 초대 Fixture가 다른 Tomcat Origin을 호출해야 할 때만 `GIGHUB_API_BASE_URL`을 설정합니다.
+   값은 Script가 `/api/...`를 붙이기 전의 Origin(예: `http://localhost:8080`)이며 `/api`를
+   포함하지 않습니다. Root Context 기본 Origin이면 이 환경 변수는 생략합니다.
+
+Vite는 `http://localhost:5173`으로 접속합니다. `127.0.0.1`이나 임의 Port는 Backend의 현재
+credentialed CORS 허용 Origin과 다르므로 이 수동 절차에서 사용하지 않습니다.
 
 ## 선택적 계약·에스크로 Seed
 
@@ -775,7 +815,7 @@ WORKER 초대 조회와 수락을 Browser로 확인할 때만 실행합니다. �
 | 항목           | 확인 내용                                                    |
 | -------------- | ------------------------------------------------------------ |
 | 로컬 MySQL     | Compose `db`가 `healthy`                                     |
-| Backend Tomcat | `http://localhost:8080`에서 기동 중                          |
+| Backend Tomcat | Root Context의 `http://localhost:8080`에서 기동 중             |
 | 초대 설정      | 로컬 properties에 `invite.hmac.secret`과 `invite.web-origin` |
 
 계약·에스크로 Seed와 달리 Backend 기동이 필요합니다. 이 Fixture는 DRAFT 근무와 초대를 SQL이 아니라 실제 OWNER API로 만들기 때문입니다. `invite.*` 설정이 없으면 Spring Root Context가 뜨지 않아 초대 발급 단계에서 멈춥니다.
@@ -806,7 +846,9 @@ npm.cmd run db:fixture:invite
 
 1. 로그아웃 상태의 Browser로 출력된 초대 URL을 엽니다. WORKER 로그인으로 이동하고 원래 경로가 보존되는지 확인합니다.
 2. `test_worker_267`로 로그인한 뒤 초대 경로로 복귀해 조건이 다시 조회되는지 확인합니다.
-3. 근무 제목, 시간, 사업장, 휴게, 일급, 조건 Version이 읽기 전용으로 표시되는지 확인합니다.
+3. 근무 제목, 시간, 사업장, 휴게와 약정 일급이 읽기 전용으로 표시되고 내부 `termsVersion`은
+   화면에 표시되지 않는지 확인합니다. 현재 API 응답의 `termsVersion` 노출은 UI 비노출과 별개인
+   Partial gap이므로 완료로 기록하지 않습니다.
 4. 수락을 실행하고 근무·초대·계약·에스크로·정산·지갑 원장을 대사합니다. 일급 300,000원이 계약 금액, 에스크로 금액, 정산 예정 금액과 같고 사장님 지갑이 가용 700,000원·잠금 300,000원으로 바뀌어야 합니다.
 5. OWNER와 WORKER가 같은 계약 최종본을 보는지 확인합니다.
 6. 새로고침, 뒤로가기, 중복 클릭, 응답 유실 후 재시도에서 계약과 HOLD가 한 번만 생성되는지 확인합니다.
