@@ -7,8 +7,8 @@
 | 항목                | 현재 기준                           |
 | ------------------- | ----------------------------------- |
 | 문서 상태           | 현재 기준                           |
-| Migration Head      | `202608111744`                      |
-| Versioned Migration | 14개                                |
+| Migration Head      | `202608112307`                      |
+| Versioned Migration | 15개                                |
 | 도메인 테이블       | 24개 (`flyway_schema_history` 제외) |
 | MySQL               | `mysql:8.4.10`                      |
 | Flyway CLI          | `flyway/flyway:12.9.0`              |
@@ -23,9 +23,9 @@
 | JDBC·MyBatis·트랜잭션 설정          | `backend/src/main/java/com/gighub/config/DatabaseConfig.java`                                          |
 | DB 라이브러리 버전과 검증 작업      | `backend/build.gradle`                                                                                 |
 | 스키마의 작업용 요약                | [`../agent/SCHEMA_OVERVIEW.md`](../agent/SCHEMA_OVERVIEW.md)                                           |
-| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608111744.sql`](../database/schema-snapshot-202608111744.sql), 참고용 |
+| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608112307.sql`](../database/schema-snapshot-202608112307.sql), 참고용 |
 
-`V202607311427`부터 `V202608111744`까지는 PM·관리자 승인을 거친 현재 정식
+`V202607311427`부터 `V202608112307`까지는 PM·관리자 승인을 거친 현재 정식
 Migration입니다. 통합 DDL은 같은 Head를 빈 DB에서 검토하기 위한 읽기용 Snapshot이며 기존
 DB 업그레이드에는 반드시 Flyway Migration을 사용합니다.
 
@@ -159,7 +159,7 @@ docker compose --profile tools run --rm flyway info
 npm.cmd run db:migrate
 ```
 
-현재 다음 열네 개 Migration이 순서대로 적용되어야 합니다.
+현재 다음 열다섯 개 Migration이 순서대로 적용되어야 합니다.
 
 | Version        | 파일                                                         |
 | -------------- | ------------------------------------------------------------ |
@@ -177,6 +177,7 @@ npm.cmd run db:migrate
 | `202608061428` | `V202608061428__add_document_access_audit_details.sql`       |
 | `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql`    |
 | `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`           |
+| `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql`  |
 
 같은 명령을 다시 실행했을 때 `Schema ... is up to date. No migration necessary.`가 나오면 반복 실행도 정상입니다.
 
@@ -369,9 +370,123 @@ Migration 파일을 수정하거나 이미 성공한 `202608111743`을 수동으
 5. `npm.cmd run db:migrate`를 다시 실행합니다. 성공한 앞 Version은 재실행하지 않고 실패했던
    Version부터 적용되는지 확인한 뒤 `validate`와 `info`를 실행합니다.
 
+#### `202608112307` 정산 생명주기 적용 전 확인
+
+이 Migration은 `settlements`의 환불 종료·Scheduler 재시도 감사와 `disputes.title`만
+추가합니다. 범용 `idempotency_requests` Claim과 기존
+`idx_settlements_status_due_at(status, due_at)`은 그대로 사용합니다.
+
+다음 count는 모두 `0`이어야 합니다. ID·금액·내용은 출력하지 않습니다. 하나라도 0이 아니면
+상태나 제목을 추정해 `UPDATE`하지 말고 수동 대사 대상으로 분리합니다.
+
+```sql
+SELECT COUNT(*) AS stuck_processing FROM settlements WHERE status = 'PROCESSING';
+SELECT COUNT(*) AS legacy_failed FROM settlements WHERE status = 'FAILED';
+SELECT COUNT(*) AS legacy_disputes_without_title FROM disputes;
+
+-- COMPLETED마다 RELEASED Escrow와 OWNER·WORKER ESCROW_RELEASE 원장 한 쌍이 정확해야 한다.
+SELECT COUNT(*) AS completed_settlement_fund_integrity
+FROM settlements s
+JOIN work_cases wc ON wc.id = s.work_case_id
+LEFT JOIN escrows e ON e.work_case_id = s.work_case_id
+WHERE s.status = 'COMPLETED'
+  AND (
+    wc.employer_id = wc.worker_id OR wc.agreed_wage <> s.amount
+    OR e.id IS NULL OR e.status <> 'RELEASED' OR e.amount <> s.amount
+    OR (SELECT COUNT(*) FROM wallet_transactions wt
+        WHERE wt.work_case_id = s.work_case_id
+          AND wt.transaction_type = 'ESCROW_RELEASE'
+          AND wt.amount = s.amount AND wt.reference_type = 'ESCROW'
+          AND wt.reference_id = e.id) <> 2
+    OR (SELECT COUNT(*) FROM wallet_transactions wt
+        JOIN wallets w ON w.id = wt.wallet_id
+        WHERE wt.work_case_id = s.work_case_id AND w.user_id = wc.employer_id
+          AND wt.transaction_type = 'ESCROW_RELEASE'
+          AND wt.amount = s.amount AND wt.reference_type = 'ESCROW'
+          AND wt.reference_id = e.id
+          AND wt.available_before = wt.available_after
+          AND wt.locked_before >= wt.amount
+          AND wt.locked_after = wt.locked_before - wt.amount) <> 1
+    OR (SELECT COUNT(*) FROM wallet_transactions wt
+        JOIN wallets w ON w.id = wt.wallet_id
+        WHERE wt.work_case_id = s.work_case_id AND w.user_id = wc.worker_id
+          AND wt.transaction_type = 'ESCROW_RELEASE'
+          AND wt.amount = s.amount AND wt.reference_type = 'ESCROW'
+          AND wt.reference_id = e.id
+          AND wt.available_after >= wt.available_before
+          AND wt.available_after - wt.available_before = wt.amount
+          AND wt.locked_before = wt.locked_after) <> 1
+  );
+
+SELECT COUNT(*) AS invalid_state_shape
+FROM settlements
+WHERE NOT (
+    (status = 'WAITING' AND approved_by_user_id IS NULL AND due_at IS NULL
+        AND processing_at IS NULL AND completed_at IS NULL AND failure_code IS NULL)
+    OR (status IN ('SCHEDULED', 'ON_HOLD') AND approved_by_user_id IS NULL
+        AND due_at IS NOT NULL AND processing_at IS NULL AND completed_at IS NULL
+        AND failure_code IS NULL)
+    OR (status = 'PROCESSING' AND processing_at IS NOT NULL AND completed_at IS NULL
+        AND failure_code IS NULL AND (due_at IS NOT NULL OR approved_by_user_id IS NOT NULL))
+    OR (status = 'COMPLETED' AND due_at IS NOT NULL AND processing_at IS NOT NULL
+        AND completed_at IS NOT NULL AND failure_code IS NULL)
+    OR (status = 'FAILED' AND approved_by_user_id IS NULL AND due_at IS NOT NULL
+        AND processing_at IS NULL AND completed_at IS NULL AND failure_code IS NOT NULL)
+);
+```
+
+Migration은 같은 테이블의 변경을 한 `ALTER TABLE`로 묶습니다. `settlements`는 재시도 세 컬럼,
+기존 상태 CHECK 제거와 새 생명주기 CHECK 추가가 함께 성공하거나 함께 실패합니다.
+`disputes`도 제목 컬럼과 제목 CHECK가 함께 성공하거나 함께 실패합니다.
+
+두 테이블 사이에서는 비원자 부분 실패가 가능합니다. `disputes` 단계가 실패하면 다음 구조가
+정상적인 복구 시작점입니다.
+
+- `settlements`: 재시도 컬럼 세 개와 `ck_settlements_lifecycle`이 모두 존재하고 기존
+  `ck_settlements_status`는 없습니다.
+- `disputes`: `title`과 `ck_disputes_title`이 모두 없습니다.
+- Flyway History: `202608112307` 실패 한 건입니다.
+
+이 조합과 다르면 `repair`하지 말고 소유자에게 보고합니다. 정상 조합이면 실패 원인을 제거한 뒤
+`flyway repair`로 실패 이력만 정리하고 재실행합니다. 재실행은 완전히 적용된 `settlements`를
+건너뛰고 `disputes`만 적용합니다. 기존 disputes 행에는 원래 제목을 복원할 근거가 없으므로,
+데이터 처리 승인이 별도로 없는 한 이 Migration을 적용하지 않습니다.
+
+완전 적용 판정은 이름 존재만 보지 않습니다. 재시도 컬럼의 unsigned·NULL·기본값·`datetime(6)`,
+제목의 `varchar(100) NOT NULL`, 각 제약의 `CHECK` 유형과 MySQL 8.4.10이 저장한 CHECK clause
+hash가 모두 일치해야 합니다. nullable `INT retry_count` 같은 수동 부분 구조나 같은 이름의 다른
+CHECK는 자동 복구하지 않고 preflight에서 차단합니다.
+
+적용 후 충분한 수의 합성 `SCHEDULED` 행을 넣고 후보 조회 Index의 자연 실행 계획을 확인합니다.
+`FORCE INDEX` 없이도 `key`가 `idx_settlements_status_due_at`이고 `type`이 `range`여야 합니다.
+`due_at ASC, id ASC` 정렬의 `id`는 현재 Index에 없으므로 `Using filesort`는 허용합니다. 후보가
+최대 100건이라 별도 중복 Index를 추가하지 않습니다. `FORCE INDEX`는 Optimizer 비교 진단에만
+사용하고 Index 충분성의 성공 근거로 사용하지 않습니다.
+
+```sql
+EXPLAIN
+SELECT id
+FROM settlements
+WHERE status = 'SCHEDULED'
+  AND due_at <= NOW(6)
+  AND (next_retry_at IS NULL OR next_retry_at <= NOW(6))
+ORDER BY due_at ASC, id ASC
+LIMIT 100;
+```
+
+`202608112307` 검증에서는 MySQL 8.4.10 폐기 DB의 합성 후보 2,000건(실제 후보 200건)으로
+자연 계획이 `type=range`, `key=idx_settlements_status_due_at`, `rows=200`,
+`Extra=Using index condition; Using where`를 선택했습니다. 이 계획에는 `Using filesort`가 없었고
+별도 중복 Index도 추가하지 않았습니다.
+
+빈 DB, Head `202608111744`의 승인 상태 행 Upgrade, 같은 명령 반복, 의도적인 두 번째 테이블
+실패 뒤 `repair`·재실행을 폐기 가능한 MySQL에서 검증합니다. 공유·Staging·Production에는 이
+절차를 실행하지 않습니다.
+
 #### 현재 DDL과 제품 Workflow 경계
 
-Head `202608111744`는 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록을
+Head `202608112307`은 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록,
+정산 환불·재시도 생명주기와 분쟁 제목을
 고정하며, 사용자 귀속 없는 Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소,
 `employer_profiles` 제거와 `CHECK_OUT_MISSING` 상태·근로자 필수 제약도 유지합니다. 이는 구조를
 저장할 수 있다는 DDL 사실이며 각 Workflow의 Runtime 구현 완료를 뜻하지 않습니다.
@@ -385,6 +500,7 @@ Head `202608111744`는 문서 접근 감사의 Version·거부 사유와 그 승
 | 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 Version과 거부 사유를 빠짐없이 기록하고 보관·조회 정책을 적용               |
 | 신뢰 뱃지            | `badge_type`은 두 종류만 허용하고 등급·건수·문턱은 `evidence` JSON에만 존재                   | 7.0.0은 누적 문턱, 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence와 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime 구현 |
 | 멱등 요청 Claim      | 사용자·Operation·Key 복합 UNIQUE, Fingerprint와 성공 응답 Snapshot 저장                       | Claim 선점·Replay·즉시 409·중단 복구·만료 정리는 후속 애플리케이션 구현                                |
+| 정산 재시도·환불     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index     | #172·#174·#175와 RF-09가 Scheduler·환불·분쟁 Runtime을 구현; Schema만으로 기능 완료 아님                 |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                 | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                       |
 
 퇴근 누락 상태의 판정 시점·실행 주체, 늦은 퇴근·보정·정산 정책과 기존 `IN_PROGRESS`
@@ -403,7 +519,7 @@ docker compose --profile tools run --rm flyway validate
 docker compose --profile tools run --rm flyway info
 ```
 
-현재 기준의 정상 결과는 열네 개 Migration의 검증 성공, Schema version `202608111744`, 모든
+현재 기준의 정상 결과는 열다섯 개 Migration의 검증 성공, Schema version `202608112307`, 모든
 항목의 `Success`입니다.
 
 ## Spring·MyBatis 연결 검증
@@ -418,6 +534,7 @@ docker compose --profile tools run --rm flyway info
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentAccessAuditSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.badge.UserBadgeTypeSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentShareUniquenessSchemaDatabaseIntegrationTest"
+.\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.settlement.SettlementLifecycleSchemaDatabaseIntegrationTest"
 ```
 
 호환 Mapper와 Service까지 같은 브랜치에 있으면 전체 DB 통합 테스트를 실행합니다.

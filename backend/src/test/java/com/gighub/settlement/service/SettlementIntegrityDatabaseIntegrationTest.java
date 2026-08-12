@@ -73,6 +73,41 @@ class SettlementIntegrityDatabaseIntegrationTest {
     }
 
     @Test
+    @Timeout(20)
+    void ownerApprovalClearsScheduledRetryTimeBeforeProcessing() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+
+            try {
+                jdbcTemplate.update(
+                        "UPDATE settlements SET retry_count = 1,"
+                                + " failure_code = 'TEMPORARY_PAYOUT_FAILURE',"
+                                + " last_failure_at = NOW(6),"
+                                + " next_retry_at = DATE_ADD(NOW(6), INTERVAL 10 MINUTE)"
+                                + " WHERE id = ?",
+                        fixture.settlementId());
+
+                // 재시도 대기 중이어도 OWNER는 즉시 승인할 수 있다. PROCESSING 선점과 동시에
+                // 다음 자동 재시도 시각을 지워 신규 lifecycle CHECK와 실제 지급 경로를 맞춘다.
+                SettlementResult result = settlementService.approve(command(
+                        fixture,
+                        fixture.approvalKey()));
+
+                assertEquals("COMPLETED", result.getStatus());
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM settlements"
+                                + " WHERE id = ? AND next_retry_at IS NOT NULL",
+                        fixture.settlementId()));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
     @Timeout(25)
     void concurrentSameKeyPaysOnlyOnceAndThenConflictsOrReplays() throws Exception {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
@@ -358,8 +393,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
             try {
                 jdbcTemplate.update(
                         "INSERT INTO disputes"
-                                + " (work_case_id, requester_id, dispute_type, content, status)"
-                                + " VALUES (?, ?, 'WAGE', '통합 테스트 분쟁', 'OPEN')",
+                                + " (work_case_id, requester_id, dispute_type,"
+                                + " title, content, status)"
+                                + " VALUES (?, ?, 'WAGE', '지급 확인 요청',"
+                                + " '통합 테스트 분쟁', 'OPEN')",
                         fixture.workCaseId(),
                         fixture.workerId());
 

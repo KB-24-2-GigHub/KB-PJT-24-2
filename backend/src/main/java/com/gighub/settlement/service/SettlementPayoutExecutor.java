@@ -167,7 +167,7 @@ public class SettlementPayoutExecutor {
                 || settlement.getApprovedByUserId() != null
                 || settlement.getProcessingAt() != null
                 || settlement.getCompletedAt() != null
-                || settlement.getFailureCode() != null) {
+                || !hasValidScheduledRetryState(settlement)) {
             throw new EscrowIntegrityException(
                     "지급 예정 정산 원장의 상태 스냅샷이 올바르지 않습니다.");
         }
@@ -181,10 +181,40 @@ public class SettlementPayoutExecutor {
                 || settlement.getDueAt() == null
                 || settlement.getProcessingAt() == null
                 || settlement.getCompletedAt() == null
-                || settlement.getFailureCode() != null) {
+                || settlement.getFailureCode() != null
+                || settlement.getNextRetryAt() != null
+                || !hasValidTerminalRetryState(settlement)) {
             throw new EscrowIntegrityException(
                     "완료된 정산 원장 스냅샷이 올바르지 않습니다.");
         }
+    }
+
+    private boolean hasValidScheduledRetryState(SettlementSnapshot settlement) {
+        Integer retryCount = settlement.getRetryCount();
+        if (retryCount == null) {
+            return false;
+        }
+        if (retryCount == 0) {
+            return settlement.getFailureCode() == null
+                    && settlement.getLastFailureAt() == null
+                    && settlement.getNextRetryAt() == null;
+        }
+        return retryCount >= 1
+                && retryCount <= 4
+                && settlement.getFailureCode() != null
+                && settlement.getLastFailureAt() != null
+                && settlement.getNextRetryAt() != null;
+    }
+
+    private boolean hasValidTerminalRetryState(SettlementSnapshot settlement) {
+        Integer retryCount = settlement.getRetryCount();
+        if (retryCount == null) {
+            return false;
+        }
+        return (retryCount == 0 && settlement.getLastFailureAt() == null)
+                || (retryCount >= 1
+                    && retryCount <= 4
+                    && settlement.getLastFailureAt() != null);
     }
 
     private SettlementResult toResult(

@@ -114,7 +114,7 @@ class WorkerMapperDatabaseIntegrationTest {
         insertAttendance(
                 jdbc, workCaseId, workerUserId, "CHECK_OUT", checkedOutAt, checkedOutAt, "SUCCESS");
         insertEscrow(jdbc, workCaseId, "HELD");
-        insertSettlement(jdbc, workCaseId, "WAITING", settlementDueAt);
+        insertSettlement(jdbc, workCaseId, "SCHEDULED", settlementDueAt);
 
         WorkerHomeCandidateRow row = mapper.findTodayCandidate(
                 workerUserId, CARRY_OVER_START, TODAY_START, TOMORROW_START);
@@ -135,7 +135,7 @@ class WorkerMapperDatabaseIntegrationTest {
         assertEquals(attemptedAt, row.getCheckInAttemptedAt());
         assertEquals(checkedOutAt, row.getCheckedOutAt());
         assertEquals("HELD", row.getEscrowStatus());
-        assertEquals("WAITING", row.getSettlementStatus());
+        assertEquals("SCHEDULED", row.getSettlementStatus());
         assertEquals(settlementDueAt, row.getSettlementDueAt());
 
         // 실패 근태가 성공 시각을 덮어쓰면 안 됩니다. uk_attendance_records_success는

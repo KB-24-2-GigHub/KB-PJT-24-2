@@ -487,10 +487,13 @@ class WorkCaseServiceDatabaseIntegrationTest {
 
     private void insertSettlement(JdbcTemplate jdbc, Long workCaseId, String status) {
         jdbc.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at, completed_at)"
-                        + " VALUES (?, 120000, ?, ?, ?)",
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, status, due_at, processing_at, completed_at)"
+                        + " VALUES (?, 120000, ?, ?, ?, ?)",
                 workCaseId, status,
-                LocalDateTime.of(2026, 8, 21, 0, 0), LocalDateTime.of(2026, 8, 21, 0, 5));
+                LocalDateTime.of(2026, 8, 21, 0, 0),
+                LocalDateTime.of(2026, 8, 21, 0, 1),
+                LocalDateTime.of(2026, 8, 21, 0, 5));
     }
 
     private void insertAttendance(JdbcTemplate jdbc, Long workCaseId, Long workerId, String type) {
