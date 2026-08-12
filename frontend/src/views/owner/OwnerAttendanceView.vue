@@ -430,9 +430,12 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 }
 
 /* ---- 근태 현황 요약(7종 그리드) ---- */
+/* 3열이면 7장이 4장(꽉 참) + 1장(빈 칸 둘 남음)으로 어색하게 끝난다. 12칸 기준으로 첫 줄은
+   4장씩 3칸(4×3=12), 둘째 줄은 3장씩 4칸(3×4=12)을 차지해 두 줄 다 꽉 채운다 — 둘째 줄
+   카드가 더 넓어져 "퇴근 확인 필요"도 덜 좁게 줄바꿈된다. */
 .summary {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(12, 1fr);
   gap: var(--space-sm);
 }
 .stat {
@@ -444,6 +447,11 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
+  grid-column: span 3;
+}
+/* 다섯 번째 카드(퇴근 확인 필요)부터 둘째 줄 — 3장이 12칸을 나눠 각 4칸씩 차지한다. */
+.stat:nth-child(n + 5) {
+  grid-column: span 4;
 }
 /* 선택된 상태 카드 — 지금 어떤 목록을 보고 있는지 표시 */
 .stat.active {
@@ -453,6 +461,10 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 .stat-label {
   font-size: var(--text-sm);
   color: var(--color-text-sub);
+  /* 카드 폭이 좁아지는 화면에서 "퇴근 확인 필요"가 음절 단위(필/요)로 잘려 줄바꿈되지
+     않게, 공백 단위로만 줄바꿈하게 한다(지금 폭에선 한 줄로 들어가지만 더 좁은
+     화면을 위한 보험). */
+  word-break: keep-all;
 }
 /* 값 색은 상태색(상수)으로 인라인 바인딩한다 */
 .stat-value {
