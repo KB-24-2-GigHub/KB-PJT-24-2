@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-328-01
-status: draft
+status: accepted
 issue: 328
 base_spec_version: 7.0.1
 targets:
