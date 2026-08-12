@@ -145,7 +145,7 @@ sequenceDiagram
 | `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | 단일 writer                                     |
 | `work_contracts`         | Work               | `contract.mapper.WorkContractMapper`          | 수락 시 불변 Contract Snapshot 생성       | 당사자·계약 Snapshot       | Work               | Work + PM/Admin               | 논리 owner 내부 단일 writer                     |
 | `qr_tokens`              | Attendance         | `attendance.mapper.QrTokenMapper`             | 고정 QR 발급·재발급·폐기                  | 활성 QR 검증               | Attendance         | Attendance + PM/Admin         | 단일 writer                                     |
-| `attendance_records`     | Attendance         | `attendance.mapper.AttendanceRecordMapper`    | 출근·퇴근 시도 기록                       | 근태 이력·Work 판정 사실   | Attendance         | Attendance + PM/Admin         | writer 없음; #164 기능 공백                     |
+| `attendance_records`     | Attendance         | `attendance.mapper.AttendanceRecordMapper`    | 출근·퇴근 시도 기록                       | 근태 이력·Work 판정 사실   | Attendance         | Attendance + PM/Admin         | 단일 writer; 성공·거절 스캔 감사 기록           |
 | `wallets`                | Wallet             | `wallet.mapper.WalletMapper`                  | 기본 지갑, 충전·출금, hold/release        | 잔액 Snapshot              | Wallet             | Wallet + PM/Admin             | 단일 writer; 외부는 Wallet participant          |
 | `funding_orders`         | Wallet             | `wallet.mapper.FundingMapper`                 | 충전 주문 실행·완료                       | 충전 replay/result         | Wallet             | Wallet + PM/Admin             | 단일 writer                                     |
 | `withdrawal_requests`    | Wallet             | `wallet.mapper.WithdrawalMapper`              | 출금 요청 실행·완료                       | 출금 replay/result         | Wallet             | Wallet + PM/Admin             | 단일 writer                                     |
@@ -170,8 +170,8 @@ sequenceDiagram
 - 외부 모듈이 owner Mapper를 직접 주입하면 SQL 파일이 하나여도 소유권 위반이다.
 - owner Command는 권한, 상태 정책, expected-state DML, 영향 행 수, Lock과 의미 오류를
   캡슐화해야 한다. 단순 1:1 Mapper wrapper를 만들라는 뜻은 아니다.
-- writer가 없는 테이블은 `missing`으로 유지한다. #283 때문에 출퇴근, 분쟁, 비밀번호 재설정,
-  Badge 기능을 새로 구현하지 않는다.
+- writer가 없는 테이블은 `missing`으로 유지한다. #283 때문에 분쟁, 비밀번호 재설정, Badge
+  기능을 새로 구현하지 않는다.
 
 ## 공개 Application 경계
 
@@ -302,17 +302,16 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 
 ## 남은 위반과 단일 후속 소유자
 
-#287에서 TV-001~TV-007을 제거했고 #291에서 TV-008의 API/Domain→persistence 타입 의존을
-제거했다. 아래 항목은 기능 공백을 임의 구현하지 않고 각 후속 이슈가 소유한다.
+#287에서 TV-001~TV-007을 제거했고 #291에서 TV-008의 API/Domain→persistence 타입 의존을,
+#286에서 TV-009의 분산된 Work/Invitation 상태 정책을 제거했다. 아래 남은 항목은 기능 공백을
+임의 구현하지 않고 명시된 검증 이력이 추적한다.
 
 | ID       | 현재 근거                                                                             | 위반                                               | Primary 후속 이슈         |
 | -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
-| `TV-009` | Work/Invitation Service와 SQL의 상태 문자열                                           | 장기 생명주기 정책 분산                            | #286                      |
 | `TV-010` | 새로고침·재로그인 뒤 client replay key                                               | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 
-`attendance_records`, `disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의
-리팩터링 위반을 고치기 위한 신규 기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를
-유지한다.
+`disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의 리팩터링 위반을
+고치기 위한 신규 기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다.
 
 ## Domain과 타입 경계
 
@@ -324,8 +323,8 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
   interface 밖으로 반환하지 않는다.
 - Domain 오류는 상태 전이와 caller 행동을 표현하고, Application이 승인된 HTTP 오류로
   변환한다.
-- 현재 production `domain` 경로의 금지 import 감사 결과는 0건이다. #286, #291, #294는 이
-  baseline을 유지해야 한다.
+- 현재 production `domain` 경로의 금지 import 감사 결과는 0건이다. 완료된 #286·#291·#294
+  결과를 포함해 이 baseline을 유지한다.
 
 금지 예시는 다음과 같다.
 

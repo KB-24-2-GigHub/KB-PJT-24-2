@@ -113,6 +113,9 @@ const SEMVER_PATTERN = /^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$/;
 const DEFAULT_INTEGRATION_BASE = "dev";
 const ALLOWED_INTEGRATION_BASES = new Set(["main", "dev", "dev2"]);
 const LOCAL_BASE_ENVIRONMENT_VARIABLE = "GIGHUB_GUARDRAIL_BASE_REF";
+// #331에서 독립 감사한 8.0.0 명세 상태다. 전체 제품 diff 기준은 그대로 유지하고,
+// Patch 이력만 이 기준점 이후의 first-parent 변화로 좁혀 오래된 정상 PR을 재판정하지 않는다.
+const PATCH_HISTORY_AUDIT_BASE = "83464c601bf7a7c047d6fc6b959b76e066cd9146";
 
 function git(args, options = {}) {
   return execFileSync("git", args, {
@@ -2458,6 +2461,46 @@ function collectGitPatchSnapshot(ref) {
   return files;
 }
 
+function collectChangedFilesBetween(previousRef, currentRef) {
+  return new Set(
+    splitNullSeparated(
+      git([
+        "diff",
+        previousRef,
+        currentRef,
+        "--name-only",
+        "-z",
+        "--diff-filter=ACMRD",
+        "--no-renames",
+      ]),
+    ),
+  );
+}
+
+function collectWorkingTreeChangedFilesFromHead() {
+  if (gitOptional(["rev-parse", "--verify", "HEAD"]) === null) {
+    return new Set(getWorkingTreeFiles());
+  }
+  const files = new Set(
+    splitNullSeparated(
+      git([
+        "diff",
+        "HEAD",
+        "--name-only",
+        "-z",
+        "--diff-filter=ACMRD",
+        "--no-renames",
+      ]),
+    ),
+  );
+  for (const file of splitNullSeparated(
+    git(["ls-files", "--others", "--exclude-standard", "-z"]),
+  )) {
+    files.add(file);
+  }
+  return files;
+}
+
 function collectPreviousPatchSnapshot(mode) {
   const ref = mode === "staged" ? "HEAD" : getAllComparisonBase();
   return collectGitPatchSnapshot(ref);
@@ -2498,32 +2541,100 @@ function verifyPatchLifecycleSnapshots(previousFiles, currentFiles) {
   return errors;
 }
 
-function validateAllPatchLifecycle(currentFiles) {
+function getPatchHistoryAuditBase() {
   const comparisonBase = getAllComparisonBase();
-  if (!comparisonBase) return [];
+  if (!comparisonBase) return null;
+  if (git(["rev-parse", "--is-shallow-repository"]).trim() === "true") {
+    throw new Error(
+      "Patch history validation requires a complete Git history; fetch without a shallow boundary.",
+    );
+  }
+
+  if (
+    gitOptional(["cat-file", "-e", `${PATCH_HISTORY_AUDIT_BASE}^{commit}`]) ===
+    null
+  ) {
+    return comparisonBase;
+  }
+  if (
+    gitOptional([
+      "merge-base",
+      "--is-ancestor",
+      PATCH_HISTORY_AUDIT_BASE,
+      comparisonBase,
+    ]) !== null
+  ) {
+    return comparisonBase;
+  }
+  if (
+    gitOptional([
+      "merge-base",
+      "--is-ancestor",
+      comparisonBase,
+      PATCH_HISTORY_AUDIT_BASE,
+    ]) === null ||
+    gitOptional([
+      "merge-base",
+      "--is-ancestor",
+      PATCH_HISTORY_AUDIT_BASE,
+      "HEAD",
+    ]) === null
+  ) {
+    throw new Error(
+      "Patch audit baseline is not on the integration path; rebase onto the latest approved integration branch.",
+    );
+  }
+  return PATCH_HISTORY_AUDIT_BASE;
+}
+
+function verifyHistoricalPatchStep(previousRef, currentRef, previousFiles) {
+  const changedFiles = collectChangedFilesBetween(previousRef, currentRef);
+  const governanceChanged = [...changedFiles].some(
+    (file) =>
+      file.startsWith(`${PATCH_ROOT}/`) || file.startsWith(`${SPEC_ROOT}/`),
+  );
+  if (!governanceChanged) return { errors: [], files: previousFiles };
+
+  const currentFiles = collectGitPatchSnapshot(currentRef);
+  const result = verifyPatchSnapshot({
+    canonicalSpecVersion: getCanonicalSpecVersionAtRef(currentRef),
+    changedFiles,
+    currentFiles,
+    previousCanonicalSpecVersion: getCanonicalSpecVersionAtRef(previousRef),
+    previousFiles,
+  });
+  return { errors: result.errors, files: currentFiles };
+}
+
+function getCanonicalSpecVersionAtRef(ref) {
+  const content = gitOptional(["show", `${ref}:${SPEC_ROOT}/README.md`]);
+  return content === null ? null : extractSpecReleaseVersion(content);
+}
+
+function validateAllPatchLifecycle() {
+  const auditBase = getPatchHistoryAuditBase();
+  if (!auditBase) return [];
 
   const errors = [];
-  let previousFiles = collectGitPatchSnapshot(comparisonBase);
-  const commitOutput =
-    gitOptional([
-      "rev-list",
-      "--reverse",
-      "--first-parent",
-      `${comparisonBase}..HEAD`,
-    ]) ?? "";
+  let previousRef = auditBase;
+  let previousFiles = collectGitPatchSnapshot(auditBase);
+  const commitOutput = git([
+    "rev-list",
+    "--reverse",
+    "--first-parent",
+    "--ancestry-path",
+    `${auditBase}..HEAD`,
+  ]);
   const commits = commitOutput.split(/\r?\n/).filter(Boolean);
 
   for (const commit of commits) {
-    const commitFiles = collectGitPatchSnapshot(commit);
+    const step = verifyHistoricalPatchStep(previousRef, commit, previousFiles);
     errors.push(
-      ...verifyPatchLifecycleSnapshots(previousFiles, commitFiles).map(
-        (error) => `${commit.slice(0, 12)}: ${error}`,
-      ),
+      ...step.errors.map((error) => `${commit.slice(0, 12)}: ${error}`),
     );
-    previousFiles = commitFiles;
+    previousRef = commit;
+    previousFiles = step.files;
   }
-
-  errors.push(...verifyPatchLifecycleSnapshots(previousFiles, currentFiles));
   return errors;
 }
 
@@ -2847,17 +2958,27 @@ function validatePatchGovernance(mode) {
       mode === "staged"
         ? collectStagedPatchSnapshot()
         : collectWorkingTreePatchSnapshot();
+    const changedFiles =
+      mode === "staged"
+        ? getChangedFiles(mode)
+        : collectWorkingTreeChangedFilesFromHead();
+    const previousFiles =
+      mode === "staged"
+        ? collectPreviousPatchSnapshot(mode)
+        : collectGitPatchSnapshot("HEAD");
     const result = verifyPatchSnapshot({
       canonicalSpecVersion: getCandidateSpecVersion(mode),
-      changedFiles: getChangedFiles(mode),
+      changedFiles,
       currentFiles,
-      previousCanonicalSpecVersion: getPreviousCanonicalSpecVersion(mode),
-      previousFiles: collectPreviousPatchSnapshot(mode),
+      previousCanonicalSpecVersion:
+        mode === "staged"
+          ? getPreviousCanonicalSpecVersion(mode)
+          : getCanonicalSpecVersionAtRef("HEAD"),
+      previousFiles,
       requireDraftAcceptance: mode === "release",
-      validateLifecycle: mode === "staged",
     });
     if (mode !== "staged") {
-      result.errors.push(...validateAllPatchLifecycle(currentFiles));
+      result.errors.push(...validateAllPatchLifecycle());
     }
     return result;
   } catch (error) {
