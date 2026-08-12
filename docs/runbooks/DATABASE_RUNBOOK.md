@@ -7,8 +7,8 @@
 | 항목                | 현재 기준                           |
 | ------------------- | ----------------------------------- |
 | 문서 상태           | 현재 기준                           |
-| Migration Head      | `202608112307`                      |
-| Versioned Migration | 15개                                |
+| Migration Head      | `202608121403`                      |
+| Versioned Migration | 19개                                |
 | 도메인 테이블       | 24개 (`flyway_schema_history` 제외) |
 | MySQL               | `mysql:8.4.10`                      |
 | Flyway CLI          | `flyway/flyway:12.9.0`              |
@@ -23,9 +23,9 @@
 | JDBC·MyBatis·트랜잭션 설정          | `backend/src/main/java/com/gighub/config/DatabaseConfig.java`                                          |
 | DB 라이브러리 버전과 검증 작업      | `backend/build.gradle`                                                                                 |
 | 스키마의 작업용 요약                | [`../agent/SCHEMA_OVERVIEW.md`](../agent/SCHEMA_OVERVIEW.md)                                           |
-| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608112307.sql`](../database/schema-snapshot-202608112307.sql), 참고용 |
+| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608121403.sql`](../database/schema-snapshot-202608121403.sql), 참고용 |
 
-`V202607311427`부터 `V202608112307`까지는 PM·관리자 승인을 거친 현재 정식
+`V202607311427`부터 `V202608121403`까지는 PM·관리자 승인을 거친 현재 정식
 Migration입니다. 통합 DDL은 같은 Head를 빈 DB에서 검토하기 위한 읽기용 Snapshot이며 기존
 DB 업그레이드에는 반드시 Flyway Migration을 사용합니다.
 
@@ -159,7 +159,7 @@ docker compose --profile tools run --rm flyway info
 npm.cmd run db:migrate
 ```
 
-현재 다음 열다섯 개 Migration이 순서대로 적용되어야 합니다.
+현재 다음 열아홉 개 Migration이 순서대로 적용되어야 합니다.
 
 | Version        | 파일                                                         |
 | -------------- | ------------------------------------------------------------ |
@@ -178,6 +178,10 @@ npm.cmd run db:migrate
 | `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql`    |
 | `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`           |
 | `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql`  |
+| `202608121400` | `V202608121400__add_funding_order_lifecycle_check.sql`       |
+| `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql`  |
+| `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`              |
+| `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`        |
 
 같은 명령을 다시 실행했을 때 `Schema ... is up to date. No migration necessary.`가 나오면 반복 실행도 정상입니다.
 
@@ -483,10 +487,151 @@ LIMIT 100;
 실패 뒤 `repair`·재실행을 폐기 가능한 MySQL에서 검증합니다. 공유·Staging·Production에는 이
 절차를 실행하지 않습니다.
 
+#### `202608121400`~`202608121403` 핵심 lifecycle 적용 전·복구 확인
+
+네 Migration은 현재 schema·승인 계약과 Writer가 증명하는 최소 상태만 DB CHECK로 고정합니다.
+
+| Version        | 대상과 제약                                                                                           | Runtime 근거                                                        | 의도적으로 제한하지 않는 상태                         |
+| -------------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------- |
+| `202608121400` | `funding_orders`: `READY` 결과 필드 없음, `COMPLETED` 금액 일치·은행 거래·완료 시각·실패 없음        | RF-08/#289, `FundingServiceImpl`, `FundingMapper.xml`                 | `FAILED`, `RECONCILIATION_REQUIRED`                   |
+| `202608121401` | `withdrawal_requests`: `READY` 결과 필드 없음, `COMPLETED` 은행 거래·완료 시각·실패 없음             | RF-08/#289, `WithdrawalServiceImpl`, `WithdrawalMapper.xml`           | `PROCESSING`, `FAILED`, `RECONCILIATION_REQUIRED`     |
+| `202608121402` | `escrows`: `UNFUNDED`, `HELD`, `RELEASED`, `REFUNDED`의 시각 존재·순서·상호배타성                    | RF-08/#289·RF-09/#290, baseline 기본값, SETTLE-005; REFUNDED writer는 #174 소유 | `ON_HOLD`의 시각 형태                                 |
+| `202608121403` | `work_cases`: `CANCELED`일 때만 `canceled_at`이 존재하고 다른 상태에서는 `NULL`                      | RF-05/#286, `WorkCasePolicy`, `WorkCaseMapper.xml`                    | 허용 전이와 취소 권한                                 |
+
+이번 변경에서 DB CHECK로 대체하거나 삭제한 Service 검증은 없습니다. 인증 주체·권한, 허용 전이,
+멱등 Claim과 Replay, 금액·통화·지갑·원장 대사, expected-state 영향 행 수, 재시도와 오류 변환은
+모두 Application 검증으로 유지합니다. 새 CHECK는 그 검증 뒤에도 잘못된 상태 조합이 저장되지
+않도록 막는 마지막 구조 방어선이며, Application 변경은 범용 Work 상태 전이가 `CANCELED`를 쓸
+때 같은 문장에서 `canceled_at`을 기록하도록 호환한 것뿐입니다.
+
+이슈의 다른 후보도 현재 Head에서 함께 감사했지만 다음 이유로 새 DDL을 만들지 않습니다.
+
+| 후보 | 이번 변경에서 제외한 근거 |
+| ---- | ------------------------- |
+| `settlements` | `202608112307`이 이미 상태·시각·승인자·재시도 형태를 강제하므로 #171 DDL을 복제하지 않습니다. |
+| `idempotency_requests` | 기존 lifecycle·expiry CHECK와 Claim 복합 UNIQUE가 PROCESSING/COMPLETED 저장 형태를 이미 방어합니다. |
+| `work_contracts` | 필수 Snapshot 열의 `NOT NULL`과 Work 당사자·일급 복합 FK가 현재 구조 불변식을 이미 보장합니다. |
+| `work_invitations` | RF-05 writer는 PENDING→ACCEPTED/REVOKED/EXPIRED를 증명하지만, 기존 Schema의 `REJECTED`·`rejected_at` 의미는 정식 계약이 별도 거절 Operation을 제공하지 않아 확정되지 않았습니다. 일부 상태만 잠근 불완전 lifecycle CHECK나 기존 상태 제거를 이번 DDL에서 추정하지 않습니다. |
+
+Invitation의 `REJECTED` 보존·제거와 timestamp 의미가 별도 보호 계약으로 확정되기 전에는
+Backfill, 상태 제거, 부분 lifecycle CHECK를 추가하지 않습니다. 현재 PENDING 단일 활성 UNIQUE와
+Token Hash·Work·수락 사용자 FK는 그대로 유지합니다.
+
+적용 전에 다음 count가 모두 `0`인지 확인합니다. 이 Audit은 ID, 계좌, 금액, Token, Storage key 등
+행 내용을 출력하지 않습니다. Migration도 같은 조건을 임시 테이블의 `invalid_count = 0` CHECK로
+다시 검사합니다. 하나라도 0이 아니면 원래 의미를 추정한 `UPDATE`·`DELETE`·Backfill을 하지 않고
+Migration을 중단합니다.
+
+```sql
+SELECT COUNT(*) AS invalid_funding_order_lifecycle
+FROM funding_orders
+WHERE NOT (
+    (status = 'READY' AND transferred_amount IS NULL
+        AND mock_bank_transaction_id IS NULL AND failure_code IS NULL AND completed_at IS NULL)
+    OR (status = 'COMPLETED' AND transferred_amount IS NOT NULL
+        AND transferred_amount = expected_amount
+        AND mock_bank_transaction_id IS NOT NULL AND failure_code IS NULL AND completed_at IS NOT NULL)
+    OR status IN ('FAILED', 'RECONCILIATION_REQUIRED')
+);
+
+SELECT COUNT(*) AS invalid_withdrawal_request_lifecycle
+FROM withdrawal_requests
+WHERE NOT (
+    (status = 'READY' AND mock_bank_transaction_id IS NULL
+        AND failure_code IS NULL AND completed_at IS NULL)
+    OR (status = 'COMPLETED' AND mock_bank_transaction_id IS NOT NULL
+        AND failure_code IS NULL AND completed_at IS NOT NULL)
+    OR status IN ('PROCESSING', 'FAILED', 'RECONCILIATION_REQUIRED')
+);
+
+SELECT COUNT(*) AS invalid_escrow_lifecycle
+FROM escrows
+WHERE NOT (
+    (status = 'UNFUNDED' AND held_at IS NULL AND released_at IS NULL
+        AND refunded_at IS NULL AND on_hold_at IS NULL)
+    OR (status = 'HELD' AND held_at IS NOT NULL AND released_at IS NULL
+        AND refunded_at IS NULL AND on_hold_at IS NULL)
+    OR (status = 'RELEASED' AND held_at IS NOT NULL AND released_at IS NOT NULL
+        AND released_at >= held_at AND refunded_at IS NULL AND on_hold_at IS NULL)
+    OR (status = 'REFUNDED' AND held_at IS NOT NULL AND refunded_at IS NOT NULL
+        AND refunded_at >= held_at AND released_at IS NULL AND on_hold_at IS NULL)
+    OR status = 'ON_HOLD'
+);
+
+SELECT COUNT(*) AS invalid_work_case_cancellation_lifecycle
+FROM work_cases
+WHERE NOT (
+    (status = 'CANCELED' AND canceled_at IS NOT NULL)
+    OR (status <> 'CANCELED' AND canceled_at IS NULL)
+);
+```
+
+MySQL의 서로 다른 테이블 DDL을 한 Transaction으로 묶지 않습니다. 그래서 네 테이블을 한
+Migration에 넣지 않고, Version 하나가 테이블 하나와 단일 `ALTER TABLE ... ADD CONSTRAINT`만
+소유합니다. 각 ALTER는 해당 테이블에서 원자적으로 성공하거나 실패하고, 성공한 앞 Version은
+뒤 Version 실패와 무관하게 그대로 유지됩니다.
+
+각 count-only preflight와 `ADD CHECK` 검증은 대상 테이블 전체 행을 읽으며, `ALTER TABLE`은
+MySQL Metadata Lock을 획득합니다. 따라서 행 수와 동시 DML에 비례해 실행 시간이 늘고, 장시간
+Transaction이 있으면 DDL이 기다리거나 반대로 Writer가 대기할 수 있습니다. 온라인 운영 적용은
+이번 작업 범위가 아니며, 실제 적용 전에는 대상 네 테이블의 행 수·열린 Transaction·Metadata
+Lock 대기를 확인하고 쓰기 부하가 낮은 변경 창을 잡아야 합니다. 이 PR의 폐기 가능한 MySQL
+8.4.10 검증에서는 24개 도메인 테이블/합성 소량 행 기준 빈 DB 전체 19개 Migration이 약 15초,
+기존 Head `202608112307`에서 네 Version Upgrade가 1초 미만이었습니다. 이 값은 운영 예상치가
+아니므로 PR과 배포 기록에는 환경·행 수·실측 시간을 다시 남깁니다.
+
+Flyway가 성공 이력을 기록하기 전에 DDL이 반영된 복구 상황은 이름만 보고 통과시키지 않습니다.
+각 Migration은 `information_schema`의 CHECK 유형, `ENFORCED=YES`, MySQL이 정규화한
+`check_clause` SHA-256이 다음 값과 정확히 일치할 때만 이미 적용된 제약을 허용합니다.
+
+| Version        | 제약명                                        | CHECK clause SHA-256                                           |
+| -------------- | --------------------------------------------- | ---------------------------------------------------------------- |
+| `202608121400` | `ck_funding_orders_lifecycle`                 | `ac7e3a0379b2081f41a7511fcd5c4ab8268bb42b364038223387501a07b3a5cc` |
+| `202608121401` | `ck_withdrawal_requests_lifecycle`            | `fb424cc4144c60c9360ecca5855bd56218bb8e570303909de5365ef39bc0a772` |
+| `202608121402` | `ck_escrows_lifecycle`                        | `356cc7defc1ed3a8b900dda540376b8b3ed840fa52896ec62e630211ad91f4c5` |
+| `202608121403` | `ck_work_cases_cancellation_lifecycle`        | `d9dfbfe3182512d6e496971ad17ef35e624e8f2979332de76beff41b0a9cf970` |
+
+폐기 가능한 로컬 DB에서 실패를 복구할 때는 다음 순서를 지킵니다.
+
+1. `flyway info`와 `flyway_schema_history`에서 마지막 성공·실패·대기 Version을 확인합니다.
+2. 위 count-only Audit을 다시 실행합니다. 위반 행이 있으면 소유자가 승인한 원본 근거 없이
+   보정하지 않습니다.
+3. 다음 조회로 대상 제약의 유형과 Clause Hash를 확인합니다.
+
+   ```sql
+   SELECT tc.table_name, tc.constraint_name, tc.constraint_type, tc.enforced,
+          SHA2(cc.check_clause, 256) AS check_clause_sha256
+   FROM information_schema.table_constraints tc
+   LEFT JOIN information_schema.check_constraints cc
+     ON cc.constraint_schema = tc.constraint_schema
+    AND CAST(cc.constraint_name AS BINARY) = CAST(tc.constraint_name AS BINARY)
+   WHERE tc.constraint_schema = DATABASE()
+     AND (
+       CAST(tc.constraint_name AS BINARY) = CAST('ck_funding_orders_lifecycle' AS BINARY)
+       OR CAST(tc.constraint_name AS BINARY) = CAST('ck_withdrawal_requests_lifecycle' AS BINARY)
+       OR CAST(tc.constraint_name AS BINARY) = CAST('ck_escrows_lifecycle' AS BINARY)
+       OR CAST(tc.constraint_name AS BINARY) = CAST('ck_work_cases_cancellation_lifecycle' AS BINARY)
+     )
+   ORDER BY tc.table_name, tc.constraint_name;
+   ```
+
+   이 진단 조회는 잘못된 유형이나 `ENFORCED=NO`도 숨기지 않고 보여주기 위해 의도적으로
+   필터링하지 않습니다. 정상 복구 가능 상태는 `constraint_type=CHECK`, `enforced=YES`, 위 표의
+   Hash 일치 세 조건을 모두 만족해야 합니다.
+
+4. 제약이 없고 Audit이 0이면 실패 이력만 `flyway repair`한 뒤 다시 migrate합니다. 실패 이력이
+   없고 `info`가 `Pending`이면 repair는 생략합니다. 제약이 이미 있고 위 표와 정확히 일치하면
+   필요한 repair 뒤 Migration이 `DO 0`으로 DDL을 건너뛰고 성공 이력을 기록합니다. 같은 이름의
+   다른 유형·Clause이거나 설명할 수 없는 부분 구조이면 제약을 임의로 DROP하거나 History만
+   repair하지 말고 소유자에게 보고해 후속 immutable Migration 범위를 결정합니다.
+5. `migrate`, `validate`, `info`를 실행해 네 Version이 모두 `Success`이고 Head가
+   `202608121403`인지 확인합니다.
+
 #### 현재 DDL과 제품 Workflow 경계
 
-Head `202608112307`은 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록,
-정산 환불·재시도 생명주기와 분쟁 제목을
+Head `202608121403`은 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록,
+정산 환불·재시도 생명주기와 분쟁 제목, 충전·출금의 확정된 결과 형태, 에스크로의 확정된 네
+상태 시각 형태와 근무 취소 시각 결합을
 고정하며, 사용자 귀속 없는 Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소,
 `employer_profiles` 제거와 `CHECK_OUT_MISSING` 상태·근로자 필수 제약도 유지합니다. 이는 구조를
 저장할 수 있다는 DDL 사실이며 각 Workflow의 Runtime 구현 완료를 뜻하지 않습니다.
@@ -501,6 +646,7 @@ Head `202608112307`은 문서 접근 감사의 Version·거부 사유와 그 승
 | 신뢰 뱃지            | `badge_type`은 두 종류만 허용하고 등급·건수·문턱은 `evidence` JSON에만 존재                   | 7.0.0은 누적 문턱, 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence와 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime 구현 |
 | 멱등 요청 Claim      | 사용자·Operation·Key 복합 UNIQUE, Fingerprint와 성공 응답 Snapshot 저장                       | Claim 선점·Replay·즉시 409·중단 복구·만료 정리는 후속 애플리케이션 구현                                |
 | 정산 재시도·환불     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index     | #172·#174·#175와 RF-09가 Scheduler·환불·분쟁 Runtime을 구현; Schema만으로 기능 완료 아님                 |
+| 핵심 lifecycle 형태  | 충전·출금 `READY/COMPLETED`, 에스크로의 확정된 네 상태, 근무 취소 시각을 이름 있는 CHECK로 제한 | 허용 전이·권한·금액 대사와 실패·대사·`ON_HOLD` 의미는 애플리케이션이 유지하고 후속 DDL을 추정하지 않음   |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                 | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                       |
 
 퇴근 누락 상태의 판정 시점·실행 주체, 늦은 퇴근·보정·정산 정책과 기존 `IN_PROGRESS`
@@ -519,7 +665,7 @@ docker compose --profile tools run --rm flyway validate
 docker compose --profile tools run --rm flyway info
 ```
 
-현재 기준의 정상 결과는 열다섯 개 Migration의 검증 성공, Schema version `202608112307`, 모든
+현재 기준의 정상 결과는 열아홉 개 Migration의 검증 성공, Schema version `202608121403`, 모든
 항목의 `Success`입니다.
 
 ## Spring·MyBatis 연결 검증
@@ -535,6 +681,7 @@ docker compose --profile tools run --rm flyway info
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.badge.UserBadgeTypeSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentShareUniquenessSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.settlement.SettlementLifecycleSchemaDatabaseIntegrationTest"
+.\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.database.CoreLifecycleConstraintDatabaseIntegrationTest"
 ```
 
 호환 Mapper와 Service까지 같은 브랜치에 있으면 전체 DB 통합 테스트를 실행합니다.

@@ -71,7 +71,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 로컬 실행·검증·장애 대응 | [`runbooks/DATABASE_RUNBOOK.md`](runbooks/DATABASE_RUNBOOK.md)                               |
 | 핵심 테이블·제약 요약    | [`agent/SCHEMA_OVERVIEW.md`](agent/SCHEMA_OVERVIEW.md)                                       |
 | 전체 관계·기능별 ERD     | [`DATABASE_SCHEMA_ERD.md`](DATABASE_SCHEMA_ERD.md)                                           |
-| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608112307.sql`](database/schema-snapshot-202608112307.sql)     |
+| 새 빈 DB 참고용 통합 DDL | [`database/schema-snapshot-202608121403.sql`](database/schema-snapshot-202608121403.sql)     |
 
 Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시된 Flyway Head를 새 빈 DB에
 재현하기 위한 참고 산출물이며 기존 DB 업그레이드에 사용하지 않습니다. Migration과
