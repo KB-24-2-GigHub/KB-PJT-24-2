@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Value;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 /**
  * 지갑 거래 내역 목록의 Item 응답입니다.
@@ -29,22 +30,30 @@ public class WalletTransactionItem {
     String displayStatus;
     Instant createdAt;
 
-    public static WalletTransactionItem from(
-            WalletTransactionView row,
+    public static WalletTransactionItem of(
+            Long transactionId,
+            String type,
+            Long amount,
             String direction,
-            String displayStatus) {
+            Long availableAfter,
+            Long lockedAfter,
+            Long workCaseId,
+            String workTitle,
+            String workplaceName,
+            String displayStatus,
+            LocalDateTime createdAt) {
         return WalletTransactionItem.builder()
-                .transactionId(row.getTransactionId())
-                .type(row.getType())
-                .amount(row.getAmount())
+                .transactionId(transactionId)
+                .type(type)
+                .amount(amount)
                 .direction(direction)
-                .availableAfter(row.getAvailableAfter())
-                .lockedAfter(row.getLockedAfter())
-                .workCaseId(row.getWorkCaseId())
-                .workTitle(row.getWorkTitle())
-                .workplaceName(row.getWorkplaceName())
+                .availableAfter(availableAfter)
+                .lockedAfter(lockedAfter)
+                .workCaseId(workCaseId)
+                .workTitle(workTitle)
+                .workplaceName(workplaceName)
                 .displayStatus(displayStatus)
-                .createdAt(ApiTimes.toInstant(row.getCreatedAt()))
+                .createdAt(ApiTimes.toInstant(createdAt))
                 .build();
     }
 }

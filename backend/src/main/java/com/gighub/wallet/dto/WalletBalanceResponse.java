@@ -17,11 +17,14 @@ public class WalletBalanceResponse {
     Long availableBalance;
     Long lockedBalance;
 
-    public static WalletBalanceResponse from(String currency, WalletSummary summary) {
+    public static WalletBalanceResponse of(
+            String currency,
+            Long availableBalance,
+            Long lockedBalance) {
         return WalletBalanceResponse.builder()
                 .currency(currency)
-                .availableBalance(summary.getAvailableBalance())
-                .lockedBalance(summary.getLockedBalance())
+                .availableBalance(availableBalance)
+                .lockedBalance(lockedBalance)
                 .build();
     }
 }

@@ -1,14 +1,15 @@
-package com.gighub.wallet.dto;
+package com.gighub.wallet.mapper.result;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
-/** MyBatis가 &lt;constructor&gt; 매핑으로 생성하므로 no-args 생성자 없이 필드를 final로 고정한다. */
+/** 지갑 잔액 조회 열을 persistence 경계 안에서 전달합니다. */
 @Getter
 @Builder
 @AllArgsConstructor
-public class WalletSummary {
+public final class WalletSummaryRow {
+
     private final Long walletId;
     private final Long availableBalance;
     private final Long lockedBalance;
