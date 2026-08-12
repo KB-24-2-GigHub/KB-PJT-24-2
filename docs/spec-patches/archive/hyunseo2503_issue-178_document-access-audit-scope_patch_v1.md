@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-178-04
-status: draft
+status: accepted
 issue: 178
 base_spec_version: 6.0.1
 targets:
