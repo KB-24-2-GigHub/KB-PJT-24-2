@@ -24,7 +24,6 @@ describe('unimplemented public facade operations', () => {
 
   it.each([
     ['worker home', () => getWorkerHome(), '#163-#169'],
-    ['attendance scan', () => scan({ qrToken: 'secret' }), '#163-#169'],
     ['documents', () => listDocuments(), '#132/#183'],
     ['notifications', () => listNotifications(), '#167/#176'],
     ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
@@ -41,7 +40,7 @@ describe('unimplemented public facade operations', () => {
     expect(idempotentPost).not.toHaveBeenCalled()
   })
 
-  it('allows an explicitly selected Development/Test mock for one unavailable operation', async () => {
+  it('allows an explicitly selected Development/Test mock for one operation', async () => {
     isMockOperationEnabled.mockImplementation((operation) => operation === 'worker.scan')
 
     await expect(scan({ qrToken: 'test-only' })).resolves.toMatchObject({
@@ -49,5 +48,20 @@ describe('unimplemented public facade operations', () => {
       isLate: false
     })
     expect(http.post).not.toHaveBeenCalled()
+    expect(idempotentPost).not.toHaveBeenCalled()
+  })
+
+  it('attendance scan (#167) is LIVE and calls the real idempotent API when no mock is selected', async () => {
+    idempotentPost.mockResolvedValue({ data: { scanType: 'CHECK_IN', isLate: false } })
+
+    await expect(scan({ qrToken: 'secret', idempotencyKey: 'key-1' })).resolves.toMatchObject({
+      scanType: 'CHECK_IN',
+      isLate: false
+    })
+    expect(idempotentPost).toHaveBeenCalledWith(
+      '/attendance/scans',
+      expect.objectContaining({ qrToken: 'secret' }),
+      expect.objectContaining({ idempotencyKey: 'key-1' })
+    )
   })
 })
