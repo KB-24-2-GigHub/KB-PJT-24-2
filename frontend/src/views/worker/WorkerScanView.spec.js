@@ -156,6 +156,60 @@ describe('WorkerScanView', () => {
     )
   })
 
+  it('확인된 조기 퇴근은 결과 모달에 확인 시각을 표시한다', async () => {
+    stubCapability()
+    scan.mockResolvedValue({
+      result: 'RECORDED',
+      workCaseId: 1,
+      scanType: 'CHECK_OUT',
+      recordedAt: '2026-08-12T08:00:00Z',
+      isLate: false,
+      lateMinutes: 0,
+      earlyCheckoutConfirmedAt: '2026-08-12T08:00:00Z',
+      settlementDueAt: '2026-08-13T08:00:00Z'
+    })
+
+    const wrapper = mount(WorkerScanView)
+    await flushPromises()
+    await wrapper.vm.$.setupState.submitScan('qr-token', { confirmEarlyCheckout: true })
+    await flushPromises()
+
+    expect(wrapper.vm.$.setupState.phase).toBe('result')
+    expect(document.querySelector('.result-early')?.textContent).toContain('조기 퇴근 확인')
+  })
+
+  it('503 일시 불가는 승인 Code 안내로 분기하고 같은 의도를 재사용하지 않는다', async () => {
+    stubCapability()
+    const error = new Error('unavailable')
+    error.code = 'ATTENDANCE_TEMPORARILY_UNAVAILABLE'
+    error.response = { status: 503 }
+    scan.mockRejectedValueOnce(error)
+
+    const wrapper = mount(WorkerScanView)
+    await flushPromises()
+    await wrapper.vm.$.setupState.submitScan('qr-token')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('일시적으로 처리할 수 없어요')
+    expect(wrapper.text()).not.toContain('같은 요청 결과 다시 확인')
+    expect(wrapper.vm.$.setupState.pendingIntent).toBeNull()
+  })
+
+  it('Code 없는 5xx는 결과가 불확실하므로 같은 의도를 보존한다', async () => {
+    stubCapability()
+    const error = new Error('bad gateway')
+    error.response = { status: 502 }
+    scan.mockRejectedValueOnce(error)
+
+    const wrapper = mount(WorkerScanView)
+    await flushPromises()
+    await wrapper.vm.$.setupState.submitScan('qr-token')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('같은 요청 결과 다시 확인')
+    expect(wrapper.vm.$.setupState.pendingIntent).not.toBeNull()
+  })
+
   it('폐기 QR(410)은 안내 문구로 분기하고 같은 의도를 재사용하지 않는다', async () => {
     stubCapability()
     const error = new Error('revoked')

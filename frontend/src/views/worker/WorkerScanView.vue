@@ -248,8 +248,11 @@ async function sendIntent(intent) {
     }
   } catch (error) {
     const status = error?.response?.status
-    // 무응답(네트워크)·5xx는 결과가 불확실 — 같은 의도를 보존해 다시 확인할 수 있게 한다.
-    const uncertain = status === undefined || status >= 500
+    // 승인 오류 Code가 붙은 응답은 서버가 판정을 끝낸 확정 실패다. 503
+    // ATTENDANCE_TEMPORARILY_UNAVAILABLE도 Claim을 제거한 뒤 오므로 재확인 대상이 아니다.
+    // Code 없는 무응답·5xx만 결과가 불확실 — 같은 의도를 보존해 다시 확인할 수 있게 한다.
+    const decided = Boolean(SCAN_ERROR_MESSAGES[error?.code])
+    const uncertain = !decided && (status === undefined || status >= 500)
     if (!uncertain) pendingIntent.value = null
     const info = uncertain
       ? {
@@ -358,6 +361,9 @@ onBeforeUnmount(stopCamera)
         <p class="result-type">{{ resultLabel() }} 처리되었습니다.</p>
         <p class="result-time">{{ formatDateTime(result.recordedAt) }}</p>
         <p v-if="result.isLate" class="result-late">지각 {{ result.lateMinutes }}분으로 기록됨</p>
+        <p v-if="result.earlyCheckoutConfirmedAt" class="result-early">
+          조기 퇴근 확인 {{ formatDateTime(result.earlyCheckoutConfirmedAt) }}
+        </p>
       </div>
       <template #footer>
         <BaseButton variant="worker" size="lg" block @click="reset">확인</BaseButton>
@@ -469,5 +475,10 @@ onBeforeUnmount(stopCamera)
   margin-top: var(--space-sm);
   font-size: var(--text-sm);
   color: var(--color-warning);
+}
+.result-early {
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
 }
 </style>
