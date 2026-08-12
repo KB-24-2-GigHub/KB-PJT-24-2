@@ -6,6 +6,7 @@ import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareListResponse;
 import com.gighub.document.service.DocumentQueryService;
@@ -48,6 +49,17 @@ public class DocumentController {
                         docType,
                         page,
                         size)));
+    }
+
+    // DOC-003·DOC-011: 권한과 감사 Commit 뒤에만 반환하는 문서 상세
+    @GetMapping("/api/documents/{documentId}")
+    public ResponseEntity<ApiResponse<DocumentDetailResponse>> getDocument(
+            @PathVariable Long documentId,
+            @RequestParam(required = false) Long workCaseId,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        return ResponseEntity.ok(ApiResponse.of(documentQueryService.findDocument(
+                principal.getUserId(), principal.getRole(), documentId, workCaseId)));
     }
 
     // SHARE-002: 문서 공유 현황

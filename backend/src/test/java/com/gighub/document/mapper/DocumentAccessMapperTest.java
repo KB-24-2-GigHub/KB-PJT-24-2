@@ -1,12 +1,15 @@
 package com.gighub.document.mapper;
 
 import com.gighub.config.RootConfig;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.mapper.param.DocumentAccessLogParam;
 import com.gighub.document.mapper.result.DocumentFileAccessRow;
+import com.gighub.document.mapper.result.DocumentHealthShareAccessRow;
 import com.gighub.document.service.DocumentFileAccessService;
 import com.gighub.document.service.DocumentFileAccessTransaction;
 import com.gighub.document.service.DocumentFileResult;
+import com.gighub.document.service.DocumentDetailAccessTransaction;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
 import com.gighub.member.domain.UserRole;
@@ -21,6 +24,7 @@ import javax.sql.DataSource;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -33,6 +37,7 @@ import java.util.concurrent.TimeoutException;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -70,6 +75,9 @@ class DocumentAccessMapperTest {
                 assertEquals("SIGNED", contract.getVersionType());
                 assertEquals(fixture.ownerId, contract.getContractOwnerUserId());
                 assertEquals(fixture.workerId, contract.getContractWorkerUserId());
+                assertEquals(1L, contract.getSizeBytes());
+                assertNotNull(contract.getVersionCreatedAt());
+                assertNotNull(contract.getDocumentCreatedAt());
                 assertArrayEquals(fixture.checksum, contract.getChecksum());
 
                 DocumentFileAccessRow health = tx.execute(status ->
@@ -86,6 +94,31 @@ class DocumentAccessMapperTest {
                 assertEquals(fixture.shareId, shareId);
                 assertTrue(mapper.hasHealthShareHistory(
                         fixture.healthDocumentId, fixture.ownerId));
+                List<DocumentHealthShareAccessRow> detailContexts = tx.execute(status ->
+                        mapper.lockValidHealthShareContexts(
+                                fixture.healthDocumentId,
+                                fixture.ownerId,
+                                fixture.workCaseId,
+                                NOW,
+                                TODAY));
+                assertNotNull(detailContexts);
+                assertEquals(1, detailContexts.size());
+                assertEquals(fixture.shareId, detailContexts.get(0).getShareId());
+                assertEquals(fixture.workCaseId, detailContexts.get(0).getWorkCaseId());
+                assertTrue(mapper.hasHealthShareHistoryForWorkCase(
+                        fixture.healthDocumentId,
+                        fixture.ownerId,
+                        fixture.workCaseId));
+                assertTrue(tx.execute(status -> mapper.lockValidHealthShareContexts(
+                        fixture.healthDocumentId,
+                        fixture.ownerId,
+                        fixture.workCaseId + 1,
+                        NOW,
+                        TODAY)).isEmpty());
+                assertFalse(mapper.hasHealthShareHistoryForWorkCase(
+                        fixture.healthDocumentId,
+                        fixture.ownerId,
+                        fixture.workCaseId + 1));
 
                 assertEquals(1, mapper.insertAccessLog(DocumentAccessLogParam.builder()
                         .documentId(fixture.healthDocumentId)
@@ -98,6 +131,57 @@ class DocumentAccessMapperTest {
                         "SELECT COUNT(*) FROM document_access_logs WHERE document_id = ?",
                         Integer.class,
                         fixture.healthDocumentId));
+            } finally {
+                deleteFixture(jdbc, fixture);
+            }
+        }
+    }
+
+    @Test
+    void commitsSelectedDetailAllowedAndRevokedDeniedAudits() {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            DocumentDetailAccessTransaction detailAccess =
+                    context.getBean(DocumentDetailAccessTransaction.class);
+            Fixture fixture = insertFixture(jdbc);
+
+            try {
+                DocumentDetailResponse detail = detailAccess.loadDetail(
+                        fixture.healthDocumentId,
+                        fixture.ownerId,
+                        UserRole.OWNER,
+                        fixture.workCaseId);
+                assertEquals(fixture.workCaseId, detail.getItem().getWorkCaseId());
+                assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM document_access_logs"
+                                + " WHERE document_id = ? AND actor_user_id = ?"
+                                + " AND action = 'DOCUMENT_DETAIL_VIEW'"
+                                + " AND result = 'ALLOWED' AND denial_reason IS NULL",
+                        Integer.class,
+                        fixture.healthDocumentId,
+                        fixture.ownerId));
+
+                jdbc.update(
+                        "UPDATE document_shares"
+                                + " SET status = 'REVOKED', revoked_at = CURRENT_TIMESTAMP(6)"
+                                + " WHERE id = ?",
+                        fixture.shareId);
+                assertThrows(DocumentNotFoundException.class,
+                        () -> detailAccess.loadDetail(
+                                fixture.healthDocumentId,
+                                fixture.ownerId,
+                                UserRole.OWNER,
+                                fixture.workCaseId));
+                assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM document_access_logs"
+                                + " WHERE document_id = ? AND actor_user_id = ?"
+                                + " AND action = 'DOCUMENT_DETAIL_VIEW'"
+                                + " AND result = 'DENIED'"
+                                + " AND denial_reason = 'DOCUMENT_UNAVAILABLE'",
+                        Integer.class,
+                        fixture.healthDocumentId,
+                        fixture.ownerId));
             } finally {
                 deleteFixture(jdbc, fixture);
             }

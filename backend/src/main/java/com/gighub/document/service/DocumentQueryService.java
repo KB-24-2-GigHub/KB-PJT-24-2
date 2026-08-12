@@ -1,6 +1,7 @@
 package com.gighub.document.service;
 
 import com.gighub.common.api.PageResponse;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareListResponse;
 import com.gighub.member.domain.UserRole;
@@ -15,6 +16,12 @@ public interface DocumentQueryService {
             String docType,
             int page,
             int size);
+
+    DocumentDetailResponse findDocument(
+            long actorUserId,
+            UserRole actorRole,
+            long documentId,
+            Long workCaseId);
 
     DocumentShareListResponse findShares(long actorUserId, long documentId);
 }

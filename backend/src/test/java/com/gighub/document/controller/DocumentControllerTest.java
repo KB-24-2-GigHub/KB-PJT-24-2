@@ -7,9 +7,11 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.CommonExceptionHandler;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentShareListResponse;
+import com.gighub.document.dto.DocumentVersionItem;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -33,6 +35,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -115,10 +118,45 @@ class DocumentControllerTest {
     }
 
     @Test
-    void noLongerPublishesTheUnapprovedDetailEndpoint() throws Exception {
-        mockMvc.perform(get("/api/documents/{documentId}", DOCUMENT_ID)
+    void returnsApprovedDetailItemAndOnlyTheAllowedVersionFields() throws Exception {
+        when(documentQueryService.findDocument(
+                USER_ID, UserRole.WORKER, DOCUMENT_ID, 201L))
+                .thenReturn(DocumentDetailResponse.of(
+                        listItem(),
+                        List.of(DocumentVersionItem.of(
+                                1,
+                                "ORIGINAL",
+                                "image/jpeg",
+                                128_400L,
+                                LocalDateTime.of(2026, 6, 1, 10, 0)))));
+
+        MvcResult result = mockMvc.perform(get("/api/documents/{documentId}", DOCUMENT_ID)
+                        .param("workCaseId", "201")
                         .principal(authentication))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.documentId").value(DOCUMENT_ID))
+                .andExpect(jsonPath("$.data.versions[0].versionNo").value(1))
+                .andExpect(jsonPath("$.data.versions[0].versionType").value("ORIGINAL"))
+                .andReturn();
+
+        JsonNode detail = objectMapper.readTree(result.getResponse().getContentAsString())
+                .path("data");
+        assertEquals(Set.of(
+                "documentId", "docType", "status", "fileName", "mimeType",
+                "issuedDate", "expiresDate", "latestVersion", "source",
+                "sharedByName", "workplaceId", "workplaceName", "workCaseId",
+                "capabilities", "createdAt", "versions"), fieldNames(detail));
+        assertFalse(detail.has("item"));
+        assertFalse(detail.has("storageKey"));
+        assertFalse(detail.has("ownerUserId"));
+        assertEquals(Set.of(
+                "versionNo", "versionType", "mimeType", "sizeBytes", "createdAt"),
+                fieldNames(detail.path("versions").get(0)));
+        assertFalse(detail.path("versions").get(0).has("checksum"));
+        assertFalse(detail.path("versions").get(0).has("id"));
+
+        verify(documentQueryService).findDocument(
+                USER_ID, UserRole.WORKER, DOCUMENT_ID, 201L);
     }
 
     @Test
@@ -149,8 +187,14 @@ class DocumentControllerTest {
                 .andExpect(status().isUnauthorized())
                 .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
 
+        mockMvc.perform(get("/api/documents/{documentId}", DOCUMENT_ID))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+
         verify(documentQueryService, never()).findDocuments(
                 any(Long.class), any(), any(), any(), any(Integer.class), any(Integer.class));
+        verify(documentQueryService, never()).findDocument(
+                anyLong(), any(), anyLong(), any());
     }
 
     private DocumentListItem listItem() {

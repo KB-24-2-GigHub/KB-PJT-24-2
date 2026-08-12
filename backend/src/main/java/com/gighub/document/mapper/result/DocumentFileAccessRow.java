@@ -1,6 +1,7 @@
 package com.gighub.document.mapper.result;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -24,7 +25,10 @@ public class DocumentFileAccessRow {
     private final String versionType;
     private final String storageKey;
     private final String mimeType;
+    private final Long sizeBytes;
     private final byte[] checksum;
+    private final LocalDateTime versionCreatedAt;
+    private final LocalDateTime documentCreatedAt;
     private final Long contractOwnerUserId;
     private final Long contractWorkerUserId;
     private final String ownerName;

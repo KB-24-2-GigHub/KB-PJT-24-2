@@ -2,6 +2,7 @@ package com.gighub.document.service;
 
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareListResponse;
 import com.gighub.document.exception.DocumentNotFoundException;
@@ -36,6 +37,9 @@ class DocumentQueryServiceImplTest {
     @Mock
     private DocumentQueryMapper mapper;
 
+    @Mock
+    private DocumentDetailAccessTransaction detailAccessTransaction;
+
     private DocumentQueryServiceImpl service;
 
     @BeforeEach
@@ -43,7 +47,37 @@ class DocumentQueryServiceImplTest {
         Clock clock = Clock.fixed(
                 Instant.parse("2026-08-11T03:00:00Z"),
                 ZoneId.of("Asia/Seoul"));
-        service = new DocumentQueryServiceImpl(mapper, clock);
+        service = new DocumentQueryServiceImpl(mapper, detailAccessTransaction, clock);
+    }
+
+    @Test
+    void delegatesDetailToTheAuditedTransactionBoundary() {
+        DocumentDetailResponse response = DocumentDetailResponse.of(
+                DocumentListItem.of(
+                        10L,
+                        "HEALTH_CERTIFICATE",
+                        "ACTIVE",
+                        "image/jpeg",
+                        LocalDate.of(2026, 8, 1),
+                        LocalDate.of(2027, 8, 1),
+                        1,
+                        "OWN",
+                        "김근로",
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        false,
+                        NOW),
+                List.of());
+        when(detailAccessTransaction.loadDetail(10L, 4L, UserRole.WORKER, 201L))
+                .thenReturn(response);
+
+        assertEquals(response, service.findDocument(
+                4L, UserRole.WORKER, 10L, 201L));
+        verify(detailAccessTransaction).loadDetail(
+                10L, 4L, UserRole.WORKER, 201L);
     }
 
     @Test

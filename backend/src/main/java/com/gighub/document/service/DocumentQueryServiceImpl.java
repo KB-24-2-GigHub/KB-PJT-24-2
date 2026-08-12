@@ -3,6 +3,7 @@ package com.gighub.document.service;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
+import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentShareListResponse;
@@ -29,16 +30,33 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
             Set.of("EMPLOYMENT_CONTRACT", "HEALTH_CERTIFICATE");
 
     private final DocumentQueryMapper documentQueryMapper;
+    private final DocumentDetailAccessTransaction detailAccessTransaction;
     private final Clock clock;
 
     @Autowired
-    public DocumentQueryServiceImpl(DocumentQueryMapper documentQueryMapper) {
-        this(documentQueryMapper, Clock.system(DATABASE_ZONE));
+    public DocumentQueryServiceImpl(
+            DocumentQueryMapper documentQueryMapper,
+            DocumentDetailAccessTransaction detailAccessTransaction) {
+        this(documentQueryMapper, detailAccessTransaction, Clock.system(DATABASE_ZONE));
     }
 
-    DocumentQueryServiceImpl(DocumentQueryMapper documentQueryMapper, Clock clock) {
+    DocumentQueryServiceImpl(
+            DocumentQueryMapper documentQueryMapper,
+            DocumentDetailAccessTransaction detailAccessTransaction,
+            Clock clock) {
         this.documentQueryMapper = documentQueryMapper;
+        this.detailAccessTransaction = detailAccessTransaction;
         this.clock = clock;
+    }
+
+    @Override
+    public DocumentDetailResponse findDocument(
+            long actorUserId,
+            UserRole actorRole,
+            long documentId,
+            Long workCaseId) {
+        return detailAccessTransaction.loadDetail(
+                documentId, actorUserId, actorRole, workCaseId);
     }
 
     @Override

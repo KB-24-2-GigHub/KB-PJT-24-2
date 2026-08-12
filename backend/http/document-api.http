@@ -10,11 +10,14 @@ GET http://localhost:8080/api/documents?docType=HEALTH_CERTIFICATE&workplaceId=1
 ### 4. 문서 목록 - 페이지
 GET http://localhost:8080/api/documents?page=0&size=10
 
-### 5. 문서 파일 보기 (DOC-003)
+### 5. 문서 상세와 허용 Version (DOC-003·DOC-011)
+GET http://localhost:8080/api/documents/1?workCaseId=201
+
+### 6. 문서 파일 보기 (DOC-003)
 GET http://localhost:8080/api/documents/1/file?mode=view
 
-### 6. 문서 파일 다운로드 (DOC-003)
+### 7. 문서 파일 다운로드 (DOC-003)
 GET http://localhost:8080/api/documents/1/file?mode=download
 
-### 7. 보건증 공유 이력 (SHARE-002)
+### 8. 보건증 공유 이력 (SHARE-002)
 GET http://localhost:8080/api/documents/1/shares
