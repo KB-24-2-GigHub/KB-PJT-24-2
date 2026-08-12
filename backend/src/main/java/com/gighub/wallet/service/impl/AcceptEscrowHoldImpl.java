@@ -9,6 +9,7 @@ import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.AcceptEscrowHold;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,6 +23,7 @@ import java.util.Objects;
 
 /** Wallet 소유 SQL을 사용해 수락 예치를 원자적으로 수행합니다. */
 @Service
+@RequiredArgsConstructor
 public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
 
     private static final String TRANSACTION_TYPE = "ESCROW_HOLD";
@@ -32,10 +34,6 @@ public class AcceptEscrowHoldImpl implements AcceptEscrowHold {
             "사장님의 예치 가능 잔액이 부족하여 근무를 확정할 수 없습니다.";
 
     private final WalletMapper walletMapper;
-
-    public AcceptEscrowHoldImpl(WalletMapper walletMapper) {
-        this.walletMapper = walletMapper;
-    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

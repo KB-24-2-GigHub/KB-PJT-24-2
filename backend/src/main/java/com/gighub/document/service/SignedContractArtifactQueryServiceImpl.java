@@ -5,6 +5,7 @@ import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -15,6 +16,7 @@ import java.util.Comparator;
 
 /** Document persistence와 storage fallback을 한 owner 경계에서 검증합니다. */
 @Service
+@RequiredArgsConstructor
 public class SignedContractArtifactQueryServiceImpl
         implements SignedContractArtifactQueryService {
 
@@ -24,13 +26,6 @@ public class SignedContractArtifactQueryServiceImpl
 
     private final ContractDocumentWriteMapper documentMapper;
     private final DocumentStorageAdapter storageAdapter;
-
-    public SignedContractArtifactQueryServiceImpl(
-            ContractDocumentWriteMapper documentMapper,
-            DocumentStorageAdapter storageAdapter) {
-        this.documentMapper = documentMapper;
-        this.storageAdapter = storageAdapter;
-    }
 
     @Override
     @Transactional(readOnly = true)

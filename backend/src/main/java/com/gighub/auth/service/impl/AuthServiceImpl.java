@@ -14,6 +14,7 @@ import com.gighub.member.domain.UserStatus;
 import com.gighub.member.mapper.UserMapper;
 import com.gighub.wallet.service.WalletProvisionService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** 승인된 인증 계약을 DB 현재 상태로 계산합니다. */
 @Service
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private static final String DUMMY_PASSWORD_HASH =
@@ -30,17 +32,6 @@ public class AuthServiceImpl implements AuthService {
     private final UserMapper userMapper;
     private final WalletProvisionService walletProvisionService;
     private final PasswordEncoder passwordEncoder;
-
-    public AuthServiceImpl(
-            WorkplaceOwnershipService workplaceOwnershipService,
-            UserMapper userMapper,
-            WalletProvisionService walletProvisionService,
-            PasswordEncoder passwordEncoder) {
-        this.workplaceOwnershipService = workplaceOwnershipService;
-        this.userMapper = userMapper;
-        this.walletProvisionService = walletProvisionService;
-        this.passwordEncoder = passwordEncoder;
-    }
 
     @Override
     public boolean isLoginIdAvailable(String loginId) {

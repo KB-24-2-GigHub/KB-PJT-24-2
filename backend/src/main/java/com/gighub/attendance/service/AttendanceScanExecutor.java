@@ -35,6 +35,7 @@ import com.gighub.work.service.result.WorkLifecycleSnapshot;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,6 +60,7 @@ import org.springframework.transaction.annotation.Transactional;
  * Escrow의 금액·원장은 이 Transaction에서 변경하지 않습니다.</p>
  */
 @Service
+@RequiredArgsConstructor
 public class AttendanceScanExecutor {
 
     /** ATT-003이 고정한 인증 반경입니다. 반올림 전 값이 이 값을 포함합니다. */
@@ -78,25 +80,6 @@ public class AttendanceScanExecutor {
     private final AttendanceScanAuditor scanAuditor;
     private final AttendanceScanReplayCodec replayCodec;
     private final IdempotencyClaimService claimService;
-
-    public AttendanceScanExecutor(
-            WorkplaceOwnershipService workplaceOwnershipService,
-            QrTokenMapper qrTokenMapper,
-            AttendanceRecordMapper attendanceRecordMapper,
-            WorkLifecycleCommandService workLifecycleCommandService,
-            SettlementReservationService settlementReservationService,
-            AttendanceScanAuditor scanAuditor,
-            AttendanceScanReplayCodec replayCodec,
-            IdempotencyClaimService claimService) {
-        this.workplaceOwnershipService = workplaceOwnershipService;
-        this.qrTokenMapper = qrTokenMapper;
-        this.attendanceRecordMapper = attendanceRecordMapper;
-        this.workLifecycleCommandService = workLifecycleCommandService;
-        this.settlementReservationService = settlementReservationService;
-        this.scanAuditor = scanAuditor;
-        this.replayCodec = replayCodec;
-        this.claimService = claimService;
-    }
 
     @Transactional
     public AttendanceScanOutcome execute(

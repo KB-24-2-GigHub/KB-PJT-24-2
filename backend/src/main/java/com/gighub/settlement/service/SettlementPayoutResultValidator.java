@@ -10,9 +10,12 @@ import java.util.Objects;
 import java.time.LocalDateTime;
 
 /** 지급 뒤 다시 읽은 최소 결과와 실제 자금 이동 결과를 대사합니다. */
-public class SettlementPayoutResultValidator {
+public final class SettlementPayoutResultValidator {
 
-    public SettlementResult validateAndBuild(
+    private SettlementPayoutResultValidator() {
+    }
+
+    public static SettlementResult validateAndBuild(
             CompletedSettlementFacts settlement,
             WorkCaseEscrowSnapshot work,
             Long approvedByUserId,
@@ -54,7 +57,7 @@ public class SettlementPayoutResultValidator {
             LocalDateTime completedAt) {
     }
 
-    private void validateAmounts(long settlementAmount, SettlementAmounts amounts) {
+    private static void validateAmounts(long settlementAmount, SettlementAmounts amounts) {
         if (amounts == null
                 || amounts.originalEscrowAmount() < 0
                 || amounts.workerPaidAmount() < 0
@@ -65,7 +68,7 @@ public class SettlementPayoutResultValidator {
         }
     }
 
-    private boolean preservesEscrow(SettlementAmounts amounts) {
+    private static boolean preservesEscrow(SettlementAmounts amounts) {
         try {
             return Math.addExact(
                     amounts.workerPaidAmount(),

@@ -20,6 +20,7 @@ import com.gighub.work.mapper.param.WorkerWorkCaseListQuery;
 import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 import com.gighub.work.mapper.result.WorkerWorkCaseRow;
 import com.gighub.work.service.WorkerQueryService;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -27,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 /** WORKER 홈·근무 이력 조회를 담당합니다. DML은 이 Service가 소유하지 않습니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkerQueryServiceImpl implements WorkerQueryService {
 
     private static final Logger log = LoggerFactory.getLogger(WorkerQueryServiceImpl.class);
@@ -35,10 +37,6 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
     private static final ZoneId WORK_CASE_ZONE = ZoneId.of("Asia/Seoul");
 
     private final WorkerMapper workerMapper;
-
-    public WorkerQueryServiceImpl(WorkerMapper workerMapper) {
-        this.workerMapper = workerMapper;
-    }
 
     @Override
     @Transactional(readOnly = true)

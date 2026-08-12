@@ -92,6 +92,7 @@ replay_pid*.log
 !/docs/agent/PROJECT_RULES.md
 !/docs/agent/ARCHITECTURE_OVERVIEW.md
 !/docs/agent/IMPLEMENTATION_GUIDE.md
+!/docs/agent/JAVA_MODELING_GUIDE.md
 !/docs/agent/SCHEMA_OVERVIEW.md
 !/docs/agent/VERIFICATION_GUIDE.md
 !/docs/specs/

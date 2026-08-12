@@ -11,12 +11,14 @@ import com.gighub.settlement.service.policy.SettlementPayoutDecision;
 import com.gighub.settlement.service.policy.SettlementPayoutRejectedException;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.exception.EscrowIntegrityException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /** OWNER 승인 지급과 성공 Claim을 한 새 Transaction으로 묶습니다. */
 @Service
+@RequiredArgsConstructor
 public class SettlementApprovalTransaction {
 
     private static final int RESPONSE_HTTP_STATUS = 200;
@@ -24,15 +26,6 @@ public class SettlementApprovalTransaction {
     private final SettlementPayoutExecutor payoutExecutor;
     private final IdempotencyClaimService claimService;
     private final SettlementReplayCodec replayCodec;
-
-    public SettlementApprovalTransaction(
-            SettlementPayoutExecutor payoutExecutor,
-            IdempotencyClaimService claimService,
-            SettlementReplayCodec replayCodec) {
-        this.payoutExecutor = payoutExecutor;
-        this.claimService = claimService;
-        this.replayCodec = replayCodec;
-    }
 
     @Transactional(propagation = Propagation.REQUIRES_NEW)
     public SettlementResult execute(SettlementApproveCommand command, long claimId) {

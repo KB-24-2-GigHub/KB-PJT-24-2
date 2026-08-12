@@ -2,18 +2,17 @@ package com.gighub.wallet.service.impl;
 
 import com.gighub.wallet.dto.WalletBalanceSnapshot;
 import com.gighub.wallet.dto.WalletTransactionSnapshot;
-import com.gighub.wallet.domain.EscrowStatus;
 import com.gighub.wallet.domain.Money;
 import com.gighub.wallet.domain.WalletBalance;
 import com.gighub.wallet.exception.EscrowIntegrityException;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
-import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.SettlementWalletService;
 import com.gighub.wallet.service.SettlementWalletService.SettlementWalletLock;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -23,19 +22,23 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.REF_ESCROW;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.TX_ESCROW_RELEASE;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.toSnapshot;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateCompletedEscrow;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEmployerReleaseLedgerInvariant;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEscrowReference;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateHeldEscrowOwnership;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateReleaseLedger;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateWallet;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateWorkerReleaseLedgerInvariant;
+
 /** Wallet owner Mapper와 자금·원장 무결성 검증을 한 participant에 둡니다. */
 @Service
+@RequiredArgsConstructor
 public class SettlementWalletServiceImpl implements SettlementWalletService {
 
-    private static final String TX_ESCROW_HOLD = "ESCROW_HOLD";
-    private static final String TX_ESCROW_RELEASE = "ESCROW_RELEASE";
-    private static final String REF_ESCROW = "ESCROW";
-
     private final WalletMapper walletMapper;
-
-    public SettlementWalletServiceImpl(WalletMapper walletMapper) {
-        this.walletMapper = walletMapper;
-    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -81,16 +84,7 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         }
         SettlementEscrowSnapshot escrow = toSnapshot(
                 walletMapper.findSettlementEscrowForUpdate(command.getWorkCaseId()));
-        if (escrow == null
-                || escrow.getEscrowId() == null
-                || escrow.getEscrowId() <= 0
-                || escrow.getEscrowId() != lock.escrowId()
-                || escrow.getStatus() != EscrowStatus.RELEASED
-                || escrow.getAmount() == null
-                || escrow.getAmount() != command.getAmount()) {
-            throw new EscrowIntegrityException("완료된 정산과 에스크로 상태가 일치하지 않습니다.");
-        }
-        long escrowId = escrow.getEscrowId();
+        long escrowId = validateCompletedEscrow(escrow, command, lock.escrowId());
         validateEscrowReference(employer, escrowId);
         validateEscrowReference(worker, escrowId);
         validateEmployerReleaseLedgerInvariant(employer, command.getAmount());
@@ -228,23 +222,6 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         return snapshots;
     }
 
-    private void validateWallet(
-            WalletBalanceSnapshot snapshot, long expectedUserId, long expectedWalletId) {
-        if (snapshot == null) {
-            throw new EscrowIntegrityException("정산 대상 KRW 지갑을 찾을 수 없습니다.");
-        }
-        if (snapshot.getWalletId() == null
-                || snapshot.getWalletId() != expectedWalletId
-                || snapshot.getUserId() == null
-                || snapshot.getUserId() != expectedUserId
-                || snapshot.getAvailableBalance() == null
-                || snapshot.getAvailableBalance() < 0
-                || snapshot.getLockedBalance() == null
-                || snapshot.getLockedBalance() < 0) {
-            throw new EscrowIntegrityException("조회된 지갑 잔액 스냅샷이 올바르지 않습니다.");
-        }
-    }
-
     private PayoutWalletLock requirePayoutLock(
             SettlementWalletCommand command,
             Long expectedEscrowId,
@@ -285,110 +262,6 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
             long workerLocked) implements SettlementWalletLock {
     }
 
-    private void validateHeldEscrowOwnership(
-            WalletTransactionSnapshot snapshot,
-            SettlementWalletCommand command,
-            long escrowId,
-            long expectedWalletId) {
-        if (snapshot == null
-                || snapshot.getId() == null
-                || snapshot.getId() <= 0
-                || snapshot.getWalletId() == null
-                || snapshot.getWalletId() != expectedWalletId
-                || snapshot.getWalletUserId() == null
-                || snapshot.getWalletUserId() != command.getEmployerId()
-                || snapshot.getWorkCaseId() == null
-                || snapshot.getWorkCaseId() != command.getWorkCaseId()
-                || snapshot.getAmount() == null
-                || snapshot.getAmount() != command.getAmount()
-                || !TX_ESCROW_HOLD.equals(snapshot.getTransactionType())
-                || !REF_ESCROW.equals(snapshot.getReferenceType())
-                || snapshot.getReferenceId() == null
-                || snapshot.getReferenceId() != escrowId) {
-            throw new EscrowIntegrityException("예치 원장과 현재 정산 대상의 소유권이 일치하지 않습니다.");
-        }
-        validateHoldLedgerInvariant(snapshot, command.getAmount());
-    }
-
-    private void validateReleaseLedger(
-            WalletTransactionSnapshot snapshot,
-            long expectedWalletId,
-            long expectedUserId,
-            SettlementWalletCommand command) {
-        if (snapshot.getId() == null
-                || snapshot.getId() <= 0
-                || snapshot.getWalletId() == null
-                || snapshot.getWalletId() != expectedWalletId
-                || snapshot.getWalletUserId() == null
-                || snapshot.getWalletUserId() != expectedUserId
-                || snapshot.getWorkCaseId() == null
-                || snapshot.getWorkCaseId() != command.getWorkCaseId()
-                || snapshot.getAmount() == null
-                || snapshot.getAmount() != command.getAmount()
-                || !TX_ESCROW_RELEASE.equals(snapshot.getTransactionType())
-                || !REF_ESCROW.equals(snapshot.getReferenceType())
-                || snapshot.getReferenceId() == null
-                || snapshot.getReferenceId() <= 0) {
-            throw new EscrowIntegrityException(
-                    "정산 식별자 기반 원장이 현재 지급 결과와 일치하지 않습니다.");
-        }
-    }
-
-    private void validateEscrowReference(WalletTransactionSnapshot snapshot, long escrowId) {
-        if (snapshot.getReferenceId() != escrowId) {
-            throw new EscrowIntegrityException("정산 원장이 다른 에스크로를 참조하고 있습니다.");
-        }
-    }
-
-    private SettlementEscrowSnapshot toSnapshot(SettlementEscrowRow row) {
-        if (row == null) {
-            return null;
-        }
-        return SettlementEscrowSnapshot.builder()
-                .escrowId(row.getEscrowId())
-                .workCaseId(row.getWorkCaseId())
-                .amount(row.getAmount())
-                .status(row.getStatus())
-                .build();
-    }
-
-    private void validateHoldLedgerInvariant(WalletTransactionSnapshot snapshot, long amount) {
-        if (!hasCompleteBalances(snapshot)
-                || !matchesSubtract(snapshot.getAvailableBefore(), amount, snapshot.getAvailableAfter())
-                || !matchesAdd(snapshot.getLockedBefore(), amount, snapshot.getLockedAfter())) {
-            throw new EscrowIntegrityException("저장된 에스크로 예치 원장 금액이 올바르지 않습니다.");
-        }
-    }
-
-    private void validateEmployerReleaseLedgerInvariant(
-            WalletTransactionSnapshot snapshot, long amount) {
-        if (!hasCompleteBalances(snapshot)
-                || !snapshot.getAvailableBefore().equals(snapshot.getAvailableAfter())
-                || !matchesSubtract(snapshot.getLockedBefore(), amount, snapshot.getLockedAfter())) {
-            throw new EscrowIntegrityException("저장된 고용주 정산 원장 금액이 올바르지 않습니다.");
-        }
-    }
-
-    private void validateWorkerReleaseLedgerInvariant(
-            WalletTransactionSnapshot snapshot, long amount) {
-        if (!hasCompleteBalances(snapshot)
-                || !matchesAdd(snapshot.getAvailableBefore(), amount, snapshot.getAvailableAfter())
-                || !snapshot.getLockedBefore().equals(snapshot.getLockedAfter())) {
-            throw new EscrowIntegrityException("저장된 근로자 정산 원장 금액이 올바르지 않습니다.");
-        }
-    }
-
-    private boolean hasCompleteBalances(WalletTransactionSnapshot snapshot) {
-        return snapshot.getAvailableBefore() != null
-                && snapshot.getAvailableBefore() >= 0
-                && snapshot.getAvailableAfter() != null
-                && snapshot.getAvailableAfter() >= 0
-                && snapshot.getLockedBefore() != null
-                && snapshot.getLockedBefore() >= 0
-                && snapshot.getLockedAfter() != null
-                && snapshot.getLockedAfter() >= 0;
-    }
-
     private void insertLedger(WalletTransactionParam param, String message) {
         try {
             if (walletMapper.insertWalletTransaction(param) != 1) {
@@ -401,19 +274,4 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         }
     }
 
-    private boolean matchesAdd(long before, long amount, long after) {
-        try {
-            return Math.addExact(before, amount) == after;
-        } catch (ArithmeticException overflow) {
-            return false;
-        }
-    }
-
-    private boolean matchesSubtract(long before, long amount, long after) {
-        try {
-            return Math.subtractExact(before, amount) == after;
-        } catch (ArithmeticException overflow) {
-            return false;
-        }
-    }
 }

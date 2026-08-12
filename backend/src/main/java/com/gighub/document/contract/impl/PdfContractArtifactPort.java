@@ -16,6 +16,7 @@ import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
+import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
@@ -42,6 +43,7 @@ import java.util.stream.Collectors;
  * 남긴다.</p>
  */
 @Component
+@RequiredArgsConstructor
 public class PdfContractArtifactPort implements ContractArtifactPort {
 
     private static final Logger log = LoggerFactory.getLogger(PdfContractArtifactPort.class);
@@ -61,15 +63,6 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
     private final ContractDocumentWriteMapper documentMapper;
     private final ContractPdfRenderer renderer;
     private final DocumentStorageAdapter storageAdapter;
-
-    public PdfContractArtifactPort(
-            ContractDocumentWriteMapper documentMapper,
-            ContractPdfRenderer renderer,
-            DocumentStorageAdapter storageAdapter) {
-        this.documentMapper = documentMapper;
-        this.renderer = renderer;
-        this.storageAdapter = storageAdapter;
-    }
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)

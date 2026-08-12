@@ -32,6 +32,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - Frontend routes and request behavior: `frontend/src/router/index.js`, `frontend/src/services/http.js`, and the affected `frontend/src/services/*.js`.
 - Backend wiring and layer boundaries: `backend/src/main/java/com/gighub/config/` and current domain packages.
 - Logical module ownership, public application calls, query exceptions, and transaction orchestrators: [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md) and its machine-readable manifest.
+- Java Lombok, type, interface, Exception, and Service complexity reviews: [`JAVA_MODELING_GUIDE.md`](JAVA_MODELING_GUIDE.md).
 - Protected product requirements and target API contracts: `docs/specs/`. Read them for intent and acceptance criteria, but derive current implementation only from code, configuration, focused tests, verification results, and runtime Swagger.
 - Database structure: owner-controlled Flyway migrations first, then `docs/agent/SCHEMA_OVERVIEW.md` for compact context and `docs/DATABASE_SCHEMA_ERD.md` for the detailed relationship map. Migration and DDL ownership follows the scoped administrative-release rule.
 - Task-specific guides and runbooks: `docs/README.md`.
@@ -42,7 +43,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - `PROJECT_RULES.md` owns repository-wide agent hard rules; `IMPLEMENTATION_GUIDE.md` owns stable exploration order, not current feature status.
 - `docs/specs/` owns protected product behavior, `docs/spec-patches/` owns the temporary development-contract lifecycle, and `docs/runbooks/` owns executable operating and recovery procedures.
 - `docs/archive/` and accepted Patch records are historical evidence, not active contracts.
-- `MODULE_BOUNDARIES.md` is the active module/write-ownership contract created by RF-02. `VERIFICATION_GUIDE.md` and `JAVA_MODELING_GUIDE.md` become active only when their owning follow-up issues create, route, protect, and verify them. Do not create empty placeholders.
+- `MODULE_BOUNDARIES.md`, `VERIFICATION_GUIDE.md`, and `JAVA_MODELING_GUIDE.md` are active shared contracts for module ownership, risk-based verification, and Java modeling respectively. Do not replace them with issue-local copies or empty placeholders.
 - Ignored local references, personal agent files, memories, and reports are not canonical sources and must not be linked from the shared router.
 
 Follow the documentation ownership and maintenance rules in [`PROJECT_RULES.md`](PROJECT_RULES.md). Update this overview only when a top-level runtime, default language, directory responsibility, request path, persistence boundary, or authoritative source changes. Keep feature details in task-specific documents.

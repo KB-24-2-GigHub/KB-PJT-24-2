@@ -9,6 +9,7 @@ import com.gighub.invitation.dto.InvitationDetailResponse;
 import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.service.InvitationQueryService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +31,7 @@ import javax.servlet.http.HttpServletRequest;
  * 보낸 뒤 같은 경로로 복귀합니다. 서버는 복귀 요청에서 Token과 상태를 다시 검증합니다.</p>
  */
 @RestController
+@RequiredArgsConstructor
 public class InvitationController {
 
     /** 저장된 결과를 다시 보냈음을 알리는 승인 Header입니다. */
@@ -37,13 +39,6 @@ public class InvitationController {
 
     private final InvitationQueryService invitationQueryService;
     private final InvitationAcceptService invitationAcceptService;
-
-    public InvitationController(
-            InvitationQueryService invitationQueryService,
-            InvitationAcceptService invitationAcceptService) {
-        this.invitationQueryService = invitationQueryService;
-        this.invitationAcceptService = invitationAcceptService;
-    }
 
     /**
      * Token이 가리키는 초대의 근무 조건을 반환합니다.

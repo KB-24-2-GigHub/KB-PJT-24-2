@@ -16,29 +16,20 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /** 사업장 고정 QR 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
+@RequiredArgsConstructor
 public class WorkplaceQrServiceImpl implements WorkplaceQrService {
 
     private final WorkplaceOwnershipService workplaceOwnershipService;
     private final QrTokenMapper qrTokenMapper;
     private final QrTokenCodec qrTokenCodec;
     private final WorkplaceQrIssuer qrIssuer;
-
-    public WorkplaceQrServiceImpl(
-            WorkplaceOwnershipService workplaceOwnershipService,
-            QrTokenMapper qrTokenMapper,
-            QrTokenCodec qrTokenCodec,
-            WorkplaceQrIssuer qrIssuer) {
-        this.workplaceOwnershipService = workplaceOwnershipService;
-        this.qrTokenMapper = qrTokenMapper;
-        this.qrTokenCodec = qrTokenCodec;
-        this.qrIssuer = qrIssuer;
-    }
 
     @Override
     @Transactional(readOnly = true)
