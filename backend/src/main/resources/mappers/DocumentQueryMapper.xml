@@ -297,6 +297,17 @@
         WHERE share.document_id = #{documentId}
           AND share.purpose = 'HEALTH_CERTIFICATE'
         ORDER BY share.created_at DESC, share.id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countSharesByDocumentId" resultType="long">
+        SELECT COUNT(*)
+        FROM document_shares share
+        JOIN documents d ON d.id = share.document_id
+        JOIN work_cases wc ON wc.id = share.work_case_id
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        WHERE share.document_id = #{documentId}
+          AND share.purpose = 'HEALTH_CERTIFICATE'
     </select>
 
 </mapper>

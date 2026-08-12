@@ -98,8 +98,9 @@ class DocumentQueryMapperTest {
                         fixture.healthDocumentId, fixture.ownerId));
 
                 List<DocumentShareRow> shares = mapper.findSharesByDocumentId(
-                        fixture.healthDocumentId, NOW, TODAY);
+                        fixture.healthDocumentId, NOW, TODAY, 0, 20);
                 assertEquals(1, shares.size());
+                assertEquals(1L, mapper.countSharesByDocumentId(fixture.healthDocumentId));
                 assertEquals(fixture.shareId, shares.get(0).getShareId());
                 assertEquals(fixture.workplaceId, shares.get(0).getWorkplaceId());
                 assertEquals("ACTIVE", shares.get(0).getStatus());
@@ -113,7 +114,8 @@ class DocumentQueryMapperTest {
                         LocalDateTime.of(2028, 8, 20, 18, 0),
                         fixture.workCaseId);
                 List<DocumentShareRow> certificateLimitedShares =
-                        mapper.findSharesByDocumentId(fixture.healthDocumentId, NOW, TODAY);
+                        mapper.findSharesByDocumentId(
+                                fixture.healthDocumentId, NOW, TODAY, 0, 20);
                 assertEquals(LocalDateTime.of(2027, 8, 12, 0, 0),
                         certificateLimitedShares.get(0).getEffectiveUntil());
                 jdbc.update(
@@ -207,7 +209,8 @@ class DocumentQueryMapperTest {
                         otherOwnerId,
                         fixture.healthDocumentId);
                 List<DocumentShareRow> workerMismatchShares =
-                        mapper.findSharesByDocumentId(fixture.healthDocumentId, NOW, TODAY);
+                        mapper.findSharesByDocumentId(
+                                fixture.healthDocumentId, NOW, TODAY, 0, 20);
                 assertEquals(1, workerMismatchShares.size());
                 assertEquals("EXPIRED", workerMismatchShares.get(0).getStatus());
 
@@ -220,12 +223,64 @@ class DocumentQueryMapperTest {
                         otherOwnerId,
                         fixture.shareId);
                 List<DocumentShareRow> recipientMismatchShares =
-                        mapper.findSharesByDocumentId(fixture.healthDocumentId, NOW, TODAY);
+                        mapper.findSharesByDocumentId(
+                                fixture.healthDocumentId, NOW, TODAY, 0, 20);
                 assertEquals(1, recipientMismatchShares.size());
                 assertEquals("EXPIRED", recipientMismatchShares.get(0).getStatus());
             } finally {
                 deleteFixture(jdbc, fixture);
                 jdbc.update("DELETE FROM users WHERE id = ?", otherOwnerId);
+            }
+        }
+    }
+
+    @Test
+    void pagesShareHistoryInNewestCreationOrder() {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            DocumentQueryMapper mapper = context.getBean(DocumentQueryMapper.class);
+            Fixture fixture = insertFixture(jdbc);
+
+            try {
+                LocalDateTime olderCreatedAt = NOW.minusMinutes(2);
+                LocalDateTime newerCreatedAt = NOW.minusMinutes(1);
+                jdbc.update(
+                        "UPDATE document_shares SET created_at = ? WHERE id = ?",
+                        olderCreatedAt,
+                        fixture.shareId);
+                jdbc.update(
+                        "INSERT INTO document_shares"
+                                + " (document_id, work_case_id, shared_with_user_id, purpose,"
+                                + " status, revoked_at, created_at)"
+                                + " VALUES (?, ?, ?, 'HEALTH_CERTIFICATE', 'REVOKED', ?, ?)",
+                        fixture.healthDocumentId,
+                        fixture.workCaseId,
+                        fixture.ownerId,
+                        newerCreatedAt,
+                        newerCreatedAt);
+                long newerShareId = jdbc.queryForObject(
+                        "SELECT LAST_INSERT_ID()", Long.class);
+
+                assertEquals(2L, mapper.countSharesByDocumentId(fixture.healthDocumentId));
+
+                List<DocumentShareRow> firstPage = mapper.findSharesByDocumentId(
+                        fixture.healthDocumentId, NOW, TODAY, 0, 1);
+                List<DocumentShareRow> secondPage = mapper.findSharesByDocumentId(
+                        fixture.healthDocumentId, NOW, TODAY, 1, 1);
+                List<DocumentShareRow> afterLastPage = mapper.findSharesByDocumentId(
+                        fixture.healthDocumentId, NOW, TODAY, 2, 1);
+
+                assertEquals(List.of(newerShareId), firstPage.stream()
+                        .map(DocumentShareRow::getShareId)
+                        .toList());
+                assertEquals("REVOKED", firstPage.get(0).getStatus());
+                assertEquals(List.of(fixture.shareId), secondPage.stream()
+                        .map(DocumentShareRow::getShareId)
+                        .toList());
+                assertTrue(afterLastPage.isEmpty());
+            } finally {
+                deleteFixture(jdbc, fixture);
             }
         }
     }
@@ -343,7 +398,8 @@ class DocumentQueryMapperTest {
     }
 
     private void deleteFixture(JdbcTemplate jdbc, Fixture fixture) {
-        jdbc.update("DELETE FROM document_shares WHERE id = ?", fixture.shareId);
+        jdbc.update("DELETE FROM document_shares WHERE document_id = ?",
+                fixture.healthDocumentId);
         jdbc.update("DELETE FROM document_versions WHERE document_id IN (?, ?)",
                 fixture.contractDocumentId, fixture.healthDocumentId);
         jdbc.update("DELETE FROM documents WHERE id IN (?, ?)",

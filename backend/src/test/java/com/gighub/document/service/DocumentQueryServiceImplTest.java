@@ -4,7 +4,7 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
-import com.gighub.document.dto.DocumentShareListResponse;
+import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.mapper.DocumentQueryMapper;
 import com.gighub.document.mapper.result.DocumentListRow;
@@ -135,18 +135,22 @@ class DocumentQueryServiceImplTest {
         when(mapper.isOwnedActiveHealthDocument(10L, 3L)).thenReturn(false);
 
         assertThrows(DocumentNotFoundException.class,
-                () -> service.findShares(3L, 10L));
+                () -> service.findShares(3L, 10L, 0, 20));
 
         verify(mapper, never()).findSharesByDocumentId(
                 org.mockito.ArgumentMatchers.anyLong(),
                 org.mockito.ArgumentMatchers.any(),
-                org.mockito.ArgumentMatchers.any());
+                org.mockito.ArgumentMatchers.any(),
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyInt());
+        verify(mapper, never()).countSharesByDocumentId(
+                org.mockito.ArgumentMatchers.anyLong());
     }
 
     @Test
     void mapsOnlyTheSafeOwnerShareProjection() {
         when(mapper.isOwnedActiveHealthDocument(10L, 4L)).thenReturn(true);
-        when(mapper.findSharesByDocumentId(10L, NOW, NOW.toLocalDate()))
+        when(mapper.findSharesByDocumentId(10L, NOW, NOW.toLocalDate(), 20L, 10))
                 .thenReturn(List.of(DocumentShareRow.builder()
                         .shareId(91L)
                         .workplaceId(3L)
@@ -156,11 +160,30 @@ class DocumentQueryServiceImplTest {
                         .sharedAt(NOW)
                         .effectiveUntil(LocalDateTime.of(2026, 8, 20, 18, 0))
                         .build()));
+        when(mapper.countSharesByDocumentId(10L)).thenReturn(21L);
 
-        DocumentShareListResponse result = service.findShares(4L, 10L);
+        PageResponse<DocumentShareItem> result = service.findShares(4L, 10L, 2, 10);
 
-        assertEquals(1, result.getItems().size());
-        assertEquals(91L, result.getItems().get(0).getShareId());
-        assertEquals(3L, result.getItems().get(0).getWorkplaceId());
+        assertEquals(1, result.getContent().size());
+        assertEquals(91L, result.getContent().get(0).getShareId());
+        assertEquals(3L, result.getContent().get(0).getWorkplaceId());
+        assertEquals(2, result.getPage().getNumber());
+        assertEquals(10, result.getPage().getSize());
+        assertEquals(21L, result.getPage().getTotalElements());
+        assertEquals(3, result.getPage().getTotalPages());
+        verify(mapper).findSharesByDocumentId(
+                10L, NOW, NOW.toLocalDate(), 20L, 10);
+    }
+
+    @Test
+    void rejectsInvalidSharePageBeforeQueryingTheMapper() {
+        assertThrows(ValidationException.class,
+                () -> service.findShares(4L, 10L, -1, 20));
+        assertThrows(ValidationException.class,
+                () -> service.findShares(4L, 10L, 0, 101));
+
+        verify(mapper, never()).isOwnedActiveHealthDocument(
+                org.mockito.ArgumentMatchers.anyLong(),
+                org.mockito.ArgumentMatchers.anyLong());
     }
 }

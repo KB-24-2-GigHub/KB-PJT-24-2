@@ -6,7 +6,6 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
-import com.gighub.document.dto.DocumentShareListResponse;
 import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.mapper.DocumentQueryMapper;
 import com.gighub.document.mapper.result.DocumentListRow;
@@ -97,17 +96,29 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
 
     @Override
     @Transactional(readOnly = true)
-    public DocumentShareListResponse findShares(long actorUserId, long documentId) {
+    public PageResponse<DocumentShareItem> findShares(
+            long actorUserId,
+            long documentId,
+            int page,
+            int size) {
+        PageRequests.validate(page, size);
         if (!documentQueryMapper.isOwnedActiveHealthDocument(documentId, actorUserId)) {
             throw new DocumentNotFoundException("문서를 찾을 수 없습니다.");
         }
         LocalDateTime now = LocalDateTime.now(clock);
-        return DocumentShareListResponse.of(
+        return PageResponse.of(
                 documentQueryMapper.findSharesByDocumentId(
-                                documentId, now, now.toLocalDate())
+                                documentId,
+                                now,
+                                now.toLocalDate(),
+                                PageRequests.offset(page, size),
+                                size)
                         .stream()
                         .map(this::toShareItem)
-                        .toList());
+                        .toList(),
+                page,
+                size,
+                documentQueryMapper.countSharesByDocumentId(documentId));
     }
 
     private DocumentListItem toListItem(DocumentListRow row) {

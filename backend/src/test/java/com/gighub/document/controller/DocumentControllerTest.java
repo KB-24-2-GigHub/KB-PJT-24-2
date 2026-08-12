@@ -10,7 +10,6 @@ import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
-import com.gighub.document.dto.DocumentShareListResponse;
 import com.gighub.document.dto.DocumentVersionItem;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.member.domain.UserRole;
@@ -161,24 +160,48 @@ class DocumentControllerTest {
 
     @Test
     void returnsOwnerOnlyShareHistoryWithoutRecipientOrDocumentIds() throws Exception {
-        when(documentQueryService.findShares(USER_ID, DOCUMENT_ID))
-                .thenReturn(DocumentShareListResponse.of(List.of(shareItem())));
+        when(documentQueryService.findShares(USER_ID, DOCUMENT_ID, 0, 20))
+                .thenReturn(PageResponse.of(List.of(shareItem()), 0, 20, 1));
 
         MvcResult result = mockMvc.perform(get("/api/documents/{documentId}/shares", DOCUMENT_ID)
                         .principal(authentication))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.items[0].shareId").value(91))
-                .andExpect(jsonPath("$.data.items[0].workplaceId").value(3))
-                .andExpect(jsonPath("$.data.items[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.content[0].shareId").value(91))
+                .andExpect(jsonPath("$.data.content[0].workplaceId").value(3))
+                .andExpect(jsonPath("$.data.content[0].status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.page.number").value(0))
+                .andExpect(jsonPath("$.data.page.size").value(20))
+                .andExpect(jsonPath("$.data.page.totalElements").value(1))
+                .andExpect(jsonPath("$.data.page.totalPages").value(1))
                 .andReturn();
 
         JsonNode item = objectMapper.readTree(result.getResponse().getContentAsString())
-                .path("data").path("items").get(0);
+                .path("data").path("content").get(0);
         assertEquals(Set.of(
                 "shareId", "workplaceId", "workplaceName", "workCaseId",
                 "status", "sharedAt", "revokedAt", "effectiveUntil"), fieldNames(item));
         assertFalse(item.has("documentId"));
         assertFalse(item.has("sharedWithUserId"));
+        verify(documentQueryService).findShares(USER_ID, DOCUMENT_ID, 0, 20);
+    }
+
+    @Test
+    void forwardsRequestedShareHistoryPage() throws Exception {
+        when(documentQueryService.findShares(USER_ID, DOCUMENT_ID, 2, 10))
+                .thenReturn(PageResponse.of(List.of(), 2, 10, 21));
+
+        mockMvc.perform(get("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .param("page", "2")
+                        .param("size", "10")
+                        .principal(authentication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.content").isEmpty())
+                .andExpect(jsonPath("$.data.page.number").value(2))
+                .andExpect(jsonPath("$.data.page.size").value(10))
+                .andExpect(jsonPath("$.data.page.totalElements").value(21))
+                .andExpect(jsonPath("$.data.page.totalPages").value(3));
+
+        verify(documentQueryService).findShares(USER_ID, DOCUMENT_ID, 2, 10);
     }
 
     @Test

@@ -8,7 +8,7 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
-import com.gighub.document.dto.DocumentShareListResponse;
+import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.service.DocumentQueryService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -64,12 +64,15 @@ public class DocumentController {
 
     // SHARE-002: 문서 공유 현황
     @GetMapping("/api/documents/{documentId}/shares")
-    public ResponseEntity<ApiResponse<DocumentShareListResponse>> getDocumentShares(
+    public ResponseEntity<ApiResponse<PageResponse<DocumentShareItem>>> getDocumentShares(
             @PathVariable Long documentId,
+            @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_TEXT) int page,
+            @RequestParam(defaultValue = PageRequests.DEFAULT_SIZE_TEXT) int size,
             Authentication authentication) {
         long actorUserId = AuthPrincipals.resolve(authentication).getUserId();
         return ResponseEntity.ok(
-                ApiResponse.of(documentQueryService.findShares(actorUserId, documentId)));
+                ApiResponse.of(documentQueryService.findShares(
+                        actorUserId, documentId, page, size)));
     }
 
     private void requireApprovedListQuery(HttpServletRequest request) {

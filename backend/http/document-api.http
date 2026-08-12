@@ -20,4 +20,4 @@ GET http://localhost:8080/api/documents/1/file?mode=view
 GET http://localhost:8080/api/documents/1/file?mode=download
 
 ### 8. 보건증 공유 이력 (SHARE-002)
-GET http://localhost:8080/api/documents/1/shares
+GET http://localhost:8080/api/documents/1/shares?page=0&size=20

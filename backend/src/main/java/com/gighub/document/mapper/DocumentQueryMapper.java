@@ -36,5 +36,9 @@ public interface DocumentQueryMapper {
     List<DocumentShareRow> findSharesByDocumentId(
             @Param("documentId") Long documentId,
             @Param("now") LocalDateTime now,
-            @Param("today") LocalDate today);
+            @Param("today") LocalDate today,
+            @Param("offset") long offset,
+            @Param("size") int size);
+
+    long countSharesByDocumentId(@Param("documentId") Long documentId);
 }
