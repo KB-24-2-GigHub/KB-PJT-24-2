@@ -57,7 +57,7 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
                     row.getWorkCaseId(), row.getStatus(),
                     row.getCheckedInAt(), row.getCheckedOutAt());
         }
-        return WorkerHomeResponse.from(row);
+        return row == null ? WorkerHomeResponse.empty() : toHomeResponse(row);
     }
 
     @Override
@@ -79,10 +79,49 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
                 row.getCheckedInAt(), row.getCheckedOutAt()));
 
         List<WorkerWorkCaseListItemResponse> content = rows.stream()
-                .map(WorkerWorkCaseListItemResponse::from)
+                .map(this::toWorkCaseResponse)
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
+    }
+
+    /** 조회 Row의 DB 시각과 nullable snapshot을 공개 응답으로 옮기는 경계를 한곳에 둡니다. */
+    private WorkerHomeResponse toHomeResponse(WorkerHomeCandidateRow row) {
+        return WorkerHomeResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getWorkplaceName(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getBreakMinutes(),
+                row.getBreakPaid(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getCheckedInAt(),
+                row.getCheckInAttemptedAt(),
+                row.getCheckedOutAt(),
+                row.getEscrowStatus(),
+                row.getSettlementStatus(),
+                row.getSettlementDueAt());
+    }
+
+    private WorkerWorkCaseListItemResponse toWorkCaseResponse(WorkerWorkCaseRow row) {
+        return WorkerWorkCaseListItemResponse.of(
+                row.getWorkCaseId(),
+                row.getTitle(),
+                row.getWorkplaceName(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getBreakMinutes(),
+                row.getBreakPaid(),
+                row.getDailyWage(),
+                row.getStatus(),
+                row.getCheckedInAt(),
+                row.getCheckInAttemptedAt(),
+                row.getCheckedOutAt(),
+                row.getEscrowStatus(),
+                row.getSettlementStatus(),
+                row.getSettlementDueAt());
     }
 
     /**

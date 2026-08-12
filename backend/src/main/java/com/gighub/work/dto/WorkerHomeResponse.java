@@ -1,12 +1,12 @@
 package com.gighub.work.dto;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 import com.gighub.common.api.ApiTimes;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.domain.AttendanceLateness;
 import com.gighub.work.domain.ExpectedNetAmount;
-import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 
 import lombok.Getter;
 
@@ -27,8 +27,42 @@ public final class WorkerHomeResponse {
         this.todayWorkCase = todayWorkCase;
     }
 
-    public static WorkerHomeResponse from(WorkerHomeCandidateRow row) {
-        return new WorkerHomeResponse(row == null ? null : TodayWorkCase.from(row));
+    public static WorkerHomeResponse empty() {
+        return new WorkerHomeResponse(null);
+    }
+
+    public static WorkerHomeResponse of(
+            Long workCaseId,
+            String title,
+            String workplaceName,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid,
+            Long dailyWage,
+            WorkCaseStatus status,
+            LocalDateTime checkedInAt,
+            LocalDateTime checkInAttemptedAt,
+            LocalDateTime checkedOutAt,
+            String escrowStatus,
+            String settlementStatus,
+            LocalDateTime settlementDueAt) {
+        return new WorkerHomeResponse(new TodayWorkCase(
+                workCaseId,
+                title,
+                workplaceName,
+                startsAt,
+                endsAt,
+                breakMinutes,
+                breakPaid,
+                dailyWage,
+                status,
+                checkedInAt,
+                checkInAttemptedAt,
+                checkedOutAt,
+                escrowStatus,
+                settlementStatus,
+                settlementDueAt));
     }
 
     @Getter
@@ -49,25 +83,37 @@ public final class WorkerHomeResponse {
         private final String settlementStatus;
         private final Instant settlementDueAt;
 
-        private TodayWorkCase(WorkerHomeCandidateRow row) {
-            this.workCaseId = row.getWorkCaseId();
-            this.title = row.getTitle();
-            this.workplaceName = row.getWorkplaceName();
-            this.startsAt = ApiTimes.toInstant(row.getStartsAt());
-            this.endsAt = ApiTimes.toInstant(row.getEndsAt());
-            this.breakMinutes = row.getBreakMinutes();
-            this.breakPaid = row.getBreakPaid();
-            this.dailyWage = row.getDailyWage();
-            this.expectedNetAmount = ExpectedNetAmount.calculate(row.getDailyWage());
-            this.status = row.getStatus();
-            this.attendance = Attendance.from(row);
-            this.escrowStatus = row.getEscrowStatus();
-            this.settlementStatus = row.getSettlementStatus();
-            this.settlementDueAt = ApiTimes.toInstant(row.getSettlementDueAt());
-        }
-
-        private static TodayWorkCase from(WorkerHomeCandidateRow row) {
-            return new TodayWorkCase(row);
+        private TodayWorkCase(
+                Long workCaseId,
+                String title,
+                String workplaceName,
+                LocalDateTime startsAt,
+                LocalDateTime endsAt,
+                Integer breakMinutes,
+                Boolean breakPaid,
+                Long dailyWage,
+                WorkCaseStatus status,
+                LocalDateTime checkedInAt,
+                LocalDateTime checkInAttemptedAt,
+                LocalDateTime checkedOutAt,
+                String escrowStatus,
+                String settlementStatus,
+                LocalDateTime settlementDueAt) {
+            this.workCaseId = workCaseId;
+            this.title = title;
+            this.workplaceName = workplaceName;
+            this.startsAt = ApiTimes.toInstant(startsAt);
+            this.endsAt = ApiTimes.toInstant(endsAt);
+            this.breakMinutes = breakMinutes;
+            this.breakPaid = breakPaid;
+            this.dailyWage = dailyWage;
+            this.expectedNetAmount = ExpectedNetAmount.calculate(dailyWage);
+            this.status = status;
+            this.attendance = Attendance.from(
+                    startsAt, checkedInAt, checkInAttemptedAt, checkedOutAt);
+            this.escrowStatus = escrowStatus;
+            this.settlementStatus = settlementStatus;
+            this.settlementDueAt = ApiTimes.toInstant(settlementDueAt);
         }
     }
 
@@ -96,11 +142,15 @@ public final class WorkerHomeResponse {
             this.lateMinutes = lateness.isLate() ? lateness.getLateMinutes() : null;
         }
 
-        private static Attendance from(WorkerHomeCandidateRow row) {
-            AttendanceLateness lateness = AttendanceLateness.from(row.getStartsAt(), row.getCheckInAttemptedAt());
+        private static Attendance from(
+                LocalDateTime startsAt,
+                LocalDateTime checkedInAt,
+                LocalDateTime checkInAttemptedAt,
+                LocalDateTime checkedOutAt) {
+            AttendanceLateness lateness = AttendanceLateness.from(startsAt, checkInAttemptedAt);
             return new Attendance(
-                    ApiTimes.toInstant(row.getCheckedInAt()),
-                    ApiTimes.toInstant(row.getCheckedOutAt()),
+                    ApiTimes.toInstant(checkedInAt),
+                    ApiTimes.toInstant(checkedOutAt),
                     lateness);
         }
 

@@ -14,8 +14,6 @@ import com.gighub.member.domain.UserRole;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.dto.WorkCaseDetailResponse;
 import com.gighub.work.dto.WorkCaseSummaryResponse;
-import com.gighub.work.mapper.result.AttendanceSummaryRow;
-import com.gighub.work.mapper.result.WorkCaseDetailRow;
 import com.gighub.work.service.WorkCaseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -286,26 +284,24 @@ class WorkCaseControllerTest {
 
     @Test
     void detailReturnsApprovedEnvelope() throws Exception {
-        when(workCaseService.detail(any(), anyLong())).thenReturn(WorkCaseDetailResponse.from(
-                WorkCaseDetailRow.builder()
-                        .workCaseId(101L)
-                        .title("주말 홀 서빙")
-                        .startsAt(LocalDateTime.of(2026, 8, 20, 9, 0))
-                        .endsAt(LocalDateTime.of(2026, 8, 20, 18, 0))
-                        .breakMinutes(60)
-                        .breakPaid(false)
-                        .dailyWage(120_000L)
-                        .status(WorkCaseStatus.DRAFT)
-                        .termsVersion(1)
-                        .workplaceName("강남점")
-                        .workplaceAddress("서울 강남구 테헤란로 1 2층")
-                        .employerId(7L)
-                        .workerId(null)
-                        .workerName(null)
-                        .build(),
-                null, null,
-                AttendanceSummaryRow.builder().checkedInAt(null).checkedOutAt(null).build(),
-                null, null));
+        when(workCaseService.detail(any(), anyLong())).thenReturn(WorkCaseDetailResponse.of(
+                101L,
+                "Weekend shift",
+                LocalDateTime.of(2026, 8, 20, 9, 0),
+                LocalDateTime.of(2026, 8, 20, 18, 0),
+                60,
+                false,
+                120_000L,
+                WorkCaseStatus.DRAFT,
+                1,
+                "Gangnam",
+                "Seoul",
+                null,
+                null,
+                null,
+                WorkCaseDetailResponse.AttendanceSummary.of(null, null),
+                null,
+                null));
 
         mockMvc.perform(get("/api/work-cases/101").principal(ownerAuthentication()))
                 .andExpect(status().isOk())

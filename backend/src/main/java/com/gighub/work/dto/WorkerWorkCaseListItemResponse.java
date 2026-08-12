@@ -1,11 +1,11 @@
 package com.gighub.work.dto;
 
 import java.time.Instant;
+import java.time.LocalDateTime;
 
 import com.gighub.common.api.ApiTimes;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.domain.AttendanceLateness;
-import com.gighub.work.mapper.result.WorkerWorkCaseRow;
 
 import lombok.Getter;
 
@@ -33,27 +33,72 @@ public final class WorkerWorkCaseListItemResponse {
     private final String settlementStatus;
     private final Instant settlementDueAt;
 
-    private WorkerWorkCaseListItemResponse(WorkerWorkCaseRow row) {
-        this.workCaseId = row.getWorkCaseId();
-        this.title = row.getTitle();
-        this.workplaceName = row.getWorkplaceName();
-        this.startsAt = ApiTimes.toInstant(row.getStartsAt());
-        this.endsAt = ApiTimes.toInstant(row.getEndsAt());
-        this.breakMinutes = row.getBreakMinutes();
-        this.breakPaid = row.getBreakPaid();
-        this.dailyWage = row.getDailyWage();
-        this.status = row.getStatus();
-        AttendanceLateness lateness = AttendanceLateness.from(row.getStartsAt(), row.getCheckInAttemptedAt());
+    private WorkerWorkCaseListItemResponse(
+            Long workCaseId,
+            String title,
+            String workplaceName,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid,
+            Long dailyWage,
+            WorkCaseStatus status,
+            LocalDateTime checkedInAt,
+            LocalDateTime checkInAttemptedAt,
+            LocalDateTime checkedOutAt,
+            String escrowStatus,
+            String settlementStatus,
+            LocalDateTime settlementDueAt) {
+        this.workCaseId = workCaseId;
+        this.title = title;
+        this.workplaceName = workplaceName;
+        this.startsAt = ApiTimes.toInstant(startsAt);
+        this.endsAt = ApiTimes.toInstant(endsAt);
+        this.breakMinutes = breakMinutes;
+        this.breakPaid = breakPaid;
+        this.dailyWage = dailyWage;
+        this.status = status;
+        AttendanceLateness lateness = AttendanceLateness.from(startsAt, checkInAttemptedAt);
         this.attendance = WorkerHomeResponse.Attendance.of(
-                ApiTimes.toInstant(row.getCheckedInAt()),
-                ApiTimes.toInstant(row.getCheckedOutAt()),
+                ApiTimes.toInstant(checkedInAt),
+                ApiTimes.toInstant(checkedOutAt),
                 lateness);
-        this.escrowStatus = row.getEscrowStatus();
-        this.settlementStatus = row.getSettlementStatus();
-        this.settlementDueAt = ApiTimes.toInstant(row.getSettlementDueAt());
+        this.escrowStatus = escrowStatus;
+        this.settlementStatus = settlementStatus;
+        this.settlementDueAt = ApiTimes.toInstant(settlementDueAt);
     }
 
-    public static WorkerWorkCaseListItemResponse from(WorkerWorkCaseRow row) {
-        return new WorkerWorkCaseListItemResponse(row);
+    public static WorkerWorkCaseListItemResponse of(
+            Long workCaseId,
+            String title,
+            String workplaceName,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid,
+            Long dailyWage,
+            WorkCaseStatus status,
+            LocalDateTime checkedInAt,
+            LocalDateTime checkInAttemptedAt,
+            LocalDateTime checkedOutAt,
+            String escrowStatus,
+            String settlementStatus,
+            LocalDateTime settlementDueAt) {
+        return new WorkerWorkCaseListItemResponse(
+                workCaseId,
+                title,
+                workplaceName,
+                startsAt,
+                endsAt,
+                breakMinutes,
+                breakPaid,
+                dailyWage,
+                status,
+                checkedInAt,
+                checkInAttemptedAt,
+                checkedOutAt,
+                escrowStatus,
+                settlementStatus,
+                settlementDueAt);
     }
 }

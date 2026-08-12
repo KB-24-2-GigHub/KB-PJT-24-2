@@ -83,10 +83,24 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 ownerUserId, size, PageRequests.offset(page, size));
 
         List<WorkplaceListItemResponse> content = rows.stream()
-                .map(WorkplaceListItemResponse::from)
+                .map(this::toListItemResponse)
                 .toList();
 
         return PageResponse.of(content, page, size, totalElements);
+    }
+
+    /** Mapper Row의 저장 정밀도와 상태를 기존 공개 응답 값으로 옮깁니다. */
+    private WorkplaceListItemResponse toListItemResponse(WorkplaceListRow row) {
+        return WorkplaceListItemResponse.of(
+                row.getWorkplaceId(),
+                row.getBusinessRegistrationNumber(),
+                row.getName(),
+                row.getRepresentativeName(),
+                row.getRoadAddress(),
+                row.getDetailAddress(),
+                row.getPhone(),
+                row.getRadiusMeters(),
+                row.getStatus());
     }
 
     @Override

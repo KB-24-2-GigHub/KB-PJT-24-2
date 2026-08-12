@@ -1,6 +1,7 @@
 package com.gighub.workplace.dto;
 
-import com.gighub.workplace.mapper.result.WorkplaceListRow;
+import java.math.BigDecimal;
+
 import lombok.Getter;
 
 /**
@@ -22,21 +23,48 @@ public final class WorkplaceListItemResponse {
     private final int radiusMeters;
     private final String status;
 
-    private WorkplaceListItemResponse(WorkplaceListRow row) {
-        this.workplaceId = row.getWorkplaceId();
-        this.businessRegistrationNumber = row.getBusinessRegistrationNumber();
-        this.name = row.getName();
-        this.representativeName = row.getRepresentativeName();
-        this.roadAddress = row.getRoadAddress();
-        this.detailAddress = row.getDetailAddress();
-        this.phone = row.getPhone();
+    private WorkplaceListItemResponse(
+            Long workplaceId,
+            String businessRegistrationNumber,
+            String name,
+            String representativeName,
+            String roadAddress,
+            String detailAddress,
+            String phone,
+            BigDecimal radiusMeters,
+            String status) {
+        this.workplaceId = workplaceId;
+        this.businessRegistrationNumber = businessRegistrationNumber;
+        this.name = name;
+        this.representativeName = representativeName;
+        this.roadAddress = roadAddress;
+        this.detailAddress = detailAddress;
+        this.phone = phone;
         // 명세의 반경은 정수 100입니다. DECIMAL(8,2)를 그대로 직렬화하면 100.00이 나가므로
         // 저장 정밀도를 응답 계약으로 흘리지 않고 여기서 정수로 맞춥니다.
-        this.radiusMeters = row.getRadiusMeters().intValue();
-        this.status = row.getStatus();
+        this.radiusMeters = radiusMeters.intValue();
+        this.status = status;
     }
 
-    public static WorkplaceListItemResponse from(WorkplaceListRow row) {
-        return new WorkplaceListItemResponse(row);
+    public static WorkplaceListItemResponse of(
+            Long workplaceId,
+            String businessRegistrationNumber,
+            String name,
+            String representativeName,
+            String roadAddress,
+            String detailAddress,
+            String phone,
+            BigDecimal radiusMeters,
+            String status) {
+        return new WorkplaceListItemResponse(
+                workplaceId,
+                businessRegistrationNumber,
+                name,
+                representativeName,
+                roadAddress,
+                detailAddress,
+                phone,
+                radiusMeters,
+                status);
     }
 }

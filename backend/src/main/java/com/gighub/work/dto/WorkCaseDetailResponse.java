@@ -2,15 +2,10 @@ package com.gighub.work.dto;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 
 import com.gighub.common.api.ApiTimes;
 import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.work.mapper.result.AttendanceSummaryRow;
-import com.gighub.work.mapper.result.ContractDetailRow;
-import com.gighub.work.mapper.result.EscrowSummaryRow;
-import com.gighub.work.mapper.result.LatestInvitationRow;
-import com.gighub.work.mapper.result.SettlementSummaryRow;
-import com.gighub.work.mapper.result.WorkCaseDetailRow;
 
 import lombok.Getter;
 
@@ -45,43 +40,80 @@ public final class WorkCaseDetailResponse {
     private final SettlementSummary settlement;
 
     private WorkCaseDetailResponse(
-            WorkCaseDetailRow row,
-            LatestInvitationRow invitation,
-            ContractDetailRow contract,
-            AttendanceSummaryRow attendance,
-            EscrowSummaryRow escrow,
-            SettlementSummaryRow settlement) {
-        this.workCaseId = row.getWorkCaseId();
-        this.title = row.getTitle();
+            Long workCaseId,
+            String title,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid,
+            Long dailyWage,
+            WorkCaseStatus status,
+            Integer termsVersion,
+            String workplaceName,
+            String workplaceAddress,
+            WorkerSummary worker,
+            InvitationSummary latestInvitation,
+            ContractSummary contract,
+            AttendanceSummary attendance,
+            EscrowSummary escrow,
+            SettlementSummary settlement) {
+        this.workCaseId = workCaseId;
+        this.title = title;
         // workDate는 저장 컬럼이 아니라 startsAt에서 파생합니다(API_SPEC 4.0.0).
-        this.workDate = row.getStartsAt().toLocalDate();
-        this.startsAt = ApiTimes.toInstant(row.getStartsAt());
-        this.endsAt = ApiTimes.toInstant(row.getEndsAt());
-        this.breakMinutes = row.getBreakMinutes();
-        this.breakPaid = row.getBreakPaid();
-        this.dailyWage = row.getDailyWage();
-        this.status = row.getStatus();
-        this.termsVersion = row.getTermsVersion();
-        this.workplaceName = row.getWorkplaceName();
-        this.workplaceAddress = row.getWorkplaceAddress();
-        this.worker = row.getWorkerId() == null
-                ? null
-                : new WorkerSummary(row.getWorkerId(), row.getWorkerName());
-        this.latestInvitation = invitation == null ? null : new InvitationSummary(invitation);
-        this.contract = contract == null ? null : new ContractSummary(contract);
-        this.attendance = new AttendanceSummary(attendance);
-        this.escrow = escrow == null ? null : new EscrowSummary(escrow);
-        this.settlement = settlement == null ? null : new SettlementSummary(settlement);
+        this.workDate = startsAt.toLocalDate();
+        this.startsAt = ApiTimes.toInstant(startsAt);
+        this.endsAt = ApiTimes.toInstant(endsAt);
+        this.breakMinutes = breakMinutes;
+        this.breakPaid = breakPaid;
+        this.dailyWage = dailyWage;
+        this.status = status;
+        this.termsVersion = termsVersion;
+        this.workplaceName = workplaceName;
+        this.workplaceAddress = workplaceAddress;
+        this.worker = worker;
+        this.latestInvitation = latestInvitation;
+        this.contract = contract;
+        this.attendance = attendance;
+        this.escrow = escrow;
+        this.settlement = settlement;
     }
 
-    public static WorkCaseDetailResponse from(
-            WorkCaseDetailRow row,
-            LatestInvitationRow invitation,
-            ContractDetailRow contract,
-            AttendanceSummaryRow attendance,
-            EscrowSummaryRow escrow,
-            SettlementSummaryRow settlement) {
-        return new WorkCaseDetailResponse(row, invitation, contract, attendance, escrow, settlement);
+    public static WorkCaseDetailResponse of(
+            Long workCaseId,
+            String title,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid,
+            Long dailyWage,
+            WorkCaseStatus status,
+            Integer termsVersion,
+            String workplaceName,
+            String workplaceAddress,
+            WorkerSummary worker,
+            InvitationSummary latestInvitation,
+            ContractSummary contract,
+            AttendanceSummary attendance,
+            EscrowSummary escrow,
+            SettlementSummary settlement) {
+        return new WorkCaseDetailResponse(
+                workCaseId,
+                title,
+                startsAt,
+                endsAt,
+                breakMinutes,
+                breakPaid,
+                dailyWage,
+                status,
+                termsVersion,
+                workplaceName,
+                workplaceAddress,
+                worker,
+                latestInvitation,
+                contract,
+                attendance,
+                escrow,
+                settlement);
     }
 
     @Getter
@@ -94,6 +126,10 @@ public final class WorkCaseDetailResponse {
             this.workerId = workerId;
             this.name = name;
         }
+
+        public static WorkerSummary of(Long workerId, String name) {
+            return new WorkerSummary(workerId, name);
+        }
     }
 
     @Getter
@@ -103,10 +139,14 @@ public final class WorkCaseDetailResponse {
         private final Integer termsVersion;
         private final Instant expiresAt;
 
-        private InvitationSummary(LatestInvitationRow row) {
-            this.status = row.getStatus();
-            this.termsVersion = row.getTermsVersion();
-            this.expiresAt = ApiTimes.toInstant(row.getExpiresAt());
+        private InvitationSummary(String status, Integer termsVersion, LocalDateTime expiresAt) {
+            this.status = status;
+            this.termsVersion = termsVersion;
+            this.expiresAt = ApiTimes.toInstant(expiresAt);
+        }
+
+        public static InvitationSummary of(String status, Integer termsVersion, LocalDateTime expiresAt) {
+            return new InvitationSummary(status, termsVersion, expiresAt);
         }
     }
 
@@ -118,11 +158,23 @@ public final class WorkCaseDetailResponse {
         private final Integer sourceTermsVersion;
         private final Instant acceptedAt;
 
-        private ContractSummary(ContractDetailRow row) {
-            this.contractId = row.getContractId();
-            this.documentId = row.getDocumentId();
-            this.sourceTermsVersion = row.getSourceTermsVersion();
-            this.acceptedAt = ApiTimes.toInstant(row.getAcceptedAt());
+        private ContractSummary(
+                Long contractId,
+                Long documentId,
+                Integer sourceTermsVersion,
+                LocalDateTime acceptedAt) {
+            this.contractId = contractId;
+            this.documentId = documentId;
+            this.sourceTermsVersion = sourceTermsVersion;
+            this.acceptedAt = ApiTimes.toInstant(acceptedAt);
+        }
+
+        public static ContractSummary of(
+                Long contractId,
+                Long documentId,
+                Integer sourceTermsVersion,
+                LocalDateTime acceptedAt) {
+            return new ContractSummary(contractId, documentId, sourceTermsVersion, acceptedAt);
         }
     }
 
@@ -143,9 +195,13 @@ public final class WorkCaseDetailResponse {
          *
          * <p>{@code attendance}만 항상 객체라는 응답 계약은 그대로 유지하고, 값만 비웁니다.</p>
          */
-        private AttendanceSummary(AttendanceSummaryRow row) {
-            this.checkedInAt = row == null ? null : ApiTimes.toInstant(row.getCheckedInAt());
-            this.checkedOutAt = row == null ? null : ApiTimes.toInstant(row.getCheckedOutAt());
+        private AttendanceSummary(LocalDateTime checkedInAt, LocalDateTime checkedOutAt) {
+            this.checkedInAt = ApiTimes.toInstant(checkedInAt);
+            this.checkedOutAt = ApiTimes.toInstant(checkedOutAt);
+        }
+
+        public static AttendanceSummary of(LocalDateTime checkedInAt, LocalDateTime checkedOutAt) {
+            return new AttendanceSummary(checkedInAt, checkedOutAt);
         }
     }
 
@@ -155,9 +211,13 @@ public final class WorkCaseDetailResponse {
         private final String status;
         private final Long amount;
 
-        private EscrowSummary(EscrowSummaryRow row) {
-            this.status = row.getStatus();
-            this.amount = row.getAmount();
+        private EscrowSummary(String status, Long amount) {
+            this.status = status;
+            this.amount = amount;
+        }
+
+        public static EscrowSummary of(String status, Long amount) {
+            return new EscrowSummary(status, amount);
         }
     }
 
@@ -169,11 +229,23 @@ public final class WorkCaseDetailResponse {
         private final Instant dueAt;
         private final Instant completedAt;
 
-        private SettlementSummary(SettlementSummaryRow row) {
-            this.status = row.getStatus();
-            this.amount = row.getAmount();
-            this.dueAt = ApiTimes.toInstant(row.getDueAt());
-            this.completedAt = ApiTimes.toInstant(row.getCompletedAt());
+        private SettlementSummary(
+                String status,
+                Long amount,
+                LocalDateTime dueAt,
+                LocalDateTime completedAt) {
+            this.status = status;
+            this.amount = amount;
+            this.dueAt = ApiTimes.toInstant(dueAt);
+            this.completedAt = ApiTimes.toInstant(completedAt);
+        }
+
+        public static SettlementSummary of(
+                String status,
+                Long amount,
+                LocalDateTime dueAt,
+                LocalDateTime completedAt) {
+            return new SettlementSummary(status, amount, dueAt, completedAt);
         }
     }
 }

@@ -6,7 +6,7 @@ import java.time.ZoneId;
 
 import com.gighub.attendance.domain.AttendanceFailureReason;
 import com.gighub.attendance.domain.AttendanceScanFingerprint;
-import com.gighub.attendance.domain.AttendanceScanOutcome;
+import com.gighub.attendance.service.result.AttendanceScanOutcome;
 import com.gighub.attendance.dto.AttendanceScanRequest;
 import com.gighub.attendance.dto.AttendanceScanResult;
 import com.gighub.attendance.exception.AttendanceScanException;
