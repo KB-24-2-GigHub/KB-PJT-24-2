@@ -14,6 +14,7 @@ import com.gighub.wallet.exception.EscrowIntegrityException;
 import com.gighub.wallet.exception.InvalidEscrowStateException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.service.SettlementWalletService;
+import com.gighub.wallet.service.SettlementWalletService.SettlementAmounts;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.domain.WorkCaseStatus;
@@ -89,7 +90,7 @@ public class SettlementPayoutExecutor {
 
         // Escrow 잠금 뒤에 지갑을 user ID 오름차순으로 잠급니다. 양쪽 잔액·Escrow·원장은
         // 이 Transaction 안에서만 바뀌며 뒤 단계 실패 시 모두 함께 Rollback됩니다.
-        settlementWalletService.release(walletCommand, escrowId);
+        SettlementAmounts amounts = settlementWalletService.release(walletCommand, escrowId);
 
         if (settlementMapper.transitionProcessingToCompleted(
                 settlement.getSettlementId(), command.getApproverUserId()) != 1) {
@@ -99,7 +100,7 @@ public class SettlementPayoutExecutor {
                 settlementMapper.findByWorkCaseIdForUpdate(context.getWorkCaseId());
         validateCompletedSettlement(completed, context);
 
-        SettlementResult result = toResult(completed);
+        SettlementResult result = toResult(completed, amounts);
         // 성공 응답 Snapshot은 지급과 같은 Transaction의 마지막 변경으로 완료합니다.
         // 자금만 Commit되고 Replay 응답이 없는 부분 성공을 허용하지 않습니다.
         claimService.complete(
@@ -186,12 +187,41 @@ public class SettlementPayoutExecutor {
         }
     }
 
-    private SettlementResult toResult(SettlementSnapshot settlement) {
+    private SettlementResult toResult(
+            SettlementSnapshot settlement, SettlementAmounts amounts) {
+        validateSettlementAmounts(settlement, amounts);
         return SettlementResult.builder()
                 .settlementId(settlement.getSettlementId())
                 .status(settlement.getStatus().name())
+                .settlementAmount(settlement.getAmount())
+                .originalEscrowAmount(amounts.originalEscrowAmount())
+                .workerPaidAmount(amounts.workerPaidAmount())
+                .ownerRefundAmount(amounts.ownerRefundAmount())
                 .completedAt(settlement.getCompletedAt())
                 .replayed(false)
                 .build();
+    }
+
+    private void validateSettlementAmounts(
+            SettlementSnapshot settlement, SettlementAmounts amounts) {
+        if (amounts == null
+                || amounts.originalEscrowAmount() < 0
+                || amounts.workerPaidAmount() < 0
+                || amounts.ownerRefundAmount() < 0
+                || settlement.getAmount() != amounts.originalEscrowAmount()
+                || !preservesEscrow(amounts)) {
+            throw new EscrowIntegrityException(
+                    "자금 실행 결과가 정산 원금 보존 계약과 일치하지 않습니다.");
+        }
+    }
+
+    private boolean preservesEscrow(SettlementAmounts amounts) {
+        try {
+            return Math.addExact(
+                    amounts.workerPaidAmount(),
+                    amounts.ownerRefundAmount()) == amounts.originalEscrowAmount();
+        } catch (ArithmeticException overflow) {
+            return false;
+        }
     }
 }

@@ -15,6 +15,7 @@ import com.gighub.wallet.exception.EscrowIntegrityException;
 import com.gighub.wallet.exception.InvalidEscrowStateException;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
 import com.gighub.wallet.service.SettlementWalletService;
+import com.gighub.wallet.service.SettlementWalletService.SettlementAmounts;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.domain.WorkCaseStatus;
@@ -83,6 +84,10 @@ class SettlementPayoutExecutorTest {
 
         assertEquals(SETTLEMENT_ID, result.getSettlementId());
         assertEquals("COMPLETED", result.getStatus());
+        assertEquals(WAGE, result.getSettlementAmount());
+        assertEquals(WAGE, result.getOriginalEscrowAmount());
+        assertEquals(WAGE, result.getWorkerPaidAmount());
+        assertEquals(0L, result.getOwnerRefundAmount());
         assertEquals(COMPLETED_AT, result.getCompletedAt());
         assertFalse(result.isReplayed());
 
@@ -203,6 +208,8 @@ class SettlementPayoutExecutorTest {
                 .thenReturn(List.of());
         when(settlementMapper.transitionScheduledToProcessing(SETTLEMENT_ID, EMPLOYER_ID))
                 .thenReturn(1);
+        when(settlementWalletService.release(any(), anyLong()))
+                .thenReturn(SettlementAmounts.fullPayout(WAGE));
         when(settlementMapper.transitionProcessingToCompleted(SETTLEMENT_ID, EMPLOYER_ID))
                 .thenReturn(0);
 
@@ -211,6 +218,20 @@ class SettlementPayoutExecutorTest {
                 () -> executor.execute(command("KEY"), CLAIM_ID));
 
         verify(settlementWalletService).release(any(), anyLong());
+        verify(claimService, never()).complete(anyLong(), any(Integer.class), any());
+    }
+
+    @Test
+    void rejectsACompletedMoneyResultThatDoesNotMatchTheSettlementAmount() {
+        SettlementApproveCommand command = command("KEY");
+        stubHappy();
+        when(settlementWalletService.release(any(), anyLong()))
+                .thenReturn(SettlementAmounts.fullPayout(WAGE - 1));
+
+        assertThrows(
+                EscrowIntegrityException.class,
+                () -> executor.execute(command, CLAIM_ID));
+
         verify(claimService, never()).complete(anyLong(), any(Integer.class), any());
     }
 
@@ -226,6 +247,8 @@ class SettlementPayoutExecutorTest {
                 .thenReturn(List.of());
         when(settlementMapper.transitionScheduledToProcessing(SETTLEMENT_ID, EMPLOYER_ID))
                 .thenReturn(1);
+        when(settlementWalletService.release(any(), anyLong()))
+                .thenReturn(SettlementAmounts.fullPayout(WAGE));
         when(settlementMapper.transitionProcessingToCompleted(SETTLEMENT_ID, EMPLOYER_ID))
                 .thenReturn(1);
     }

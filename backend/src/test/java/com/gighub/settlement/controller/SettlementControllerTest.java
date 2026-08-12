@@ -44,6 +44,7 @@ class SettlementControllerTest {
 
     private static final Long EMPLOYER_ID = 3L;
     private static final Long WORK_CASE_ID = 1L;
+    private static final Long WAGE = 300_000L;
     private static final String PATH = "/api/work-cases/{workCaseId}/settlement/approve";
     private static final String KEY = "SETTLEMENT-KEY-001";
     private static final LocalDateTime COMPLETED_AT =
@@ -69,6 +70,10 @@ class SettlementControllerTest {
                 SettlementResult.builder()
                         .settlementId(12L)
                         .status("COMPLETED")
+                        .settlementAmount(WAGE)
+                        .originalEscrowAmount(WAGE)
+                        .workerPaidAmount(WAGE)
+                        .ownerRefundAmount(0L)
                         .completedAt(COMPLETED_AT)
                         .replayed(false)
                         .build()
@@ -80,7 +85,11 @@ class SettlementControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.settlementId").value(12))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
+                .andExpect(jsonPath("$.data.originalEscrowAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.workerPaidAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.ownerRefundAmount").value(0))
                 .andExpect(jsonPath("$.data.completedAt").value("2026-07-24T08:12:34.123456Z"))
+                .andExpect(jsonPath("$.data.settlementAmount").doesNotExist())
                 .andExpect(jsonPath("$.data.replayed").doesNotExist());
 
         ArgumentCaptor<SettlementApproveCommand> captor =
@@ -98,6 +107,10 @@ class SettlementControllerTest {
                 SettlementResult.builder()
                         .settlementId(12L)
                         .status("COMPLETED")
+                        .settlementAmount(WAGE)
+                        .originalEscrowAmount(WAGE)
+                        .workerPaidAmount(WAGE)
+                        .ownerRefundAmount(0L)
                         .completedAt(COMPLETED_AT)
                         .replayed(true)
                         .build());
@@ -108,6 +121,9 @@ class SettlementControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("Idempotency-Replayed", "true"))
                 .andExpect(jsonPath("$.data.settlementId").value(12))
+                .andExpect(jsonPath("$.data.originalEscrowAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.workerPaidAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.ownerRefundAmount").value(0))
                 .andExpect(jsonPath("$.data.completedAt")
                         .value("2026-07-24T08:12:34.123456Z"));
     }

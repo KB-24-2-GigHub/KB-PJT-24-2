@@ -87,7 +87,7 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
-    public void release(SettlementWalletCommand command, long escrowId) {
+    public SettlementAmounts release(SettlementWalletCommand command, long escrowId) {
         if (escrowId <= 0) {
             throw new EscrowIntegrityException("정산 대상 에스크로 식별자가 올바르지 않습니다.");
         }
@@ -144,6 +144,9 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 .referenceId(escrowId)
                 .idempotencyKey(command.getWorkerLedgerKey())
                 .build(), "근로자 정산 원장을 기록하지 못했습니다.");
+
+        // 응답 금액은 요청을 다시 계산하지 않고, 방금 검증·반영한 전액 지급 결과에서 만듭니다.
+        return SettlementAmounts.fullPayout(command.getAmount());
     }
 
     private Map<Long, WalletBalanceSnapshot> lockWalletsInOrder(long employerId, long workerId) {

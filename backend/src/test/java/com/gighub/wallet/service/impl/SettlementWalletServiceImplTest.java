@@ -6,6 +6,7 @@ import com.gighub.wallet.exception.EscrowIntegrityException;
 import com.gighub.wallet.exception.IdempotencyKeyReusedException;
 import com.gighub.wallet.mapper.WalletMapper;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
+import com.gighub.wallet.service.SettlementWalletService.SettlementAmounts;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,7 +52,14 @@ class SettlementWalletServiceImplTest {
                 wallet(20L, 2L, 0L, 0L));
 
         long escrowId = service.lockHeldEscrow(command);
-        service.release(command, escrowId);
+        SettlementAmounts amounts = service.release(command, escrowId);
+
+        assertEquals(AMOUNT, amounts.originalEscrowAmount());
+        assertEquals(AMOUNT, amounts.workerPaidAmount());
+        assertEquals(0L, amounts.ownerRefundAmount());
+        assertEquals(
+                amounts.originalEscrowAmount(),
+                Math.addExact(amounts.workerPaidAmount(), amounts.ownerRefundAmount()));
 
         InOrder lockOrder = inOrder(walletMapper);
         lockOrder.verify(walletMapper).getEscrowStatusForUpdate(WORK_CASE_ID);

@@ -60,8 +60,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertEquals("COMPLETED", first.getStatus());
                 assertNotNull(first.getCompletedAt());
                 assertFalse(first.isReplayed());
+                assertFullPayoutAmounts(first);
                 assertEquals(first.getSettlementId(), replay.getSettlementId());
                 assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(replay);
                 assertTrue(replay.isReplayed());
                 assertCompletedState(jdbcTemplate, fixture, first.getCompletedAt());
             } finally {
@@ -123,9 +125,11 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertEquals(1, firstSuccesses);
                 assertEquals(1, replayOrInProgress);
                 assertNotNull(completed);
+                assertFullPayoutAmounts(completed);
                 SettlementResult replay = settlementService.approve(command);
                 assertTrue(replay.isReplayed());
                 assertEquals(completed.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(replay);
                 assertCompletedState(jdbcTemplate, fixture, completed.getCompletedAt());
             } finally {
                 executor.shutdownNow();
@@ -187,6 +191,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertEquals(1, successes);
                 assertEquals(1, conflicts);
                 assertNotNull(completed);
+                assertFullPayoutAmounts(completed);
                 assertCompletedState(
                         jdbcTemplate,
                         fixture,
@@ -224,6 +229,8 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertNotNull(replay);
                 assertTrue(replay.isReplayed());
                 assertEquals(completed.getCompletedAt(), replay.getCompletedAt());
+                assertFullPayoutAmounts(completed);
+                assertFullPayoutAmounts(replay);
                 assertCompletedState(
                         jdbcTemplate,
                         fixture,
@@ -526,6 +533,18 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 fixture.employerWalletId(),
                 fixture.workerWalletId()
         ));
+    }
+
+    private void assertFullPayoutAmounts(SettlementResult result) {
+        assertEquals(WAGE, result.getSettlementAmount());
+        assertEquals(WAGE, result.getOriginalEscrowAmount());
+        assertEquals(WAGE, result.getWorkerPaidAmount());
+        assertEquals(0L, result.getOwnerRefundAmount());
+        assertEquals(
+                result.getOriginalEscrowAmount().longValue(),
+                Math.addExact(
+                        result.getWorkerPaidAmount(),
+                        result.getOwnerRefundAmount()));
     }
 
     private void assertInitialState(

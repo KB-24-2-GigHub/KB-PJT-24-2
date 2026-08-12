@@ -12,5 +12,21 @@ public interface SettlementWalletService {
     boolean verifyReplay(SettlementWalletCommand command);
 
     /** user ID 오름차순으로 지갑을 잠근 뒤 Escrow 지급과 양측 원장을 원자적으로 기록합니다. */
-    void release(SettlementWalletCommand command, long escrowId);
+    SettlementAmounts release(SettlementWalletCommand command, long escrowId);
+
+    /**
+     * 실제 자금 실행이 확정한 정산 금액입니다.
+     *
+     * <p>현재 #72 경로는 정상 근무 전액 지급만 담당합니다. 지각 분할 계산은 별도 기능 이슈가
+     * 소유하므로 여기에서 추정하지 않습니다.</p>
+     */
+    record SettlementAmounts(
+            long originalEscrowAmount,
+            long workerPaidAmount,
+            long ownerRefundAmount) {
+
+        public static SettlementAmounts fullPayout(long amount) {
+            return new SettlementAmounts(amount, amount, 0L);
+        }
+    }
 }

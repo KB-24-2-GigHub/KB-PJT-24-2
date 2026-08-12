@@ -39,6 +39,7 @@ class SettlementServiceTest {
     private static final long EMPLOYER_ID = 3L;
     private static final long WORK_CASE_ID = 1L;
     private static final long CLAIM_ID = 77L;
+    private static final long WAGE = 300_000L;
     private static final String KEY = "SETTLEMENT-KEY-001";
 
     @Mock
@@ -160,6 +161,10 @@ class SettlementServiceTest {
         return SettlementResult.builder()
                 .settlementId(12L)
                 .status("COMPLETED")
+                .settlementAmount(WAGE)
+                .originalEscrowAmount(WAGE)
+                .workerPaidAmount(WAGE)
+                .ownerRefundAmount(0L)
                 .completedAt(LocalDateTime.of(2026, 8, 12, 10, 0))
                 .replayed(replayed)
                 .build();
