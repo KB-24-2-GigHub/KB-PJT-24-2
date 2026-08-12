@@ -65,8 +65,10 @@ export async function getWorkCaseSummary(workplaceId) {
     accepted: count('ACCEPTED'),
     ready: count('READY'),
     inProgress: count('IN_PROGRESS'),
+    checkOutMissing: count('CHECK_OUT_MISSING'),
     completed: count('COMPLETED'),
-    noShow: count('NO_SHOW')
+    noShow: count('NO_SHOW'),
+    canceled: count('CANCELED')
   }
 }
 

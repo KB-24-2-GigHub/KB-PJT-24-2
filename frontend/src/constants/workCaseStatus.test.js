@@ -44,6 +44,7 @@ describe('work-case status contract', () => {
       accepted: 0,
       ready: 0,
       inProgress: 0,
+      checkOutMissing: 0,
       completed: 0,
       noShow: 0
     })

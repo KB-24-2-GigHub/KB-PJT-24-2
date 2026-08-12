@@ -258,7 +258,7 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
       캘린더)만 스크롤한다. AppTopBar 바로 밑에 멈추도록 sticky 로 잡는다.
     -->
     <div class="sticky-head">
-      <!-- 상태별 요약 6종 — 카드를 누르면 해당 상태만, 다시 누르면 전체를 본다 -->
+      <!-- 상태별 요약 7종 — 카드를 누르면 해당 상태만, 다시 누르면 전체를 본다 -->
       <section class="summary">
         <button
           v-for="bucket in WORK_CASE_SUMMARY"
@@ -429,7 +429,7 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   background: var(--color-surface);
 }
 
-/* ---- 근태 현황 요약(6종 그리드) ---- */
+/* ---- 근태 현황 요약(7종 그리드) ---- */
 .summary {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
