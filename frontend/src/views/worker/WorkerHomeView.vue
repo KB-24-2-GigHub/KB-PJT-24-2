@@ -1,7 +1,7 @@
 <script setup>
 /**
  * [F] 알바생 홈(안심지갑)  ·  /worker/home  ·  WORKER  (탭 화면)
- * 안심지갑 잔액·출금(입금 없음) + 오늘의 알바 일정 카드(출근전/지각/노쇼/없음)
+ * 안심지갑 잔액·출금(입금 없음) + 오늘의 알바 일정 카드(work_case 8종 상태 + 지각 파생 뱃지)
  * + 현재까지 확보한 안심금액(진행바·i 팝오버, 지각은 표시/뱃지만).
  * 지급액은 합의 일급(agreedWage) 전액 — 지각 임금 차감 없음.
  * 적립액·진행률·예상 실수령액은 서버가 준 기준값으로부터 화면에서 계산하는 표시 전용
@@ -30,10 +30,9 @@ const { availableBalance } = storeToRefs(walletStore)
 // 이 화면에서 직접 잡아 homeStore.error와 함께 하나의 오류 화면으로 묶는다.
 const walletError = ref(false)
 
-// 확보 안심금액은 오늘 진행 중인 근무가 있을 때만 노출(없음/미배정이면 숨김).
-const showEarning = computed(
-  () => !!earning.value && !!todayWorkCase.value && todayWorkCase.value.status !== 'NONE'
-)
+// 확보 안심금액은 오늘 근무가 있을 때만 노출한다. 오늘 근무가 없으면 서버가
+// todayWorkCase 자체를 null로 주므로(WorkerHomeResponse) earning도 함께 비어 있다.
+const showEarning = computed(() => !!earning.value && !!todayWorkCase.value)
 const hasError = computed(() => !!error.value || walletError.value)
 const errorMessage = computed(() =>
   error.value?.code === 'FEATURE_UNAVAILABLE'

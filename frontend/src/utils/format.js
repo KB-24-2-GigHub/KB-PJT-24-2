@@ -83,6 +83,22 @@ export function formatSeoulTime(value) {
   return SEOUL_WALL_CLOCK_TIME.format(d)
 }
 
+/** UTC Instant → 근무지 기준(Asia/Seoul) 날짜 키 "2026-07-22". formatSeoulTime 과 같은 이유로
+ * 브라우저 로컬 TZ 대신 Asia/Seoul 로 고정한다. */
+const SEOUL_WALL_CLOCK_DATE_KEY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'Asia/Seoul',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit'
+})
+
+export function formatSeoulDateKey(value) {
+  if (value == null || value === '') return ''
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return ''
+  return SEOUL_WALL_CLOCK_DATE_KEY.format(d)
+}
+
 /** UTC Instant 시작·종료 → 근무지 기준 "09:00 ~ 18:00" */
 export function formatSeoulTimeRange(start, end) {
   const s = formatSeoulTime(start)

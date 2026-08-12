@@ -6,7 +6,7 @@
  * (assets/README.md 리스트 상태 표시 규약 준수).
  *
  * 사용: <StatusChip :status="workCase.status" kind="workCase" />
- *   kind: 'workCase' | 'tx' | 'settle' | 'today'
+ *   kind: 'workCase' | 'tx' | 'settle'
  */
 import {
   Ban,
@@ -16,7 +16,6 @@ import {
   FileText,
   Loader,
   Lock,
-  Minus,
   RotateCcw,
   TriangleAlert,
   UserX
@@ -24,7 +23,7 @@ import {
 import { computed } from 'vue'
 
 import { WORK_CASE_STATUS } from '@/constants/workCaseStatus'
-import { SETTLE_STATUS, TODAY_WORK_CASE_STATUS, TX_STATUS } from '@/utils/constants'
+import { SETTLE_STATUS, TX_STATUS } from '@/utils/constants'
 
 const props = defineProps({
   status: { type: String, required: true },
@@ -34,17 +33,17 @@ const props = defineProps({
 const LABEL_MAPS = {
   workCase: WORK_CASE_STATUS,
   tx: TX_STATUS,
-  settle: SETTLE_STATUS,
-  today: TODAY_WORK_CASE_STATUS
+  settle: SETTLE_STATUS
 }
 
 // 상태값(enum) → lucide 아이콘. 서로 다른 kind 가 같은 상태값을 공유한다.
 const ICONS = {
-  // 근무(work_case) 7단계
+  // 근무(work_case) 8단계
   DRAFT: FileText,
   ACCEPTED: FileCheck,
   READY: Clock,
   IN_PROGRESS: Loader,
+  CHECK_OUT_MISSING: TriangleAlert,
   COMPLETED: CircleCheck,
   NO_SHOW: UserX,
   CANCELED: Ban,
@@ -52,11 +51,7 @@ const ICONS = {
   HOLD: Lock,
   SETTLED: CircleCheck,
   REFUNDED: RotateCcw,
-  DONE: CircleCheck,
-  // 오늘의 알바 카드
-  BEFORE_WORK: Clock,
-  LATE: TriangleAlert,
-  NONE: Minus
+  DONE: CircleCheck
 }
 
 const meta = computed(() => {
