@@ -85,7 +85,7 @@ sudo systemctl is-active docker
 기대: Docker 25.x, Compose v5.x, docker `active`.
 비활성이면 `sudo systemctl enable --now docker`.
 
-22번을 전체 개방했으므로 키 인증만 남긴다:
+OS 수준 키 인증을 강제한다:
 
 ```bash
 sudo sed -i 's/^#\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config
