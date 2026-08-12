@@ -1,20 +1,17 @@
-package com.gighub.wallet.dto;
+package com.gighub.wallet.mapper.result;
+
+import java.time.LocalDateTime;
 
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 
-import java.time.LocalDateTime;
-
-/**
- * 지갑 거래 내역 조회 결과.
- *
- * <p>MyBatis가 &lt;constructor&gt; 매핑으로 생성하므로 no-args 생성자 없이 필드를 final로 고정한다.</p>
- */
+/** 지갑 거래 조회 SQL의 원장·근무 Snapshot 열을 보관합니다. */
 @Getter
 @Builder
 @AllArgsConstructor
-public class WalletTransactionView {
+public final class WalletTransactionRow {
+
     private final Long transactionId;
     private final String type;
     private final Long amount;

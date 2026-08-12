@@ -108,26 +108,28 @@ P0 Target와 현재 응답이 다르면 테스트를 삭제하거나 목표를 �
 ## Architecture Gate
 
 `scripts/check-project-guardrails.js`는 비교 기준선에 이미 있던 위반을 안정적인 ID로 고정하고
-신규 증가만 실패시킨다.
+신규 증가를 실패시킨다. 다만 #291에서 0건으로 해소한 API DTO↔Mapper 타입, Domain 금지 의존,
+Application interface Web 타입의 여섯 역방향 결합은 기준선과 관계없이 현재 0건을 요구한다.
 
 - 새 cross-module Mapper import
 - 새 Controller→Mapper import
+- 새 API DTO→Mapper Row/Param import
+- 새 Mapper Java interface→API Request/Response import
+- 새 Mapper XML→API Request/Response parameter/result type
+- 새 Application interface→Servlet/Spring MVC·HTTP/Jackson import
 - 새 Domain→Spring/MyBatis/Web DTO·persistence import
 - 새 Production hardcoded Mock
-- 새 Mapper XML→API Response DTO `resultType` 또는 `resultMap type`
 
-마지막 규칙은 아래 다섯 실명 타입의 동결 Registry, Controller가 import하는 DTO와
-`*Response` 타입을 API 경계로 분류한다. 위반 ID에는 Mapper Tag 종류와 `id`를 포함하므로
-같은 파일에서 같은 DTO를 쓰는 새 Statement도 신규 위반이다. Controller import가 Service
-경계로 이동해도 동결 Registry는 사라지지 않는다. 현재 기준선은 새 사용을 정당화하지 않는다.
-
-| Mapper                    | 기존 API 경계 DTO                          |
-| ------------------------- | ------------------------------------------ |
-| `BadgeQueryMapper.xml`    | `com.gighub.badge.dto.UserBadge`           |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.Document`         |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentVersion`  |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentListItem` |
-| `DocumentQueryMapper.xml` | `com.gighub.document.dto.DocumentShare`    |
+Mapper Java/XML의 API DTO 규칙은 제거된 Badge·Document 결합의 실명 타입, 공통
+Envelope·Page·Error 타입, 모든 package의 `*Request`·`*Response`, Controller가 노출하는 타입을
+API 경계 Registry로 분류한다. Backend 경계가 바뀌면 변경되지 않은 Controller까지 전체
+조회한다. 공개 타입의 import·FQCN·같은 package 단순 이름 참조와 interface의 concrete 구현을
+전이적으로 따라가므로 중첩·다형성 API 타입도 포함한다. Mapper XML의 `resultType`, resultMap
+`type`, `association javaType`, `collection ofType`, discriminator `case resultType`, constructor
+`arg javaType`, statement `parameterType`에서 이 Registry를 직접 사용하는 결합을 막는다. XML
+위반 ID에는 Mapper Tag 종류와 `id` 또는 property를 포함한다. 실명 Registry는 기존 위반을
+허용하는 목록이 아니라 제거된 결합의 재유입을 막는 회귀 규칙이다. #132와 #291 이후 해당
+Mapper Java/XML→API DTO 현재 위반은 0건이다.
 
 그 밖의 기존 Mapper·Controller·Production Mock 위반과 후속 소유자는
 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)의 `TV-*` 표를 따른다. 기준선 ID를 바꾸어

@@ -379,12 +379,6 @@
   ],
   "temporaryViolations": [
     {
-      "id": "TV-008",
-      "kind": "persistence-type-cross-module-import",
-      "target": "Attendance/Work persistence DTO and Row imports",
-      "ownerIssues": [291]
-    },
-    {
       "id": "TV-009",
       "kind": "distributed-lifecycle-status-policy",
       "target": "Work and Invitation services and SQL",

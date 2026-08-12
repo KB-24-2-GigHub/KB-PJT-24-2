@@ -6,7 +6,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gighub.config.ApiJsonMapper;
 import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -23,7 +22,7 @@ class WorkerHomeResponseTest {
     @Test
     void serializesLatenessUnderApprovedFieldNames() throws Exception {
         JsonNode attendance = objectMapper
-                .readTree(objectMapper.writeValueAsString(WorkerHomeResponse.from(lateCandidate())))
+                .readTree(objectMapper.writeValueAsString(lateResponse()))
                 .path("todayWorkCase")
                 .path("attendance");
 
@@ -32,24 +31,23 @@ class WorkerHomeResponseTest {
         assertEquals(30, attendance.path("lateMinutes").asInt());
     }
 
-    private WorkerHomeCandidateRow lateCandidate() {
+    private WorkerHomeResponse lateResponse() {
         LocalDateTime startsAt = LocalDateTime.of(2026, 8, 11, 9, 0);
-        return WorkerHomeCandidateRow.builder()
-                .workCaseId(1L)
-                .title("주방 보조")
-                .workplaceName("행복식당")
-                .startsAt(startsAt)
-                .endsAt(startsAt.plusHours(9))
-                .breakMinutes(60)
-                .breakPaid(false)
-                .dailyWage(200_000L)
-                .status(WorkCaseStatus.IN_PROGRESS)
-                .checkedInAt(startsAt.plusMinutes(30))
-                .checkInAttemptedAt(startsAt.plusMinutes(30))
-                .checkedOutAt(null)
-                .escrowStatus("HELD")
-                .settlementStatus(null)
-                .settlementDueAt(null)
-                .build();
+        return WorkerHomeResponse.of(
+                1L,
+                "주방 보조",
+                "행복식당",
+                startsAt,
+                startsAt.plusHours(9),
+                60,
+                false,
+                200_000L,
+                WorkCaseStatus.IN_PROGRESS,
+                startsAt.plusMinutes(30),
+                startsAt.plusMinutes(30),
+                null,
+                "HELD",
+                null,
+                null);
     }
 }

@@ -4,8 +4,8 @@
 
 <mapper namespace="com.gighub.wallet.mapper.WalletQueryMapper">
 
-    <!-- DTO가 setter를 갖지 않으므로 생성자 인자로 매핑한다. 인자 순서는 필드 선언 순서를 따른다 -->
-    <resultMap id="walletSummaryResult" type="com.gighub.wallet.dto.WalletSummary">
+    <!-- SQL 열을 Mapper 전용 Row의 불변 생성자에 명시적으로 연결합니다. -->
+    <resultMap id="walletSummaryRowResult" type="com.gighub.wallet.mapper.result.WalletSummaryRow">
         <constructor>
             <idArg column="walletId" javaType="java.lang.Long"/>
             <arg column="availableBalance" javaType="java.lang.Long"/>
@@ -13,7 +13,7 @@
         </constructor>
     </resultMap>
 
-    <resultMap id="walletTransactionViewResult" type="com.gighub.wallet.dto.WalletTransactionView">
+    <resultMap id="walletTransactionRowResult" type="com.gighub.wallet.mapper.result.WalletTransactionRow">
         <constructor>
             <idArg column="transactionId" javaType="java.lang.Long"/>
             <arg column="type" javaType="java.lang.String"/>
@@ -29,7 +29,7 @@
         </constructor>
     </resultMap>
 
-    <select id="findWalletSummaryByUserId" resultMap="walletSummaryResult">
+    <select id="findWalletSummaryByUserId" resultMap="walletSummaryRowResult">
         SELECT id                AS walletId,
                available_balance AS availableBalance,
                locked_balance    AS lockedBalance
@@ -67,7 +67,7 @@
     </sql>
 
     <!-- work_case_id는 NULL 가능(충전·출금)하므로 LEFT JOIN을 사용한다 -->
-    <select id="findTransactions" resultMap="walletTransactionViewResult">
+    <select id="findTransactions" resultMap="walletTransactionRowResult">
         SELECT wt.id               AS transactionId,
         wt.transaction_type AS type,
         wt.amount           AS amount,

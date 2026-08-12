@@ -10,7 +10,7 @@ import java.util.Map;
 
 import com.gighub.attendance.domain.AttendanceFailureReason;
 import com.gighub.attendance.domain.AttendanceResult;
-import com.gighub.attendance.domain.AttendanceScanOutcome;
+import com.gighub.attendance.service.result.AttendanceScanOutcome;
 import com.gighub.attendance.domain.AttendanceType;
 import com.gighub.attendance.dto.AttendanceScanConfirmationResponse;
 import com.gighub.attendance.dto.AttendanceScanRequest;

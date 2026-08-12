@@ -1,11 +1,8 @@
 package com.gighub.work.dto;
 
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 import com.gighub.work.domain.WorkCaseStatus;
-import com.gighub.work.mapper.result.WorkCaseStatusCountRow;
 
 import lombok.Builder;
 import lombok.Getter;
@@ -36,12 +33,7 @@ public final class WorkCaseSummaryResponse {
      * <p>DB는 건수가 1 이상인 상태만 돌려주므로, 존재하지 않는 상태는 여기서 0으로
      * 채웁니다.</p>
      */
-    public static WorkCaseSummaryResponse from(List<WorkCaseStatusCountRow> rows) {
-        Map<WorkCaseStatus, Long> counts = rows.stream()
-                .collect(Collectors.toMap(
-                        WorkCaseStatusCountRow::getStatus,
-                        WorkCaseStatusCountRow::getCaseCount));
-
+    public static WorkCaseSummaryResponse of(Map<WorkCaseStatus, Long> counts) {
         return WorkCaseSummaryResponse.builder()
                 .draft(counts.getOrDefault(WorkCaseStatus.DRAFT, 0L))
                 .accepted(counts.getOrDefault(WorkCaseStatus.ACCEPTED, 0L))
