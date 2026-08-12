@@ -7,23 +7,26 @@ This is the compact database context for repository agents. Read it before chang
 | Item                   | Current baseline                                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Status                 | Current                                                                                                        |
-| Last verified          | 2026-08-10                                                                                                     |
+| Last verified          | 2026-08-12                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
-| Migration head         | `202608061428`                                                                                                 |
-| Versioned migrations   | 12                                                                                                             |
+| Migration head         | `202608111744`                                                                                                 |
+| Versioned migrations   | 14                                                                                                             |
 | Domain tables          | 24, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
-| Readable DDL snapshot  | [`schema-snapshot-202608061428.sql`](../database/schema-snapshot-202608061428.sql), owner-maintained reference |
+| Readable DDL snapshot  | [`schema-snapshot-202608111744.sql`](../database/schema-snapshot-202608111744.sql), owner-maintained reference |
 
 When this summary and executable configuration disagree, inspect the owner-authored or
 owner-adopted migrations, Git tracking, `compose.yaml`, `DatabaseConfig.java`, and
-`backend/build.gradle`. Versions `202607311427` through `202608061428` are approved parts of the
+`backend/build.gradle`. Versions `202607311427` through `202608111744` are approved parts of the
 current schema. Version `202608041614` adds the independent idempotency Claim store, and version
 `202608051337` replaces Mock bank-account user ownership with a four-digit Demo PIN while preserving
 account IDs and finance references. Version `202608061428` adds document-Version and structured
-denial-reason detail to document access audit rows without rewriting historical rows. Update this
-document when those authoritative sources prove the summary is stale.
+denial-reason detail to document access audit rows without rewriting historical rows. Version
+`202608111743` closes the audit `action` and `denial_reason` value sets, and `202608111744` separately
+closes the `user_badges.badge_type` value set. Keeping one MySQL `ALTER TABLE` statement per Flyway
+version makes a cross-table failure visible and retryable by version. Update this document when those
+authoritative sources prove the summary is stale.
 If the executable schema itself needs correction, report the required change to the owner and do
 not edit or regenerate SQL.
 
@@ -54,6 +57,8 @@ not edit or regenerate SQL.
 | `202608041614` | `V202608041614__add_idempotency_request_claims.sql`          | Add a user-and-operation-scoped Claim store for request fingerprints and successful response replay   |
 | `202608051337` | `V202608051337__replace_mock_bank_account_user_with_pin.sql` | Remove Mock account user ownership and add the four-digit ASCII Demo PIN without changing account IDs |
 | `202608061428` | `V202608061428__add_document_access_audit_details.sql`       | Link access audits to a version of the same document and store structured denial reasons              |
+| `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql` | Restrict audit `action` and audit `denial_reason` to the approved value sets                            |
+| `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`        | Restrict `user_badges.badge_type` to `TRUST_OWNER` and `TRUST_WORKER`                                  |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
 
@@ -82,6 +87,7 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - The composite relationship from `work_cases` to `(workplaces.owner_user_id, workplaces.id)` proves that a selected workplace belongs to the recorded employer.
 - `password_reset_tokens` stores only a unique `BINARY(32)` token hash. Generated active-slot uniqueness permits one `ACTIVE` token per user while retaining `USED`, `EXPIRED`, and `REVOKED` history.
 - Password-reset status determines audit timestamps: only `USED` requires `used_at`, only `REVOKED` requires `revoked_at`, and neither is populated for `ACTIVE` or `EXPIRED`.
+- `user_badges` keeps one row per user and badge type, and `badge_type` accepts only `TRUST_OWNER` and `TRUST_WORKER`. Level, counts, and thresholds live in the `evidence` JSON rather than dedicated columns.
 
 ### Work and contract
 
@@ -128,8 +134,12 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - Generated active-slot uniqueness permits one equivalent active document share while retaining expired or revoked history.
 - A composite foreign key proves that a non-null `document_access_logs.document_version_id` belongs
   to the same document. Historical rows and denials before version resolution may keep it null.
-- A non-null `document_access_logs.denial_reason` is non-empty and only valid for `DENIED`. Existing
-  rows remain null because their original reason cannot be reconstructed safely.
+- `document_access_logs.action` accepts only `HEALTH_CERT_FILE_VIEW`, `HEALTH_CERT_FILE_DOWNLOAD`,
+  `CONTRACT_FILE_VIEW`, `CONTRACT_FILE_DOWNLOAD`, and `DOCUMENT_DETAIL_VIEW`.
+- A non-null `document_access_logs.denial_reason` is valid only for `DENIED` and only for
+  `PARTY_ACCESS_DENIED`, `DOCUMENT_UNAVAILABLE`, `FILE_UNAVAILABLE`, `CHECKSUM_MISMATCH`, or
+  `SIGNED_VERSION_UNAVAILABLE`. Existing rows remain null because their original reason cannot be
+  reconstructed safely.
 
 ## Approved workflow and enforcement gaps
 
@@ -144,7 +154,8 @@ edit Flyway or a DDL snapshot themselves.
 | Missing checkout (`ATT-006`)      | `CHECK_OUT_MISSING` is allowed and requires a worker; no attendance fact, transition, timestamp, or scheduler index is encoded | The approved contract uses an end-plus-two-hour Scheduler rule, no late/manual M5 correction, and `WAITING/due_at=null`; application behavior and any later DDL reinforcement remain separate work |
 | Fixed workplace radius            | `workplaces.radius_meters` defaults to 100, while it and `work_cases.allowed_radius_meters` accept every positive value        | The approved application policy always writes and checks 100m in current and snapshot data; the owner decides whether DB checks must also require exactly 100             |
 | System-generated contracts        | `documents.work_case_id` may be null even for `EMPLOYMENT_CONTRACT`                                                            | The approved service policy permits only system-generated, work-case-linked contracts; the owner decides whether stronger DB enforcement is required                      |
-| Three-year contract auto-deletion | `documents.status=DELETED` exists, but there is no dedicated retention or deletion tracking/index                              | Three-year server deletion and no user deletion are approved; the open reference-date and deletion-scope decision must precede any required schema                         |
+| Three-year contract purge         | `documents.status=DELETED` exists; no dedicated retention, purge-completion, or retry column/index exists                       | SPEC 7.0.0 fixes the Seoul `ends_at` date + 3 years boundary, 02:00 keyset job, DB-first logical deletion, idempotent object purge, and indefinite metadata/audit retention; #131 owns runtime implementation without inferred DDL |
+| Trust-badge projection            | One row per user/type; type allowlist and current-row unique key are enforced, while approved evidence remains JSON              | SPEC 7.0.0 fixes cumulative thresholds and lock→recalculate→upsert; #182 owns runtime implementation, with no new columns, history table, or separate backfill             |
 | Idempotency request handling      | User, operation, and key Claims are unique; fingerprints, completed 2xx snapshots, and expiry can be stored                    | The application owns Claim acquisition, fingerprint comparison, immediate conflict handling, replay, interruption recovery, and expiry cleanup                           |
 | Non-owned Mock account execution  | Account rows have a four-digit PIN and no user FK; existing order, withdrawal, and bank-ledger references remain               | A compatible backend must resolve ACTIVE accounts by bank/account, verify PIN only for new funding, and treat withdrawal accounts as PIN-free destinations                |
 
@@ -154,10 +165,12 @@ Scheduler at the end-plus-two-hour boundary for an assigned `IN_PROGRESS` case w
 check-in and no successful check-out. It provides no late QR or manual M5 correction and keeps Settlement
 at `WAITING/due_at=null`. The DDL does not prove those facts or implement the Scheduler.
 
-The team approved no user deletion and backend automatic deletion after three years, but not yet
-the overnight-work reference date or whether deletion covers only storage content or also
-metadata, checksums, and audit rows. Storage-object purge plus `documents.status=DELETED` while
-retaining audit metadata is a safe schema-compatible proposal, not yet an approved contract.
+SPEC 7.0.0 uses the Seoul date of `work_cases.ends_at` as the contract-retention reference date. At
+that date plus three years, the 02:00 job pages by `documentId`, commits `documents.status=DELETED`
+before deleting every final and deterministic temporary object, and retries expired DELETED rows.
+Document/version metadata, checksums, signatures, shares, access audits, and contract relations remain
+indefinitely. The approved workflow deliberately adds no purge-history table, completion marker, or
+`updated_at` completion meaning; the schema does not implement the job by itself.
 
 Within the RF program, product-scope reclassification belongs to #282, module ownership belongs to #283,
 and lifecycle DDL reinforcement belongs to #292. This summary records the current approved contract and
@@ -176,7 +189,8 @@ Database constraints do not replace application authorization or transaction rul
 - attendance worker assignment;
 - fixed-QR HMAC verification, revoked-token rejection, first/second scan selection, one applicable work case per worker/workplace, location checks, and transactional QR reissue;
 - idempotent no-show handling and, after product approval, missing-checkout detection, race handling, resolution, and settlement behavior;
-- system-only employment-contract generation, work-case linkage, contract access control, and the eventually approved three-year automatic-deletion policy;
+- system-only employment-contract generation, work-case linkage, contract access control, and the approved three-year DB-first logical-deletion and idempotent object-purge policy;
+- per-request badge recalculation after locking the user row, followed by current-row upsert with the approved closed evidence fields and no separate backfill;
 - complete document-access audit writes: resolved version when available, action, result, and a
   structured reason for every new denial after document resolution;
 - password-reset token generation, hashing, delivery, expiry transition, single-use handling, and revocation of the prior active token;
