@@ -11,11 +11,13 @@
 import {
   Ban,
   CircleCheck,
+  CircleX,
   Clock,
   FileCheck,
   FileText,
   Loader,
   Lock,
+  Pause,
   RotateCcw,
   TriangleAlert,
   UserX
@@ -47,11 +49,16 @@ const ICONS = {
   COMPLETED: CircleCheck,
   NO_SHOW: UserX,
   CANCELED: Ban,
-  // 정산·거래
+  // 정산·거래(settlements.status 6종 — ck_settlements_status)
   HOLD: Lock,
   SETTLED: CircleCheck,
   REFUNDED: RotateCcw,
-  DONE: CircleCheck
+  DONE: CircleCheck,
+  WAITING: Clock,
+  SCHEDULED: Clock,
+  PROCESSING: Loader,
+  FAILED: CircleX,
+  ON_HOLD: Pause
 }
 
 const meta = computed(() => {
