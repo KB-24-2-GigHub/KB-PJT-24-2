@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [dev2, dev, main]
+    branches: [dev, main]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -18,14 +18,16 @@ jobs:
       # check:guardrails 의 --all 스코프는 origin/<integration base> 와의 merge-base 를
       # 기준으로 삼는다(scripts/check-project-guardrails.js:185-205).
       #
-      # pull_request 에서는 GITHUB_BASE_REF 가 올바른 기준을 준다. push 에서는 비어 있어
-      # DEFAULT_INTEGRATION_BASE 인 dev 로 떨어지는데, dev2 push 를 dev 기준으로 전체
-      # 비교하면 Refactoring 프로그램 24커밋이 통째로 범위에 들어간다. 그 범위의
-      # accepted Patch 위반은 #295 RF-14 가 dev2 → dev 통합에서 정리할 몫이며,
-      # 이 워크플로가 떠안으면 상시 빨간불이 된다.
+      # 기준 선택 순서는 GITHUB_BASE_REF -> GIGHUB_GUARDRAIL_BASE_REF ->
+      # DEFAULT_INTEGRATION_BASE("dev") 다(같은 파일 167행).
       #
-      # 두 변수를 동시에 다른 값으로 주면 스크립트가 예외를 던지므로,
-      # pull_request 에서는 빈 값으로 두어 GITHUB_BASE_REF 가 그대로 쓰이게 한다.
+      # pull_request 에서는 GITHUB_BASE_REF 가 올바른 기준을 주므로 빈 값을 준다.
+      # push 에서는 GITHUB_BASE_REF 가 비어 있어 기본값 dev 로 떨어지는데, main push 를
+      # dev 기준으로 비교하면 두 브랜치의 격차 전체가 검사 범위가 된다. 자기 브랜치를
+      # 기준으로 지정하면 merge-base 가 HEAD 라 비교 범위가 비고, 그 커밋의 Guardrail
+      # 검증은 이미 PR 에서 끝나 있다.
+      #
+      # 두 변수를 동시에 다른 값으로 주면 스크립트가 예외를 던진다(163행).
       GIGHUB_GUARDRAIL_BASE_REF: ${{ github.event_name == 'push' && github.ref_name || '' }}
 
     steps:

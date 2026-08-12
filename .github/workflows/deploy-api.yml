@@ -6,7 +6,7 @@ name: Deploy API
 #   변수 = <브랜치명>   해당 브랜치 push 마다 자동 배포
 #   변수 삭제           자동 배포 꺼짐. 수동 버튼만 동작
 #
-#     gh variable set DEPLOY_BRANCH --body "dev2"   # 켜기
+#     gh variable set DEPLOY_BRANCH --body "dev"    # 켜기
 #     gh variable delete DEPLOY_BRANCH              # 끄기
 #
 # GitHub API 는 값이 빈 변수를 거부하므로(422) 끄는 방법은 삭제다. 정의되지 않은
