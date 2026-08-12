@@ -1,10 +1,9 @@
-package com.gighub.attendance.service;
+package com.gighub.document.service;
 
 import com.gighub.document.mapper.ContractDocumentWriteMapper;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
-import com.gighub.document.service.SignedContractArtifactQueryServiceImpl;
 import com.gighub.document.storage.DocumentStorageIntegrityException;
 import com.gighub.document.storage.Sha256;
 import org.junit.jupiter.api.Test;
@@ -22,7 +21,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class SignedContractArtifactVerifierTest {
+class SignedContractArtifactQueryServiceImplTest {
 
     private static final long WORK_CASE_ID = 17L;
     private static final long DOCUMENT_ID = 23L;
@@ -44,7 +43,7 @@ class SignedContractArtifactVerifierTest {
                 WORK_CASE_ID, DOCUMENT_ID, row.getVersionNo())))
                 .thenReturn(content);
 
-        assertTrue(verifier().isReadable(WORK_CASE_ID));
+        assertTrue(queryService().isReadable(WORK_CASE_ID));
     }
 
     @Test
@@ -57,7 +56,7 @@ class SignedContractArtifactVerifierTest {
                 .thenReturn(List.of(oldRow, latestRow));
         when(storageAdapter.read(latestRow.getStorageKey())).thenReturn(latest);
 
-        assertTrue(verifier().isReadable(WORK_CASE_ID));
+        assertTrue(queryService().isReadable(WORK_CASE_ID));
 
         verify(storageAdapter, never()).read(oldRow.getStorageKey());
     }
@@ -73,7 +72,7 @@ class SignedContractArtifactVerifierTest {
                 WORK_CASE_ID, DOCUMENT_ID, row.getVersionNo())))
                 .thenReturn("wrong-pending".getBytes(StandardCharsets.UTF_8));
 
-        assertFalse(verifier().isReadable(WORK_CASE_ID));
+        assertFalse(queryService().isReadable(WORK_CASE_ID));
     }
 
     private ContractVersionPromotionRow signedRow(int versionNo, byte[] checksum) {
@@ -86,8 +85,7 @@ class SignedContractArtifactVerifierTest {
                 .build();
     }
 
-    private SignedContractArtifactVerifier verifier() {
-        return new SignedContractArtifactVerifier(
-                new SignedContractArtifactQueryServiceImpl(documentMapper, storageAdapter));
+    private SignedContractArtifactQueryService queryService() {
+        return new SignedContractArtifactQueryServiceImpl(documentMapper, storageAdapter);
     }
 }

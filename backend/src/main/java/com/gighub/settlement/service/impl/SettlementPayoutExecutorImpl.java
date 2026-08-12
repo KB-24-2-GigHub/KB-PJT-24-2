@@ -4,7 +4,6 @@ import com.gighub.settlement.dto.SettlementSnapshot;
 import com.gighub.settlement.domain.SettlementPayoutTrigger;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.SettlementPayoutExecutor;
-import com.gighub.settlement.service.SettlementPayoutResultValidator;
 import com.gighub.settlement.service.SettlementPayoutResultValidator.CompletedSettlementFacts;
 import com.gighub.settlement.service.command.SettlementPayoutCommand;
 import com.gighub.settlement.service.policy.SettlementPayoutDecision;
@@ -21,29 +20,22 @@ import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.service.WorkSettlementService;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import static com.gighub.settlement.service.SettlementPayoutResultValidator.validateAndBuild;
+
 /** 정상 정산의 상태·에스크로·지갑·원장을 호출자의 Transaction 안에서 원자 처리합니다. */
 @Service
+@RequiredArgsConstructor
 public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
 
     private final SettlementMapper settlementMapper;
     private final WorkSettlementService workSettlementService;
     private final SettlementWalletService settlementWalletService;
     private final SettlementPayoutPolicy payoutPolicy = new SettlementPayoutPolicy();
-    private final SettlementPayoutResultValidator resultValidator =
-            new SettlementPayoutResultValidator();
-
-    public SettlementPayoutExecutorImpl(
-            SettlementMapper settlementMapper,
-            WorkSettlementService workSettlementService,
-            SettlementWalletService settlementWalletService) {
-        this.settlementMapper = settlementMapper;
-        this.workSettlementService = workSettlementService;
-        this.settlementWalletService = settlementWalletService;
-    }
 
     /**
      * Work → Settlement → Dispute → Escrow → Wallet 순서를 모든 호출자가 공유합니다.
@@ -97,7 +89,7 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
         SettlementSnapshot completed =
                 settlementMapper.findByWorkCaseIdForUpdate(work.getWorkCaseId());
         settlementWalletService.verifyCompletedPayout(walletCommand, walletLock);
-        return resultValidator.validateAndBuild(
+        return validateAndBuild(
                 completedFacts(completed), work, approvedByUserId, amounts);
     }
 

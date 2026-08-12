@@ -3,6 +3,7 @@ package com.gighub.attendance.service;
 import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.document.service.SignedContractArtifactQueryService;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -24,15 +25,15 @@ public class AttendanceLifecycleTransitionExecutor {
     private static final String CHECK_OUT = "CHECK_OUT";
 
     private final AttendanceLifecycleMapper lifecycleMapper;
-    private final SignedContractArtifactVerifier artifactVerifier;
+    private final SignedContractArtifactQueryService artifactQueryService;
     private final WorkLifecycleCommandService workLifecycleCommandService;
 
     public AttendanceLifecycleTransitionExecutor(
             AttendanceLifecycleMapper lifecycleMapper,
-            SignedContractArtifactVerifier artifactVerifier,
+            SignedContractArtifactQueryService artifactQueryService,
             WorkLifecycleCommandService workLifecycleCommandService) {
         this.lifecycleMapper = lifecycleMapper;
-        this.artifactVerifier = artifactVerifier;
+        this.artifactQueryService = artifactQueryService;
         this.workLifecycleCommandService = workLifecycleCommandService;
     }
 
@@ -52,7 +53,7 @@ public class AttendanceLifecycleTransitionExecutor {
             auditReadyBlocked(workCaseId, readiness);
             return false;
         }
-        if (!artifactVerifier.isReadable(workCaseId)) {
+        if (!artifactQueryService.isReadable(workCaseId)) {
             auditReadyBlocked(workCaseId, List.of("SIGNED_CONTRACT_ARTIFACT_UNREADABLE"));
             return false;
         }

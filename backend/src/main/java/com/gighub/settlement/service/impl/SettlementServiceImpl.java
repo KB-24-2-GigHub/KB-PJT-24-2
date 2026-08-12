@@ -12,6 +12,7 @@ import com.gighub.settlement.service.SettlementService;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.exception.InvalidEscrowStateException;
+import lombok.RequiredArgsConstructor;
 import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +22,7 @@ import java.security.NoSuchAlgorithmException;
 
 /** OWNER 정산 승인의 외부 멱등 Claim 생명주기를 관리합니다. */
 @Service
+@RequiredArgsConstructor
 public class SettlementServiceImpl implements SettlementService {
 
     private static final String OPERATION_CODE = "SETTLEMENT_APPROVE";
@@ -29,15 +31,6 @@ public class SettlementServiceImpl implements SettlementService {
     private final IdempotencyClaimService claimService;
     private final SettlementApprovalTransaction approvalTransaction;
     private final SettlementReplayCodec replayCodec;
-
-    public SettlementServiceImpl(
-            IdempotencyClaimService claimService,
-            SettlementApprovalTransaction approvalTransaction,
-            SettlementReplayCodec replayCodec) {
-        this.claimService = claimService;
-        this.approvalTransaction = approvalTransaction;
-        this.replayCodec = replayCodec;
-    }
 
     @Override
     public SettlementResult approve(SettlementApproveCommand command) {
