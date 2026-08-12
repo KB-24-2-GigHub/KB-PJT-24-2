@@ -395,7 +395,7 @@ class DocumentAccessMapperTest {
                 contractDocumentId,
                 2,
                 "SIGNED",
-                "access-tests/" + token + "/contract-v2.pdf",
+                "contracts/" + workCaseId + "/" + contractDocumentId + "/v2.pdf",
                 "application/pdf",
                 checksum);
 
@@ -406,7 +406,7 @@ class DocumentAccessMapperTest {
                 healthDocumentId,
                 1,
                 "ORIGINAL",
-                "access-tests/" + token + "/health-v1.jpg",
+                "health-certificates/" + workerId + "/" + healthDocumentId + "/v1.jpg",
                 "image/jpeg",
                 checksum);
         jdbc.update(
