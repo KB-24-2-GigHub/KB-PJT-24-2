@@ -23,6 +23,9 @@ public class DocumentFileAccessService {
 
     private static final String CONTRACT_DOCUMENT_TYPE = "EMPLOYMENT_CONTRACT";
     private static final String HEALTH_DOCUMENT_TYPE = "HEALTH_CERTIFICATE";
+    private static final String SIGNED_VERSION_TYPE = "SIGNED";
+    private static final String ORIGINAL_VERSION_TYPE = "ORIGINAL";
+    private static final int HEALTH_ORIGINAL_VERSION = 1;
     private static final Set<String> SAFE_MIME_TYPES =
             Set.of("application/pdf", "image/jpeg", "image/png");
 
@@ -79,9 +82,8 @@ public class DocumentFileAccessService {
             log.warn("문서 파일 최종 Object를 읽지 못했습니다. result=DENIED denialReason=FILE_UNAVAILABLE");
         }
 
-        if (CONTRACT_DOCUMENT_TYPE.equals(row.getDocType())) {
-            String pendingKey = ContractStorageKeys.pendingKey(
-                    row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo());
+        String pendingKey = deterministicPendingKey(row);
+        if (pendingKey != null) {
             try {
                 if (storageAdapter.exists(pendingKey)) {
                     byte[] pendingContent = storageAdapter.read(pendingKey);
@@ -104,10 +106,66 @@ public class DocumentFileAccessService {
     private void promoteFallbackQuietly(DocumentFileAccessRow row, String pendingKey) {
         try {
             storageAdapter.promote(pendingKey, row.getStorageKey(), row.getChecksum());
-        } catch (DocumentStorageIntegrityException failure) {
+        } catch (RuntimeException failure) {
             // 검증된 Bytes는 반환할 수 있고 다음 조회에서 복구를 재시도할 수 있습니다.
             log.warn("문서 파일 조회 중 최종 Object 승격에 실패했습니다. result=ALLOWED");
         }
+    }
+
+    private String deterministicPendingKey(DocumentFileAccessRow row) {
+        // DB의 문서·Version·최종 Key가 승인된 규칙과 모두 맞을 때만 한 임시 Key를 계산합니다.
+        if (isCanonicalContractVersion(row)) {
+            return ContractStorageKeys.pendingKey(
+                    row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo());
+        }
+        if (!isCanonicalHealthVersion(row)) {
+            return null;
+        }
+
+        String extension = healthStorageExtension(row.getMimeType());
+        if (extension == null) {
+            return null;
+        }
+        String finalKey = "health-certificates/%d/%d/v1.%s".formatted(
+                row.getOwnerUserId(), row.getDocumentId(), extension);
+        if (!finalKey.equals(row.getStorageKey())) {
+            return null;
+        }
+        return "health-certificates/%d/%d/.pending/v1.%s".formatted(
+                row.getOwnerUserId(), row.getDocumentId(), extension);
+    }
+
+    private boolean isCanonicalContractVersion(DocumentFileAccessRow row) {
+        if (!CONTRACT_DOCUMENT_TYPE.equals(row.getDocType())
+                || !SIGNED_VERSION_TYPE.equals(row.getVersionType())
+                || row.getWorkCaseId() == null
+                || row.getDocumentId() == null
+                || row.getVersionNo() == null
+                || row.getVersionNo() < 1) {
+            return false;
+        }
+        return ContractStorageKeys.finalKey(
+                row.getWorkCaseId(), row.getDocumentId(), row.getVersionNo())
+                .equals(row.getStorageKey());
+    }
+
+    private boolean isCanonicalHealthVersion(DocumentFileAccessRow row) {
+        return HEALTH_DOCUMENT_TYPE.equals(row.getDocType())
+                && ORIGINAL_VERSION_TYPE.equals(row.getVersionType())
+                && Integer.valueOf(HEALTH_ORIGINAL_VERSION).equals(row.getVersionNo())
+                && row.getOwnerUserId() != null
+                && row.getOwnerUserId() > 0
+                && row.getDocumentId() != null
+                && row.getDocumentId() > 0;
+    }
+
+    private String healthStorageExtension(String mimeType) {
+        return switch (normalizedMime(mimeType)) {
+            case "image/jpeg" -> "jpg";
+            case "image/png" -> "png";
+            case "application/pdf" -> "pdf";
+            default -> null;
+        };
     }
 
     private boolean matchesChecksum(byte[] content, byte[] expectedChecksum) {

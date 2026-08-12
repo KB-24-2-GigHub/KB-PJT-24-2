@@ -46,6 +46,9 @@ class DocumentFileAccessServiceTest {
     private static final String CONTRACT_FINAL_KEY = "contracts/1/10/v2.pdf";
     private static final String CONTRACT_PENDING_KEY =
             ContractStorageKeys.pendingKey(WORK_CASE_ID, DOCUMENT_ID, 2);
+    private static final String HEALTH_FINAL_KEY = "health-certificates/4/10/v1.jpg";
+    private static final String HEALTH_PENDING_KEY =
+            "health-certificates/4/10/.pending/v1.jpg";
     private static final Clock CLOCK = Clock.fixed(
             Instant.parse("2026-08-11T03:00:00Z"),
             ZoneId.of("Asia/Seoul"));
@@ -261,6 +264,94 @@ class DocumentFileAccessServiceTest {
     }
 
     @Test
+    void verifiedHealthPendingBytesAreReturnedAndPromotionIsRetried() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11), "image/jpeg");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        when(storageAdapter.exists(HEALTH_FINAL_KEY)).thenReturn(false);
+        when(storageAdapter.exists(HEALTH_PENDING_KEY)).thenReturn(true);
+        when(storageAdapter.read(HEALTH_PENDING_KEY)).thenReturn(CONTENT);
+
+        DocumentFileResult result = service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view");
+
+        assertArrayEquals(CONTENT, result.getContent());
+        verify(storageAdapter).promote(
+                HEALTH_PENDING_KEY, HEALTH_FINAL_KEY, Sha256.digest(CONTENT));
+        assertAudit("HEALTH_CERT_FILE_VIEW", "ALLOWED", null, VERSION_ID, WORKER_ID);
+    }
+
+    @Test
+    void verifiedHealthPendingBytesRecoverFromAFinalChecksumMismatch() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11), "image/jpeg");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        when(storageAdapter.exists(HEALTH_FINAL_KEY)).thenReturn(true);
+        when(storageAdapter.read(HEALTH_FINAL_KEY)).thenReturn(new byte[]{9});
+        when(storageAdapter.exists(HEALTH_PENDING_KEY)).thenReturn(true);
+        when(storageAdapter.read(HEALTH_PENDING_KEY)).thenReturn(CONTENT);
+
+        DocumentFileResult result = service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view");
+
+        assertArrayEquals(CONTENT, result.getContent());
+        verify(storageAdapter).promote(
+                HEALTH_PENDING_KEY, HEALTH_FINAL_KEY, Sha256.digest(CONTENT));
+        assertAudit("HEALTH_CERT_FILE_VIEW", "ALLOWED", null, VERSION_ID, WORKER_ID);
+    }
+
+    @Test
+    void healthPendingChecksumMismatchFailsClosedWithoutReturningBytes() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11), "image/jpeg");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        when(storageAdapter.exists(HEALTH_FINAL_KEY)).thenReturn(false);
+        when(storageAdapter.exists(HEALTH_PENDING_KEY)).thenReturn(true);
+        when(storageAdapter.read(HEALTH_PENDING_KEY)).thenReturn(new byte[]{9});
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view"));
+
+        verify(storageAdapter, never()).promote(any(), any(), any());
+        assertAudit("HEALTH_CERT_FILE_VIEW", "DENIED", "CHECKSUM_MISMATCH",
+                VERSION_ID, WORKER_ID);
+    }
+
+    @Test
+    void missingHealthFinalAndPendingObjectsFailClosedWithoutReturningBytes() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11), "image/jpeg");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        when(storageAdapter.exists(HEALTH_FINAL_KEY)).thenReturn(false);
+        when(storageAdapter.exists(HEALTH_PENDING_KEY)).thenReturn(false);
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view"));
+
+        verify(storageAdapter, never()).read(any());
+        verify(storageAdapter, never()).promote(any(), any(), any());
+        assertAudit("HEALTH_CERT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, WORKER_ID);
+    }
+
+    @Test
+    void healthFallbackDoesNotProbePendingStorageForANonCanonicalFinalKey() {
+        DocumentFileAccessRow row = healthRow(
+                LocalDate.of(2027, 8, 11),
+                "image/jpeg",
+                "health-certificates/4/10/unexpected/v1.jpg");
+        when(documentAccessMapper.lockFileAccessContext(DOCUMENT_ID)).thenReturn(row);
+        when(storageAdapter.exists(row.getStorageKey())).thenReturn(false);
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> service.loadFile(
+                DOCUMENT_ID, WORKER_ID, UserRole.WORKER, "view"));
+
+        verify(storageAdapter, never()).exists(HEALTH_PENDING_KEY);
+        assertAudit("HEALTH_CERT_FILE_VIEW", "DENIED", "FILE_UNAVAILABLE",
+                VERSION_ID, WORKER_ID);
+    }
+
+    @Test
     void unsupportedMimeFallsBackToOctetStreamAndAttachment() {
         givenReadable(contractRow("ACTIVE", "text/html"));
 
@@ -323,6 +414,13 @@ class DocumentFileAccessServiceTest {
     }
 
     private DocumentFileAccessRow healthRow(LocalDate expiresDate, String mimeType) {
+        return healthRow(expiresDate, mimeType, "health-certificates/4/10/v1.jpg");
+    }
+
+    private DocumentFileAccessRow healthRow(
+            LocalDate expiresDate,
+            String mimeType,
+            String storageKey) {
         return DocumentFileAccessRow.builder()
                 .documentId(DOCUMENT_ID)
                 .ownerUserId(WORKER_ID)
@@ -333,7 +431,7 @@ class DocumentFileAccessServiceTest {
                 .versionId(VERSION_ID)
                 .versionNo(1)
                 .versionType("ORIGINAL")
-                .storageKey("health-certificates/4/10/v1.jpg")
+                .storageKey(storageKey)
                 .mimeType(mimeType)
                 .checksum(Sha256.digest(CONTENT))
                 .ownerName("김근로")
