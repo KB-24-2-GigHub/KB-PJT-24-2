@@ -7,6 +7,7 @@ import javax.sql.DataSource;
 
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.config.RootConfig;
+import com.gighub.workplace.geocoding.FixedAddressGeocoderConfig;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
@@ -40,7 +41,8 @@ class WorkplaceQrAccessDatabaseIntegrationTest {
     @Timeout(60)
     void ownershipQueriesAcceptOnlyTheOwnersActiveWorkplace() {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+                     new AnnotationConfigApplicationContext(
+                             RootConfig.class, FixedAddressGeocoderConfig.class)) {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
             WorkplaceMapper workplaceMapper = context.getBean(WorkplaceMapper.class);
 
@@ -81,7 +83,8 @@ class WorkplaceQrAccessDatabaseIntegrationTest {
     @Timeout(60)
     void rollingBackWorkplaceCreationLeavesNoOrphanQr() {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+                     new AnnotationConfigApplicationContext(
+                             RootConfig.class, FixedAddressGeocoderConfig.class)) {
             JdbcTemplate jdbcTemplate = new JdbcTemplate(context.getBean(DataSource.class));
             WorkplaceService workplaceService = context.getBean(WorkplaceService.class);
             TransactionTemplate transactionTemplate = new TransactionTemplate(

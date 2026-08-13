@@ -24,8 +24,7 @@ import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.config.RootConfig;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.controller.WorkplaceController;
-import com.gighub.workplace.geocoding.AddressGeocoder;
-import com.gighub.workplace.geocoding.GeocodedCoordinates;
+import com.gighub.workplace.geocoding.FixedAddressGeocoderConfig;
 import com.gighub.workplace.service.WorkplaceService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,7 +33,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockServletContext;
@@ -67,6 +65,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @Tag("database")
 class WorkplaceCreateFlowIntegrationTest {
 
+    /** 주소 변환을 대신하는 고정 좌표입니다. 저장된 값이 요청이 아닌 변환 결과인지 확인합니다. */
+    private static final BigDecimal GEOCODED_LATITUDE = FixedAddressGeocoderConfig.LATITUDE;
+    private static final BigDecimal GEOCODED_LONGITUDE = FixedAddressGeocoderConfig.LONGITUDE;
+
     private AnnotationConfigWebApplicationContext rootContext;
     private AnnotationConfigWebApplicationContext servletContext;
     private JdbcTemplate jdbcTemplate;
@@ -82,7 +84,7 @@ class WorkplaceCreateFlowIntegrationTest {
 
         rootContext = new AnnotationConfigWebApplicationContext();
         rootContext.setServletContext(mockServletContext);
-        rootContext.register(RootConfig.class, FixedGeocoderConfig.class);
+        rootContext.register(RootConfig.class, FixedAddressGeocoderConfig.class);
         rootContext.refresh();
 
         servletContext = new AnnotationConfigWebApplicationContext();
@@ -134,9 +136,7 @@ class WorkplaceCreateFlowIntegrationTest {
                         .cookie(csrf)
                         .header("X-XSRF-TOKEN", csrf.getValue())
                         .contentType(APPLICATION_JSON)
-                        .content(body(
-                                businessNumber(1),
-                                "\"latitude\":37.1234567,\"longitude\":127.1234567,")))
+                        .content(body(businessNumber(1), "")))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.data.workplaceId").isNumber());
 
@@ -151,6 +151,9 @@ class WorkplaceCreateFlowIntegrationTest {
         assertEquals("0212345678", row.get("phone"));
         assertEquals("강남점", row.get("name"));
         assertEquals("서울 강남구 테헤란로 1", row.get("road_address"));
+        // 좌표는 요청이 아니라 서버의 주소 변환 결과로 저장돼야 합니다(SPEC-343-01).
+        assertEquals(0, GEOCODED_LATITUDE.compareTo((BigDecimal) row.get("latitude")));
+        assertEquals(0, GEOCODED_LONGITUDE.compareTo((BigDecimal) row.get("longitude")));
         // 반경과 최초 상태는 요청이 정할 수 없는 계약값입니다.
         assertEquals(0, new BigDecimal("100.00").compareTo((BigDecimal) row.get("radius_meters")));
         assertEquals("ACTIVE", row.get("status"));
@@ -242,7 +245,7 @@ class WorkplaceCreateFlowIntegrationTest {
 
     @Test
     @Timeout(60)
-    void unapprovedRadiusAndMissingCoordinateAreRejectedBeforeStorage() throws Exception {
+    void unapprovedRadiusAndClientCoordinatesAreRejectedBeforeStorage() throws Exception {
         MockHttpSession session = authenticatedSession(ownerUserId, UserRole.OWNER, "김사장");
         Cookie csrf = csrfCookie(session);
 
@@ -261,10 +264,13 @@ class WorkplaceCreateFlowIntegrationTest {
                         .cookie(csrf)
                         .header("X-XSRF-TOKEN", csrf.getValue())
                         .contentType(APPLICATION_JSON)
-                        .content(body(businessNumber(7), "\"latitude\":37.1234567,")))
+                        .content(body(
+                                businessNumber(7),
+                                "\"latitude\":37.1234567,\"longitude\":127.1234567,")))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("longitude"));
+                // 좌표는 서버가 주소로 확정하므로 요청 필드로 받지 않습니다(SPEC-343-01).
+                // 미승인 필드라 @Valid 이전 역직렬화 단계에서 끊깁니다.
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         assertEquals(0, countWorkplaces(businessNumber(6)));
         assertEquals(0, countWorkplaces(businessNumber(7)));
@@ -380,22 +386,6 @@ class WorkplaceCreateFlowIntegrationTest {
                 role.name());
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM users WHERE login_id = ?", Long.class, loginId);
-    }
-
-    /**
-     * 이 Test의 대상은 Security 인가·CSRF·MyBatis Mapping·DB 제약이지 외부 주소 변환이
-     * 아닙니다. 실제 외부 호출을 그대로 두면 네트워크와 키 상태가 이 Test의 결과를 바꾸므로
-     * 결정적인 좌표를 돌려주는 구현으로 대체합니다.
-     */
-    @Configuration
-    static class FixedGeocoderConfig {
-
-        @Bean
-        @Primary
-        AddressGeocoder fixedAddressGeocoder() {
-            return roadAddress -> new GeocodedCoordinates(
-                    new BigDecimal("37.1234567"), new BigDecimal("127.1234567"));
-        }
     }
 
     @Configuration

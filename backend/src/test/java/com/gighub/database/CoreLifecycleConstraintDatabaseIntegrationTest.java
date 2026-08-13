@@ -1,6 +1,7 @@
 package com.gighub.database;
 
 import com.gighub.config.RootConfig;
+import com.gighub.workplace.geocoding.FixedAddressGeocoderConfig;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.mapper.WorkCaseMapper;
 import org.junit.jupiter.api.Tag;
@@ -26,7 +27,8 @@ class CoreLifecycleConstraintDatabaseIntegrationTest {
     @Test
     void enforcesOnlyTheImplementedFinancialAndWorkLifecycleShapes() {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+                     new AnnotationConfigApplicationContext(
+                             RootConfig.class, FixedAddressGeocoderConfig.class)) {
             JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
             WorkCaseMapper workCaseMapper = context.getBean(WorkCaseMapper.class);
             String token = UUID.randomUUID().toString().replace("-", "");

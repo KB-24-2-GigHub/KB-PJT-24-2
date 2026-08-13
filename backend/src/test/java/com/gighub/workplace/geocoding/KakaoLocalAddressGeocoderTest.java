@@ -1,6 +1,7 @@
 package com.gighub.workplace.geocoding;
 
 import java.math.BigDecimal;
+import java.util.Collections;
 import java.util.List;
 
 import com.gighub.common.api.ApiErrorCode;
@@ -56,6 +57,56 @@ class KakaoLocalAddressGeocoderTest {
                         () -> geocoder.toSingleCoordinates(ambiguous)).getCode());
     }
 
+    /**
+     * 2xx라도 본문·{@code documents}·좌표가 계약과 다르면 외부 응답 해석 실패입니다.
+     *
+     * <p>주소 오류(422)로 분류하면 사용자가 멀쩡한 주소를 계속 고치게 되고, 처리하지 않으면
+     * 500이 나갑니다. 계약상 일시 실패 하나로 모읍니다.</p>
+     */
+    @Test
+    void reportsTemporaryFailureWhenResponseCannotBeInterpreted() {
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE,
+                assertThrows(
+                        WorkplaceGeocodingException.class,
+                        () -> geocoder.toSingleCoordinates(null)).getCode(),
+                "본문이 없는 2xx");
+
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE,
+                assertThrows(
+                        WorkplaceGeocodingException.class,
+                        () -> geocoder.toSingleCoordinates(
+                                new KakaoAddressSearchResponse(null))).getCode(),
+                "documents 자체가 없는 2xx");
+
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE,
+                assertThrows(
+                        WorkplaceGeocodingException.class,
+                        () -> geocoder.toSingleCoordinates(
+                                singleton(new KakaoAddressSearchResponse.Document(null, null))))
+                        .getCode(),
+                "후보는 하나인데 좌표가 없음");
+
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE,
+                assertThrows(
+                        WorkplaceGeocodingException.class,
+                        () -> geocoder.toSingleCoordinates(
+                                singleton(new KakaoAddressSearchResponse.Document("x", "y"))))
+                        .getCode(),
+                "좌표가 숫자가 아님");
+
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE,
+                assertThrows(
+                        WorkplaceGeocodingException.class,
+                        () -> geocoder.toSingleCoordinates(
+                                new KakaoAddressSearchResponse(singletonList(null)))).getCode(),
+                "후보 자리가 비어 있음");
+    }
+
     /** 키가 없는 환경은 좌표를 지어내지 않고 일시 실패로 끝납니다. */
     @Test
     void reportsTemporaryFailureWhenKeyIsMissing() {
@@ -68,5 +119,14 @@ class KakaoLocalAddressGeocoderTest {
 
     private KakaoAddressSearchResponse response(KakaoAddressSearchResponse.Document... documents) {
         return new KakaoAddressSearchResponse(List.of(documents));
+    }
+
+    private KakaoAddressSearchResponse singleton(KakaoAddressSearchResponse.Document document) {
+        return response(document);
+    }
+
+    private static List<KakaoAddressSearchResponse.Document> singletonList(
+            KakaoAddressSearchResponse.Document document) {
+        return Collections.singletonList(document);
     }
 }

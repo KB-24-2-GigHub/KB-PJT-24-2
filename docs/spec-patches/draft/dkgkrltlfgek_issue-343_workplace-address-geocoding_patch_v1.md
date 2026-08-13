@@ -5,13 +5,10 @@ issue: 343
 base_spec_version: 8.0.0
 targets:
   - requirement: WORKPLACE-001
-  - requirement: WORKPLACE-002
   - requirement: ATT-003
   - decision: DEC-WORKPLACE-ATTENDANCE-LOCATION
   - decision: DEC-WORKPLACE-IMMUTABLE
   - operation: POST /api/workplaces
-  - operation: PATCH /api/workplaces/{workplaceId}
-  - operation: PUT /api/workplaces/{workplaceId}/coordinates
 ---
 
 # SPEC-343-01: 사업장 좌표를 서버 주소 변환으로 확정
@@ -45,24 +42,18 @@ API)로 변환해 확정한다. 클라이언트가 보낸 `latitude`·`longitude
   신규 등록 경로에서 적용되지 않는다. 이미 좌표가 없는 기존 사업장에 대한 READY 차단 동작은
   그대로 유지한다.
 
-### 주소를 바꾸면 좌표를 다시 계산한다
+### 이 Patch의 범위는 사업장 등록이다
 
-`roadAddress` 변경은 좌표 재계산을 동반한다.
+`POST /api/workplaces`만 다룬다. 아래는 이 Patch의 계약이 아니며 후속 작업으로 분리한다.
 
-- 좌표가 이미 있는 사업장의 주소 변경을 막던 `409 WORKPLACE_LOCATION_LOCKED`는 도로명주소
-  변경에 대해 적용하지 않는다.
-- 재계산에 실패하면 수정 요청 전체를 취소하고 기존 주소와 기존 좌표를 그대로 유지한다. 주소만
-  바뀌고 좌표가 과거 위치에 남는 중간 상태를 만들지 않는다.
-- `latitude`·`longitude`·`radiusMeters`·`representativeName`·`businessRegistrationNumber`를
-  직접 보내면 `400 VALIDATION_ERROR`라는 기존 규칙은 유지한다. 사용자는 여전히 좌표를 직접
-  수정할 수 없고(`DEC-WORKPLACE-IMMUTABLE` 취지 유지), 서버만 주소로부터 좌표를 바꾼다.
-
-### 현장 위치 확정 Endpoint는 제공하지 않는다
-
-`PUT /api/workplaces/{workplaceId}/coordinates`는 좌표가 비어 있는 사업장을 전제로 한
-경로였다. 신규 사업장이 항상 좌표를 가지므로 이 Patch 범위에서는 제공하지 않는다. 기존
-좌표 없는 사업장의 보정은 이 Patch에서 다루지 않으며, 대상과 검증 범위를 정한 별도 관리자
-승인 이슈로 분리한다.
+- **주소 수정 시 좌표 재계산**: `PATCH /api/workplaces/{workplaceId}` 자체가 미구현이다.
+  좌표와 무관한 이유로 없는 `WORKPLACE-002` 기능 전체에 딸린 문제이므로, 수정 Endpoint를
+  만드는 작업에서 함께 정한다.
+- **현장 위치 확정 Endpoint**: `PUT /api/workplaces/{workplaceId}/coordinates`는 좌표가 비어
+  있는 사업장을 전제로 한 경로다. 이 Patch는 이 Endpoint를 바꾸지 않는다.
+- **기존 좌표 없는 사업장 보정**: 대상과 검증 범위를 정한 별도 관리자 승인 이슈로 분리한다.
+- **좌표가 채워진 사업장의 QR 반경 검증**: 등록 경로가 좌표를 채우면 기존 `ATT-003` 검증이
+  그대로 성립한다. 스캔 Façade의 LIVE 전환은 #167이 담당한다.
 
 ### 실패를 원인별로 구분한다
 
@@ -72,6 +63,7 @@ API)로 변환해 확정한다. 클라이언트가 보낸 `latitude`·`longitude
 | ------------------------------------------------------------ | ---: | --------------------------------------------- |
 | 주소를 좌표로 변환할 수 없음, 결과가 모호해 하나로 확정 불가 |  422 | `WORKPLACE_ADDRESS_NOT_RESOLVABLE`            |
 | 외부 변환 서비스 Timeout·오류·인증 실패                      |  503 | `WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE` |
+| 2xx이지만 본문·`documents`·좌표 값이 누락되거나 해석 불가    |  503 | `WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE` |
 
 - `WORKPLACE_ADDRESS_NOT_RESOLVABLE`은 사용자가 주소를 고쳐 다시 시도해야 하는 확정 실패다.
 - `WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE`은 잠시 후 같은 요청을 다시 시도할 수 있는
@@ -82,9 +74,11 @@ API)로 변환해 확정한다. 클라이언트가 보낸 `latitude`·`longitude
 ### 외부 호출 경계
 
 - 연결 Timeout과 읽기 Timeout을 명시적으로 설정한다. 무제한 대기를 두지 않는다.
-- Timeout 초과는 위 일시 실패로 처리하고 사업장 생성·수정 트랜잭션을 취소한다.
+- Timeout 초과는 위 일시 실패로 처리하고 사업장 생성 트랜잭션을 취소한다.
 - 변환 결과가 복수일 때 임의로 첫 결과를 선택하지 않는다. 하나로 확정할 수 없으면 확정 실패로
   처리한다.
+- 후보 0건과 복수만 주소 확정 실패다. 본문 부재, `documents` 부재, 좌표 누락·형식 오류는
+  사용자가 보낸 주소와 무관한 외부 응답 해석 실패이므로 일시 실패로 분류한다.
 
 ## 보안
 
@@ -105,7 +99,5 @@ API)로 변환해 확정한다. 클라이언트가 보낸 `latitude`·`longitude
 - [ ] 외부 변환 서비스가 Timeout·오류를 내면 상태 `503`,
       `WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE`이고 사업장과 QR이 모두 생성되지 않는다.
 - [ ] 두 실패가 화면에서 서로 다른 안내로 구분되고, 일시 실패만 재시도를 안내한다.
-- [ ] 좌표가 있는 사업장의 도로명주소를 바꾸면 좌표가 새 주소 기준으로 갱신된다.
-- [ ] 주소 변경 중 변환이 실패하면 주소와 좌표가 모두 변경 전 값으로 유지된다.
-- [ ] 좌표가 채워진 사업장에서 QR 스캔 반경 검증이 동작한다.
+- [ ] 2xx 응답이라도 본문·`documents`·좌표 값이 계약과 다르면 일시 실패로 분류한다.
 - [ ] 외부 키가 저장소 추적 파일과 응답·로그에 없다.

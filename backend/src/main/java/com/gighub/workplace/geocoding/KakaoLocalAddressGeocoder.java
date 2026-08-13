@@ -108,34 +108,54 @@ public class KakaoLocalAddressGeocoder implements AddressGeocoder {
      * 후보가 정확히 하나일 때만 좌표를 확정합니다.
      *
      * <p>0건은 주소를 확인할 수 없는 경우이고, 복수는 어느 위치인지 정할 수 없는 경우입니다.
-     * 첫 결과를 고르면 잘못된 기준점이 조용히 저장돼 출퇴근 반경 판정을 계속 어긋나게 합니다.</p>
+     * 둘 다 사용자가 주소를 고쳐야 하는 확정 실패입니다. 첫 결과를 고르면 잘못된 기준점이
+     * 조용히 저장돼 출퇴근 반경 판정을 계속 어긋나게 합니다.</p>
+     *
+     * <p>본문 자체가 없거나 {@code documents}가 아예 없는 응답은 다릅니다. 사용자가 보낸
+     * 주소와 무관한 외부 응답 해석 실패이므로 일시 실패로 분류합니다. 주소 오류로 바꾸면
+     * 사용자가 멀쩡한 주소를 계속 고치게 됩니다.</p>
      *
      * <p>실제 HTTP 호출 없이 이 판정만 검증할 수 있도록 같은 Package에 열어 둡니다.</p>
      */
     GeocodedCoordinates toSingleCoordinates(KakaoAddressSearchResponse response) {
-        List<KakaoAddressSearchResponse.Document> documents =
-                response == null ? null : response.documents();
-        if (documents == null || documents.size() != 1) {
+        if (response == null || response.documents() == null) {
+            log.warn("사업장 주소 변환 응답을 해석할 수 없습니다. body={}",
+                    response == null ? "none" : "documents 없음");
+            throw WorkplaceGeocodingException.temporarilyUnavailable();
+        }
+
+        List<KakaoAddressSearchResponse.Document> documents = response.documents();
+        if (documents.size() != 1) {
             // 후보 수만 남깁니다. 확정 실패가 0건 때문인지 복수 때문인지 구분됩니다.
-            log.info("사업장 주소를 좌표로 확정하지 못했습니다. candidates={}",
-                    documents == null ? "none" : documents.size());
+            log.info("사업장 주소를 좌표로 확정하지 못했습니다. candidates={}", documents.size());
             throw WorkplaceGeocodingException.addressNotResolvable();
         }
 
         KakaoAddressSearchResponse.Document document = documents.get(0);
+        if (document == null) {
+            log.warn("사업장 주소 변환 응답의 후보가 비어 있습니다.");
+            throw WorkplaceGeocodingException.temporarilyUnavailable();
+        }
         return new GeocodedCoordinates(
                 toCoordinate(document.latitude()), toCoordinate(document.longitude()));
     }
 
-    /** 좌표는 문자열로 오므로 저장 전에 숫자로 확정합니다. 해석할 수 없으면 확정 실패입니다. */
+    /**
+     * 좌표는 문자열로 오므로 저장 전에 숫자로 확정합니다.
+     *
+     * <p>후보를 하나로 특정한 뒤 좌표가 비었거나 숫자가 아니라면 주소 문제가 아니라 외부
+     * 응답이 계약과 다른 것입니다. 일시 실패로 분류해 사용자가 주소를 고치게 만들지 않습니다.</p>
+     */
     private BigDecimal toCoordinate(String value) {
         if (!StringUtils.hasText(value)) {
-            throw WorkplaceGeocodingException.addressNotResolvable();
+            log.warn("사업장 주소 변환 응답에 좌표가 없습니다.");
+            throw WorkplaceGeocodingException.temporarilyUnavailable();
         }
         try {
             return new BigDecimal(value.trim());
         } catch (NumberFormatException exception) {
-            throw WorkplaceGeocodingException.addressNotResolvable();
+            log.warn("사업장 주소 변환 응답의 좌표를 숫자로 해석할 수 없습니다.");
+            throw WorkplaceGeocodingException.temporarilyUnavailable();
         }
     }
 }
