@@ -1,41 +1,64 @@
+/**
+ * WORKER 홈·근무 이력 Mock — 실제 계약(WorkerHomeResponse·WorkerWorkCaseListItemResponse)과
+ * 같은 모양을 쓴다. status는 work_case 8종 enum, 지각은 attendance.isLate의 파생값이다.
+ */
 const workCases = [
   {
     workCaseId: 101,
-    workplaceName: '강남점',
-    workDate: '2026-07-22',
-    time: '10:00 ~ 18:00',
+    title: '주말 홀 서빙',
+    workplaceName: '카페 봄',
+    startsAt: '2026-07-22T01:00:00Z', // KST 10:00
+    endsAt: '2026-07-22T09:00:00Z', // KST 18:00
+    breakMinutes: 60,
+    breakPaid: false,
     dailyWage: 90000,
     status: 'IN_PROGRESS',
-    settleStatus: 'HOLD'
+    attendance: {
+      checkedInAt: '2026-07-22T01:15:00Z',
+      checkedOutAt: null,
+      isLate: true,
+      lateMinutes: 15
+    },
+    escrowStatus: 'HELD',
+    settlementStatus: 'WAITING',
+    settlementDueAt: null
+  },
+  {
+    workCaseId: 100,
+    title: '평일 오전 준비',
+    workplaceName: '카페 봄',
+    startsAt: '2026-07-20T00:00:00Z', // KST 09:00
+    endsAt: '2026-07-20T04:00:00Z', // KST 13:00
+    breakMinutes: 0,
+    breakPaid: false,
+    dailyWage: 60000,
+    status: 'COMPLETED',
+    attendance: {
+      checkedInAt: '2026-07-20T00:00:00Z',
+      checkedOutAt: '2026-07-20T04:00:00Z',
+      isLate: false,
+      lateMinutes: null
+    },
+    escrowStatus: 'RELEASED',
+    settlementStatus: 'COMPLETED',
+    settlementDueAt: null
   }
 ]
 
 export async function getWorkerHome() {
   return {
-    wallet: { availableBalance: 320000 },
     todayWorkCase: {
-      status: 'LATE',
-      title: '주말 홀 서빙',
-      workplaceName: '카페 봄',
-      workDate: '2026-07-22',
-      startTime: '10:00',
-      endTime: '18:00'
-    },
-    earning: {
-      agreedWage: 90000,
-      totalMinutes: 480,
-      unpaidBreakMinutes: 60,
-      elapsedPayDisplay: 34526,
-      progressRatio: 0.42,
-      expectedNetAmount: 90000,
-      isLate: true,
-      lateMinutes: 15
+      ...workCases[0],
+      expectedNetAmount: 90000
     }
   }
 }
 
 export async function listWorkerWorkCases() {
-  return { content: workCases.map((workCase) => ({ ...workCase })), totalPages: 1 }
+  return {
+    content: workCases.map((workCase) => ({ ...workCase })),
+    page: { number: 0, size: 20, totalElements: workCases.length, totalPages: 1 }
+  }
 }
 
 export async function listWorkerWorkplaces() {

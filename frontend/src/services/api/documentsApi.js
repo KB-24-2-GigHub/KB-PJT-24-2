@@ -37,3 +37,10 @@ export function documentFileUrl(documentId, mode = 'view') {
   const base = import.meta.env.VITE_API_BASE_URL || '/api'
   return `${base}/documents/${documentId}/file?mode=${mode}`
 }
+
+export function fetchDocumentFile(documentId, mode = 'view') {
+  return http.get(`/documents/${documentId}/file`, {
+    params: { mode },
+    responseType: 'blob'
+  })
+}

@@ -2,7 +2,7 @@
 /**
  * [D] 사장 문서 뷰어  ·  /owner/documents/:documentId  ·  OWNER(소유/공유 수신)
  * 이미지·PDF 인앱 열람 + 다운로드. 공유받은 보건증은 발급일·만료 예정일 표시.
- * 연계 API: GET /documents/{id}/file  →  @/services/documents (documentFileUrl)
+ * 연계 API: GET /documents/{id}/file  →  @/composables/useDocumentPreview
  * 문서 메타데이터는 명세상 단건 조회 API가 없어 목록(GET /documents) 결과에서 찾는다.
  * 접근 권한(work_case 당사자 / 유효 공유 대상)은 서버가 최종 검증 — 프론트는 응답 기준 렌더링만.
  */
@@ -12,6 +12,7 @@ import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { documentFileUrl, listDocuments } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
 import { formatDate } from '@/utils/format'
@@ -23,7 +24,7 @@ const doc = ref(null)
 const loading = ref(true)
 const loadError = ref(null)
 
-const viewUrl = ref('')
+const { previewUrl: viewUrl, loadPreview } = useDocumentPreview()
 const downloadUrl = ref('')
 
 onMounted(async () => {
@@ -32,8 +33,8 @@ onMounted(async () => {
     const res = await listDocuments()
     doc.value = res.content.find((d) => d.documentId === documentId) ?? null
     if (doc.value) {
-      viewUrl.value = documentFileUrl(documentId, 'view')
       downloadUrl.value = documentFileUrl(documentId, 'download')
+      await loadPreview(documentId)
     }
   } catch (error) {
     loadError.value = error

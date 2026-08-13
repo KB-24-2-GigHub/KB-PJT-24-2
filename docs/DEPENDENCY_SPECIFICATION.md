@@ -105,13 +105,19 @@
 
 ### 저장소 공통 도구와 인프라
 
-| 역할                   | 직접 의존성·이미지      |
-| ---------------------- | ----------------------- |
-| Git Hook·staged format | `husky`, `lint-staged`  |
-| DB                     | `mysql:8.4` 계열 이미지 |
-| Migration              | `flyway/flyway` 이미지  |
+| 역할                   | 직접 의존성·이미지                 |
+| ---------------------- | ---------------------------------- |
+| Git Hook·staged format | `husky`, `lint-staged`             |
+| DB                     | `mysql:8.4` 계열 이미지            |
+| Migration              | `flyway/flyway` 이미지             |
+| 배포 Runtime           | `tomcat:9.0-jdk17-temurin` 이미지  |
 
 MySQL 이미지 태그를 변경하면 DB 서비스와 seed 도구가 같은 버전선을 사용하는지 확인한다.
+
+`tomcat:9.0-jdk17-temurin`은 `backend/Dockerfile`이 WAR을 포장할 때만 사용하며 로컬
+개발 실행에는 관여하지 않는다. Tomcat 9와 Java 17이라는 고정 제약을 그대로 따르므로,
+태그를 바꿀 때는 `backend/build.gradle`의 toolchain과 같은 버전선인지 확인한다.
+로컬 인프라는 루트 `compose.yaml`, 배포 런타임은 `deploy/compose.prod.yaml`이 기준이다.
 
 ## 5. 금지 기술
 

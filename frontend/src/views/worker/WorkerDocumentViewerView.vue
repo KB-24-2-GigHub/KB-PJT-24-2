@@ -2,7 +2,7 @@
 /**
  * [G] 알바생 문서 뷰어  ·  /worker/documents/:documentId  ·  WORKER(소유자)
  * 이미지·PDF 인앱 열람 + 다운로드. 보건증 만료 예정일(발급일+1년) 표시.
- * 연계 API: GET /documents/{id}/file  →  @/services/documents (documentFileUrl)
+ * 연계 API: GET /documents/{id}/file  →  @/composables/useDocumentPreview
  * route.params.documentId 사용. 공통: @/utils/format (formatDate).
  */
 import { Download, FileText } from 'lucide-vue-next'
@@ -11,6 +11,7 @@ import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { documentFileUrl, listDocuments } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
 import { DOC_TYPE } from '@/utils/constants'
@@ -27,13 +28,14 @@ const loadError = ref(null)
 const docTypeLabel = computed(() => DOC_TYPE[doc.value?.docType]?.label ?? '문서')
 const isHealthCert = computed(() => doc.value?.docType === 'HEALTH_CERT')
 const isPdf = computed(() => (doc.value?.fileExt ?? '').toLowerCase() === 'pdf')
-const fileUrl = computed(() => (doc.value ? documentFileUrl(documentId, 'view') : ''))
+const { previewUrl: fileUrl, loadPreview } = useDocumentPreview()
 const downloadUrl = computed(() => (doc.value ? documentFileUrl(documentId, 'download') : ''))
 
 onMounted(async () => {
   try {
     const { content } = await listDocuments()
     doc.value = (content ?? []).find((d) => d.documentId === documentId) ?? null
+    if (doc.value) await loadPreview(documentId)
   } catch (error) {
     loadError.value = error
     ui.toast(

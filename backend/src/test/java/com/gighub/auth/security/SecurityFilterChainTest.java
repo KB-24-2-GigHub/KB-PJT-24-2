@@ -71,6 +71,15 @@ class SecurityFilterChainTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty());
     }
 
+    /** 문서는 Blob URL로 미리보기하므로 백엔드 응답의 프레임 삽입은 계속 차단한다. */
+    @Test
+    void backendResponsesKeepFrameEmbeddingDenied() throws Exception {
+        mockMvc.perform(get("/api/protected")
+                        .session(sessionFor(UserRole.OWNER)))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Frame-Options", "DENY"));
+    }
+
     @Test
     void stateChangingRequestWithoutCsrfUsesApprovedForbiddenEnvelope() throws Exception {
         mockMvc.perform(post("/api/protected"))

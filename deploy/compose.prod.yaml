@@ -1,0 +1,63 @@
+# EC2 운영 구성. 저장소 루트 compose.yaml(로컬 개발용)과 의도적으로 분리한다.
+# 하나로 합치면 로컬에서 실수로 RDS 를 대상으로 명령을 실행할 위험이 생긴다.
+#
+# 배치 위치: /opt/gighub/compose.prod.yaml
+# 값 주입:   /opt/gighub/.env  (Compose 가 자동으로 읽는다)
+
+services:
+  app:
+    image: ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:${API_TAG:-dev}
+
+    # 호스트 nginx 만 접근한다. 외부에서 Tomcat 에 직접 도달할 수 없으므로
+    # 모든 트래픽이 반드시 HTTPS 를 거친다.
+    ports:
+      - "127.0.0.1:8080:8080"
+
+    environment:
+      CATALINA_OPTS: >-
+        -Dgighub.database.config=/config/database.properties
+        -Duser.timezone=Asia/Seoul
+      TZ: Asia/Seoul
+
+    volumes:
+      # 접속정보와 배포 설정. 이미지에 굽지 않는다.
+      - /opt/gighub/config/database.properties:/config/database.properties:ro
+      # 계약 PDF 는 LocalFileDocumentStorageAdapter 가 실제 파일로 쓴다.
+      # 볼륨이 아니면 재배포마다 발급된 계약서가 사라진다.
+      - /opt/gighub/documents:/var/gighub/documents
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      # Tomcat 기동 + Spring 컨텍스트 초기화 시간을 고려한다.
+      start_period: 60s
+
+  # 수동 실행 전용. docker compose --profile tools run --rm flyway <command>
+  flyway:
+    image: flyway/flyway:12.9.0
+    profiles: ["tools"]
+    environment:
+      FLYWAY_URL: ${FLYWAY_URL}
+      FLYWAY_USER: ${FLYWAY_USER}
+      FLYWAY_PASSWORD: ${FLYWAY_PASSWORD}
+      FLYWAY_LOCATIONS: filesystem:/flyway/sql
+      FLYWAY_CONNECT_RETRIES: "10"
+      FLYWAY_CONNECT_RETRIES_INTERVAL: "5"
+      FLYWAY_VALIDATE_MIGRATION_NAMING: "true"
+      FLYWAY_FAIL_ON_MISSING_LOCATIONS: "true"
+      FLYWAY_CLEAN_DISABLED: "true"
+    volumes:
+      - /opt/gighub/migrations:/flyway/sql:ro
+      # Flyway CLI 이미지에는 MySQL Connector/J 가 없으므로 backend 의
+      # prepareFlywayDriver Task 산출물을 얹는다.
+      #
+      # 반드시 파일 단위로 마운트한다. /flyway/drivers 를 디렉터리째 마운트하면
+      # 이미지에 내장된 다른 DB 플러그인의 드라이버까지 가려져,
+      # Flyway 가 플러그인 로딩 단계에서 ServiceConfigurationError 로 죽는다.
+      # (예: CassandraDatabase -> NoClassDefFoundError DriverOption)
+      # 루트 compose.yaml 도 같은 이유로 파일 단위 마운트를 쓴다.
+      - /opt/gighub/drivers/mysql-connector-j-9.7.0.jar:/flyway/drivers/mysql-connector-j-9.7.0.jar:ro

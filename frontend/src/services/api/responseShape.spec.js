@@ -6,7 +6,7 @@ vi.mock('@/services/http', () => ({
 }))
 
 import http, { idempotentPost } from '@/services/http'
-import { listDocuments } from '@/services/api/documentsApi'
+import { fetchDocumentFile, listDocuments } from '@/services/api/documentsApi'
 import { listNotifications } from '@/services/api/notificationsApi'
 import { listReports } from '@/services/api/workCasesApi'
 import { listWorkerWorkCases, scan } from '@/services/api/workerApi'
@@ -34,6 +34,17 @@ describe('API adapter response shapes', () => {
 
     await expect(listReports(7)).resolves.toEqual(payload)
     expect(http.get).toHaveBeenCalledWith('/work-cases/7/disputes')
+  })
+
+  it('requests an authenticated document Stream as a Blob', async () => {
+    const blob = new Blob(['pdf'], { type: 'application/pdf' })
+    http.get.mockResolvedValue(blob)
+
+    await expect(fetchDocumentFile(9)).resolves.toBe(blob)
+    expect(http.get).toHaveBeenCalledWith('/documents/9/file', {
+      params: { mode: 'view' },
+      responseType: 'blob'
+    })
   })
 
   it('keeps the dormant attendance adapter aligned with the approved idempotent contract', async () => {

@@ -44,6 +44,7 @@ describe('work-case status contract', () => {
       accepted: 0,
       ready: 0,
       inProgress: 0,
+      checkOutMissing: 0,
       completed: 0,
       noShow: 0
     })
@@ -56,6 +57,21 @@ describe('work-case status contract', () => {
     expect(content.map(({ status }) => status)).not.toContain('INVITED')
     expect(summary).toHaveProperty('accepted')
     expect(summary).not.toHaveProperty('invited')
+  })
+
+  it('keeps CHECK_OUT_MISSING a separate summary bucket from NO_SHOW and COMPLETED', () => {
+    const keysByStatus = Object.fromEntries(WORK_CASE_SUMMARY.map((b) => [b.status, b.key]))
+
+    expect(keysByStatus.CHECK_OUT_MISSING).toBe('checkOutMissing')
+    expect(keysByStatus.CHECK_OUT_MISSING).not.toBe(keysByStatus.NO_SHOW)
+    expect(keysByStatus.CHECK_OUT_MISSING).not.toBe(keysByStatus.COMPLETED)
+  })
+
+  it('mock summary reports checkOutMissing as its own field', async () => {
+    const { getWorkCaseSummary } = await importWithMock()
+    const summary = await getWorkCaseSummary(1)
+
+    expect(summary).toHaveProperty('checkOutMissing')
   })
 
   it('keeps the mock list aligned with the live API item contract', async () => {

@@ -14,12 +14,19 @@ vi.mock('vue-router', () => ({
 vi.mock('@/services/invites', () => ({ confirmInvite: vi.fn(), getInvite: vi.fn() }))
 vi.mock('@/services/workCases', () => ({ getWorkCase: vi.fn() }))
 vi.mock('@/services/wallet', () => ({ fetchWallet: vi.fn(), fetchTransactions: vi.fn() }))
+vi.mock('@/services/documents', () => ({
+  contractFileUrl: vi.fn(
+    (documentId, mode = 'view') => `/api/documents/${documentId}/file?mode=${mode}`
+  ),
+  fetchDocumentFile: vi.fn()
+}))
 vi.mock('@/services/http', async (importOriginal) => {
   const actual = await importOriginal()
   return { ...actual, newIdempotencyKey: vi.fn(() => 'accept-intent-key') }
 })
 
 import { newIdempotencyKey } from '@/services/http'
+import { fetchDocumentFile } from '@/services/documents'
 import { confirmInvite, getInvite } from '@/services/invites'
 import { fetchTransactions, fetchWallet } from '@/services/wallet'
 import { getWorkCase } from '@/services/workCases'
@@ -62,6 +69,9 @@ function acceptButton(wrapper) {
 }
 
 describe('InviteConfirmView', () => {
+  const createObjectURL = vi.fn()
+  const revokeObjectURL = vi.fn()
+
   beforeEach(() => {
     setActivePinia(createPinia())
     push.mockReset()
@@ -77,6 +87,10 @@ describe('InviteConfirmView', () => {
       page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
     })
     newIdempotencyKey.mockClear()
+    fetchDocumentFile.mockReset().mockResolvedValue(new Blob(['pdf'], { type: 'application/pdf' }))
+    createObjectURL.mockReset().mockReturnValue('blob:https://gighub.store/contract-preview')
+    revokeObjectURL.mockReset()
+    vi.stubGlobal('URL', { createObjectURL, revokeObjectURL })
   })
 
   it('승인 DTO를 KST 시각으로 표시하고 Canvas를 만들지 않는다', async () => {
@@ -105,7 +119,7 @@ describe('InviteConfirmView', () => {
     expect(text).toContain('초대 만료')
   })
 
-  it('Body 없는 수락 후 근무·지갑을 재조회하고 계약 최종본 Stream을 연다', async () => {
+  it('Body 없는 수락 후 근무·지갑을 재조회하고 계약 최종본 Blob을 연다', async () => {
     const wrapper = mountView()
     await flushPromises()
 
@@ -119,7 +133,13 @@ describe('InviteConfirmView', () => {
     expect(getWorkCase).toHaveBeenCalledWith(42)
     expect(fetchWallet).toHaveBeenCalled()
     expect(fetchTransactions).toHaveBeenCalled()
-    expect(wrapper.get('iframe').attributes('src')).toBe('/api/documents/99/file?mode=view')
+    expect(fetchDocumentFile).toHaveBeenCalledWith(99, 'view')
+    expect(wrapper.get('iframe').attributes('src')).toBe(
+      'blob:https://gighub.store/contract-preview'
+    )
+    expect(wrapper.get('.download-link').attributes('href')).toBe(
+      '/api/documents/99/file?mode=download'
+    )
     expect(wrapper.text()).toContain('임금 예치 완료')
   })
 

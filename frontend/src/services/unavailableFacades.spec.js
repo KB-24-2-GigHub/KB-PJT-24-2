@@ -23,7 +23,7 @@ describe('unimplemented public facade operations', () => {
   })
 
   it.each([
-    ['worker home', () => getWorkerHome(), '#163-#169'],
+    // worker home·work-cases는 #168, attendance scan은 #167에서 LIVE로 전환됐다.
     ['documents', () => listDocuments(), '#132/#183'],
     ['notifications', () => listNotifications(), '#167/#176'],
     ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
@@ -38,6 +38,13 @@ describe('unimplemented public facade operations', () => {
     expect(http.patch).not.toHaveBeenCalled()
     expect(http.delete).not.toHaveBeenCalled()
     expect(idempotentPost).not.toHaveBeenCalled()
+  })
+
+  it('worker home은 #168부터 LIVE로 전환되어 실제 API를 호출한다', async () => {
+    http.get.mockResolvedValueOnce({ data: { todayWorkCase: null } })
+
+    await expect(getWorkerHome()).resolves.toEqual({ todayWorkCase: null })
+    expect(http.get).toHaveBeenCalledWith('/worker/home')
   })
 
   it('allows an explicitly selected Development/Test mock for one operation', async () => {

@@ -13,6 +13,7 @@ import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
+import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { contractFileUrl } from '@/services/documents'
 import { newIdempotencyKey } from '@/services/http'
 import { confirmInvite, getInvite } from '@/services/invites'
@@ -54,9 +55,11 @@ let inviteLoadSequence = 0
 
 const workDateText = computed(() => formatSeoulDateTime(invite.value?.startsAt).split(' ')[0])
 const contractDocumentId = computed(() => acceptedWorkCase.value?.contract?.documentId ?? null)
-const contractViewUrl = computed(() =>
-  contractDocumentId.value ? contractFileUrl(contractDocumentId.value, 'view') : ''
-)
+const {
+  previewUrl: contractViewUrl,
+  loadPreview: loadContractPreview,
+  clearPreview: clearContractPreview
+} = useDocumentPreview()
 const contractDownloadUrl = computed(() =>
   contractDocumentId.value ? contractFileUrl(contractDocumentId.value, 'download') : ''
 )
@@ -73,6 +76,7 @@ watch(token, () => {
   accepted.value = null
   acceptedWorkCase.value = null
   syncError.value = false
+  clearContractPreview()
   void loadInvite()
 })
 
@@ -111,12 +115,25 @@ async function synchronizeAcceptedState() {
     acceptedWorkCase.value = workCaseResult.value
   }
 
+  let contractPreviewFailed = false
+  const documentId = acceptedWorkCase.value?.contract?.documentId
+  if (documentId) {
+    try {
+      await loadContractPreview(documentId)
+    } catch {
+      contractPreviewFailed = true
+    }
+  } else {
+    clearContractPreview()
+  }
+
   // 수락 Aggregate는 계약 문서까지 원자 생성한다. 식별자가 없으면 성공을 되돌리지 않고
   // 동기화 실패로만 표시해 사용자가 같은 수락을 새 Key로 다시 보내지 않게 한다.
   syncError.value =
     workCaseResult.status === 'rejected' ||
     !acceptedWorkCase.value?.contract?.documentId ||
-    Boolean(walletStore.error)
+    Boolean(walletStore.error) ||
+    contractPreviewFailed
   synchronizing.value = false
 }
 
@@ -197,12 +214,20 @@ function goHome() {
           <p>{{ formatSeoulTimeRange(acceptedWorkCase.startsAt, acceptedWorkCase.endsAt) }}</p>
         </section>
 
-        <section v-if="contractViewUrl" class="contract-section">
+        <section v-if="contractDocumentId" class="contract-section">
           <div class="section-head">
             <h2>최종 근로계약서</h2>
             <span>서명 완료본</span>
           </div>
-          <iframe :src="contractViewUrl" title="최종 근로계약서" class="contract-frame" />
+          <iframe
+            v-if="contractViewUrl"
+            :src="contractViewUrl"
+            title="최종 근로계약서"
+            class="contract-frame"
+          />
+          <p v-else class="contract-preview-error">
+            미리보기를 불러오지 못했어요. 아래에서 계약서를 다운로드할 수 있어요.
+          </p>
           <a :href="contractDownloadUrl" class="download-link">
             <FileText :size="18" />
             계약서 다운로드
@@ -454,6 +479,13 @@ function goHome() {
   border: 0;
   border-radius: var(--radius-sm);
   background: var(--color-bg);
+}
+.contract-preview-error {
+  padding: var(--space-lg);
+  color: var(--color-text-sub);
+  text-align: center;
+  background: var(--color-bg);
+  border-radius: var(--radius-sm);
 }
 .download-link {
   display: flex;
