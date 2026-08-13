@@ -31,9 +31,11 @@
     </sql>
 
     <!--
-        latitude, longitude 는 승인된 목록 Item에 없으므로 SELECT 자체에서 뺍니다.
-        정렬은 created_at 만으로는 같은 시각 등록에서 Page 사이 순서가 흔들릴 수 있어
-        id 를 마지막 기준으로 더해 고정합니다.
+        latitude, longitude 원문은 승인된 목록 Item에 없으므로 SELECT에 두지 않습니다.
+        두 값이 함께 있는지만 attendance_location_confirmed 로 계산해 내보내, 좌표 원문이
+        이 조회를 거쳐 응답에 실릴 경로 자체를 남기지 않습니다. 정렬은 created_at 만으로는
+        같은 시각 등록에서 Page 사이 순서가 흔들릴 수 있어 id 를 마지막 기준으로 더해
+        고정합니다.
     -->
     <select id="findPageByOwnerUserId" resultType="com.gighub.workplace.mapper.result.WorkplaceListRow">
         SELECT id AS workplace_id,
@@ -44,6 +46,7 @@
                detail_address,
                phone,
                radius_meters,
+               (latitude IS NOT NULL AND longitude IS NOT NULL) AS attendance_location_confirmed,
                status
         <include refid="ownedManageableWorkplaces"/>
         ORDER BY created_at DESC, id DESC
@@ -112,5 +115,32 @@
           AND status = 'ACTIVE'
         FOR UPDATE
     </select>
+
+    <!--
+        현장 위치 확정은 OWNER 본인만 호출하므로 소유자 조건을 더합니다. countOwnedActiveById와
+        같은 조건을 써서 없는 사업장과 다른 OWNER의 사업장을 구분하지 않습니다.
+    -->
+    <select id="findOwnedActiveLocationForUpdate" resultMap="workplaceLocationSnapshot">
+        SELECT id,
+               latitude,
+               longitude
+        FROM workplaces
+        WHERE id = #{workplaceId}
+          AND owner_user_id = #{ownerUserId}
+          AND status = 'ACTIVE'
+        FOR UPDATE
+    </select>
+
+    <!--
+        latitude IS NULL 조건이 이 UPDATE의 유일한 방어선입니다. 호출자가 잠금 조회에서 이미
+        비어 있음을 확인하지만, 여기서도 같은 조건을 반복해 확정된 좌표를 조용히 덮어쓰는
+        경로를 남기지 않습니다.
+    -->
+    <update id="confirmCoordinates">
+        UPDATE workplaces
+        SET latitude = #{latitude}, longitude = #{longitude}
+        WHERE id = #{workplaceId}
+          AND latitude IS NULL
+    </update>
 
 </mapper>

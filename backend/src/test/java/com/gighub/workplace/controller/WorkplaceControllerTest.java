@@ -202,6 +202,7 @@ class WorkplaceControllerTest {
                 .andExpect(jsonPath("$.data.content[0].detailAddress").value("2층"))
                 .andExpect(jsonPath("$.data.content[0].phone").value("0212345678"))
                 .andExpect(jsonPath("$.data.content[0].radiusMeters").value(100))
+                .andExpect(jsonPath("$.data.content[0].attendanceLocationConfirmed").value(true))
                 .andExpect(jsonPath("$.data.content[0].status").value("ACTIVE"))
                 .andExpect(jsonPath("$.data.page.number").value(0))
                 .andExpect(jsonPath("$.data.page.size").value(20))
@@ -300,6 +301,7 @@ class WorkplaceControllerTest {
                 "2층",
                 "0212345678",
                 new BigDecimal("100.00"),
+                true,
                 "ACTIVE");
     }
 

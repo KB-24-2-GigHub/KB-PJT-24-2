@@ -1,5 +1,6 @@
 package com.gighub.workplace.service.impl;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 
@@ -10,8 +11,11 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
+import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
+import com.gighub.workplace.domain.WorkplaceCoordinateFreshness;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.exception.WorkplaceCoordinatesAlreadySetException;
 import com.gighub.workplace.geocoding.AddressGeocoder;
 import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
@@ -20,6 +24,7 @@ import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
+import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
@@ -121,7 +126,55 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 row.getDetailAddress(),
                 row.getPhone(),
                 row.getRadiusMeters(),
+                row.isAttendanceLocationConfirmed(),
                 row.getStatus());
+    }
+
+    /**
+     * 신선도 검증 → 소유·활성 사업장 잠금 → 좌표 상태 판정 순서를 한 트랜잭션에서 수행합니다.
+     *
+     * <p>신선도를 잠금보다 먼저 검사하는 이유는, 오래된 측정값은 사업장이 어떤 상태든 거절해야
+     * 하는 입력 자체의 문제이기 때문입니다. 잠금부터 걸고 나중에 거절하면 불필요하게 행을
+     * 붙잡습니다.</p>
+     */
+    @Override
+    @Transactional
+    public void confirmLocation(
+            AuthPrincipal principal, Long workplaceId, WorkplaceCoordinateConfirmCommand command) {
+        requireOwner(principal, "현장 위치 확정은 OWNER만 할 수 있습니다.");
+
+        if (!WorkplaceCoordinateFreshness.isFresh(command.getCapturedAt(), Instant.now())) {
+            throw new ValidationException("위치 측정 시각이 오래됐습니다. 위치를 다시 확인해주세요.");
+        }
+
+        WorkplaceLocationSnapshot snapshot = workplaceMapper.findOwnedActiveLocationForUpdate(
+                workplaceId, principal.getUserId());
+        if (snapshot == null) {
+            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
+        }
+
+        if (snapshot.hasCoordinates()) {
+            // 같은 정규화 좌표의 재요청은 응답 유실 재시도로 보아 다시 성공(204) 처리합니다.
+            // 다른 값이면 이미 확정된 좌표를 보호해야 하므로 거절합니다.
+            if (isSameCoordinates(snapshot, command)) {
+                return;
+            }
+            throw new WorkplaceCoordinatesAlreadySetException(
+                    "이미 다른 현장 위치가 확정된 사업장입니다.");
+        }
+
+        workplaceMapper.confirmCoordinates(
+                workplaceId, command.getLatitude(), command.getLongitude());
+    }
+
+    /**
+     * DB 저장 정밀도와 요청 값의 소수 자릿수가 다를 수 있어 {@code equals} 대신 {@code
+     * compareTo}로 비교합니다.
+     */
+    private boolean isSameCoordinates(
+            WorkplaceLocationSnapshot snapshot, WorkplaceCoordinateConfirmCommand command) {
+        return snapshot.latitude().compareTo(command.getLatitude()) == 0
+                && snapshot.longitude().compareTo(command.getLongitude()) == 0;
     }
 
     @Override

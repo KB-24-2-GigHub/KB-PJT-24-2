@@ -7,8 +7,9 @@ import lombok.Getter;
 /**
  * OWNER 사업장 목록의 Item 하나입니다.
  *
- * <p>승인 명세가 고정한 아홉 필드만 두고, 목록에서 제외된 {@code latitude}·{@code longitude}는
- * 조회 행에도 응답에도 없습니다.</p>
+ * <p>승인 명세가 고정한 필드만 두고, 목록에서 제외된 {@code latitude}·{@code longitude}
+ * 원문은 조회 행에도 응답에도 없습니다. 두 좌표가 함께 있는지는 {@code
+ * attendanceLocationConfirmed}로만 노출합니다.</p>
  */
 @Getter
 public final class WorkplaceListItemResponse {
@@ -21,6 +22,7 @@ public final class WorkplaceListItemResponse {
     private final String detailAddress;
     private final String phone;
     private final int radiusMeters;
+    private final boolean attendanceLocationConfirmed;
     private final String status;
 
     private WorkplaceListItemResponse(
@@ -32,6 +34,7 @@ public final class WorkplaceListItemResponse {
             String detailAddress,
             String phone,
             BigDecimal radiusMeters,
+            boolean attendanceLocationConfirmed,
             String status) {
         this.workplaceId = workplaceId;
         this.businessRegistrationNumber = businessRegistrationNumber;
@@ -43,6 +46,7 @@ public final class WorkplaceListItemResponse {
         // 명세의 반경은 정수 100입니다. DECIMAL(8,2)를 그대로 직렬화하면 100.00이 나가므로
         // 저장 정밀도를 응답 계약으로 흘리지 않고 여기서 정수로 맞춥니다.
         this.radiusMeters = radiusMeters.intValue();
+        this.attendanceLocationConfirmed = attendanceLocationConfirmed;
         this.status = status;
     }
 
@@ -55,6 +59,7 @@ public final class WorkplaceListItemResponse {
             String detailAddress,
             String phone,
             BigDecimal radiusMeters,
+            boolean attendanceLocationConfirmed,
             String status) {
         return new WorkplaceListItemResponse(
                 workplaceId,
@@ -65,6 +70,7 @@ public final class WorkplaceListItemResponse {
                 detailAddress,
                 phone,
                 radiusMeters,
+                attendanceLocationConfirmed,
                 status);
     }
 }
