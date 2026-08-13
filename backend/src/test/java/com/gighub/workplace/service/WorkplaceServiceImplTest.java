@@ -341,10 +341,31 @@ class WorkplaceServiceImplTest {
     void confirmsLocationOnFirstRequestForOwnedActiveWorkplaceWithoutCoordinates() {
         when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
                 .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+        when(workplaceMapper.confirmCoordinates(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE))
+                .thenReturn(1);
 
         service.confirmLocation(owner(7L), 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
 
         verify(workplaceMapper).confirmCoordinates(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE);
+    }
+
+    /**
+     * 갱신된 행이 없는데 성공으로 끝나면 아무것도 저장하지 않고 204가 나갑니다.
+     *
+     * <p>행을 잠근 뒤라 실제로는 일어날 수 없지만, 잠금이나 순서가 바뀌었을 때 이 조용한
+     * 실패를 그대로 통과시키지 않도록 확인합니다.</p>
+     */
+    @Test
+    void failsLoudlyWhenConfirmUpdatesNoRow() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
+                .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+        when(workplaceMapper.confirmCoordinates(anyLong(), any(BigDecimal.class), any(BigDecimal.class)))
+                .thenReturn(0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.confirmLocation(
+                        owner(7L), 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE)));
     }
 
     /**

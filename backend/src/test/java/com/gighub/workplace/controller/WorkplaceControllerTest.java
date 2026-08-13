@@ -1,6 +1,7 @@
 package com.gighub.workplace.controller;
 
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.util.List;
 
 import com.gighub.auth.security.AuthPrincipal;
@@ -11,7 +12,9 @@ import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.exception.WorkplaceCoordinatesAlreadySetException;
 import com.gighub.workplace.service.WorkplaceService;
+import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -33,6 +37,8 @@ import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -289,6 +295,85 @@ class WorkplaceControllerTest {
         mockMvc.perform(get("/api/workplaces").principal(ownerAuthentication()))
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("ROLE_MISMATCH"));
+    }
+
+    /** 성공은 본문 없는 204여야 합니다. 200이나 빈 Envelope가 나가면 계약이 달라집니다. */
+    @Test
+    void confirmLocationReturnsNoContentAndPassesPathAndBodyToService() throws Exception {
+        mockMvc.perform(put("/api/workplaces/11/coordinates")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content(validCoordinateBody()))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        ArgumentCaptor<WorkplaceCoordinateConfirmCommand> captor =
+                ArgumentCaptor.forClass(WorkplaceCoordinateConfirmCommand.class);
+        verify(workplaceService).confirmLocation(any(), eq(11L), captor.capture());
+
+        WorkplaceCoordinateConfirmCommand command = captor.getValue();
+        assertEquals(0, new BigDecimal("37.1234567").compareTo(command.getLatitude()));
+        assertEquals(0, new BigDecimal("127.1234567").compareTo(command.getLongitude()));
+        assertEquals(Instant.parse("2026-08-13T01:00:00Z"), command.getCapturedAt());
+    }
+
+    /** 이미 다른 좌표가 확정된 사업장은 승인된 409 Code로 나가야 합니다. */
+    @Test
+    void confirmLocationSurfacesAlreadySetConflictAsApprovedCode() throws Exception {
+        doThrow(new WorkplaceCoordinatesAlreadySetException("이미 다른 현장 위치가 확정된 사업장입니다."))
+                .when(workplaceService).confirmLocation(any(), any(), any());
+
+        mockMvc.perform(put("/api/workplaces/11/coordinates")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content(validCoordinateBody()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("WORKPLACE_COORDINATES_ALREADY_SET"));
+    }
+
+    /**
+     * 좌표 범위와 미승인 필드는 Service에 닿기 전에 끊겨야 합니다.
+     *
+     * <p>미승인 필드는 {@code @Valid}가 아니라 역직렬화 단계에서 끊기므로 두 경로를 함께
+     * 확인합니다.</p>
+     */
+    @Test
+    void confirmLocationRejectsOutOfRangeAndUnapprovedFieldsBeforeService() throws Exception {
+        mockMvc.perform(put("/api/workplaces/11/coordinates")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{"
+                                + "\"latitude\":90.0000001,"
+                                + "\"longitude\":127.1234567,"
+                                + "\"accuracyMeters\":18.25,"
+                                + "\"capturedAt\":\"2026-08-13T01:00:00Z\""
+                                + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(put("/api/workplaces/11/coordinates")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{"
+                                + "\"latitude\":37.1234567,"
+                                + "\"longitude\":127.1234567,"
+                                + "\"accuracyMeters\":18.25,"
+                                + "\"capturedAt\":\"2026-08-13T01:00:00Z\","
+                                + "\"radiusMeters\":500"
+                                + "}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(workplaceService, never()).confirmLocation(any(), any(), any());
+    }
+
+    private String validCoordinateBody() {
+        return "{"
+                + "\"latitude\":37.1234567,"
+                + "\"longitude\":127.1234567,"
+                + "\"accuracyMeters\":18.25,"
+                + "\"capturedAt\":\"2026-08-13T01:00:00Z\""
+                + "}";
     }
 
     private WorkplaceListItemResponse listItem() {

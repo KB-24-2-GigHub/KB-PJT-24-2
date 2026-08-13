@@ -163,8 +163,15 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                     "이미 다른 현장 위치가 확정된 사업장입니다.");
         }
 
-        workplaceMapper.confirmCoordinates(
+        int confirmed = workplaceMapper.confirmCoordinates(
                 workplaceId, command.getLatitude(), command.getLongitude());
+        // 행을 이미 잠갔고 좌표가 비어 있음을 확인했으므로 여기서 0이 나올 수 없습니다.
+        // 그래도 확인하는 이유는, 0을 그냥 흘리면 아무것도 저장하지 않고 204를 돌려주는
+        // 조용한 실패가 되기 때문입니다.
+        if (confirmed != 1) {
+            throw new IllegalStateException(
+                    "현장 위치 확정이 반영되지 않았습니다. workplaceId=" + workplaceId);
+        }
     }
 
     /**
