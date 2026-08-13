@@ -33,7 +33,14 @@ const walletError = ref(false)
 
 // 근무 경과 예상금액은 오늘 근무가 있을 때만 노출한다. 오늘 근무가 없으면 서버가
 // todayWorkCase 자체를 null로 주므로(WorkerHomeResponse) earning도 함께 비어 있다.
-const showEarning = computed(() => !!earning.value && !!todayWorkCase.value)
+// NO_SHOW·CANCELED는 지급을 기대할 수 없는 상태라 참고값도 노출하지 않는다(DEC-OPEN-DASHBOARD-BREAK).
+const NO_EARNING_REFERENCE_STATUSES = ['NO_SHOW', 'CANCELED']
+const showEarning = computed(
+  () =>
+    !!earning.value &&
+    !!todayWorkCase.value &&
+    !NO_EARNING_REFERENCE_STATUSES.includes(todayWorkCase.value.status)
+)
 const hasError = computed(() => !!error.value || walletError.value)
 const errorMessage = computed(() =>
   error.value?.code === 'FEATURE_UNAVAILABLE'
