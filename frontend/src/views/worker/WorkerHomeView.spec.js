@@ -48,13 +48,13 @@ describe('WorkerHomeView', () => {
       .mockResolvedValue({ currency: 'KRW', availableBalance: 320_000, lockedBalance: 0 })
   })
 
-  it('안심지갑 잔액·오늘의 알바·확보 안심금액을 표시한다', async () => {
+  it('안심지갑 잔액·오늘의 알바·근무 경과 예상금액을 표시한다', async () => {
     const wrapper = mount(WorkerHomeView)
     await flushPromises()
 
     expect(wrapper.text()).toContain('320,000원') // 안심지갑 잔액(공용 wallet Store)
     expect(wrapper.text()).toContain('주말 홀 서빙') // 오늘의 알바
-    expect(wrapper.text()).toContain('현재까지 확보한 안심금액') // 안심금액 카드
+    expect(wrapper.text()).toContain('근무 경과 예상금액') // 참고값 카드(비금융 표시)
     expect(wrapper.text()).toContain('일급 90,000원') // dailyWage → agreedWage 로 매핑되는지 확인
   })
 
@@ -66,14 +66,29 @@ describe('WorkerHomeView', () => {
     expect(wrapper.text()).toContain('지각 15분') // attendance.isLate 파생 뱃지(상태값이 아니다)
   })
 
-  it('오늘 근무가 없으면(todayWorkCase=null) 안심금액 카드를 숨긴다', async () => {
+  it('오늘 근무가 없으면(todayWorkCase=null) 근무 경과 예상금액 카드를 숨긴다', async () => {
     getWorkerHome.mockResolvedValue({ todayWorkCase: null })
     const wrapper = mount(WorkerHomeView)
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('현재까지 확보한 안심금액')
+    expect(wrapper.text()).not.toContain('근무 경과 예상금액')
     expect(wrapper.text()).toContain('오늘은 예정된 알바가 없어요.')
   })
+
+  it.each(['NO_SHOW', 'CANCELED'])(
+    '오늘 근무가 %s 상태면 근무 경과 예상금액 카드를 숨긴다(DEC-OPEN-DASHBOARD-BREAK)',
+    async (status) => {
+      const payload = structuredClone(homePayload)
+      payload.todayWorkCase.status = status
+      getWorkerHome.mockResolvedValue(payload)
+
+      const wrapper = mount(WorkerHomeView)
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('근무 경과 예상금액')
+      expect(wrapper.text()).toContain('주말 홀 서빙') // 오늘의 알바 카드 자체는 계속 노출
+    }
+  )
 
   it('출금 버튼은 출금 화면으로 이동한다', async () => {
     const wrapper = mount(WorkerHomeView)
