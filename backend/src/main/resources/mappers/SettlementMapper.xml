@@ -126,4 +126,86 @@
           AND completed_at IS NULL
     </update>
 
+    <!--
+        #172 Scheduler 배치 후보 조회다. 잠그지 않으므로 목록을 얻은 뒤 각 ID는
+        lockScheduledPayoutCandidate로 다시 잠그고 자격을 재확인해야 한다. 열린 분쟁이 있는
+        Work Case는 정상 SCHEDULED 정산이 ON_HOLD로 이미 옮겨가 있어야 하지만, SETTLE-003
+        계약대로 이 조회에서도 다시 한번 열린 분쟁을 후보에서 제외한다.
+    -->
+    <select id="findScheduledPayoutCandidateIds" resultType="java.lang.Long">
+        SELECT s.id
+        FROM settlements s
+        WHERE s.status = 'SCHEDULED'
+          AND s.due_at &lt;= #{eligibilityTime}
+          AND (s.next_retry_at IS NULL OR s.next_retry_at &lt;= #{eligibilityTime})
+          AND NOT EXISTS (
+              SELECT 1
+              FROM disputes d
+              WHERE d.work_case_id = s.work_case_id
+                AND d.status IN ('OPEN', 'UNDER_REVIEW')
+          )
+        ORDER BY s.due_at ASC, s.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+        건별 짧은 Transaction 전용 잠금이다. SKIP LOCKED라 다른 실행 주체가 이미 잠근 행은
+        대기 없이 결과에서 빠진다. 배치 조회와 이 잠금 사이의 시간차를 감안해 자격 조건을
+        한 번 더 검사한다.
+    -->
+    <select id="lockScheduledPayoutCandidate" resultType="java.lang.Long">
+        SELECT s.id
+        FROM settlements s
+        WHERE s.id = #{settlementId}
+          AND s.status = 'SCHEDULED'
+          AND s.due_at &lt;= #{eligibilityTime}
+          AND (s.next_retry_at IS NULL OR s.next_retry_at &lt;= #{eligibilityTime})
+          AND s.processing_at IS NULL
+          AND s.completed_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1
+              FROM disputes d
+              WHERE d.work_case_id = s.work_case_id
+                AND d.status IN ('OPEN', 'UNDER_REVIEW')
+          )
+        FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!--
+        일시 실패 감사 기록. retry_count &lt;= 3인 행만 바꿔 결과 값이 SCHEDULED 상태의 계약
+        상한 4를 넘지 않게 한다. 자금 Transaction은 이미 Rollback되어 이 문장이 열리기 전에
+        행은 SCHEDULED/processing_at NULL로 돌아와 있어야 한다.
+    -->
+    <update id="recordScheduledPayoutRetry">
+        UPDATE settlements
+        SET failure_code    = #{failureCode},
+            last_failure_at = NOW(6),
+            next_retry_at   = #{nextRetryAt},
+            retry_count     = retry_count + 1,
+            updated_at      = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+          AND retry_count &lt;= 3
+    </update>
+
+    <!--
+        재시도 소진 또는 즉시 격리해야 하는 영구 실패를 FAILED로 확정한다. LEAST로 retry_count
+        상한 5를 SQL에서 직접 보장해 CHECK 위반 가능성을 만들지 않는다.
+    -->
+    <update id="recordScheduledPayoutFailed">
+        UPDATE settlements
+        SET status          = 'FAILED',
+            failure_code    = #{failureCode},
+            last_failure_at = NOW(6),
+            next_retry_at   = NULL,
+            retry_count     = LEAST(retry_count + 1, 5),
+            updated_at      = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+    </update>
+
 </mapper>

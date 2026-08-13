@@ -62,4 +62,54 @@ public interface SettlementMapper {
     int transitionProcessingToCompleted(
             @Param("settlementId") Long settlementId,
             @Param("approvedByUserId") Long approvedByUserId);
+
+    /**
+     * #172 Scheduler가 한 실행에서 훑을 후보 ID를 고른다.
+     *
+     * <p>잠그지 않는 배치 조회이므로 이 목록의 각 ID는 건별 짧은 Transaction에서
+     * {@link #lockScheduledPayoutCandidate}로 다시 잠그고 자격을 재확인한 뒤에만 선점한다.</p>
+     */
+    List<Long> findScheduledPayoutCandidateIds(
+            @Param("eligibilityTime") LocalDateTime eligibilityTime,
+            @Param("limit") int limit);
+
+    /**
+     * 건별 짧은 Transaction 안에서 후보 행을 잠그고 자격을 다시 확인한다.
+     *
+     * <p>{@code FOR UPDATE SKIP LOCKED}이므로 다른 Scheduler 인스턴스나 OWNER 승인이 같은
+     * 행을 먼저 잠그고 있으면 대기하지 않고 즉시 {@code null}을 반환한다. 호출부는 {@code null}을
+     * "이번 실행에서는 건너뛴다"로 처리해야 한다.</p>
+     *
+     * @return 잠금에 성공한 Settlement ID, 이미 잠겼거나 자격을 잃었으면 {@code null}
+     */
+    Long lockScheduledPayoutCandidate(
+            @Param("settlementId") Long settlementId,
+            @Param("eligibilityTime") LocalDateTime eligibilityTime);
+
+    /**
+     * 일시 실패를 감사 기록하고 {@code SCHEDULED}로 남긴다.
+     *
+     * <p>자금 Transaction은 이미 Rollback되어 행이 {@code SCHEDULED}로 돌아온 뒤, 별도 짧은
+     * 감사 Transaction에서만 부른다. {@code retry_count &lt;= 3}인 행만 바꿔 최종 값이 계약이
+     * 허용하는 {@code SCHEDULED} 최대치인 4를 넘지 않게 한다. 5번째 실패는 이 메서드가 아니라
+     * {@link #recordScheduledPayoutFailed}로 처리한다.</p>
+     *
+     * @return 변경된 행 수
+     */
+    int recordScheduledPayoutRetry(
+            @Param("settlementId") Long settlementId,
+            @Param("failureCode") String failureCode,
+            @Param("nextRetryAt") LocalDateTime nextRetryAt);
+
+    /**
+     * 재시도를 소진한 일시 실패 또는 즉시 격리해야 하는 영구 실패를 {@code FAILED}로 확정한다.
+     *
+     * <p>{@code retry_count}는 상한 5를 넘지 않게 SQL에서 직접 clamp한다. 자동 재처리 대상에서
+     * 빠지며 관리자 승인 복구만 다음 상태 전이가 될 수 있다.</p>
+     *
+     * @return 변경된 행 수
+     */
+    int recordScheduledPayoutFailed(
+            @Param("settlementId") Long settlementId,
+            @Param("failureCode") String failureCode);
 }
