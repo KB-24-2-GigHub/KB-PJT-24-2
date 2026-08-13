@@ -518,8 +518,13 @@ Head 와 비교한다. 같으면 호환, 낮으면 비호환이다.
 
 ```bash
 git ls-tree -r <태그SHA> --name-only backend/src/main/resources/db/migration/ \
-  | sed 's/.*\/V//;s/__.*//' | sort | tail -1
+  | sed 's/.*\/V//;s/__.*//' | grep -E '^[0-9]+$' | sort | tail -1
 ```
+
+`grep -E '^[0-9]+$'` 는 빼면 안 된다. Migration 디렉터리에는 `.gitkeep` 이 함께 들어
+있는데 `sed` 가 이 줄을 바꾸지 않고 흘려보내고, 경로 문자열이 버전 숫자보다 뒤로 정렬돼
+`tail -1` 이 버전 대신 `.gitkeep` 경로를 뱉는다. 어떤 태그를 넣어도 같은 값이 나오므로
+비호환 이미지를 호환으로 오판한다.
 
 여러 태그를 한 번에 판정하려면 저장소에서 다음을 돌린다. `HEAD_VER` 에 위에서 확인한
 Schema version 을 넣는다.
