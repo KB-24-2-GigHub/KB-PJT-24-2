@@ -10,6 +10,7 @@ import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.SettlementWalletService.SettlementAmounts;
 import com.gighub.wallet.service.SettlementWalletService.SettlementWalletLock;
+import com.gighub.wallet.service.command.NoShowRefundWalletCommand;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
 import org.junit.jupiter.api.Test;
@@ -101,6 +102,51 @@ class SettlementWalletServiceImplTest {
         assertEquals(0L, worker.getAvailableBefore());
         assertEquals(AMOUNT, worker.getAvailableAfter());
         assertEquals(command.getWorkerLedgerKey(), worker.getIdempotencyKey());
+    }
+
+    @Test
+    void refundRestoresOnlyTheOwnerWalletAndWritesOneRefundLedger() {
+        NoShowRefundWalletCommand command = refundCommand();
+        when(walletMapper.findSettlementEscrowForUpdate(WORK_CASE_ID))
+                .thenReturn(escrowRow(EscrowStatus.HELD));
+        when(walletMapper.resolveWalletId(EMPLOYER_ID, "KRW")).thenReturn(30L);
+        when(walletMapper.getWalletSnapshotForUpdateByWalletId(30L))
+                .thenReturn(wallet(30L, EMPLOYER_ID, 400_000L, AMOUNT));
+        when(walletMapper.findEscrowHoldTransactionSnapshot(WORK_CASE_ID, ESCROW_ID))
+                .thenReturn(holdLedger(EMPLOYER_ID, 30L));
+        when(walletMapper.refundEscrow(WORK_CASE_ID)).thenReturn(1);
+        when(walletMapper.updateWalletBalanceByWalletId(any())).thenReturn(1);
+        when(walletMapper.insertWalletTransaction(any())).thenReturn(1);
+
+        SettlementEscrowSnapshot escrow = service.lockRefundEscrow(command);
+        SettlementWalletLock walletLock = service.lockRefundWallet(command, ESCROW_ID);
+        service.verifyHeldRefundEscrow(command, escrow.getEscrowId(), walletLock);
+        SettlementAmounts amounts = service.refund(
+                command, escrow.getEscrowId(), walletLock);
+
+        assertEquals(AMOUNT, amounts.originalEscrowAmount());
+        assertEquals(0L, amounts.workerPaidAmount());
+        assertEquals(AMOUNT, amounts.ownerRefundAmount());
+        verify(walletMapper, never()).resolveWalletId(WORKER_ID, "KRW");
+        verify(walletMapper).refundEscrow(WORK_CASE_ID);
+
+        ArgumentCaptor<WalletBalanceUpdateParam> balance =
+                ArgumentCaptor.forClass(WalletBalanceUpdateParam.class);
+        verify(walletMapper).updateWalletBalanceByWalletId(balance.capture());
+        assertEquals(400_000L, balance.getValue().getAvailableBefore());
+        assertEquals(700_000L, balance.getValue().getAvailableAfter());
+        assertEquals(AMOUNT, balance.getValue().getLockedBefore());
+        assertEquals(0L, balance.getValue().getLockedAfter());
+
+        ArgumentCaptor<WalletTransactionParam> ledger =
+                ArgumentCaptor.forClass(WalletTransactionParam.class);
+        verify(walletMapper).insertWalletTransaction(ledger.capture());
+        assertEquals("ESCROW_REFUND", ledger.getValue().getTransactionType());
+        assertEquals(command.getEmployerLedgerKey(), ledger.getValue().getIdempotencyKey());
+        assertEquals(400_000L, ledger.getValue().getAvailableBefore());
+        assertEquals(700_000L, ledger.getValue().getAvailableAfter());
+        assertEquals(AMOUNT, ledger.getValue().getLockedBefore());
+        assertEquals(0L, ledger.getValue().getLockedAfter());
     }
 
     @Test
@@ -228,6 +274,15 @@ class SettlementWalletServiceImplTest {
                 .amount(AMOUNT)
                 .employerLedgerKey("release-employer")
                 .workerLedgerKey("release-worker")
+                .build();
+    }
+
+    private NoShowRefundWalletCommand refundCommand() {
+        return NoShowRefundWalletCommand.builder()
+                .workCaseId(WORK_CASE_ID)
+                .employerId(EMPLOYER_ID)
+                .amount(AMOUNT)
+                .employerLedgerKey("refund-employer")
                 .build();
     }
 

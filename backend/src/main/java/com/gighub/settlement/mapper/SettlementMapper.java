@@ -62,4 +62,14 @@ public interface SettlementMapper {
     int transitionProcessingToCompleted(
             @Param("settlementId") Long settlementId,
             @Param("approvedByUserId") Long approvedByUserId);
+
+    /** NO_SHOW의 WAITING 정산을 OWNER 환불 처리 중으로 선점합니다. */
+    int transitionWaitingToRefundProcessing(
+            @Param("settlementId") Long settlementId,
+            @Param("approvedByUserId") Long approvedByUserId);
+
+    /** 같은 OWNER가 선점한 환불만 최종 REFUNDED로 전이합니다. */
+    int transitionRefundProcessingToRefunded(
+            @Param("settlementId") Long settlementId,
+            @Param("approvedByUserId") Long approvedByUserId);
 }

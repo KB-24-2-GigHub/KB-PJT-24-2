@@ -23,10 +23,11 @@ class WalletIdempotencyKeysTest {
                 WalletIdempotencyKeys.escrowHold(RAW_KEY),
                 WalletIdempotencyKeys.settlementReleaseOwner(17L),
                 WalletIdempotencyKeys.settlementReleaseWorker(17L),
+                WalletIdempotencyKeys.settlementRefundOwner(17L),
                 WalletIdempotencyKeys.withdrawal(RAW_KEY)
         );
 
-        assertEquals(5, keys.size());
+        assertEquals(6, keys.size());
         keys.forEach(key -> {
             assertEquals(key.length(), key.getBytes(StandardCharsets.US_ASCII).length);
             assertTrue(key.matches("[A-Z_]+:[0-9a-f]{64}"));
@@ -42,10 +43,15 @@ class WalletIdempotencyKeysTest {
         assertEquals(
                 WalletIdempotencyKeys.settlementReleaseWorker(17L),
                 WalletIdempotencyKeys.settlementReleaseWorker(17L));
+        assertEquals(
+                WalletIdempotencyKeys.settlementRefundOwner(17L),
+                WalletIdempotencyKeys.settlementRefundOwner(17L));
         assertTrue(WalletIdempotencyKeys.settlementReleaseOwner(17L)
                 .startsWith("SETTLEMENT_RELEASE_OWNER:"));
         assertTrue(WalletIdempotencyKeys.settlementReleaseWorker(17L)
                 .startsWith("SETTLEMENT_RELEASE_WORKER:"));
+        assertTrue(WalletIdempotencyKeys.settlementRefundOwner(17L)
+                .startsWith("SETTLEMENT_REFUND_OWNER:"));
         assertThrows(
                 IllegalArgumentException.class,
                 () -> WalletIdempotencyKeys.settlementReleaseOwner(0L));

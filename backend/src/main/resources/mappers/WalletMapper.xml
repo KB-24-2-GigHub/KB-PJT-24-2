@@ -181,6 +181,16 @@
           AND status = 'HELD'
     </update>
 
+    <!-- HELD -> REFUNDED. OWNER 승인 Transaction 안에서만 호출합니다. -->
+    <update id="refundEscrow">
+        UPDATE escrows
+        SET status      = 'REFUNDED',
+            refunded_at = NOW(6),
+            updated_at  = NOW(6)
+        WHERE work_case_id = #{workCaseId}
+          AND status = 'HELD'
+    </update>
+
     <!-- ================= 3. 원장(Ledger) ================= -->
 
     <select id="countTransactionByIdempotencyKey" resultType="int">

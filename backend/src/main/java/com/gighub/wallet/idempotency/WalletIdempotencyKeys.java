@@ -33,6 +33,10 @@ public final class WalletIdempotencyKeys {
         return encodeSettlement("SETTLEMENT_RELEASE_WORKER", settlementId);
     }
 
+    public static String settlementRefundOwner(long settlementId) {
+        return encodeSettlement("SETTLEMENT_REFUND_OWNER", settlementId);
+    }
+
     public static String withdrawal(String rawKey) {
         return encode("WDRW", rawKey);
     }

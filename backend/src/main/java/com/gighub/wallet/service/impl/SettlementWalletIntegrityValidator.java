@@ -6,6 +6,7 @@ import com.gighub.wallet.dto.WalletTransactionSnapshot;
 import com.gighub.wallet.exception.EscrowIntegrityException;
 import com.gighub.wallet.mapper.result.SettlementEscrowRow;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
+import com.gighub.wallet.service.command.NoShowRefundWalletCommand;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
 
 /**
@@ -19,6 +20,7 @@ final class SettlementWalletIntegrityValidator {
 
     static final String TX_ESCROW_HOLD = "ESCROW_HOLD";
     static final String TX_ESCROW_RELEASE = "ESCROW_RELEASE";
+    static final String TX_ESCROW_REFUND = "ESCROW_REFUND";
     static final String REF_ESCROW = "ESCROW";
 
     private SettlementWalletIntegrityValidator() {
@@ -66,6 +68,32 @@ final class SettlementWalletIntegrityValidator {
         validateHoldLedgerInvariant(snapshot, command.getAmount());
     }
 
+    static void validateHeldEscrowOwnership(
+            WalletTransactionSnapshot snapshot,
+            NoShowRefundWalletCommand command,
+            long escrowId,
+            long expectedWalletId) {
+        if (snapshot == null
+                || snapshot.getId() == null
+                || snapshot.getId() <= 0
+                || snapshot.getWalletId() == null
+                || snapshot.getWalletId() != expectedWalletId
+                || snapshot.getWalletUserId() == null
+                || snapshot.getWalletUserId() != command.getEmployerId()
+                || snapshot.getWorkCaseId() == null
+                || snapshot.getWorkCaseId() != command.getWorkCaseId()
+                || snapshot.getAmount() == null
+                || snapshot.getAmount() != command.getAmount()
+                || !TX_ESCROW_HOLD.equals(snapshot.getTransactionType())
+                || !REF_ESCROW.equals(snapshot.getReferenceType())
+                || snapshot.getReferenceId() == null
+                || snapshot.getReferenceId() != escrowId) {
+            throw new EscrowIntegrityException(
+                    "예치 원장과 NO_SHOW 환불 대상의 소유권이 일치하지 않습니다.");
+        }
+        validateHoldLedgerInvariant(snapshot, command.getAmount());
+    }
+
     static void validateReleaseLedger(
             WalletTransactionSnapshot snapshot,
             long expectedWalletId,
@@ -90,6 +118,30 @@ final class SettlementWalletIntegrityValidator {
         }
     }
 
+    static void validateRefundLedger(
+            WalletTransactionSnapshot snapshot,
+            long expectedWalletId,
+            NoShowRefundWalletCommand command) {
+        if (snapshot == null
+                || snapshot.getId() == null
+                || snapshot.getId() <= 0
+                || snapshot.getWalletId() == null
+                || snapshot.getWalletId() != expectedWalletId
+                || snapshot.getWalletUserId() == null
+                || snapshot.getWalletUserId() != command.getEmployerId()
+                || snapshot.getWorkCaseId() == null
+                || snapshot.getWorkCaseId() != command.getWorkCaseId()
+                || snapshot.getAmount() == null
+                || snapshot.getAmount() != command.getAmount()
+                || !TX_ESCROW_REFUND.equals(snapshot.getTransactionType())
+                || !REF_ESCROW.equals(snapshot.getReferenceType())
+                || snapshot.getReferenceId() == null
+                || snapshot.getReferenceId() <= 0) {
+            throw new EscrowIntegrityException(
+                    "NO_SHOW 환불 원장이 현재 환불 결과와 일치하지 않습니다.");
+        }
+    }
+
     static long validateCompletedEscrow(
             SettlementEscrowSnapshot escrow,
             SettlementWalletCommand command,
@@ -102,6 +154,23 @@ final class SettlementWalletIntegrityValidator {
                 || escrow.getAmount() == null
                 || escrow.getAmount() != command.getAmount()) {
             throw new EscrowIntegrityException("완료된 정산과 에스크로 상태가 일치하지 않습니다.");
+        }
+        return escrow.getEscrowId();
+    }
+
+    static long validateRefundedEscrow(
+            SettlementEscrowSnapshot escrow,
+            NoShowRefundWalletCommand command,
+            long expectedEscrowId) {
+        if (escrow == null
+                || escrow.getEscrowId() == null
+                || escrow.getEscrowId() <= 0
+                || escrow.getEscrowId() != expectedEscrowId
+                || escrow.getStatus() != EscrowStatus.REFUNDED
+                || escrow.getAmount() == null
+                || escrow.getAmount() != command.getAmount()) {
+            throw new EscrowIntegrityException(
+                    "완료된 NO_SHOW 환불과 Escrow 상태가 일치하지 않습니다.");
         }
         return escrow.getEscrowId();
     }
@@ -147,6 +216,16 @@ final class SettlementWalletIntegrityValidator {
                 || !matchesAdd(snapshot.getAvailableBefore(), amount, snapshot.getAvailableAfter())
                 || !snapshot.getLockedBefore().equals(snapshot.getLockedAfter())) {
             throw new EscrowIntegrityException("저장된 근로자 정산 원장 금액이 올바르지 않습니다.");
+        }
+    }
+
+    static void validateOwnerRefundLedgerInvariant(
+            WalletTransactionSnapshot snapshot, long amount) {
+        if (!hasCompleteBalances(snapshot)
+                || !matchesAdd(snapshot.getAvailableBefore(), amount, snapshot.getAvailableAfter())
+                || !matchesSubtract(snapshot.getLockedBefore(), amount, snapshot.getLockedAfter())) {
+            throw new EscrowIntegrityException(
+                    "저장된 OWNER 환불 원장 금액이 올바르지 않습니다.");
         }
     }
 

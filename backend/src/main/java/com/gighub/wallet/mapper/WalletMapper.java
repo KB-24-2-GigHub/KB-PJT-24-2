@@ -59,6 +59,8 @@ public interface WalletMapper {
 
     int releaseEscrow(@Param("workCaseId") Long workCaseId);
 
+    int refundEscrow(@Param("workCaseId") Long workCaseId);
+
     // 원장
     int countTransactionByIdempotencyKey(@Param("idempotencyKey") String idempotencyKey);
 
