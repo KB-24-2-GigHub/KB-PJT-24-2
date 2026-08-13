@@ -14,6 +14,7 @@ import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * 외부 properties 파일에서 로컬 MySQL 접속 정보를 읽어 영속성 기반 Bean을 구성합니다.
@@ -104,5 +105,20 @@ public class DatabaseConfig {
     @Bean
     public PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new DataSourceTransactionManager(dataSource);
+    }
+
+    /**
+     * 트랜잭션 경계를 메서드보다 좁게 잡아야 하는 Service를 위한 프로그래밍 방식 Template입니다.
+     *
+     * <p>외부 호출을 트랜잭션 밖에 두고 저장만 묶으려면 경계가 메서드 단위인 {@code
+     * @Transactional}로는 부족합니다. 같은 Bean 안에서 나눈 메서드는 Proxy를 거치지 않아
+     * 애노테이션이 적용되지 않습니다.</p>
+     *
+     * @param transactionManager JDBC Transaction Manager
+     * @return 공유 Transaction Template
+     */
+    @Bean
+    public TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+        return new TransactionTemplate(transactionManager);
     }
 }

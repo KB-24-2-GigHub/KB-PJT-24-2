@@ -16,6 +16,7 @@ import com.gighub.auth.security.AuthSessionManager;
 import com.gighub.auth.service.AuthService;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.config.RootConfig;
+import com.gighub.workplace.geocoding.FixedAddressGeocoderConfig;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.controller.WorkplaceController;
 import com.gighub.workplace.service.WorkplaceService;
@@ -78,7 +79,7 @@ class WorkplaceListFlowIntegrationTest {
 
         rootContext = new AnnotationConfigWebApplicationContext();
         rootContext.setServletContext(mockServletContext);
-        rootContext.register(RootConfig.class);
+        rootContext.register(RootConfig.class, FixedAddressGeocoderConfig.class);
         rootContext.refresh();
 
         servletContext = new AnnotationConfigWebApplicationContext();

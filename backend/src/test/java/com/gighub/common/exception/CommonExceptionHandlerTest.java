@@ -186,6 +186,8 @@ class CommonExceptionHandlerTest {
                         "QR_INVALID",
                         "QR_REVOKED",
                         "WORKPLACE_LOCATION_REQUIRED",
+                        "WORKPLACE_ADDRESS_NOT_RESOLVABLE",
+                        "WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE",
                         "LOCATION_INVALID",
                         "OUTSIDE_WORKPLACE_RADIUS",
                         "ATTENDANCE_WORK_CASE_NOT_FOUND",

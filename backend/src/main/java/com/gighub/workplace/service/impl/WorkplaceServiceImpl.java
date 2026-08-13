@@ -12,6 +12,8 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.geocoding.AddressGeocoder;
+import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
@@ -24,6 +26,7 @@ import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /** 승인된 사업장 계약을 인증 Principal과 DB 현재 상태로 적용합니다. */
 @Service
@@ -32,12 +35,33 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
 
     private final WorkplaceMapper workplaceMapper;
     private final WorkplaceQrIssuer qrIssuer;
+    private final AddressGeocoder addressGeocoder;
+    private final TransactionTemplate transactionTemplate;
 
+    /**
+     * 좌표 확정을 트랜잭션 밖에서 먼저 끝냅니다.
+     *
+     * <p>주소 변환은 Timeout 상한을 가진 외부 호출입니다. 트랜잭션 안에서 부르면 그 시간만큼
+     * DB 커넥션을 붙잡아, 외부 서비스가 느려질 때 Pool이 사업장과 무관한 요청까지 막습니다.
+     * 확정 실패는 저장이 시작되기 전에 끝나므로 사업장 행도 활성 QR도 남지 않습니다.</p>
+     *
+     * <p>요청이 보낸 좌표는 쓰지 않습니다 — SPEC-343-01은 좌표의 출처를 서버 주소 변환 하나로
+     * 고정합니다.</p>
+     */
     @Override
-    @Transactional
     public Long create(AuthPrincipal principal, WorkplaceCreateCommand command) {
         requireOwner(principal, "사업장은 OWNER만 등록할 수 있습니다.");
 
+        GeocodedCoordinates coordinates = addressGeocoder.geocode(command.getRoadAddress());
+
+        return transactionTemplate.execute(status -> store(principal, command, coordinates));
+    }
+
+    /** 사업장 행과 활성 QR을 한 트랜잭션에서 만듭니다. */
+    private Long store(
+            AuthPrincipal principal,
+            WorkplaceCreateCommand command,
+            GeocodedCoordinates coordinates) {
         WorkplaceInsertParam param = WorkplaceInsertParam.builder()
                 // 소유자는 요청 Body가 아니라 인증 Principal에서만 정합니다.
                 .ownerUserId(principal.getUserId())
@@ -47,8 +71,8 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 .roadAddress(command.getRoadAddress())
                 .detailAddress(command.getDetailAddress())
                 .phone(command.getPhone())
-                .latitude(command.getLatitude())
-                .longitude(command.getLongitude())
+                .latitude(coordinates.latitude())
+                .longitude(coordinates.longitude())
                 .build();
 
         insertOrReportDuplicate(param);
