@@ -7,12 +7,16 @@ import com.gighub.settlement.service.policy.SettlementPayoutDecision;
 import com.gighub.settlement.service.policy.SettlementPayoutRejectedException;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.idempotency.WalletIdempotencyKeys;
+import com.gighub.work.service.WorkSettlementService;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.LocalDateTime;
@@ -24,6 +28,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -59,12 +64,12 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
                 setDueAt(jdbcTemplate, disputedFixture, now.minusMinutes(1));
                 openDispute(jdbcTemplate, disputedFixture);
 
-                List<Long> candidates =
-                        settlementMapper.findScheduledPayoutCandidateIds(now, 100);
+                List<Long> candidateSettlementIds = candidateSettlementIds(
+                        settlementMapper.findScheduledPayoutCandidates(now, 100));
 
-                assertTrue(candidates.contains(dueFixture.settlementId()));
-                assertFalse(candidates.contains(futureFixture.settlementId()));
-                assertFalse(candidates.contains(disputedFixture.settlementId()));
+                assertTrue(candidateSettlementIds.contains(dueFixture.settlementId()));
+                assertFalse(candidateSettlementIds.contains(futureFixture.settlementId()));
+                assertFalse(candidateSettlementIds.contains(disputedFixture.settlementId()));
             } finally {
                 deleteFixture(jdbcTemplate, dueFixture);
                 deleteFixture(jdbcTemplate, futureFixture);
@@ -92,10 +97,10 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
                                 + " WHERE id = ?",
                         fixture.settlementId());
 
-                List<Long> candidates =
-                        settlementMapper.findScheduledPayoutCandidateIds(now, 100);
+                List<Long> candidateSettlementIds = candidateSettlementIds(
+                        settlementMapper.findScheduledPayoutCandidates(now, 100));
 
-                assertFalse(candidates.contains(fixture.settlementId()));
+                assertFalse(candidateSettlementIds.contains(fixture.settlementId()));
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }
@@ -115,7 +120,7 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
 
             try {
                 SettlementResult result =
-                        payoutService.attemptPayout(fixture.settlementId(), now);
+                        payoutService.attemptPayout(fixture.settlementId(), fixture.workCaseId(), now);
 
                 assertNotNull(result);
                 assertEquals("COMPLETED", result.getStatus());
@@ -136,7 +141,7 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
 
     @Test
     @Timeout(20)
-    void attemptPayoutSkipsWhenNotYetDue() {
+    void attemptPayoutRejectsAsNotReadyWhenNotYetDue() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementScheduledPayoutService payoutService =
@@ -146,10 +151,16 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
             setDueAt(jdbcTemplate, fixture, now.plusHours(1));
 
             try {
-                SettlementResult result =
-                        payoutService.attemptPayout(fixture.settlementId(), now);
+                // 실제 운영에서는 findScheduledPayoutCandidates가 due_at 조건으로 이 후보를
+                // 애초에 걸러내므로 Scheduler가 이 경로를 타지 않는다. 여기서는 work_cases
+                // 잠금 뒤 실행기의 자격 재검증이 방어적으로 여전히 거절하는지만 확인한다.
+                SettlementPayoutRejectedException rejection = org.junit.jupiter.api.Assertions
+                        .assertThrows(
+                                SettlementPayoutRejectedException.class,
+                                () -> payoutService.attemptPayout(
+                                        fixture.settlementId(), fixture.workCaseId(), now));
 
-                assertNull(result);
+                assertEquals(SettlementPayoutDecision.NOT_READY, rejection.getDecision());
                 assertEquals("SCHEDULED", text(
                         jdbcTemplate,
                         "SELECT status FROM settlements WHERE id = ?",
@@ -179,7 +190,7 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
                 if (!start.await(5, TimeUnit.SECONDS)) {
                     throw new IllegalStateException("동시 Scheduler 시작 신호를 기다리지 못했습니다.");
                 }
-                return payoutService.attemptPayout(fixture.settlementId(), now);
+                return payoutService.attemptPayout(fixture.settlementId(), fixture.workCaseId(), now);
             };
 
             try {
@@ -348,10 +359,12 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
 
     @Test
     @Timeout(20)
-    void stuckProcessingRowIsNeverPickedUpByCandidateQueryOrLock() {
+    void stuckProcessingRowIsNeverPickedUpByCandidateQueryOrAttempt() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
             SettlementMapper settlementMapper = context.getBean(SettlementMapper.class);
+            SettlementScheduledPayoutService payoutService =
+                    context.getBean(SettlementScheduledPayoutService.class);
             SettlementFixture fixture = createFixture(jdbcTemplate);
             LocalDateTime now = jdbcTemplate.queryForObject("SELECT NOW(6)", LocalDateTime.class);
             setDueAt(jdbcTemplate, fixture, now.minusHours(1));
@@ -361,14 +374,18 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
                     fixture.settlementId());
 
             try {
-                List<Long> candidates =
-                        settlementMapper.findScheduledPayoutCandidateIds(now, 100);
-                ScheduledPayoutCandidate locked =
-                        settlementMapper.lockScheduledPayoutCandidate(
-                                fixture.settlementId(), now);
+                List<Long> candidateSettlementIds = candidateSettlementIds(
+                        settlementMapper.findScheduledPayoutCandidates(now, 100));
+                assertFalse(candidateSettlementIds.contains(fixture.settlementId()));
 
-                assertFalse(candidates.contains(fixture.settlementId()));
-                assertNull(locked);
+                // work_cases 잠금 자체는 얻지만(다른 실행 주체가 없으므로), 실행기가 Settlement
+                // 상태를 다시 검증해 PROCESSING을 자동으로 재처리하지 않고 거절해야 한다.
+                SettlementPayoutRejectedException rejection = org.junit.jupiter.api.Assertions
+                        .assertThrows(
+                                SettlementPayoutRejectedException.class,
+                                () -> payoutService.attemptPayout(
+                                        fixture.settlementId(), fixture.workCaseId(), now));
+                assertEquals(SettlementPayoutDecision.NOT_READY, rejection.getDecision());
             } finally {
                 jdbcTemplate.update(
                         "UPDATE settlements SET status = 'SCHEDULED', processing_at = NULL"
@@ -377,6 +394,67 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
                 deleteFixture(jdbcTemplate, fixture);
             }
         }
+    }
+
+    @Test
+    @Timeout(20)
+    void attemptPayoutSkipsWhenAnotherActorAlreadyHoldsTheWorkCaseLock() throws Exception {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementScheduledPayoutService payoutService =
+                    context.getBean(SettlementScheduledPayoutService.class);
+            WorkSettlementService workSettlementService =
+                    context.getBean(WorkSettlementService.class);
+            TransactionTemplate holderTransaction = new TransactionTemplate(
+                    context.getBean(PlatformTransactionManager.class));
+            holderTransaction.setPropagationBehavior(
+                    TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+            LocalDateTime now = jdbcTemplate.queryForObject("SELECT NOW(6)", LocalDateTime.class);
+            setDueAt(jdbcTemplate, fixture, now.minusSeconds(1));
+            CountDownLatch holderLockAcquired = new CountDownLatch(1);
+            CountDownLatch releaseHolder = new CountDownLatch(1);
+            ExecutorService executor = Executors.newSingleThreadExecutor();
+
+            Future<?> holderFuture = executor.submit(() -> holderTransaction.executeWithoutResult(
+                    status -> {
+                        workSettlementService.lockEscrowContext(fixture.workCaseId());
+                        holderLockAcquired.countDown();
+                        awaitUninterruptibly(releaseHolder);
+                    }));
+
+            try {
+                assertTrue(holderLockAcquired.await(5, TimeUnit.SECONDS));
+
+                SettlementResult result = payoutService.attemptPayout(
+                        fixture.settlementId(), fixture.workCaseId(), now);
+
+                assertNull(result);
+            } finally {
+                releaseHolder.countDown();
+                holderFuture.get(10, TimeUnit.SECONDS);
+                executor.shutdownNow();
+                executor.awaitTermination(5, TimeUnit.SECONDS);
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    private void awaitUninterruptibly(CountDownLatch latch) {
+        try {
+            if (!latch.await(10, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Work Case 잠금 보유자 해제 신호를 기다리지 못했습니다.");
+            }
+        } catch (InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException(interrupted);
+        }
+    }
+
+    private List<Long> candidateSettlementIds(List<ScheduledPayoutCandidate> candidates) {
+        return candidates.stream()
+                .map(ScheduledPayoutCandidate::getSettlementId)
+                .collect(Collectors.toList());
     }
 
     private AnnotationConfigApplicationContext applicationContext() {

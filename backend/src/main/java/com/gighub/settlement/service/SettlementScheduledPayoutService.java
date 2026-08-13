@@ -1,13 +1,13 @@
 package com.gighub.settlement.service;
 
-import com.gighub.settlement.dto.ScheduledPayoutCandidate;
-import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.command.SettlementPayoutCommand;
 import com.gighub.settlement.service.policy.SettlementPayoutDecision;
 import com.gighub.settlement.service.policy.SettlementPayoutRejectedException;
 import com.gighub.settlement.service.policy.SettlementRetryDecision;
 import com.gighub.settlement.service.policy.SettlementRetryPolicy;
+import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.result.SettlementResult;
+import com.gighub.work.service.WorkSettlementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
@@ -31,9 +31,17 @@ public class SettlementScheduledPayoutService {
 
     private final SettlementMapper settlementMapper;
     private final SettlementPayoutExecutor payoutExecutor;
+    private final WorkSettlementService workSettlementService;
 
     /**
-     * 후보를 잠그고 자격을 재확인한 뒤 같은 Transaction에서 바로 지급을 실행한다.
+     * work_cases를 SKIP LOCKED로 먼저 잠근 뒤 같은 Transaction에서 바로 지급을 실행한다.
+     *
+     * <p>{@code SettlementPayoutExecutor}가 수동 승인과 공유하는 Work → Settlement 고정 잠금
+     * 순서를 Scheduler도 그대로 지키도록, 배치 조회가 이미 알려준 {@code workCaseId}로 Work
+     * 행을 먼저 선점한다. 이 선점에 실패하면(수동 승인이나 다른 Scheduler 인스턴스가 이미 이
+     * Work Case를 잠그고 있으면) 대기하지 않고 건너뛴다. due_at·next_retry_at·분쟁 같은 상세
+     * 자격은 이 뒤에 실행기가 {@code SettlementPayoutPolicy}로 같은 Transaction에서 다시
+     * 검증한다.</p>
      *
      * <p>실패하면 이 Transaction 전체가 Rollback되어 행은 {@code SCHEDULED}로 남는다. 호출자는
      * 던져진 예외를 잡아 {@link #recordFailure}로 넘겨야 한다.</p>
@@ -41,14 +49,13 @@ public class SettlementScheduledPayoutService {
      * @return 지급 결과, 다른 실행 주체가 이미 선점했거나 자격을 잃었으면 {@code null}
      */
     @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public SettlementResult attemptPayout(long settlementId, LocalDateTime eligibilityTime) {
-        ScheduledPayoutCandidate candidate =
-                settlementMapper.lockScheduledPayoutCandidate(settlementId, eligibilityTime);
-        if (candidate == null) {
+    public SettlementResult attemptPayout(
+            long settlementId, long workCaseId, LocalDateTime eligibilityTime) {
+        if (!workSettlementService.tryLockEscrowContext(workCaseId)) {
             return null;
         }
         return payoutExecutor.execute(SettlementPayoutCommand.scheduled(
-                candidate.getSettlementId(), candidate.getWorkCaseId(), eligibilityTime));
+                settlementId, workCaseId, eligibilityTime));
     }
 
     /**

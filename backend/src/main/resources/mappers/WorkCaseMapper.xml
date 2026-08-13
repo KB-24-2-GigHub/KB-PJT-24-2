@@ -173,6 +173,13 @@
         FOR UPDATE
     </select>
 
+    <select id="lockWorkCaseIdForUpdateSkipLocked" resultType="java.lang.Long">
+        SELECT id
+        FROM work_cases
+        WHERE id = #{workCaseId}
+        FOR UPDATE SKIP LOCKED
+    </select>
+
     <update id="updateWorkStatus">
         UPDATE work_cases
         SET status = #{toStatus},

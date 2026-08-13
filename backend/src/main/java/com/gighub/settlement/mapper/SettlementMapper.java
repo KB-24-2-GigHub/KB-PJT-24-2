@@ -65,28 +65,19 @@ public interface SettlementMapper {
             @Param("approvedByUserId") Long approvedByUserId);
 
     /**
-     * #172 Scheduler가 한 실행에서 훑을 후보 ID를 고른다.
+     * #172 Scheduler가 한 실행에서 훑을 후보를 고른다.
      *
-     * <p>잠그지 않는 배치 조회이므로 이 목록의 각 ID는 건별 짧은 Transaction에서
-     * {@link #lockScheduledPayoutCandidate}로 다시 잠그고 자격을 재확인한 뒤에만 선점한다.</p>
+     * <p>잠그지 않는 배치 조회다. 각 후보의 실제 선점은 {@code WorkSettlementService}가
+     * work_cases를 SKIP LOCKED로 먼저 잠근 뒤 {@code SettlementPayoutExecutor}가 같은
+     * Transaction에서 이 목록의 due_at·next_retry_at·분쟁 조건을 다시 검증한다. Work → Settlement
+     * 고정 잠금 순서를 지키려고 이 배치 조회 자체는 아무 것도 잠그지 않는다.</p>
      */
-    List<Long> findScheduledPayoutCandidateIds(
+    List<ScheduledPayoutCandidate> findScheduledPayoutCandidates(
             @Param("eligibilityTime") LocalDateTime eligibilityTime,
             @Param("limit") int limit);
 
-    /**
-     * 건별 짧은 Transaction 안에서 후보 행을 잠그고 자격을 다시 확인한다.
-     *
-     * <p>{@code FOR UPDATE SKIP LOCKED}이므로 다른 Scheduler 인스턴스나 OWNER 승인이 같은
-     * 행을 먼저 잠그고 있으면 대기하지 않고 즉시 {@code null}을 반환한다. 호출부는 {@code null}을
-     * "이번 실행에서는 건너뛴다"로 처리해야 한다. 배치 조회는 ID만 주므로 지급 실행에 필요한
-     * {@code workCaseId}는 이 잠금 조회가 함께 돌려준다.</p>
-     *
-     * @return 잠금에 성공한 후보, 이미 잠겼거나 자격을 잃었으면 {@code null}
-     */
-    ScheduledPayoutCandidate lockScheduledPayoutCandidate(
-            @Param("settlementId") Long settlementId,
-            @Param("eligibilityTime") LocalDateTime eligibilityTime);
+    /** Scheduler 자격 판정에 쓸 DB 자체 시각이다. 앱 서버 시계와 DB 시계가 어긋나도 이 값을 쓴다. */
+    LocalDateTime currentDatabaseTime();
 
     /**
      * 실패 감사 기록 직전, 같은 Transaction에서 현재 실패 누적 횟수를 잠그고 읽는다.
