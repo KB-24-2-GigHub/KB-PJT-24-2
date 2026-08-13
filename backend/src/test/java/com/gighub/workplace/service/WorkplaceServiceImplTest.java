@@ -24,6 +24,10 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.http.HttpStatus;
+import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.AbstractPlatformTransactionManager;
+import org.springframework.transaction.support.DefaultTransactionStatus;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -47,8 +51,11 @@ class WorkplaceServiceImplTest {
     private final WorkplaceMapper workplaceMapper = mock(WorkplaceMapper.class);
     private final WorkplaceQrIssuer qrIssuer = mock(WorkplaceQrIssuer.class);
     private final AddressGeocoder addressGeocoder = mock(AddressGeocoder.class);
-    private final WorkplaceServiceImpl service =
-            new WorkplaceServiceImpl(workplaceMapper, qrIssuer, addressGeocoder);
+    /** 저장 경계만 검증하므로 Callback을 그대로 실행하는 Template을 씁니다. */
+    private final TransactionTemplate transactionTemplate =
+            new TransactionTemplate(new PseudoTransactionManager());
+    private final WorkplaceServiceImpl service = new WorkplaceServiceImpl(
+            workplaceMapper, qrIssuer, addressGeocoder, transactionTemplate);
 
     WorkplaceServiceImplTest() {
         when(addressGeocoder.geocode(any())).thenReturn(GEOCODED);
@@ -336,5 +343,34 @@ class WorkplaceServiceImplTest {
                 .latitude(new BigDecimal("37.1234567"))
                 .longitude(new BigDecimal("127.1234567"))
                 .build();
+    }
+
+    /**
+     * Callback을 그대로 실행하는 Transaction Manager입니다.
+     *
+     * <p>이 Test의 대상은 저장 순서와 실패 시 미저장이지 Commit·Rollback 자체가 아닙니다.
+     * 실제 트랜잭션 동작은 DB Test가 확인합니다.</p>
+     */
+    private static final class PseudoTransactionManager extends AbstractPlatformTransactionManager {
+
+        @Override
+        protected Object doGetTransaction() {
+            return new Object();
+        }
+
+        @Override
+        protected void doBegin(Object transaction, TransactionDefinition definition) {
+            // 실제 자원을 열지 않습니다.
+        }
+
+        @Override
+        protected void doCommit(DefaultTransactionStatus status) {
+            // 검증 대상이 아닙니다.
+        }
+
+        @Override
+        protected void doRollback(DefaultTransactionStatus status) {
+            // 검증 대상이 아닙니다.
+        }
     }
 }
