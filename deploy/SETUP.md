@@ -494,6 +494,55 @@ docker compose -f compose.prod.yaml images app
 > 되돌려도 그대로 남는다. 컬럼 삭제 같은 파괴적 변경을 적용한 뒤 애플리케이션만 되돌리면
 > 이전 코드가 없는 컬럼을 찾다가 실패한다. 배포와 Migration 을 분리한 이유가 이것이다.
 
+### 10.1 되돌리기 전에 — 그 이미지가 현재 스키마와 맞는가
+
+**롤백 대상을 "직전 배포" 로 고르지 말고 "현재 스키마와 호환되는 가장 최근 이미지" 로
+고른다.** 서버에 남아 있다고 해서 지금 되돌릴 수 있는 이미지가 아니다.
+
+Migration 을 적용한 시점보다 **이전에 빌드된 이미지는 새 스키마를 모른다.** 그런 이미지로
+되돌리면 새로 추가된 `NOT NULL` 컬럼이나 CHECK 제약이 구 코드의 쓰기를 거부한다.
+롤백 절차를 시험하는 행위 자체가 장애를 만든다.
+
+판단 순서는 다음과 같다.
+
+EC2 에서 현재 스키마 Head 와 보유 이미지를 본다.
+
+```bash
+cd /opt/gighub
+docker compose -f compose.prod.yaml --profile tools run --rm flyway info | grep "Schema version"
+docker images ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api --format "{{.Tag}}  {{.CreatedAt}}"
+```
+
+**이미지 태그는 커밋 SHA 다.** 그 커밋의 코드가 아는 최신 Migration 을 저장소에서 뽑아
+Head 와 비교한다. 같으면 호환, 낮으면 비호환이다.
+
+```bash
+git ls-tree -r <태그SHA> --name-only backend/src/main/resources/db/migration/ \
+  | sed 's/.*\/V//;s/__.*//' | sort | tail -1
+```
+
+여러 태그를 한 번에 판정하려면 저장소에서 다음을 돌린다. `HEAD_VER` 에 위에서 확인한
+Schema version 을 넣는다.
+
+```bash
+HEAD_VER=<현재 Schema version>
+for sha in <태그1> <태그2> <태그3>; do
+  V=$(git ls-tree -r "$sha" --name-only backend/src/main/resources/db/migration/ \
+      | sed 's/.*\/V//;s/__.*//' | grep -E '^[0-9]+$' | sort | tail -1)
+  printf "%s  최신Migration=%s  %s\n" "${sha:0:7}" "$V" \
+    "$([ "$V" = "$HEAD_VER" ] && echo 호환 || echo 비호환)"
+done
+```
+
+`git log` 로 Migration 디렉터리의 커밋 이력을 보는 방법도 있으나, 위 방식이 **버전 값을
+직접 비교**하므로 판정이 모호하지 않다.
+
+호환되는 이미지가 하나뿐이면 **롤백할 곳이 없다.** 그 경우 되돌리기가 아니라 고쳐서
+새로 배포하는 것이 유일한 복구 경로다. 이 상태를 미리 알고 있어야 장애 중에 당황하지 않는다.
+
+> 실측 사례: 2026-08-12 에 Migration 7건을 적용한 직후에는 호환 이미지가 하나뿐이었다.
+> 다음 배포로 두 번째가 생긴 뒤에야 롤백 왕복을 검증할 수 있었다(#336, #337).
+
 ## 11. 브랜치와 배포 스위치
 
 배포 대상 브랜치는 워크플로 파일이 아니라 GitHub Variable `DEPLOY_BRANCH` 하나가
