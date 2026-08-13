@@ -111,6 +111,7 @@
 | DB                     | `mysql:8.4` 계열 이미지            |
 | Migration              | `flyway/flyway` 이미지             |
 | 배포 Runtime           | `tomcat:9.0-jdk17-temurin` 이미지  |
+| 운영 알림 Runtime      | AWS Lambda `nodejs24.x`            |
 
 MySQL 이미지 태그를 변경하면 DB 서비스와 seed 도구가 같은 버전선을 사용하는지 확인한다.
 
@@ -118,6 +119,18 @@ MySQL 이미지 태그를 변경하면 DB 서비스와 seed 도구가 같은 버
 개발 실행에는 관여하지 않는다. Tomcat 9와 Java 17이라는 고정 제약을 그대로 따르므로,
 태그를 바꿀 때는 `backend/build.gradle`의 toolchain과 같은 버전선인지 확인한다.
 로컬 인프라는 루트 `compose.yaml`, 배포 런타임은 `deploy/compose.prod.yaml`이 기준이다.
+
+AWS Lambda `nodejs24.x`는 CloudWatch 부하 알람을 Slack으로 보내는 운영 알림 함수
+(`deploy/lambda/slack-alert/`)의 실행 환경이다. 애플리케이션 스택이 아니라 저장소 밖
+운영 도구이며, Frontend·Backend 어느 빌드에도 관여하지 않는다.
+
+- **새 언어를 도입하지 않는다.** 3절의 실행 도구 범위 `Node >=20.19.0 <25` 안이고,
+  `scripts/`의 저장소 자동화와 같은 언어다.
+- **직접 의존성이 없다.** 전역 `fetch`, `AbortSignal.timeout`, `Intl`만 사용하므로
+  `package.json`도 `node_modules`도 만들지 않는다. 패키지를 추가하려면 7절의 직접
+  의존성 변경 절차를 먼저 밟는다.
+- 함수 코드는 저장소에 있지만 실행 사본은 AWS 계정 안에 있고 자동 배포되지 않는다.
+  런타임 식별자를 바꿀 때는 `deploy/SETUP.md` 13.5절과 이 표를 함께 갱신한다.
 
 ## 5. 금지 기술
 
