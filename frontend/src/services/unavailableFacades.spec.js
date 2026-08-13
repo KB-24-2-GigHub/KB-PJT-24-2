@@ -23,8 +23,7 @@ describe('unimplemented public facade operations', () => {
   })
 
   it.each([
-    // worker home·work-cases는 #168에서 LIVE로 전환됐다 — 별도 케이스로 아래에서 검증한다.
-    ['attendance scan', () => scan({ qrToken: 'secret' }), '#167'],
+    // worker home·work-cases는 #168, attendance scan은 #167에서 LIVE로 전환됐다.
     ['documents', () => listDocuments(), '#132/#183'],
     ['notifications', () => listNotifications(), '#167/#176'],
     ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
@@ -48,7 +47,7 @@ describe('unimplemented public facade operations', () => {
     expect(http.get).toHaveBeenCalledWith('/worker/home')
   })
 
-  it('allows an explicitly selected Development/Test mock for one unavailable operation', async () => {
+  it('allows an explicitly selected Development/Test mock for one operation', async () => {
     isMockOperationEnabled.mockImplementation((operation) => operation === 'worker.scan')
 
     await expect(scan({ qrToken: 'test-only' })).resolves.toMatchObject({
@@ -56,5 +55,20 @@ describe('unimplemented public facade operations', () => {
       isLate: false
     })
     expect(http.post).not.toHaveBeenCalled()
+    expect(idempotentPost).not.toHaveBeenCalled()
+  })
+
+  it('attendance scan (#167) is LIVE and calls the real idempotent API when no mock is selected', async () => {
+    idempotentPost.mockResolvedValue({ data: { scanType: 'CHECK_IN', isLate: false } })
+
+    await expect(scan({ qrToken: 'secret', idempotencyKey: 'key-1' })).resolves.toMatchObject({
+      scanType: 'CHECK_IN',
+      isLate: false
+    })
+    expect(idempotentPost).toHaveBeenCalledWith(
+      '/attendance/scans',
+      expect.objectContaining({ qrToken: 'secret' }),
+      expect.objectContaining({ idempotencyKey: 'key-1' })
+    )
   })
 })
