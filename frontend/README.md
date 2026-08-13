@@ -70,6 +70,7 @@ frontend/
   .env.example
   eslint.config.js
   package.json
+  vercel.json
   vite.config.js
 ```
 
@@ -77,3 +78,14 @@ frontend/
 - Axios 공통 Client는 `/api`를 사용하고 세션 Cookie와 CSRF Header를 전송할 수 있게 구성되어 있습니다.
 - 로그인·권한 검사는 프론트 Router Guard만 믿지 않고 Spring Service에서도 반드시 수행해야 합니다.
 - 공통 스타일과 SVG 자산 사용법은 [assets 가이드](src/assets/README.md)를 확인합니다.
+
+### `vercel.json`을 지우지 마세요
+
+Router가 `createWebHistory`(history 모드)를 쓰므로, 매칭되는 정적 파일이 없는 경로에 대해
+서버가 `index.html`을 돌려줘야 합니다. `vercel.json`의 rewrite 규칙이 그 역할을 합니다.
+
+이 파일이 없으면 **앱 외부에서 딥링크로 진입할 때 Vercel이 404를 반환**합니다. 초대 링크
+(`/invitations/:token`)와 모든 화면의 새로고침이 여기 해당합니다.
+
+`npm run dev`는 Vite 개발 서버가 같은 fallback을 내장하고 있어 이 파일 없이도 정상
+동작합니다. **로컬에서 멀쩡한 것이 운영에서 멀쩡하다는 근거가 되지 않는 지점입니다.**

@@ -2,6 +2,7 @@ package com.gighub.auth.security;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.stream.Collectors;
 
 import com.gighub.member.domain.UserRole;
 import org.springframework.context.annotation.Bean;
@@ -29,7 +30,10 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 @EnableWebSecurity
 public class SecurityConfig {
 
-    private static final String LOCAL_ORIGIN = "http://localhost:5173";
+    /** 두 Key 모두 미설정이 로컬 개발 기본값이며, 그때 현재 동작이 그대로 유지된다. */
+    private static final String ALLOWED_ORIGINS_KEY = "cors.allowed-origins";
+    private static final String COOKIE_DOMAIN_KEY = "security.cookie.domain";
+    private static final String DEFAULT_ALLOWED_ORIGIN = "http://localhost:5173";
     private static final String[] PUBLIC_GET_PATHS = {
         "/api/auth/csrf",
         "/api/auth/session",
@@ -80,13 +84,24 @@ public class SecurityConfig {
     public CsrfTokenRepository csrfTokenRepository() {
         CookieCsrfTokenRepository repository = CookieCsrfTokenRepository.withHttpOnlyFalse();
         repository.setCookiePath("/");
+
+        // Frontend Origin과 API Origin이 다른 배포에서는 상위 도메인 Cookie여야
+        // Frontend JavaScript가 XSRF-TOKEN을 읽어 헤더에 실을 수 있다.
+        // 미설정 로컬은 host-only를 유지한다.
+        String cookieDomain = environment.getProperty(COOKIE_DOMAIN_KEY);
+        if (cookieDomain != null && !cookieDomain.isBlank()) {
+            repository.setCookieDomain(cookieDomain.trim());
+        }
+
+        // setSecure를 호출하지 않는다. null이면 request.isSecure()를 따르므로
+        // RemoteIpValve가 X-Forwarded-Proto를 해석한 배포에서만 Secure가 붙는다.
         return repository;
     }
 
     @Bean
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        configuration.setAllowedOrigins(List.of(LOCAL_ORIGIN));
+        configuration.setAllowedOrigins(allowedOrigins());
         configuration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         configuration.setAllowedHeaders(List.of("Accept", "Content-Type", "X-XSRF-TOKEN", "Idempotency-Key"));
         configuration.setExposedHeaders(List.of("Location", "Idempotency-Replayed"));
@@ -133,6 +148,24 @@ public class SecurityConfig {
                 });
 
         return http.build();
+    }
+
+    /**
+     * 배포 Origin은 외부 properties로 주입하고, 미설정 시 로컬 개발 Origin을 유지합니다.
+     *
+     * @return Credentials 포함 요청을 허용할 브라우저 Origin 목록
+     */
+    private List<String> allowedOrigins() {
+        String configured = environment.getProperty(ALLOWED_ORIGINS_KEY);
+
+        if (configured == null || configured.isBlank()) {
+            return List.of(DEFAULT_ALLOWED_ORIGIN);
+        }
+
+        return Arrays.stream(configured.split(","))
+                .map(String::trim)
+                .filter(origin -> !origin.isEmpty())
+                .collect(Collectors.toList());
     }
 
     private static RequestMatcher[] matchers(HttpMethod method, String... patterns) {
