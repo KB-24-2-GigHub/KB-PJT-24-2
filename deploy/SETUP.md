@@ -354,14 +354,33 @@ cd /opt/gighub
 docker compose -f compose.prod.yaml --profile tools run --rm flyway info
 ```
 
-기대: 12개 Migration이 `Pending`. 눈으로 확인한 뒤 적용한다:
+이 절은 **빈 데이터베이스에서 시작하는 신규 환경** 기준이다. 따라서 저장소의 Migration이
+전부 `Pending`으로 나와야 한다.
+
+기대: **19개 Migration이 전부 `Pending`.** 눈으로 확인한 뒤 적용한다:
 
 ```bash
 docker compose -f compose.prod.yaml --profile tools run --rm flyway migrate
 docker compose -f compose.prod.yaml --profile tools run --rm flyway info
 ```
 
-기대: 전부 `Success`, Head `202608061428`.
+기대: 전부 `Success`, Head `202608121403`.
+
+> **위 숫자는 Migration이 추가되면 낡는다.** 기대값을 외우지 말고 다음 두 가지를 확인한다.
+>
+> - `info`의 `Pending` 목록이 `backend/src/main/resources/db/migration/`의 `.sql` 파일
+>   목록과 일치하는가
+> - 적용 후 Head가 그중 가장 최신 버전과 같은가
+>
+> 파일 개수는 이렇게 센다.
+>
+> ```bash
+> ls backend/src/main/resources/db/migration/*.sql | wc -l
+> ```
+
+> **기존 운영 RDS는 이 절의 대상이 아니다.** 2026-08-11에 12건(Head `202608061428`)까지
+> 적용한 뒤, 2026-08-12에 나머지 7건을 적용해 `202608121403`에 도달했다(#336).
+> 이미 운영 중인 데이터베이스에는 `migrate`가 남은 것만 적용하므로 `Pending` 수가 다르다.
 
 > Flyway는 되돌리지 않는다. `FLYWAY_CLEAN_DISABLED=true`가 `clean`을 막아두었지만,
 > `migrate`로 적용된 DDL은 백업 복구나 수동 `ALTER`로만 되돌릴 수 있다.
