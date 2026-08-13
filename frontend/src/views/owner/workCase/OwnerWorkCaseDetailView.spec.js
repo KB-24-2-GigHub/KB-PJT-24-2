@@ -15,11 +15,25 @@ vi.mock('@/services/workCases', () => ({
   updateWorkCase: vi.fn(),
   deleteWorkCase: vi.fn(),
   createInvite: vi.fn(),
-  reissueInvite: vi.fn()
+  reissueInvite: vi.fn(),
+  approveSettlement: vi.fn(),
+  approveNoShowRefund: vi.fn()
+}))
+vi.mock('@/services/http', async (importOriginal) => {
+  const actual = await importOriginal()
+  return { ...actual, newIdempotencyKey: vi.fn(() => 'settlement-intent-key') }
+})
+vi.mock('@/services/wallet', () => ({
+  fetchWallet: vi.fn(),
+  fetchTransactions: vi.fn()
 }))
 vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(true) }))
 
+import { newIdempotencyKey } from '@/services/http'
+import { fetchTransactions, fetchWallet } from '@/services/wallet'
 import {
+  approveNoShowRefund,
+  approveSettlement,
   createInvite,
   deleteWorkCase,
   getWorkCase,
@@ -55,6 +69,49 @@ const PENDING_INVITATION = {
   expiresAt: '2026-08-01T00:00:00Z'
 }
 
+const PAYOUT_READY_DETAIL = {
+  ...DRAFT_DETAIL,
+  status: 'COMPLETED',
+  worker: { workerId: 4, name: '이알바' },
+  escrow: { status: 'HELD', amount: 90000 },
+  attendance: {
+    checkedInAt: '2026-08-01T00:00:00Z',
+    checkedOutAt: '2026-08-01T09:00:00Z'
+  },
+  settlement: {
+    status: 'SCHEDULED',
+    amount: 90000,
+    dueAt: '2026-08-02T09:00:00Z',
+    completedAt: null
+  }
+}
+
+const NO_SHOW_REFUND_READY_DETAIL = {
+  ...DRAFT_DETAIL,
+  status: 'NO_SHOW',
+  worker: { workerId: 4, name: '이알바' },
+  escrow: { status: 'HELD', amount: 90000 },
+  settlement: { status: 'WAITING', amount: 90000, dueAt: null, completedAt: null }
+}
+
+const PAYOUT_RESULT = {
+  settlementId: 1,
+  status: 'COMPLETED',
+  originalEscrowAmount: 90000,
+  workerPaidAmount: 90000,
+  ownerRefundAmount: 0,
+  completedAt: '2026-08-13T01:00:00Z'
+}
+
+const REFUND_RESULT = {
+  settlementId: 2,
+  status: 'REFUNDED',
+  originalEscrowAmount: 90000,
+  workerPaidAmount: 0,
+  ownerRefundAmount: 90000,
+  completedAt: '2026-08-13T01:00:00Z'
+}
+
 function mountView() {
   return mount(OwnerWorkCaseDetailView, { global: { stubs: { teleport: true } } })
 }
@@ -79,6 +136,18 @@ describe('OwnerWorkCaseDetailView', () => {
     reissueInvite.mockReset().mockResolvedValue({
       inviteUrl: 'https://app/invitations/new',
       expiresAt: '2026-08-01T00:00:00Z'
+    })
+    approveSettlement.mockReset().mockResolvedValue(PAYOUT_RESULT)
+    approveNoShowRefund.mockReset().mockResolvedValue(REFUND_RESULT)
+    newIdempotencyKey.mockClear()
+    fetchWallet.mockReset().mockResolvedValue({
+      currency: 'KRW',
+      availableBalance: 100000,
+      lockedBalance: 0
+    })
+    fetchTransactions.mockReset().mockResolvedValue({
+      content: [],
+      page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
     })
   })
 
@@ -175,6 +244,270 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(text).toContain('정산대기') // settlements.status=WAITING 이 한글로 매핑돼야 한다
     expect(text).not.toContain('WAITING')
     expect(wrapper.get('.contract-link').attributes('href')).toBe('/api/documents/9/file?mode=view')
+  })
+
+  it.each([
+    ['WAITING', '정산대기'],
+    ['SCHEDULED', '정산예정'],
+    ['ON_HOLD', '정산보류'],
+    ['PROCESSING', '정산중'],
+    ['COMPLETED', '정산완료'],
+    ['REFUNDED', '환불완료'],
+    ['FAILED', '정산실패']
+  ])('정산 상태 %s를 승인된 한글 문구로 표시한다', async (status, label) => {
+    getWorkCase.mockResolvedValue({
+      ...DRAFT_DETAIL,
+      status: 'COMPLETED',
+      escrow: { status: 'HELD', amount: 90000 },
+      settlement: { status, amount: 90000, dueAt: null, completedAt: null }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(label)
+    expect(wrapper.text()).not.toContain(status)
+  })
+
+  it('정상 지급을 확인한 뒤 상세·지갑·거래내역을 재조회한다', async () => {
+    const completedDetail = {
+      ...PAYOUT_READY_DETAIL,
+      escrow: { status: 'RELEASED', amount: 90000 },
+      settlement: {
+        ...PAYOUT_READY_DETAIL.settlement,
+        status: 'COMPLETED',
+        completedAt: PAYOUT_RESULT.completedAt
+      }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+      .mockResolvedValue(completedDetail)
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('자동 지급 예정')
+    expect(wrapper.text()).not.toContain('승인 만료')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('일급 전액을 지급할까요?')
+    expect(wrapper.text()).toContain('90,000원')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(approveSettlement).toHaveBeenCalledWith(42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveNoShowRefund).not.toHaveBeenCalled()
+    expect(newIdempotencyKey).toHaveBeenCalledTimes(1)
+    expect(getWorkCase).toHaveBeenCalledTimes(2)
+    expect(fetchWallet).toHaveBeenCalledTimes(1)
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('정산완료')
+    expect(toastMessages().join(' ')).toContain('90,000원이 알바생에게 지급됐어요')
+  })
+
+  it('NO_SHOW 환불을 지급과 다른 확인 문구로 승인하고 세 원천을 재조회한다', async () => {
+    const refundedDetail = {
+      ...NO_SHOW_REFUND_READY_DETAIL,
+      escrow: { status: 'REFUNDED', amount: 90000 },
+      settlement: {
+        ...NO_SHOW_REFUND_READY_DETAIL.settlement,
+        status: 'REFUNDED',
+        completedAt: REFUND_RESULT.completedAt
+      }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(NO_SHOW_REFUND_READY_DETAIL)
+      .mockResolvedValue(refundedDetail)
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('노쇼 예치금 전액 환불'))
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('노쇼 예치금을 환불할까요?')
+    expect(wrapper.text()).toContain('알바생에게 지급하지 않고')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(approveNoShowRefund).toHaveBeenCalledWith(42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveSettlement).not.toHaveBeenCalled()
+    expect(getWorkCase).toHaveBeenCalledTimes(2)
+    expect(fetchWallet).toHaveBeenCalledTimes(1)
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('환불완료')
+    expect(toastMessages().join(' ')).toContain('90,000원이 사장님 지갑으로 반환됐어요')
+  })
+
+  it('CONFLICT 뒤 같은 지급 의도를 다시 확인할 때 멱등 Key를 바꾸지 않는다', async () => {
+    const completedDetail = {
+      ...PAYOUT_READY_DETAIL,
+      escrow: { status: 'RELEASED', amount: 90000 },
+      settlement: { ...PAYOUT_READY_DETAIL.settlement, status: 'COMPLETED' }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+      .mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+      .mockResolvedValue(completedDetail)
+    approveSettlement.mockRejectedValueOnce({ code: 'CONFLICT' }).mockResolvedValue(PAYOUT_RESULT)
+    const wrapper = mountView()
+    await flushPromises()
+
+    const open = () =>
+      wrapper
+        .findAll('button')
+        .find((button) => button.text().includes('일급 전액 지급'))
+        .trigger('click')
+    const confirm = () =>
+      wrapper
+        .findAll('button')
+        .find((button) => button.text() === '승인하기')
+        .trigger('click')
+
+    await open()
+    await confirm()
+    await flushPromises()
+    await open()
+    await confirm()
+    await flushPromises()
+
+    expect(newIdempotencyKey).toHaveBeenCalledTimes(1)
+    expect(approveSettlement).toHaveBeenNthCalledWith(1, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveSettlement).toHaveBeenNthCalledWith(2, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+  })
+
+  it('느린 승인 응답 중 중복 클릭이 추가 지급 의도를 만들지 않는다', async () => {
+    const completedDetail = {
+      ...PAYOUT_READY_DETAIL,
+      escrow: { status: 'RELEASED', amount: 90000 },
+      settlement: { ...PAYOUT_READY_DETAIL.settlement, status: 'COMPLETED' }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+      .mockResolvedValue(completedDetail)
+    let resolveApproval
+    approveSettlement.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveApproval = resolve
+        })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    const confirm = wrapper.findAll('button').find((button) => button.text() === '승인하기')
+    await confirm.trigger('click')
+    await confirm.trigger('click')
+
+    expect(approveSettlement).toHaveBeenCalledTimes(1)
+    expect(newIdempotencyKey).toHaveBeenCalledTimes(1)
+
+    resolveApproval(PAYOUT_RESULT)
+    await flushPromises()
+  })
+
+  it('이미 처리된 응답은 새 성공으로 간주하지 않고 세 원천을 재조회한다', async () => {
+    const completedDetail = {
+      ...PAYOUT_READY_DETAIL,
+      escrow: { status: 'RELEASED', amount: 90000 },
+      settlement: { ...PAYOUT_READY_DETAIL.settlement, status: 'COMPLETED' }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+      .mockResolvedValue(completedDetail)
+    approveSettlement.mockRejectedValue({ code: 'SETTLEMENT_ALREADY_PROCESSED' })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(getWorkCase).toHaveBeenCalledTimes(2)
+    expect(fetchWallet).toHaveBeenCalledTimes(1)
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    expect(wrapper.text()).toContain('정산완료')
+    expect(toastMessages().join(' ')).toContain('이미 처리된 정산이에요')
+    expect(toastMessages().join(' ')).not.toContain('지급을 승인했어요')
+  })
+
+  it('승인 후 재조회 일부가 실패하면 성공 상태를 추정하지 않고 재조회 버튼을 제공한다', async () => {
+    getWorkCase.mockReset().mockResolvedValue(PAYOUT_READY_DETAIL)
+    fetchTransactions.mockRejectedValueOnce(new Error('network'))
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산 정보 다시 불러오기')
+    expect(toastMessages().join(' ')).toContain('최신 상태 일부를 불러오지 못했어요')
+    expect(wrapper.text()).toContain('정산예정')
+  })
+
+  it('보존식이 맞지 않는 성공 응답은 완료로 안내하지 않는다', async () => {
+    getWorkCase.mockReset().mockResolvedValue(PAYOUT_READY_DETAIL)
+    approveSettlement.mockResolvedValue({
+      ...PAYOUT_RESULT,
+      workerPaidAmount: 80000,
+      ownerRefundAmount: 0
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(toastMessages().join(' ')).toContain(
+      '상태와 금액이 일치하지 않아 완료로 표시하지 않았어요'
+    )
+    expect(toastMessages().join(' ')).not.toContain('알바생에게 지급됐어요')
+    expect(wrapper.text()).toContain('정산예정')
   })
 
   it('기한이 지난 PENDING 초대는 상태만이 아니라 기한 경과를 함께 알린다', async () => {

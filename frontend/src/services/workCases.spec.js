@@ -1,6 +1,6 @@
 /**
- * 근무(work_case) Service 계약 테스트 — #158 실연동 범위(DRAFT CRUD·요약·목록·초대 발급)의
- * 실제 HTTP 경로만 다룬다. 정산·연락처·분쟁은 M6 범위라 항상 Mock이므로 여기서 다루지 않는다.
+ * 근무(work_case) Service 계약 테스트 — DRAFT CRUD·요약·목록·초대와
+ * #173 OWNER 정산 승인 실연동의 실제 HTTP 경로를 다룬다.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -9,8 +9,10 @@ vi.mock('@/services/http', () => ({
   idempotentPost: vi.fn()
 }))
 
-import http from '@/services/http'
+import http, { idempotentPost } from '@/services/http'
 import {
+  approveNoShowRefund,
+  approveSettlement,
   createInvite,
   createWorkCase,
   deleteWorkCase,
@@ -27,6 +29,7 @@ describe('workCases service', () => {
     http.post.mockReset()
     http.patch.mockReset()
     http.delete.mockReset()
+    idempotentPost.mockReset()
   })
 
   it('조회한 지점의 근무 요약을 GET summary로 그대로 반환한다', async () => {
@@ -127,20 +130,60 @@ describe('workCases service', () => {
     expect(http.post).toHaveBeenCalledWith('/work-cases/42/invitations/reissue')
     expect(result).toEqual(response)
   })
+
+  it('정상 지급 승인은 Body 없이 같은 멱등 Key를 전달한다', async () => {
+    const response = {
+      settlementId: 1,
+      status: 'COMPLETED',
+      originalEscrowAmount: 90000,
+      workerPaidAmount: 90000,
+      ownerRefundAmount: 0,
+      completedAt: '2026-08-13T01:00:00Z'
+    }
+    idempotentPost.mockResolvedValue({ data: response })
+
+    await expect(approveSettlement(42, { idempotencyKey: 'same-payout-intent' })).resolves.toEqual(
+      response
+    )
+
+    expect(idempotentPost).toHaveBeenCalledWith('/work-cases/42/settlement/approve', undefined, {
+      idempotencyKey: 'same-payout-intent'
+    })
+  })
+
+  it('NO_SHOW 환불 승인은 별도 경로에 Body 없이 같은 멱등 Key를 전달한다', async () => {
+    const response = {
+      settlementId: 2,
+      status: 'REFUNDED',
+      originalEscrowAmount: 90000,
+      workerPaidAmount: 0,
+      ownerRefundAmount: 90000,
+      completedAt: '2026-08-13T01:00:00Z'
+    }
+    idempotentPost.mockResolvedValue({ data: response })
+
+    await expect(
+      approveNoShowRefund(42, { idempotencyKey: 'same-refund-intent' })
+    ).resolves.toEqual(response)
+
+    expect(idempotentPost).toHaveBeenCalledWith(
+      '/work-cases/42/settlement/no-show-refund/approve',
+      undefined,
+      { idempotencyKey: 'same-refund-intent' }
+    )
+  })
 })
 
-describe('workCases service — 미구현 정산·연락처·분쟁은 fail-closed', () => {
+describe('workCases service — 미구현 연락처·분쟁은 fail-closed', () => {
   beforeEach(() => {
     http.get.mockReset()
     http.post.mockReset()
   })
 
   it('Production 기본 선택은 fake success 대신 명시 Unavailable을 반환한다', async () => {
-    const { approveSettlement, getOwnerContact, listReports, createReport } =
-      await import('@/services/workCases')
+    const { getOwnerContact, listReports, createReport } = await import('@/services/workCases')
 
     for (const action of [
-      () => approveSettlement(1),
       () => getOwnerContact(1),
       () => listReports(1),
       () => createReport(1, { content: '내용' })
