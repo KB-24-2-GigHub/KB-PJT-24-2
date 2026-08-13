@@ -71,13 +71,13 @@ class SecurityFilterChainTest {
                 .andExpect(jsonPath("$.traceId").isNotEmpty());
     }
 
-    /** 같은 Origin 문서 iframe은 허용하되 외부 Origin 프레이밍은 차단한다. */
+    /** 문서는 Blob URL로 미리보기하므로 백엔드 응답의 프레임 삽입은 계속 차단한다. */
     @Test
-    void sameOriginFramePolicyKeepsInlineDocumentPreviewUsable() throws Exception {
+    void backendResponsesKeepFrameEmbeddingDenied() throws Exception {
         mockMvc.perform(get("/api/protected")
                         .session(sessionFor(UserRole.OWNER)))
                 .andExpect(status().isOk())
-                .andExpect(header().string("X-Frame-Options", "SAMEORIGIN"));
+                .andExpect(header().string("X-Frame-Options", "DENY"));
     }
 
     @Test
