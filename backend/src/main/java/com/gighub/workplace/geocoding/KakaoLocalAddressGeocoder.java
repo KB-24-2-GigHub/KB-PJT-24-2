@@ -7,6 +7,8 @@ import java.util.List;
 
 import com.gighub.workplace.exception.WorkplaceGeocodingException;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -15,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
@@ -31,6 +34,8 @@ import org.springframework.web.util.UriComponentsBuilder;
  */
 @Component
 public class KakaoLocalAddressGeocoder implements AddressGeocoder {
+
+    private static final Logger log = LoggerFactory.getLogger(KakaoLocalAddressGeocoder.class);
 
     private static final String SEARCH_URL = "https://dapi.kakao.com/v2/local/search/address.json";
     private static final String KEY_PROPERTY = "kakao.local.rest-api-key";
@@ -56,6 +61,8 @@ public class KakaoLocalAddressGeocoder implements AddressGeocoder {
     public GeocodedCoordinates geocode(String roadAddress) {
         if (!StringUtils.hasText(restApiKey)) {
             // 연동이 구성되지 않은 환경입니다. 좌표를 지어내지 않고 일시 실패로 끝냅니다.
+            // 사용자에게는 일시 실패로 보이지만 실제로는 배포 구성 누락이므로 구분해 남깁니다.
+            log.warn("사업장 주소 변환 키가 구성되지 않았습니다. property={}", KEY_PROPERTY);
             throw WorkplaceGeocodingException.temporarilyUnavailable();
         }
         if (!StringUtils.hasText(roadAddress)) {
@@ -82,9 +89,17 @@ public class KakaoLocalAddressGeocoder implements AddressGeocoder {
                     uri, HttpMethod.GET, new HttpEntity<>(headers),
                     KakaoAddressSearchResponse.class);
             return response.getBody();
+        } catch (HttpStatusCodeException exception) {
+            // 외부 상태와 본문은 사용자 응답이 아니라 서버 로그에만 남깁니다. 키 미승인이나
+            // 서비스 비활성 같은 구성 오류는 이 본문에만 드러나고, 사용자에게 보이는 일시
+            // 실패 문구만으로는 원인을 알 수 없습니다. Authorization Header는 남기지 않습니다.
+            log.warn("사업장 주소 변환 외부 응답이 실패했습니다. status={}, body={}",
+                    exception.getStatusCode().value(), exception.getResponseBodyAsString());
+            throw WorkplaceGeocodingException.temporarilyUnavailable();
         } catch (RestClientException exception) {
-            // Timeout, 4xx·5xx, 본문 해석 실패를 모두 포함합니다. 인증 실패(401·403)도
-            // 사용자 입력 문제가 아니므로 주소 오류로 바꾸지 않습니다.
+            // Timeout과 본문 해석 실패가 여기로 옵니다. 사용자 입력 문제가 아니므로 주소
+            // 오류로 바꾸지 않습니다.
+            log.warn("사업장 주소 변환 외부 호출에 실패했습니다.", exception);
             throw WorkplaceGeocodingException.temporarilyUnavailable();
         }
     }
@@ -101,6 +116,9 @@ public class KakaoLocalAddressGeocoder implements AddressGeocoder {
         List<KakaoAddressSearchResponse.Document> documents =
                 response == null ? null : response.documents();
         if (documents == null || documents.size() != 1) {
+            // 후보 수만 남깁니다. 확정 실패가 0건 때문인지 복수 때문인지 구분됩니다.
+            log.info("사업장 주소를 좌표로 확정하지 못했습니다. candidates={}",
+                    documents == null ? "none" : documents.size());
             throw WorkplaceGeocodingException.addressNotResolvable();
         }
 
