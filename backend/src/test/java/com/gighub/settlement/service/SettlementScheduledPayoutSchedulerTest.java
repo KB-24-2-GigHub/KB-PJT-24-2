@@ -1,5 +1,6 @@
 package com.gighub.settlement.service;
 
+import com.gighub.settlement.config.SettlementSchedulerProperties;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.result.SettlementResult;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.CannotAcquireLockException;
+import org.springframework.mock.env.MockEnvironment;
 
 import java.time.Clock;
 import java.time.LocalDateTime;
@@ -26,6 +28,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
     private static final LocalDateTime NOW = LocalDateTime.of(2026, 8, 13, 9, 0);
+    private static final int BATCH_SIZE = SettlementSchedulerProperties.DEFAULT_BATCH_SIZE;
 
     @Mock
     private SettlementMapper settlementMapper;
@@ -35,8 +38,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     @Test
     void paysEachCandidateAndSkipsThoseAlreadyClaimed() {
-        when(settlementMapper.findScheduledPayoutCandidateIds(
-                NOW, SettlementScheduledPayoutScheduler.BATCH_SIZE))
+        when(settlementMapper.findScheduledPayoutCandidateIds(NOW, BATCH_SIZE))
                 .thenReturn(List.of(1L, 2L));
         when(payoutService.attemptPayout(1L, NOW))
                 .thenReturn(SettlementResult.builder().settlementId(1L).build());
@@ -51,8 +53,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     @Test
     void recordsFailureWhenPayoutAttemptThrows() {
-        when(settlementMapper.findScheduledPayoutCandidateIds(
-                NOW, SettlementScheduledPayoutScheduler.BATCH_SIZE))
+        when(settlementMapper.findScheduledPayoutCandidateIds(NOW, BATCH_SIZE))
                 .thenReturn(List.of(1L));
         CannotAcquireLockException failure = new CannotAcquireLockException("lock timeout");
         when(payoutService.attemptPayout(1L, NOW)).thenThrow(failure);
@@ -65,8 +66,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     @Test
     void isolatesOneCandidateFailureAndContinuesWithTheRest() {
-        when(settlementMapper.findScheduledPayoutCandidateIds(
-                NOW, SettlementScheduledPayoutScheduler.BATCH_SIZE))
+        when(settlementMapper.findScheduledPayoutCandidateIds(NOW, BATCH_SIZE))
                 .thenReturn(List.of(1L, 2L));
         when(payoutService.attemptPayout(1L, NOW))
                 .thenThrow(new IllegalStateException("unexpected"));
@@ -81,8 +81,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     @Test
     void doesNotCrashWhenRecordFailureItselfThrows() {
-        when(settlementMapper.findScheduledPayoutCandidateIds(
-                NOW, SettlementScheduledPayoutScheduler.BATCH_SIZE))
+        when(settlementMapper.findScheduledPayoutCandidateIds(NOW, BATCH_SIZE))
                 .thenReturn(List.of(1L, 2L));
         when(payoutService.attemptPayout(1L, NOW))
                 .thenThrow(new IllegalStateException("unexpected"));
@@ -98,8 +97,7 @@ class SettlementScheduledPayoutSchedulerTest {
 
     @Test
     void doesNotProcessAnyCandidateWhenBatchLookupFails() {
-        when(settlementMapper.findScheduledPayoutCandidateIds(
-                NOW, SettlementScheduledPayoutScheduler.BATCH_SIZE))
+        when(settlementMapper.findScheduledPayoutCandidateIds(NOW, BATCH_SIZE))
                 .thenThrow(new CannotAcquireLockException("batch lock"));
 
         scheduler().runOnce();
@@ -109,6 +107,9 @@ class SettlementScheduledPayoutSchedulerTest {
 
     private SettlementScheduledPayoutScheduler scheduler() {
         Clock clock = Clock.fixed(NOW.atZone(SEOUL).toInstant(), SEOUL);
-        return new SettlementScheduledPayoutScheduler(settlementMapper, payoutService, clock);
+        SettlementSchedulerProperties properties =
+                new SettlementSchedulerProperties(new MockEnvironment());
+        return new SettlementScheduledPayoutScheduler(
+                settlementMapper, payoutService, properties, clock);
     }
 }

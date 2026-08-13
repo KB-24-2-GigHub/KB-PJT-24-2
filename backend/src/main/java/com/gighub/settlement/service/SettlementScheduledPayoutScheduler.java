@@ -1,11 +1,11 @@
 package com.gighub.settlement.service;
 
+import com.gighub.settlement.config.SettlementSchedulerProperties;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.result.SettlementResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Clock;
@@ -20,11 +20,14 @@ import java.util.List;
  * {@link SettlementScheduledPayoutService}가 노출하는 두 개의 독립된 짧은 Transaction을
  * 통해서만 이뤄집니다. 한 후보의 실패가 다른 후보 처리를 막지 않도록 후보별로 예외를
  * 잡습니다.</p>
+ *
+ * <p>실행 주기는 {@code @Scheduled}가 아니라
+ * {@link com.gighub.settlement.config.SettlementSchedulingConfigurer}가 이
+ * {@link #runOnce}를 {@link SettlementSchedulerProperties}의 외부 설정 주기로 등록하는
+ * 방식으로 연결한다. 이 클래스는 실행 주기를 몰라도 되고 "한 번 실행"만 책임진다.</p>
  */
 @Component
 public class SettlementScheduledPayoutScheduler {
-
-    static final int BATCH_SIZE = 100;
 
     private static final Logger log =
             LoggerFactory.getLogger(SettlementScheduledPayoutScheduler.class);
@@ -32,32 +35,36 @@ public class SettlementScheduledPayoutScheduler {
 
     private final SettlementMapper settlementMapper;
     private final SettlementScheduledPayoutService payoutService;
+    private final SettlementSchedulerProperties properties;
     private final Clock clock;
 
     @Autowired
     public SettlementScheduledPayoutScheduler(
             SettlementMapper settlementMapper,
-            SettlementScheduledPayoutService payoutService) {
-        this(settlementMapper, payoutService, Clock.system(DATABASE_ZONE));
+            SettlementScheduledPayoutService payoutService,
+            SettlementSchedulerProperties properties) {
+        this(settlementMapper, payoutService, properties, Clock.system(DATABASE_ZONE));
     }
 
     /** 경계 시각 테스트에서만 고정 Clock을 주입합니다. */
     SettlementScheduledPayoutScheduler(
             SettlementMapper settlementMapper,
             SettlementScheduledPayoutService payoutService,
+            SettlementSchedulerProperties properties,
             Clock clock) {
         this.settlementMapper = settlementMapper;
         this.payoutService = payoutService;
+        this.properties = properties;
         this.clock = clock;
     }
 
-    @Scheduled(fixedDelay = 60_000L, initialDelay = 60_000L)
     public void runOnce() {
         LocalDateTime now = LocalDateTime.now(clock);
 
         List<Long> candidateIds;
         try {
-            candidateIds = settlementMapper.findScheduledPayoutCandidateIds(now, BATCH_SIZE);
+            candidateIds = settlementMapper.findScheduledPayoutCandidateIds(
+                    now, properties.getBatchSize());
         } catch (RuntimeException failure) {
             // 후보 조회 자체가 실패해도 다음 실행 주기에서 다시 시도하면 되므로 예외를 삼킨다.
             log.warn("Settlement 예정 자동 지급 후보 조회에 실패했습니다.", failure);
