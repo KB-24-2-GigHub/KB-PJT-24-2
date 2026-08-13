@@ -106,6 +106,16 @@ public interface WorkCaseMapper {
     WorkCaseEscrowSnapshot getEscrowContextForUpdate(
             @Param("workCaseId") Long workCaseId);
 
+    /**
+     * #172 Scheduler가 {@link #getEscrowContextForUpdate}보다 먼저 부르는 SKIP LOCKED 선점이다.
+     *
+     * <p>수동 승인·다른 Scheduler 인스턴스가 이미 이 Work Case를 잠그고 있으면 대기하지 않고
+     * {@code null}을 반환한다. 정상적으로 이 잠금을 얻으면 같은 Transaction 안의
+     * {@link #getEscrowContextForUpdate} 재조회는 이미 보유한 잠금을 재사용하므로 잠금 순서가
+     * Work → Settlement로 항상 고정된다.</p>
+     */
+    Long lockWorkCaseIdForUpdateSkipLocked(@Param("workCaseId") Long workCaseId);
+
     /** Domain이 승인한 expected-state 목록에서 목표 상태로 원자 전이합니다. */
     int updateWorkStatus(
             @Param("workCaseId") Long workCaseId,

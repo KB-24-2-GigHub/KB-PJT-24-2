@@ -126,6 +126,94 @@
           AND completed_at IS NULL
     </update>
 
+    <resultMap id="scheduledPayoutCandidateResult"
+               type="com.gighub.settlement.dto.ScheduledPayoutCandidate">
+        <constructor>
+            <idArg column="settlementId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        #172 Scheduler 배치 후보 조회다. 잠그지 않는다 — Work → Settlement 고정 잠금 순서를
+        지키려고 실제 선점은 WorkSettlementService가 work_cases를 SKIP LOCKED로 먼저 잠근 뒤
+        SettlementPayoutExecutor가 같은 Transaction에서 아래 조건(dueAt·next_retry_at·분쟁)을
+        다시 검증한다. 열린 분쟁이 있는 Work Case는 정상 SCHEDULED 정산이 ON_HOLD로 이미
+        옮겨가 있어야 하지만, SETTLE-003 계약대로 이 조회에서도 다시 한번 제외한다.
+    -->
+    <select id="findScheduledPayoutCandidates" resultMap="scheduledPayoutCandidateResult">
+        SELECT s.id AS settlementId, s.work_case_id AS workCaseId
+        FROM settlements s
+        WHERE s.status = 'SCHEDULED'
+          AND s.due_at &lt;= #{eligibilityTime}
+          AND (s.next_retry_at IS NULL OR s.next_retry_at &lt;= #{eligibilityTime})
+          AND NOT EXISTS (
+              SELECT 1
+              FROM disputes d
+              WHERE d.work_case_id = s.work_case_id
+                AND d.status IN ('OPEN', 'UNDER_REVIEW')
+          )
+        ORDER BY s.due_at ASC, s.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <!-- 앱 서버 시계가 아니라 DB 자체 시각으로 Scheduler 자격을 판정한다 (SETTLE-003). -->
+    <select id="currentDatabaseTime" resultType="java.time.LocalDateTime">
+        SELECT NOW(6)
+    </select>
+
+    <!--
+        실패 감사 기록 직전 잠금 겸 조회다. 이 Transaction이 행을 잠그고 있는 동안에는 다른
+        Scheduler 인스턴스가 같은 work_case를 SKIP LOCKED로 다시 선점하지 못하므로 감사 기록과
+        다음 선점 사이에 경합이 끼어들지 않는다.
+    -->
+    <select id="findRetryCountForUpdate" resultType="java.lang.Integer">
+        SELECT retry_count
+        FROM settlements
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+        FOR UPDATE
+    </select>
+
+    <!--
+        일시 실패 감사 기록. retry_count &lt;= 3인 행만 바꿔 결과 값이 SCHEDULED 상태의 계약
+        상한 4를 넘지 않게 한다. 자금 Transaction은 이미 Rollback되어 이 문장이 열리기 전에
+        행은 SCHEDULED/processing_at NULL로 돌아와 있어야 한다.
+    -->
+    <update id="recordScheduledPayoutRetry">
+        UPDATE settlements
+        SET failure_code    = #{failureCode},
+            last_failure_at = NOW(6),
+            next_retry_at   = #{nextRetryAt},
+            retry_count     = retry_count + 1,
+            updated_at      = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+          AND retry_count &lt;= 3
+    </update>
+
+    <!--
+        재시도 소진 또는 즉시 격리해야 하는 영구 실패를 FAILED로 확정한다. LEAST로 retry_count
+        상한 5를 SQL에서 직접 보장해 CHECK 위반 가능성을 만들지 않는다.
+    -->
+    <update id="recordScheduledPayoutFailed">
+        UPDATE settlements
+        SET status          = 'FAILED',
+            failure_code    = #{failureCode},
+            last_failure_at = NOW(6),
+            next_retry_at   = NULL,
+            retry_count     = LEAST(retry_count + 1, 5),
+            updated_at      = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+    </update>
+
     <update id="transitionWaitingToRefundProcessing">
         UPDATE settlements
         SET status              = 'PROCESSING',
