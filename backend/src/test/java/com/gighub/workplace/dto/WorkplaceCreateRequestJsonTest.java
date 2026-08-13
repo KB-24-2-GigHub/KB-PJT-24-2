@@ -1,6 +1,5 @@
 package com.gighub.workplace.dto;
 
-import java.math.BigDecimal;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -26,9 +25,7 @@ class WorkplaceCreateRequestJsonTest {
                 + "\"representativeName\":\"김사장\","
                 + "\"roadAddress\":\"서울 강남구 테헤란로 1\","
                 + "\"detailAddress\":\"2층\","
-                + "\"phone\":\"02-1234-5678\","
-                + "\"latitude\":37.1234567,"
-                + "\"longitude\":127.1234567"
+                + "\"phone\":\"02-1234-5678\""
                 + "}";
 
         WorkplaceCreateRequest request = objectMapper.readValue(body, WorkplaceCreateRequest.class);
@@ -39,8 +36,6 @@ class WorkplaceCreateRequestJsonTest {
         assertEquals("서울 강남구 테헤란로 1", request.getRoadAddress());
         assertEquals("2층", request.getDetailAddress());
         assertEquals("0212345678", request.getPhone());
-        assertEquals(0, new BigDecimal("37.1234567").compareTo(request.getLatitude()));
-        assertEquals(0, new BigDecimal("127.1234567").compareTo(request.getLongitude()));
     }
 
     @Test
@@ -56,8 +51,24 @@ class WorkplaceCreateRequestJsonTest {
         WorkplaceCreateRequest request = objectMapper.readValue(body, WorkplaceCreateRequest.class);
 
         assertNull(request.getDetailAddress());
-        assertNull(request.getLatitude());
-        assertNull(request.getLongitude());
+    }
+
+    /** 좌표는 서버가 주소로 확정하므로 Body가 실어 보내면 거절합니다(SPEC-343-01). */
+    @Test
+    void rejectsBodyCarryingClientSuppliedCoordinates() {
+        String body = "{"
+                + "\"businessRegistrationNumber\":\"1234567890\","
+                + "\"name\":\"강남점\","
+                + "\"representativeName\":\"김사장\","
+                + "\"roadAddress\":\"서울 강남구 테헤란로 1\","
+                + "\"phone\":\"0212345678\","
+                + "\"latitude\":37.1234567,"
+                + "\"longitude\":127.1234567"
+                + "}";
+
+        assertThrows(
+                JsonProcessingException.class,
+                () -> objectMapper.readValue(body, WorkplaceCreateRequest.class));
     }
 
     @Test

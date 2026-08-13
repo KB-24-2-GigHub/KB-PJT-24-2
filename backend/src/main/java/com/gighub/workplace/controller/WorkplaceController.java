@@ -76,8 +76,6 @@ public class WorkplaceController {
                 .roadAddress(request.getRoadAddress())
                 .detailAddress(request.getDetailAddress())
                 .phone(request.getPhone())
-                .latitude(request.getLatitude())
-                .longitude(request.getLongitude())
                 .build();
     }
 }

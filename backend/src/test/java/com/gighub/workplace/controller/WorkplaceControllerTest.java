@@ -83,8 +83,6 @@ class WorkplaceControllerTest {
         assertEquals("서울 강남구 테헤란로 1", command.getRoadAddress());
         assertEquals("2층", command.getDetailAddress());
         assertEquals("0212345678", command.getPhone());
-        assertEquals(0, new BigDecimal("37.1234567").compareTo(command.getLatitude()));
-        assertEquals(0, new BigDecimal("127.1234567").compareTo(command.getLongitude()));
     }
 
     @Test
@@ -109,8 +107,6 @@ class WorkplaceControllerTest {
 
         WorkplaceCreateCommand command = captor.getValue();
         assertNull(command.getDetailAddress());
-        assertNull(command.getLatitude());
-        assertNull(command.getLongitude());
     }
 
     @Test
@@ -145,8 +141,9 @@ class WorkplaceControllerTest {
         verify(workplaceService, never()).create(any(), any());
     }
 
+    /** 좌표는 서버가 주소로 확정하므로 Body에 실리면 저장 이전에 거절합니다(SPEC-343-01). */
     @Test
-    void createReportsMissingCoordinateAsFieldError() throws Exception {
+    void createRejectsClientSuppliedCoordinates() throws Exception {
         mockMvc.perform(post("/api/workplaces")
                         .principal(ownerAuthentication())
                         .contentType(APPLICATION_JSON)
@@ -159,8 +156,7 @@ class WorkplaceControllerTest {
                                 + "\"latitude\":37.1234567"
                                 + "}"))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
-                .andExpect(jsonPath("$.fieldErrors[0].field").value("longitude"));
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         verify(workplaceService, never()).create(any(), any());
     }
@@ -319,9 +315,7 @@ class WorkplaceControllerTest {
                 + "\"representativeName\":\"김사장\","
                 + "\"roadAddress\":\"서울 강남구 테헤란로 1\","
                 + "\"detailAddress\":\"2층\","
-                + "\"phone\":\"02-1234-5678\","
-                + "\"latitude\":37.1234567,"
-                + "\"longitude\":127.1234567"
+                + "\"phone\":\"02-1234-5678\""
                 + "}";
     }
 }

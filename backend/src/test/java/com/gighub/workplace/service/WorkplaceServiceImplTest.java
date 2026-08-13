@@ -158,13 +158,13 @@ class WorkplaceServiceImplTest {
     }
 
     /**
-     * 좌표의 출처는 서버 주소 변환 하나뿐입니다(SPEC-343-01).
+     * 좌표의 출처는 요청이 아니라 도로명주소 변환 결과입니다(SPEC-343-01).
      *
-     * <p>요청이 좌표를 보내도 저장 근거로 쓰지 않습니다. 이 단언이 없으면 클라이언트가 보낸
-     * 좌표가 조용히 저장돼 출퇴근 반경 판정의 기준점을 움직일 수 있습니다.</p>
+     * <p>요청 필드로는 좌표를 받지 않으므로(DTO가 거절) 저장되는 값이 변환 결과와 같은지만
+     * 확인합니다. 변환에 넘긴 주소가 요청 주소와 다르면 엉뚱한 지점이 기준점이 됩니다.</p>
      */
     @Test
-    void storesGeocodedCoordinatesInsteadOfClientSuppliedOnes() {
+    void storesCoordinatesResolvedFromRequestedAddress() {
         doAnswer(invocation -> {
             invocation.getArgument(0, WorkplaceInsertParam.class).setId(44L);
             return 1;
@@ -176,8 +176,6 @@ class WorkplaceServiceImplTest {
                 .representativeName("김사장")
                 .roadAddress("서울 강남구 테헤란로 1")
                 .phone("0212345678")
-                .latitude(new BigDecimal("1.0000000"))
-                .longitude(new BigDecimal("2.0000000"))
                 .build());
 
         ArgumentCaptor<WorkplaceInsertParam> captor =
@@ -340,8 +338,6 @@ class WorkplaceServiceImplTest {
                 .roadAddress("서울 강남구 테헤란로 1")
                 .detailAddress("2층")
                 .phone("0212345678")
-                .latitude(new BigDecimal("37.1234567"))
-                .longitude(new BigDecimal("127.1234567"))
                 .build();
     }
 
