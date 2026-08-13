@@ -70,12 +70,12 @@ onUnmounted(() => {
   <section ref="rootEl" class="earning-card">
     <div class="head-row">
       <header class="head">
-        <h2 class="title">현재까지 확보한 안심금액</h2>
+        <h2 class="title">근무 경과 예상금액</h2>
 
         <button
           type="button"
           class="info"
-          aria-label="안심금액 안내"
+          aria-label="예상금액 안내"
           :aria-expanded="infoOpen"
           :aria-controls="infoId"
           @click="toggleInfo"
@@ -85,8 +85,11 @@ onUnmounted(() => {
       </header>
 
       <div v-if="infoOpen" :id="infoId" class="info-popover" role="note">
+        <p>
+          표시 금액은 근무 시작 시각부터 경과한 시간에 비례해 1분마다 갱신되는 참고용 예상치예요.
+        </p>
+        <p>지갑 잔액·예치금·실제 지급액과는 무관하며, 이 값이 실제 정산 금액을 결정하지 않아요.</p>
         <p>휴게시간·지각 등 특이사항이 있으면 실제 지급액은 달라질 수 있어요.</p>
-        <p>표시 금액은 근무 시작 시각부터 경과한 시간에 비례해 1분마다 갱신되는 예상치예요.</p>
         <p>
           예상 실수령액은 일용직 원천징수 기준(일당 15만원 초과분에 소득세 2.7%, 지방소득세
           0.27%)으로 계산한 값입니다.
@@ -95,7 +98,7 @@ onUnmounted(() => {
     </div>
 
     <p class="amount">{{ formatKRW(elapsedPay) }}</p>
-    <p class="sub">일급 {{ formatKRW(earning.agreedWage) }} 기준 실시간 적립</p>
+    <p class="sub">일급 {{ formatKRW(earning.agreedWage) }} 기준 근무 경과 참고값</p>
 
     <p class="net">
       예상 실수령액 <strong>{{ formatKRW(expectedNet) }}</strong>

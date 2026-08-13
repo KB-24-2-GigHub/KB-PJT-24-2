@@ -95,14 +95,19 @@ export function isInvitationUsable(invitation, now = new Date()) {
 }
 
 /**
- * 근태관리 요약 카운트(6종). `key` = 서버 요약 응답 필드, `status` = 매핑 enum.
+ * 근태관리 요약 카운트(7종). `key` = 서버 요약 응답 필드, `status` = 매핑 enum.
  * CANCELED는 운영 현황 요약에 집계하지 않는다.
+ *
+ * CHECK_OUT_MISSING은 NO_SHOW·COMPLETED와 상호 배타적인 별도 상태라(위 문서 참고)
+ * 두 버킷 중 하나로 합산하지 않고 독립 카드로 노출한다(WorkCaseSummaryResponse에도
+ * 별도 필드로 내려온다).
  */
 export const WORK_CASE_SUMMARY = [
   { key: 'draft', status: 'DRAFT' },
   { key: 'accepted', status: 'ACCEPTED' },
   { key: 'ready', status: 'READY' },
   { key: 'inProgress', status: 'IN_PROGRESS' },
+  { key: 'checkOutMissing', status: 'CHECK_OUT_MISSING' },
   { key: 'completed', status: 'COMPLETED' },
   { key: 'noShow', status: 'NO_SHOW' }
 ]

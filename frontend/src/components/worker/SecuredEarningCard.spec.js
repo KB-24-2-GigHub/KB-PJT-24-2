@@ -35,14 +35,31 @@ describe('SecuredEarningCard', () => {
     vi.useRealTimers()
   })
 
-  it('제목과 프론트 계산 적립액을 보여준다', async () => {
+  it('제목과 프론트 계산 참고 예상금액을 보여준다', async () => {
     const wrapper = mountCard()
     // useEarningTick 은 onMounted 에서 값을 채운다 — 초기 렌더 이후이므로
     // 반영을 기다려야 한다. 실제 화면에서는 Vue 가 paint 전에 flush 하므로
     // 0원이 보이는 순간은 없다.
     await nextTick()
-    expect(wrapper.text()).toContain('현재까지 확보한 안심금액')
+    expect(wrapper.text()).toContain('근무 경과 예상금액')
     expect(wrapper.text()).toContain('45,000원') // 10:00~18:00 중 14:00 → 절반
+  })
+
+  it('시계가 흘러 참고 예상금액이 갱신돼도 서버가 준 실제 금액 필드는 바뀌지 않는다', async () => {
+    // earning props는 서버 기준값(agreedWage/expectedNetAmount)이다 — 1분 tick 은 표시용
+    // elapsedPay 만 다시 계산할 뿐, 여기 값을 계산해 넣거나 되돌려쓰지 않는다.
+    const earning = earningOf(90000)
+    const wrapper = mount(SecuredEarningCard, { props: { earning, workCase: WORK_CASE } })
+    await nextTick()
+    expect(wrapper.text()).toContain('45,000원')
+
+    vi.advanceTimersByTime(60_000)
+    await nextTick()
+
+    expect(wrapper.text()).toContain('45,187원') // elapsedPay 표시값은 갱신된다
+    expect(earning.agreedWage).toBe(90000) // 서버가 준 실제 금액 필드는 불변
+    expect(earning.expectedNetAmount).toBeNull()
+    expect(wrapper.text()).toContain('예상 실수령액 90,000원') // 실수령액도 시간과 무관하게 고정
   })
 
   it('세금이 없으면 실수령액에 공제 없음을 표시한다', () => {
@@ -73,7 +90,8 @@ describe('SecuredEarningCard', () => {
 
     await wrapper.find('button.info').trigger('click')
     expect(wrapper.find('.info-popover').exists()).toBe(true)
-    expect(wrapper.text()).toContain('1분마다 갱신되는 예상치')
+    expect(wrapper.text()).toContain('1분마다 갱신되는 참고용 예상치')
+    expect(wrapper.text()).toContain('지갑 잔액·예치금·실제 지급액과는 무관') // 비금융 참고값 명시
     expect(wrapper.find('button.info').attributes('aria-expanded')).toBe('true')
 
     await wrapper.find('button.info').trigger('click')
