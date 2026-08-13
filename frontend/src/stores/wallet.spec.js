@@ -61,4 +61,33 @@ describe('wallet store', () => {
       expect.objectContaining({ type: 'FUNDING', page: 1, size: 1 })
     )
   })
+
+  it('진행 중 조회를 기다린 뒤 정산 확인용 새 거래 요청을 보장한다', async () => {
+    let resolveFirst
+    fetchTransactions
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValueOnce({
+        content: [{ transactionId: 2, type: 'ESCROW_RELEASE' }],
+        page: { number: 0, size: 20, totalElements: 1, totalPages: 1 }
+      })
+    const store = useWalletStore()
+
+    const firstRequest = store.loadTransactions()
+    const refreshRequest = store.refreshTransactions()
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    resolveFirst({
+      content: [{ transactionId: 1 }],
+      page: { number: 0, size: 20, totalElements: 1, totalPages: 1 }
+    })
+    await Promise.all([firstRequest, refreshRequest])
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(2)
+    expect(store.transactions).toEqual([{ transactionId: 2, type: 'ESCROW_RELEASE' }])
+  })
 })

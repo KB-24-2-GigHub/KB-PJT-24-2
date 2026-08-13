@@ -123,6 +123,7 @@ function toastMessages() {
 describe('OwnerWorkCaseDetailView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    sessionStorage.clear()
     push.mockClear()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-22T00:00:00Z'))
@@ -384,6 +385,46 @@ describe('OwnerWorkCaseDetailView', () => {
     await flushPromises()
     await open()
     await confirm()
+    await flushPromises()
+
+    expect(newIdempotencyKey).toHaveBeenCalledTimes(1)
+    expect(approveSettlement).toHaveBeenNthCalledWith(1, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveSettlement).toHaveBeenNthCalledWith(2, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+  })
+
+  it('응답을 확인하지 못한 뒤 화면에 재진입해도 같은 멱등 Key를 사용한다', async () => {
+    getWorkCase.mockResolvedValue(PAYOUT_READY_DETAIL)
+    approveSettlement
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(PAYOUT_RESULT)
+
+    const firstWrapper = mountView()
+    await flushPromises()
+    await firstWrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await firstWrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+    firstWrapper.unmount()
+
+    const secondWrapper = mountView()
+    await flushPromises()
+    await secondWrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await secondWrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
     await flushPromises()
 
     expect(newIdempotencyKey).toHaveBeenCalledTimes(1)

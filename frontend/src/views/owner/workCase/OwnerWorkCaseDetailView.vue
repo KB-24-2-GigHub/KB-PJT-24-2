@@ -50,6 +50,8 @@ import {
 import {
   canApproveNoShowRefund as canApproveNoShowRefundState,
   canApprovePayout as canApprovePayoutState,
+  clearSettlementIntent,
+  getOrCreateSettlementIntent,
   hasSettlementTerminalState,
   isSettlementResultConsistent,
   SETTLEMENT_ACTION,
@@ -381,10 +383,24 @@ function closeSettlementModal() {
 
 /** 응답 유실·처리 경합 뒤에도 한 사용자 의도에는 같은 Key를 유지한다. */
 function getSettlementIntent(action) {
-  if (!settlementIntent.value || settlementIntent.value.action !== action) {
-    settlementIntent.value = { action, idempotencyKey: newIdempotencyKey() }
+  const workCaseId = workCase.value.workCaseId
+  if (
+    !settlementIntent.value ||
+    settlementIntent.value.action !== action ||
+    settlementIntent.value.workCaseId !== workCaseId
+  ) {
+    settlementIntent.value = {
+      action,
+      workCaseId,
+      idempotencyKey: getOrCreateSettlementIntent(workCaseId, action, newIdempotencyKey)
+    }
   }
   return settlementIntent.value
+}
+
+function discardSettlementIntent(action) {
+  clearSettlementIntent(workCase.value.workCaseId, action)
+  if (settlementIntent.value?.action === action) settlementIntent.value = null
 }
 
 /** 승인 결과를 화면에서 추정하지 않고 상세·지갑·거래내역 세 원천으로 다시 수렴시킨다. */
@@ -394,13 +410,16 @@ async function refreshSettlementSources({ notify = false } = {}) {
     const [detailResult, walletResult, transactionsResult] = await Promise.allSettled([
       getWorkCase(route.params.workCaseId),
       wallet.loadWallet(),
-      wallet.loadTransactions()
+      wallet.refreshTransactions()
     ])
 
     if (detailResult.status === 'fulfilled') {
       workCase.value = detailResult.value
-      if (['COMPLETED', 'REFUNDED'].includes(detailResult.value?.settlement?.status)) {
-        settlementIntent.value = null
+      if (detailResult.value?.settlement?.status === 'COMPLETED') {
+        discardSettlementIntent(SETTLEMENT_ACTION.PAYOUT)
+      }
+      if (detailResult.value?.settlement?.status === 'REFUNDED') {
+        discardSettlementIntent(SETTLEMENT_ACTION.NO_SHOW_REFUND)
       }
     }
 
@@ -452,7 +471,7 @@ async function onApproveSettlement() {
 
     settlementModalAction.value = null
     if (!isSettlementResultConsistent(action, result)) {
-      settlementIntent.value = null
+      discardSettlementIntent(action)
       pendingSettlementConvergenceAction.value = action
       await refreshSettlementSources()
       ui.toast('서버 정산 결과의 상태와 금액이 일치하지 않아 완료로 표시하지 않았어요.', {
@@ -464,7 +483,7 @@ async function onApproveSettlement() {
 
     pendingSettlementConvergenceAction.value = action
     const converged = await refreshSettlementSources()
-    settlementIntent.value = null
+    discardSettlementIntent(action)
     ui.toast(
       converged
         ? settlementSuccessMessage(action, result)
@@ -474,7 +493,7 @@ async function onApproveSettlement() {
   } catch (error) {
     const policy = settlementApprovalErrorPolicy(error?.code)
     settlementModalAction.value = null
-    if (!policy.preserveIntent) settlementIntent.value = null
+    if (!policy.preserveIntent) discardSettlementIntent(action)
     if (error?.code === 'SETTLEMENT_ALREADY_PROCESSED') {
       pendingSettlementConvergenceAction.value = action
     }

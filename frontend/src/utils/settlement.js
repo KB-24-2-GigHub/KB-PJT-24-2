@@ -3,6 +3,66 @@ export const SETTLEMENT_ACTION = Object.freeze({
   NO_SHOW_REFUND: 'NO_SHOW_REFUND'
 })
 
+const INTENT_STORAGE_PREFIX = 'gighub:settlement-intent'
+const intentMemory = new Map()
+const VALID_IDEMPOTENCY_KEY = /^[\x21-\x7e]{1,100}$/
+
+function intentStorageKey(workCaseId, action) {
+  return `${INTENT_STORAGE_PREFIX}:${workCaseId}:${action}`
+}
+
+function isValidIdempotencyKey(value) {
+  return typeof value === 'string' && VALID_IDEMPOTENCY_KEY.test(value)
+}
+
+function readStoredIntent(storageKey) {
+  try {
+    if (typeof sessionStorage !== 'undefined') {
+      const stored = sessionStorage.getItem(storageKey)
+      if (isValidIdempotencyKey(stored)) {
+        intentMemory.set(storageKey, stored)
+        return stored
+      }
+      sessionStorage.removeItem(storageKey)
+      intentMemory.delete(storageKey)
+      return null
+    }
+  } catch {
+    // 저장소 접근이 막힌 브라우저에서는 같은 페이지 생명주기 밖에서도 모듈 메모리를 사용한다.
+  }
+  return intentMemory.get(storageKey) ?? null
+}
+
+/** 화면 이탈·재진입 뒤에도 같은 Work Case와 승인 동작은 같은 멱등 키를 사용한다. */
+export function getOrCreateSettlementIntent(workCaseId, action, createKey) {
+  const storageKey = intentStorageKey(workCaseId, action)
+  const stored = readStoredIntent(storageKey)
+  if (stored) return stored
+
+  const created = createKey()
+  if (!isValidIdempotencyKey(created)) {
+    throw new Error('유효한 정산 요청 식별자를 만들지 못했습니다.')
+  }
+
+  intentMemory.set(storageKey, created)
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.setItem(storageKey, created)
+  } catch {
+    // sessionStorage가 막혀도 현재 탭의 모듈 메모리로 같은 의도를 유지한다.
+  }
+  return created
+}
+
+export function clearSettlementIntent(workCaseId, action) {
+  const storageKey = intentStorageKey(workCaseId, action)
+  intentMemory.delete(storageKey)
+  try {
+    if (typeof sessionStorage !== 'undefined') sessionStorage.removeItem(storageKey)
+  } catch {
+    // 메모리 값은 이미 제거했으므로 별도 복구가 필요하지 않다.
+  }
+}
+
 /** 버튼은 안내용이다. 서버가 같은 상태·당사자·금액 조건을 최종 재검증한다. */
 export function canApprovePayout(workCase) {
   return (
@@ -105,7 +165,7 @@ const ERROR_POLICIES = Object.freeze({
   IDEMPOTENCY_KEY_REUSED: {
     message: '요청 식별자가 다른 요청과 충돌했어요. 새로고침 후 상태를 확인하고 다시 시도해주세요.',
     refresh: true,
-    preserveIntent: true
+    preserveIntent: false
   },
   SETTLEMENT_TEMPORARILY_UNAVAILABLE: {
     message: '정산 처리가 잠시 지연되고 있어요. 상태 확인 후 같은 요청으로 다시 시도해주세요.',

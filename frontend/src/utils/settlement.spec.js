@@ -1,13 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   canApproveNoShowRefund,
   canApprovePayout,
+  clearSettlementIntent,
+  getOrCreateSettlementIntent,
   hasSettlementTerminalState,
   isSettlementResultConsistent,
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
 } from '@/utils/settlement'
+
+beforeEach(() => {
+  sessionStorage.clear()
+})
 
 const PAYOUT_READY = {
   status: 'COMPLETED',
@@ -147,7 +153,7 @@ describe('settlement approval error policy', () => {
     ['SETTLEMENT_NOT_READY', true, false],
     ['SETTLEMENT_ALREADY_PROCESSED', true, false],
     ['CONFLICT', true, true],
-    ['IDEMPOTENCY_KEY_REUSED', true, true],
+    ['IDEMPOTENCY_KEY_REUSED', true, false],
     ['SETTLEMENT_TEMPORARILY_UNAVAILABLE', true, true],
     ['INTERNAL_ERROR', true, true]
   ])('%s를 승인된 재조회·의도 보존 정책으로 구분한다', (code, refresh, preserveIntent) => {
@@ -159,5 +165,50 @@ describe('settlement approval error policy', () => {
       refresh: true,
       preserveIntent: true
     })
+  })
+})
+
+describe('settlement intent persistence', () => {
+  it('같은 Work Case와 승인 동작은 재진입해도 저장된 키를 재사용한다', () => {
+    const createKey = vi.fn(() => 'persisted-settlement-key')
+
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe(
+      'persisted-settlement-key'
+    )
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe(
+      'persisted-settlement-key'
+    )
+    expect(createKey).toHaveBeenCalledTimes(1)
+  })
+
+  it('Work Case 또는 승인 동작이 다르면 의도를 분리한다', () => {
+    const createKey = vi
+      .fn()
+      .mockReturnValueOnce('payout-key')
+      .mockReturnValueOnce('refund-key')
+      .mockReturnValueOnce('other-work-key')
+
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe('payout-key')
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.NO_SHOW_REFUND, createKey)).toBe(
+      'refund-key'
+    )
+    expect(getOrCreateSettlementIntent(43, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe(
+      'other-work-key'
+    )
+  })
+
+  it('서버 종료 상태 확인 뒤 저장된 의도를 제거한다', () => {
+    const createKey = vi
+      .fn()
+      .mockReturnValueOnce('completed-intent-key')
+      .mockReturnValueOnce('next-intent-key')
+
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe(
+      'completed-intent-key'
+    )
+    clearSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT)
+    expect(getOrCreateSettlementIntent(42, SETTLEMENT_ACTION.PAYOUT, createKey)).toBe(
+      'next-intent-key'
+    )
   })
 })
