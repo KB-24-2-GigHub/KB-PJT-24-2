@@ -1,41 +1,21 @@
 <script setup>
-import { CalendarX, Clock, TriangleAlert, UserX } from 'lucide-vue-next'
+/**
+ * 상태 표기는 workCaseStatus.js 8종 단일 소스(StatusChip)만 쓴다 — 이 카드에서 상태 문자열을
+ * 따로 하드코딩하지 않는다. 지각은 work_case 상태가 아니라 attendance.isLate의 파생
+ * 표시라(workCaseStatus.js 문서 참고) 상태 칩과 별개 배지로 얹는다.
+ */
+import { CalendarX, TriangleAlert } from 'lucide-vue-next'
 import { computed } from 'vue'
+
+import StatusChip from '@/components/common/StatusChip.vue'
 
 const props = defineProps({
   workCase: { type: Object, default: null }
 })
 
-const isEmpty = computed(() => !props.workCase || props.workCase.status === 'NONE')
-
-// 상태 → 뱃지 라벨·색·아이콘
-const meta = computed(() => {
-  switch (props.workCase?.status) {
-    case 'BEFORE_WORK':
-      return {
-        label: '출근 전',
-        color: 'var(--color-text-sub)',
-        bg: 'var(--color-bg)',
-        icon: Clock
-      }
-    case 'LATE':
-      return {
-        label: '지각',
-        color: 'var(--color-warning)',
-        bg: 'var(--color-warning-bg)',
-        icon: TriangleAlert
-      }
-    case 'NO_SHOW':
-      return {
-        label: '노쇼',
-        color: 'var(--color-danger)',
-        bg: 'var(--color-danger-bg)',
-        icon: UserX
-      }
-    default:
-      return null
-  }
-})
+// 오늘 근무 후보가 없으면 서버가 todayWorkCase 자체를 null로 준다(WorkerHomeResponse).
+const isEmpty = computed(() => !props.workCase)
+const isLate = computed(() => !!props.workCase?.attendance?.isLate)
 </script>
 
 <template>
@@ -48,10 +28,13 @@ const meta = computed(() => {
     </div>
 
     <div v-else class="work-case">
-      <span class="badge" :style="{ color: meta.color, background: meta.bg }">
-        <component :is="meta.icon" :size="14" />
-        {{ meta.label }}
-      </span>
+      <div class="badges">
+        <StatusChip :status="workCase.status" kind="workCase" />
+        <span v-if="isLate" class="badge-late">
+          <TriangleAlert :size="13" />
+          지각 {{ workCase.attendance.lateMinutes }}분
+        </span>
+      </div>
       <p class="work-case-title">{{ workCase.title }}</p>
       <p class="work-case-info">
         {{ workCase.workplaceName }} · {{ workCase.startTime }}–{{ workCase.endTime }}
@@ -84,14 +67,19 @@ const meta = computed(() => {
   font-size: var(--text-md);
 }
 
-.badge {
+.badges {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.badge-late {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-xs);
-  padding: var(--space-xs) var(--space-sm);
-  border-radius: var(--radius-pill);
+  gap: 3px;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
+  color: var(--color-warning);
 }
 
 .work-case-title {

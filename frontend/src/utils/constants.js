@@ -77,14 +77,6 @@ export const TX_SORT = [
   { value: 'AMOUNT_ASC', label: '금액 낮은순' }
 ]
 
-/* ---- 오늘의 알바 일정 카드(GET /api/worker/home todayWorkCase.status) ---- */
-export const TODAY_WORK_CASE_STATUS = {
-  BEFORE_WORK: { label: '출근 전', color: 'var(--color-owner)' },
-  LATE: { label: '지각', color: 'var(--color-warning)' },
-  NO_SHOW: { label: '노쇼', color: 'var(--color-danger)' },
-  NONE: { label: '오늘 알바 없음', color: 'var(--color-text-sub)' }
-}
-
 /* ---- 문서 유형·출처 ---- */
 export const DOC_TYPE = {
   CONTRACT: { label: '근로계약서' },

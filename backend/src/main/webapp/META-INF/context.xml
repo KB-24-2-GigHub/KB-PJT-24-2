@@ -4,4 +4,20 @@
     <CookieProcessor
             className="org.apache.tomcat.util.http.Rfc6265CookieProcessor"
             sameSiteCookies="lax"/>
+
+    <!--
+      배포에서는 nginx가 TLS를 종료하므로 Tomcat에 도달하는 요청은 평문 HTTP다.
+      X-Forwarded-Proto를 신뢰해야 request.isSecure()가 참이 되고, 그때에만
+      Session과 CSRF Cookie에 Secure가 붙는다.
+
+      Cookie의 Secure를 코드에서 강제하지 않는 이유가 여기에 있다. Valve 없이
+      Secure만 켜면 Tomcat이 자신을 비보안 연결로 판단해 Cookie를 아예 내려보내지
+      않으므로 로그인이 조용히 실패한다.
+
+      프록시 헤더가 없는 로컬 직접 접속에서는 요청을 변형하지 않는다.
+    -->
+    <Valve className="org.apache.catalina.valves.RemoteIpValve"
+           remoteIpHeader="x-forwarded-for"
+           protocolHeader="x-forwarded-proto"
+           protocolHeaderHttpsValue="https"/>
 </Context>
