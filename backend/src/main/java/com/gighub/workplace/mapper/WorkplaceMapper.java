@@ -1,5 +1,6 @@
 package com.gighub.workplace.mapper;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
@@ -105,4 +106,32 @@ public interface WorkplaceMapper {
      */
     WorkplaceLocationSnapshot findActiveLocationForUpdate(
             @Param("workplaceId") Long workplaceId);
+
+    /**
+     * 인증 OWNER가 소유한 {@code ACTIVE} 사업장 행을 잠그고 현재 좌표를 읽습니다.
+     *
+     * <p>현장 위치 확정은 OWNER 본인만 호출하므로 소유자 조건을 둡니다. 없는 사업장과
+     * 다른 OWNER의 사업장을 구분하지 않아야 하므로 {@link #countOwnedActiveById}와 같은
+     * 조건을 씁니다.</p>
+     *
+     * @return 소유한 {@code ACTIVE} 사업장이 아니면 {@code null}
+     */
+    WorkplaceLocationSnapshot findOwnedActiveLocationForUpdate(
+            @Param("workplaceId") Long workplaceId,
+            @Param("ownerUserId") Long ownerUserId);
+
+    /**
+     * 좌표가 비어 있는 사업장 행에만 현장 위치를 확정합니다.
+     *
+     * <p>{@code WHERE latitude IS NULL}을 조건에 두어, 잠금과 확정 사이에 다른 요청이 먼저
+     * 확정했더라도 이 UPDATE가 조용히 값을 덮어쓰지 않습니다. 호출자는 잠금 조회에서 이미
+     * 비어 있음을 확인했지만, 이 방어는 그 확인 이후 로직이 실수로 순서를 바꿔도 안전하도록
+     * 남겨 둡니다.</p>
+     *
+     * @return 실제로 갱신된 행 수. 이미 확정돼 있었으면 {@code 0}
+     */
+    int confirmCoordinates(
+            @Param("workplaceId") Long workplaceId,
+            @Param("latitude") BigDecimal latitude,
+            @Param("longitude") BigDecimal longitude);
 }

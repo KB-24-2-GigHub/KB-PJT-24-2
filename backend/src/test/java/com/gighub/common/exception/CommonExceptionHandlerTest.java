@@ -188,6 +188,7 @@ class CommonExceptionHandlerTest {
                         "WORKPLACE_LOCATION_REQUIRED",
                         "WORKPLACE_ADDRESS_NOT_RESOLVABLE",
                         "WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE",
+                        "WORKPLACE_COORDINATES_ALREADY_SET",
                         "LOCATION_INVALID",
                         "OUTSIDE_WORKPLACE_RADIUS",
                         "ATTENDANCE_WORK_CASE_NOT_FOUND",

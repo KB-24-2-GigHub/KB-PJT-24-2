@@ -7,16 +7,20 @@ import com.gighub.auth.security.AuthPrincipals;
 import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
+import com.gighub.workplace.dto.WorkplaceCoordinateConfirmRequest;
 import com.gighub.workplace.dto.WorkplaceCreateRequest;
 import com.gighub.workplace.dto.WorkplaceCreateResponse;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
 import com.gighub.workplace.service.WorkplaceService;
+import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -63,6 +67,23 @@ public class WorkplaceController {
     }
 
     /**
+     * 좌표가 비어 있는 소유 사업장의 현장 위치를 한 번 확정합니다.
+     *
+     * <p>성공은 본문 없는 204입니다. 새로 확정됐든 같은 좌표의 재시도든 호출자 입장에서는
+     * 구분할 필요가 없는 같은 성공이므로 Service가 반환값으로 구분하지 않습니다.</p>
+     */
+    @PutMapping("/{workplaceId}/coordinates")
+    public ResponseEntity<Void> confirmLocation(
+            @PathVariable Long workplaceId,
+            @Valid @RequestBody WorkplaceCoordinateConfirmRequest request,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        workplaceService.confirmLocation(principal, workplaceId, toCommand(request));
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 검증을 통과한 요청을 Service 입력으로 옮깁니다.
      *
      * <p>요청 DTO를 그대로 넘기지 않아 Service가 HTTP·JSON 계약에 의존하지 않습니다.
@@ -76,6 +97,14 @@ public class WorkplaceController {
                 .roadAddress(request.getRoadAddress())
                 .detailAddress(request.getDetailAddress())
                 .phone(request.getPhone())
+                .build();
+    }
+
+    private WorkplaceCoordinateConfirmCommand toCommand(WorkplaceCoordinateConfirmRequest request) {
+        return WorkplaceCoordinateConfirmCommand.builder()
+                .latitude(request.getLatitude())
+                .longitude(request.getLongitude())
+                .capturedAt(request.getCapturedAt())
                 .build();
     }
 }

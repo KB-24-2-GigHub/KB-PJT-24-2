@@ -1,6 +1,8 @@
 package com.gighub.workplace.service;
 
 import java.math.BigDecimal;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import com.gighub.attendance.service.WorkplaceQrIssuer;
@@ -8,18 +10,22 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.ApiErrorCode;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ConflictException;
+import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.exception.WorkplaceCoordinatesAlreadySetException;
 import com.gighub.workplace.exception.WorkplaceGeocodingException;
 import com.gighub.workplace.geocoding.AddressGeocoder;
 import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
+import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import com.gighub.workplace.service.impl.WorkplaceServiceImpl;
+import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
@@ -30,6 +36,7 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,8 +52,10 @@ import static org.mockito.Mockito.when;
 
 class WorkplaceServiceImplTest {
 
-    private static final GeocodedCoordinates GEOCODED = new GeocodedCoordinates(
-            new BigDecimal("37.1234567"), new BigDecimal("127.1234567"));
+    private static final BigDecimal GEOCODED_LATITUDE = new BigDecimal("37.1234567");
+    private static final BigDecimal GEOCODED_LONGITUDE = new BigDecimal("127.1234567");
+    private static final GeocodedCoordinates GEOCODED =
+            new GeocodedCoordinates(GEOCODED_LATITUDE, GEOCODED_LONGITUDE);
 
     private final WorkplaceMapper workplaceMapper = mock(WorkplaceMapper.class);
     private final WorkplaceQrIssuer qrIssuer = mock(WorkplaceQrIssuer.class);
@@ -236,7 +245,8 @@ class WorkplaceServiceImplTest {
     @Test
     void translatesRequestedPageIntoQueryBoundsAndMetadata() {
         when(workplaceMapper.countByOwnerUserId(7L)).thenReturn(3);
-        when(workplaceMapper.findPageByOwnerUserId(7L, 2, 2L)).thenReturn(List.of(row(11L, "ACTIVE")));
+        when(workplaceMapper.findPageByOwnerUserId(7L, 2, 2L))
+                .thenReturn(List.of(row(11L, "ACTIVE", true)));
 
         PageResponse<WorkplaceListItemResponse> response = service.findOwnedWorkplaces(owner(7L), 1, 2);
 
@@ -252,7 +262,8 @@ class WorkplaceServiceImplTest {
     @Test
     void mapsRowColumnsIntoApprovedItemFields() {
         when(workplaceMapper.countByOwnerUserId(7L)).thenReturn(1);
-        when(workplaceMapper.findPageByOwnerUserId(7L, 20, 0L)).thenReturn(List.of(row(11L, "INACTIVE")));
+        when(workplaceMapper.findPageByOwnerUserId(7L, 20, 0L))
+                .thenReturn(List.of(row(11L, "INACTIVE", true)));
 
         WorkplaceListItemResponse item =
                 service.findOwnedWorkplaces(owner(7L), 0, 20).getContent().get(0);
@@ -265,7 +276,21 @@ class WorkplaceServiceImplTest {
         assertEquals("2층", item.getDetailAddress());
         assertEquals("0212345678", item.getPhone());
         assertEquals(100, item.getRadiusMeters(), "DECIMAL(8,2)가 아니라 명세의 정수 100이어야 합니다.");
+        assertTrue(item.isAttendanceLocationConfirmed());
         assertEquals("INACTIVE", item.getStatus(), "INACTIVE 사업장도 상태를 그대로 노출합니다.");
+    }
+
+    /** 좌표가 비어 있는 사업장은 목록에서 미확정으로 노출돼야 합니다. */
+    @Test
+    void reportsUnconfirmedLocationWhenRowHasNoCoordinates() {
+        when(workplaceMapper.countByOwnerUserId(7L)).thenReturn(1);
+        when(workplaceMapper.findPageByOwnerUserId(7L, 20, 0L))
+                .thenReturn(List.of(row(12L, "ACTIVE", false)));
+
+        WorkplaceListItemResponse item =
+                service.findOwnedWorkplaces(owner(7L), 0, 20).getContent().get(0);
+
+        assertFalse(item.isAttendanceLocationConfirmed());
     }
 
     @Test
@@ -312,7 +337,118 @@ class WorkplaceServiceImplTest {
         assertEquals(0, response.getPage().getTotalPages());
     }
 
-    private WorkplaceListRow row(Long workplaceId, String status) {
+    @Test
+    void confirmsLocationOnFirstRequestForOwnedActiveWorkplaceWithoutCoordinates() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
+                .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+        when(workplaceMapper.confirmCoordinates(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE))
+                .thenReturn(1);
+
+        service.confirmLocation(owner(7L), 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
+
+        verify(workplaceMapper).confirmCoordinates(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE);
+    }
+
+    /**
+     * 갱신된 행이 없는데 성공으로 끝나면 아무것도 저장하지 않고 204가 나갑니다.
+     *
+     * <p>행을 잠근 뒤라 실제로는 일어날 수 없지만, 잠금이나 순서가 바뀌었을 때 이 조용한
+     * 실패를 그대로 통과시키지 않도록 확인합니다.</p>
+     */
+    @Test
+    void failsLoudlyWhenConfirmUpdatesNoRow() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
+                .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+        when(workplaceMapper.confirmCoordinates(anyLong(), any(BigDecimal.class), any(BigDecimal.class)))
+                .thenReturn(0);
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> service.confirmLocation(
+                        owner(7L), 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE)));
+    }
+
+    /**
+     * 같은 정규화 좌표의 재요청은 응답 유실 재시도이므로 다시 성공해야 합니다.
+     *
+     * <p>DB 저장 정밀도와 요청 값의 소수 자릿수가 다를 수 있어 다른 Scale의 같은 값으로
+     * 재요청해도 같은 값으로 판정돼야 합니다.</p>
+     */
+    @Test
+    void treatsSameNormalizedCoordinatesAsIdempotentReplay() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
+                .thenReturn(new WorkplaceLocationSnapshot(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
+
+        service.confirmLocation(
+                owner(7L),
+                11L,
+                confirmCommand(new BigDecimal("37.12345670"), new BigDecimal("127.12345670")));
+
+        verify(workplaceMapper, never())
+                .confirmCoordinates(anyLong(), any(BigDecimal.class), any(BigDecimal.class));
+    }
+
+    /** 이미 확정된 좌표를 보호해야 하므로 다른 값의 재요청은 409여야 합니다. */
+    @Test
+    void rejectsDifferentCoordinatesWhenAlreadyConfirmed() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
+                .thenReturn(new WorkplaceLocationSnapshot(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
+
+        WorkplaceCoordinateConfirmCommand differentValue =
+                confirmCommand(new BigDecimal("1.0000000"), new BigDecimal("2.0000000"));
+
+        assertThrows(
+                WorkplaceCoordinatesAlreadySetException.class,
+                () -> service.confirmLocation(owner(7L), 11L, differentValue));
+        verify(workplaceMapper, never())
+                .confirmCoordinates(anyLong(), any(BigDecimal.class), any(BigDecimal.class));
+    }
+
+    /** 없는 사업장과 다른 OWNER의 사업장을 구분하지 않고 404여야 합니다. */
+    @Test
+    void reportsNotFoundWhenWorkplaceIsNotOwnedOrNotActive() {
+        when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L)).thenReturn(null);
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () -> service.confirmLocation(
+                        owner(7L), 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE)));
+    }
+
+    /** 오래된 측정값은 사업장 상태와 무관하게 거절해야 하므로 잠금보다 먼저 검사합니다. */
+    @Test
+    void rejectsStaleCapturedAtBeforeLockingTheWorkplace() {
+        WorkplaceCoordinateConfirmCommand stale = WorkplaceCoordinateConfirmCommand.builder()
+                .latitude(GEOCODED_LATITUDE)
+                .longitude(GEOCODED_LONGITUDE)
+                .capturedAt(Instant.now().minus(Duration.ofMinutes(10)))
+                .build();
+
+        assertThrows(
+                ValidationException.class, () -> service.confirmLocation(owner(7L), 11L, stale));
+        verifyNoInteractions(workplaceMapper);
+    }
+
+    @Test
+    void rejectsNonOwnerBeforeConfirmingLocation() {
+        AuthPrincipal worker = new AuthPrincipal(9L, UserRole.WORKER, "김근로");
+
+        assertThrows(
+                RoleMismatchException.class,
+                () -> service.confirmLocation(
+                        worker, 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE)));
+        verifyNoInteractions(workplaceMapper);
+    }
+
+    private WorkplaceCoordinateConfirmCommand confirmCommand(BigDecimal latitude, BigDecimal longitude) {
+        return WorkplaceCoordinateConfirmCommand.builder()
+                .latitude(latitude)
+                .longitude(longitude)
+                .capturedAt(Instant.now())
+                .build();
+    }
+
+    private WorkplaceListRow row(Long workplaceId, String status, boolean attendanceLocationConfirmed) {
         return WorkplaceListRow.builder()
                 .workplaceId(workplaceId)
                 .businessRegistrationNumber("1234567890")
@@ -322,6 +458,7 @@ class WorkplaceServiceImplTest {
                 .detailAddress("2층")
                 .phone("0212345678")
                 .radiusMeters(new BigDecimal("100.00"))
+                .attendanceLocationConfirmed(attendanceLocationConfirmed)
                 .status(status)
                 .build();
     }

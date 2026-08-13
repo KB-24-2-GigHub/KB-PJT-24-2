@@ -18,6 +18,7 @@ import org.springframework.context.annotation.AnnotationConfigApplicationContext
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -146,6 +147,12 @@ class WorkplaceListMapperDatabaseIntegrationTest {
         WorkplaceListRow inactive = rowOf(rows, fixture.middleInactive);
         assertEquals("INACTIVE", inactive.getStatus(), "INACTIVE 사업장은 상태를 그대로 노출해야 합니다.");
         assertNull(inactive.getDetailAddress(), "선택 컬럼의 NULL은 그대로 와야 합니다.");
+
+        // Fixture 어느 행도 좌표를 넣지 않으므로 모두 미확정으로 파생돼야 합니다. 확정된
+        // 사업장과의 조합은 WorkplaceCoordinateConfirmMapperDatabaseIntegrationTest가 다룹니다.
+        assertFalse(
+                newest.isAttendanceLocationConfirmed(),
+                "좌표를 넣지 않은 사업장은 미확정으로 파생돼야 합니다.");
     }
 
     /**

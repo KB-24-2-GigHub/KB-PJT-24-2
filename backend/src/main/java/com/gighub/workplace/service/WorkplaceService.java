@@ -3,6 +3,7 @@ package com.gighub.workplace.service;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.PageResponse;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 
 /** 사업장 등록과 소유 사업장 조회의 승인 규칙을 적용합니다. */
@@ -31,4 +32,18 @@ public interface WorkplaceService {
      */
     PageResponse<WorkplaceListItemResponse> findOwnedWorkplaces(
             AuthPrincipal principal, int page, int size);
+
+    /**
+     * 좌표가 비어 있는 소유 {@code ACTIVE} 사업장의 현장 위치를 한 번 확정합니다.
+     *
+     * <p>같은 정규화 좌표의 재요청은 응답 유실 재시도로 보아 다시 성공 처리합니다. 다른
+     * 값이면 이미 확정된 좌표를 보호하기 위해 거절합니다(API_SPEC "사업장 출퇴근 위치
+     * 확정").</p>
+     *
+     * @param principal   소유자를 결정하는 인증 Principal
+     * @param workplaceId 확정 대상 사업장 식별자
+     * @param command     검증을 통과한 위치 확정 입력
+     */
+    void confirmLocation(
+            AuthPrincipal principal, Long workplaceId, WorkplaceCoordinateConfirmCommand command);
 }
