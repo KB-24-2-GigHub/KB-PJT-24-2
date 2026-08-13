@@ -46,6 +46,11 @@ export function contractFileUrl(documentId, mode = 'view') {
   return api.documentFileUrl(documentId, mode)
 }
 
+// 계약 문서 Stream은 M4에서 제공되므로, M7 문서함 지원 여부와 별개로 직접 호출한다.
+export function fetchDocumentFile(documentId, mode = 'view') {
+  return api.fetchDocumentFile(documentId, mode)
+}
+
 export function getDocumentShares(documentId) {
   return invoke('getDocumentShares', [documentId])
 }
