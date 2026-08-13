@@ -1,10 +1,5 @@
 package com.gighub.workplace.dto;
 
-import java.math.BigDecimal;
-
-import javax.validation.constraints.DecimalMax;
-import javax.validation.constraints.DecimalMin;
-import javax.validation.constraints.Digits;
 import javax.validation.constraints.NotBlank;
 import javax.validation.constraints.Pattern;
 import javax.validation.constraints.Size;
@@ -13,7 +8,6 @@ import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.annotation.JsonPOJOBuilder;
 import com.gighub.common.validation.PhoneNormalizer;
-import com.gighub.workplace.validation.CoordinatePair;
 
 /**
  * 승인된 사업장 등록 입력과 정규화·검증 계약입니다.
@@ -22,11 +16,14 @@ import com.gighub.workplace.validation.CoordinatePair;
  * 사용자가 정할 수 없어 {@code radiusMeters}, {@code radiusM}은 허용되지 않은 필드로
  * 거절합니다.</p>
  *
+ * <p>{@code latitude}, {@code longitude}도 같은 이유로 입력 필드가 아닙니다. SPEC-343-01은
+ * 좌표의 출처를 서버 주소 변환 하나로 고정하므로, 클라이언트가 보낸 좌표를 받아 두면 저장에
+ * 쓰지 않더라도 계약이 좌표를 허용하는 것처럼 보입니다.</p>
+ *
  * <p>검증을 통과한 뒤 값이 바뀌지 않도록 불변으로 두고 역직렬화와 정규화는 Builder가
  * 담당합니다. Builder 없이 Jackson이 직접 필드를 채우면 검증 이후 Setter로 값을 바꿀 수
  * 있는 경로가 남습니다.</p>
  */
-@CoordinatePair
 @JsonDeserialize(builder = WorkplaceCreateRequest.Builder.class)
 public final class WorkplaceCreateRequest {
 
@@ -53,16 +50,6 @@ public final class WorkplaceCreateRequest {
     @Pattern(regexp = PhoneNormalizer.VALID_PATTERN, message = "전화번호 형식이 올바르지 않습니다.")
     private final String phone;
 
-    @DecimalMin(value = "-90", message = "위도는 -90 이상이어야 합니다.")
-    @DecimalMax(value = "90", message = "위도는 90 이하여야 합니다.")
-    @Digits(integer = 3, fraction = 7, message = "위도는 소수점 7자리까지만 허용합니다.")
-    private final BigDecimal latitude;
-
-    @DecimalMin(value = "-180", message = "경도는 -180 이상이어야 합니다.")
-    @DecimalMax(value = "180", message = "경도는 180 이하여야 합니다.")
-    @Digits(integer = 3, fraction = 7, message = "경도는 소수점 7자리까지만 허용합니다.")
-    private final BigDecimal longitude;
-
     private WorkplaceCreateRequest(Builder builder) {
         this.businessRegistrationNumber = builder.businessRegistrationNumber;
         this.name = builder.name;
@@ -70,8 +57,6 @@ public final class WorkplaceCreateRequest {
         this.roadAddress = builder.roadAddress;
         this.detailAddress = builder.detailAddress;
         this.phone = builder.phone;
-        this.latitude = builder.latitude;
-        this.longitude = builder.longitude;
     }
 
     public static Builder builder() {
@@ -102,14 +87,6 @@ public final class WorkplaceCreateRequest {
         return phone;
     }
 
-    public BigDecimal getLatitude() {
-        return latitude;
-    }
-
-    public BigDecimal getLongitude() {
-        return longitude;
-    }
-
     /**
      * 승인 입력을 정규화해 불변 요청으로 만듭니다.
      *
@@ -125,9 +102,6 @@ public final class WorkplaceCreateRequest {
         private String roadAddress;
         private String detailAddress;
         private String phone;
-        private BigDecimal latitude;
-        private BigDecimal longitude;
-
         private Builder() {
         }
 
@@ -165,16 +139,6 @@ public final class WorkplaceCreateRequest {
 
         public Builder phone(String phone) {
             this.phone = PhoneNormalizer.normalize(phone);
-            return this;
-        }
-
-        public Builder latitude(BigDecimal latitude) {
-            this.latitude = latitude;
-            return this;
-        }
-
-        public Builder longitude(BigDecimal longitude) {
-            this.longitude = longitude;
             return this;
         }
 

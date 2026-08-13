@@ -101,13 +101,39 @@ async function searchAddress() {
   )
 }
 
+/**
+ * 주소 확정 실패와 위치 확인 서비스 장애는 사용자가 할 일이 다르다(SPEC-343-01).
+ * 전자는 주소를 고쳐야 하고 후자는 그대로 다시 시도하면 되므로 안내를 구분한다.
+ * 재시도를 안내하는 쪽만 warning 으로 낮춰 "고칠 것이 있다"는 신호와 섞이지 않게 한다.
+ */
+const CREATE_ERROR_MESSAGES = {
+  WORKPLACE_ADDRESS_NOT_RESOLVABLE: {
+    message: '입력한 주소로 위치를 찾지 못했어요. 도로명주소를 다시 확인해주세요.',
+    type: 'danger'
+  },
+  WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE: {
+    message: '위치 확인 서비스가 일시적으로 응답하지 않아요. 잠시 후 다시 시도해주세요.',
+    type: 'warning'
+  }
+}
+
+function createErrorInfo(err) {
+  const byCode = CREATE_ERROR_MESSAGES[err?.code]
+  if (byCode) return byCode
+  return {
+    message: err?.response?.data?.message || '사업장 등록에 실패했어요.',
+    type: 'danger'
+  }
+}
+
 async function handleSubmit() {
   if (!validateAll()) return
 
   submitting.value = true
   try {
     // 승인 Body 는 radius 를 받지 않는다 — 서버가 100m 를 적용한다(API_SPEC.md:341).
-    // 좌표는 지오코딩 미연동이라 보내지 않는다(둘 다 생략은 유효하다).
+    // 좌표도 보내지 않는다. 서버가 도로명주소를 변환해 확정하며, 실어 보내면 400 이다
+    // (SPEC-343-01).
     await createWorkplace({
       businessRegistrationNumber: businessRegistrationNumber.value,
       name: name.value,
@@ -144,7 +170,8 @@ async function handleSubmit() {
       router.push('/owner/mypage/workplaces')
     }
   } catch (err) {
-    ui.toast(err?.response?.data?.message || '사업장 등록에 실패했어요.', { type: 'danger' })
+    const info = createErrorInfo(err)
+    ui.toast(info.message, { type: info.type })
   } finally {
     submitting.value = false
   }
