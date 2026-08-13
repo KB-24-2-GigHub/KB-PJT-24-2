@@ -5,7 +5,7 @@ import { calcElapsedPay } from '@/utils/earning'
 const TICK_MS = 60_000
 
 /**
- * 안심금액 적립액을 1분마다 다시 계산한다.
+ * 근무 경과 예상금액(참고용)을 1분마다 다시 계산한다.
  * 기준값(일급·근무 시각)은 서버가 준 값을 그대로 쓰고, 시간 축 파생값만 여기서 만든다.
  *
  * @param {import('vue').Ref<object|null>|object|null} earning  { agreedWage }

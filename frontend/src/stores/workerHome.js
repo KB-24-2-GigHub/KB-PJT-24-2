@@ -17,7 +17,7 @@ import { formatSeoulDateKey, formatSeoulTime } from '@/utils/format'
  */
 export const useWorkerHomeStore = defineStore('workerHome', () => {
   const todayWorkCase = ref(null) // 오늘의 알바 일정(표시용 workDate/startTime/endTime 포함)
-  const earning = ref(null) // 확보 안심금액(todayWorkCase로부터 파생)
+  const earning = ref(null) // 근무 경과 예상금액(참고용, todayWorkCase로부터 파생)
   const loading = ref(false)
   const error = ref(null)
 
