@@ -10,6 +10,7 @@ import com.gighub.wallet.mapper.param.WalletBalanceUpdateParam;
 import com.gighub.wallet.mapper.param.WalletTransactionParam;
 import com.gighub.wallet.service.SettlementWalletService;
 import com.gighub.wallet.service.SettlementWalletService.SettlementWalletLock;
+import com.gighub.wallet.service.command.NoShowRefundWalletCommand;
 import com.gighub.wallet.service.command.SettlementWalletCommand;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
 import lombok.RequiredArgsConstructor;
@@ -24,14 +25,18 @@ import java.util.Objects;
 
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.REF_ESCROW;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.TX_ESCROW_RELEASE;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.TX_ESCROW_REFUND;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.toSnapshot;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateCompletedEscrow;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateRefundedEscrow;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEmployerReleaseLedgerInvariant;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEscrowReference;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateRefundLedger;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateHeldEscrowOwnership;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateReleaseLedger;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateWallet;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateWorkerReleaseLedgerInvariant;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateOwnerRefundLedgerInvariant;
 
 /** Wallet owner Mapper와 자금·원장 무결성 검증을 한 participant에 둡니다. */
 @Service
@@ -48,11 +53,32 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
+    public SettlementEscrowSnapshot lockRefundEscrow(NoShowRefundWalletCommand command) {
+        return toSnapshot(walletMapper.findSettlementEscrowForUpdate(command.getWorkCaseId()));
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public void verifyHeldEscrow(
             SettlementWalletCommand command,
             long escrowId,
             SettlementWalletLock walletLock) {
         PayoutWalletLock lock = requirePayoutLock(command, escrowId, walletLock);
+        validateHeldEscrowOwnership(
+                walletMapper.findEscrowHoldTransactionSnapshot(
+                        command.getWorkCaseId(), escrowId),
+                command,
+                escrowId,
+                lock.employerWalletId());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void verifyHeldRefundEscrow(
+            NoShowRefundWalletCommand command,
+            long escrowId,
+            SettlementWalletLock walletLock) {
+        RefundWalletLock lock = requireRefundLock(command, escrowId, walletLock);
         validateHeldEscrowOwnership(
                 walletMapper.findEscrowHoldTransactionSnapshot(
                         command.getWorkCaseId(), escrowId),
@@ -93,6 +119,22 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
+    public void verifyCompletedRefund(
+            NoShowRefundWalletCommand command, SettlementWalletLock walletLock) {
+        RefundWalletLock lock = requireRefundLock(command, null, walletLock);
+        WalletTransactionSnapshot owner =
+                walletMapper.findSettlementTransactionByIdempotencyKeyForShare(
+                        command.getEmployerLedgerKey());
+        validateRefundLedger(owner, lock.employerWalletId(), command);
+        SettlementEscrowSnapshot escrow = toSnapshot(
+                walletMapper.findSettlementEscrowForUpdate(command.getWorkCaseId()));
+        long escrowId = validateRefundedEscrow(escrow, command, lock.escrowId());
+        validateEscrowReference(owner, escrowId);
+        validateOwnerRefundLedgerInvariant(owner, command.getAmount());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
     public SettlementWalletLock lockPayoutWallets(
             SettlementWalletCommand command, long escrowId) {
         if (escrowId <= 0) {
@@ -125,6 +167,28 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 workerWalletId,
                 worker.getAvailableBalance(),
                 worker.getLockedBalance());
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SettlementWalletLock lockRefundWallet(
+            NoShowRefundWalletCommand command, long escrowId) {
+        if (escrowId <= 0) {
+            throw new EscrowIntegrityException("NO_SHOW 환불 Escrow 식별자가 올바르지 않습니다.");
+        }
+        long employerWalletId = resolveWalletId(command.getEmployerId());
+        WalletBalanceSnapshot employer =
+                walletMapper.getWalletSnapshotForUpdateByWalletId(employerWalletId);
+        validateWallet(employer, command.getEmployerId(), employerWalletId);
+        return new RefundWalletLock(
+                command.getWorkCaseId(),
+                command.getEmployerId(),
+                command.getAmount(),
+                command.getEmployerLedgerKey(),
+                escrowId,
+                employerWalletId,
+                employer.getAvailableBalance(),
+                employer.getLockedBalance());
     }
 
     @Override
@@ -197,6 +261,51 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         return SettlementAmounts.fullPayout(command.getAmount());
     }
 
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SettlementAmounts refund(
+            NoShowRefundWalletCommand command,
+            long escrowId,
+            SettlementWalletLock walletLock) {
+        if (escrowId <= 0) {
+            throw new EscrowIntegrityException("NO_SHOW 환불 Escrow 식별자가 올바르지 않습니다.");
+        }
+        RefundWalletLock lock = requireRefundLock(command, escrowId, walletLock);
+        WalletBalance ownerBefore = WalletBalance.krw(
+                lock.employerAvailable(), lock.employerLocked());
+        WalletBalance ownerAfter;
+        try {
+            ownerAfter = ownerBefore.refund(Money.krw(command.getAmount()));
+        } catch (WalletBalance.InsufficientBalanceException insufficient) {
+            throw new EscrowIntegrityException(
+                    "OWNER의 잠금 금액이 NO_SHOW 환불 금액보다 적습니다.", insufficient);
+        } catch (ArithmeticException overflow) {
+            throw new EscrowIntegrityException(
+                    "NO_SHOW 환불 뒤 OWNER Wallet 금액이 허용 범위를 벗어납니다.", overflow);
+        }
+        if (walletMapper.refundEscrow(command.getWorkCaseId()) != 1) {
+            throw new EscrowIntegrityException("Escrow를 환불 상태로 전이하지 못했습니다.");
+        }
+        if (walletMapper.updateWalletBalanceByWalletId(WalletBalanceUpdateParam.of(
+                lock.employerWalletId(), ownerBefore, ownerAfter)) != 1) {
+            throw new EscrowIntegrityException("OWNER Wallet에 환불 금액을 반영하지 못했습니다.");
+        }
+        insertLedger(WalletTransactionParam.builder()
+                .walletId(lock.employerWalletId())
+                .workCaseId(command.getWorkCaseId())
+                .transactionType(TX_ESCROW_REFUND)
+                .amount(command.getAmount())
+                .availableBefore(ownerBefore.available())
+                .availableAfter(ownerAfter.available())
+                .lockedBefore(ownerBefore.locked())
+                .lockedAfter(ownerAfter.locked())
+                .referenceType(REF_ESCROW)
+                .referenceId(escrowId)
+                .idempotencyKey(command.getEmployerLedgerKey())
+                .build(), "OWNER NO_SHOW 환불 원장을 기록하지 못했습니다.");
+        return SettlementAmounts.fullRefund(command.getAmount());
+    }
+
     private long resolveWalletId(long userId) {
         Long walletId = walletMapper.resolveWalletId(userId, Money.KRW);
         if (walletId == null || walletId <= 0) {
@@ -246,6 +355,24 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         return lock;
     }
 
+    private RefundWalletLock requireRefundLock(
+            NoShowRefundWalletCommand command,
+            Long expectedEscrowId,
+            SettlementWalletLock walletLock) {
+        if (!(walletLock instanceof RefundWalletLock lock)
+                || lock.workCaseId() != command.getWorkCaseId()
+                || lock.employerUserId() != command.getEmployerId()
+                || lock.amount() != command.getAmount()
+                || !Objects.equals(lock.employerLedgerKey(), command.getEmployerLedgerKey())
+                || (expectedEscrowId != null && lock.escrowId() != expectedEscrowId)
+                || lock.employerWalletId() <= 0
+                || lock.employerAvailable() < 0
+                || lock.employerLocked() < 0) {
+            throw new EscrowIntegrityException("잠긴 NO_SHOW 환불 Wallet Snapshot이 올바르지 않습니다.");
+        }
+        return lock;
+    }
+
     private record PayoutWalletLock(
             long workCaseId,
             long employerUserId,
@@ -260,6 +387,17 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
             long workerWalletId,
             long workerAvailable,
             long workerLocked) implements SettlementWalletLock {
+    }
+
+    private record RefundWalletLock(
+            long workCaseId,
+            long employerUserId,
+            long amount,
+            String employerLedgerKey,
+            long escrowId,
+            long employerWalletId,
+            long employerAvailable,
+            long employerLocked) implements SettlementWalletLock {
     }
 
     private void insertLedger(WalletTransactionParam param, String message) {

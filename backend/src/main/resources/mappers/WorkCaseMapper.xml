@@ -39,6 +39,7 @@
             <arg column="workerId" javaType="java.lang.Long"/>
             <arg column="agreedWage" javaType="java.lang.Long"/>
             <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
+            <arg column="successfulCheckInCount" javaType="java.lang.Long"/>
         </constructor>
     </resultMap>
 
@@ -163,13 +164,20 @@
     </update>
 
     <select id="getEscrowContextForUpdate" resultMap="workCaseEscrowContextResult">
-        SELECT id           AS workCaseId,
-               employer_id  AS employerId,
-               worker_id    AS workerId,
-               agreed_wage  AS agreedWage,
-               status       AS status
-        FROM work_cases
-        WHERE id = #{workCaseId}
+        SELECT wc.id           AS workCaseId,
+               wc.employer_id  AS employerId,
+               wc.worker_id    AS workerId,
+               wc.agreed_wage  AS agreedWage,
+               wc.status       AS status,
+               (
+                   SELECT COUNT(*)
+                   FROM attendance_records ar
+                   WHERE ar.work_case_id = wc.id
+                     AND ar.attendance_type = 'CHECK_IN'
+                     AND ar.result = 'SUCCESS'
+               ) AS successfulCheckInCount
+        FROM work_cases wc
+        WHERE wc.id = #{workCaseId}
         FOR UPDATE
     </select>
 

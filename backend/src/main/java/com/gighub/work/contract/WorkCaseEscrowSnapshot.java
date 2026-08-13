@@ -16,4 +16,5 @@ public class WorkCaseEscrowSnapshot {
     private final Long workerId;
     private final Long agreedWage;
     private final WorkCaseStatus status;
+    private final Long successfulCheckInCount;
 }

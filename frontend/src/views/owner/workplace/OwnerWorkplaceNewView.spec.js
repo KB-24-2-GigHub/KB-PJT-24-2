@@ -151,6 +151,45 @@ describe('OwnerWorkplaceNewView', () => {
     )
     expect(payload).not.toHaveProperty('radiusM')
     expect(payload).not.toHaveProperty('address')
+    // 좌표는 서버가 주소로 확정한다 — 보내면 400 이다(SPEC-343-01).
+    expect(payload).not.toHaveProperty('latitude')
+    expect(payload).not.toHaveProperty('longitude')
+  })
+
+  /**
+   * 주소 확정 실패와 위치 확인 서비스 장애는 사용자가 할 일이 다르다(SPEC-343-01).
+   * 하나로 뭉치면 주소를 고쳐야 하는 상황에서 재시도만 반복하게 된다.
+   */
+  it('주소 확정 실패와 위치 확인 서비스 장애를 다른 안내로 구분한다', async () => {
+    const ui = useUiStore()
+    const toastSpy = vi.spyOn(ui, 'toast')
+
+    const notResolvable = new Error('rejected')
+    notResolvable.code = 'WORKPLACE_ADDRESS_NOT_RESOLVABLE'
+    createWorkplace.mockRejectedValueOnce(notResolvable)
+
+    const wrapper = mount(OwnerWorkplaceNewView)
+    await fillValidForm(wrapper)
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const [addressMessage, addressOptions] = toastSpy.mock.calls.at(-1)
+    expect(addressMessage).toContain('도로명주소')
+    expect(addressOptions).toEqual({ type: 'danger' })
+    expect(push).not.toHaveBeenCalled()
+
+    const unavailable = new Error('rejected')
+    unavailable.code = 'WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE'
+    createWorkplace.mockRejectedValueOnce(unavailable)
+
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    const [unavailableMessage, unavailableOptions] = toastSpy.mock.calls.at(-1)
+    expect(unavailableMessage).toContain('다시 시도')
+    expect(unavailableMessage).not.toBe(addressMessage)
+    // 재시도로 풀리는 실패만 warning 이다 — 고칠 것이 있다는 신호와 섞지 않는다.
+    expect(unavailableOptions).toEqual({ type: 'warning' })
   })
 
   it('상호명·대표자명·도로명주소·세부주소는 서버 @Size 제한과 같은 maxlength 를 갖는다', () => {

@@ -1,6 +1,5 @@
 package com.gighub.workplace.dto;
 
-import java.math.BigDecimal;
 import java.util.Set;
 
 import javax.validation.ConstraintViolation;
@@ -10,7 +9,6 @@ import javax.validation.Validator;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -41,8 +39,6 @@ class WorkplaceCreateRequestValidationTest {
     void acceptsRequestWithoutOptionalFields() {
         WorkplaceCreateRequest request = validBuilder()
                 .detailAddress(null)
-                .latitude(null)
-                .longitude(null)
                 .build();
 
         assertTrue(validator.validate(request).isEmpty());
@@ -137,38 +133,6 @@ class WorkplaceCreateRequestValidationTest {
     }
 
     @Test
-    void reportsMissingCoordinateOnTheAbsentField() {
-        Set<ConstraintViolation<WorkplaceCreateRequest>> violations =
-                validate(validBuilder().longitude(null));
-        assertTrue(hasViolation(violations, "longitude"));
-        assertFalse(hasViolation(violations, "latitude"));
-
-        violations = validate(validBuilder().latitude(null));
-        assertTrue(hasViolation(violations, "latitude"));
-        assertFalse(hasViolation(violations, "longitude"));
-    }
-
-    @Test
-    void rejectsCoordinatesOutsideApprovedRange() {
-        Set<ConstraintViolation<WorkplaceCreateRequest>> violations = validate(validBuilder()
-                .latitude(new BigDecimal("90.0000001"))
-                .longitude(new BigDecimal("180.0000001")));
-
-        assertTrue(hasViolation(violations, "latitude"));
-        assertTrue(hasViolation(violations, "longitude"));
-    }
-
-    @Test
-    void rejectsCoordinatePrecisionPastColumnScale() {
-        Set<ConstraintViolation<WorkplaceCreateRequest>> violations = validate(validBuilder()
-                .latitude(new BigDecimal("37.12345678"))
-                .longitude(new BigDecimal("127.12345678")));
-
-        assertTrue(hasViolation(violations, "latitude"));
-        assertTrue(hasViolation(violations, "longitude"));
-    }
-
-    @Test
     void rejectsFieldsOutsideApprovedContract() {
         WorkplaceCreateRequest.Builder builder = validBuilder();
 
@@ -176,6 +140,12 @@ class WorkplaceCreateRequestValidationTest {
         assertThrows(IllegalArgumentException.class, () -> builder.rejectUnknownField("radiusM", 500));
         assertThrows(IllegalArgumentException.class, () -> builder.rejectUnknownField("radiusMeters", 500));
         assertThrows(IllegalArgumentException.class, () -> builder.rejectUnknownField("ownerUserId", 999));
+
+        // 좌표는 서버가 주소로 확정하므로 요청 필드로 받지 않습니다(SPEC-343-01).
+        assertThrows(IllegalArgumentException.class,
+                () -> builder.rejectUnknownField("latitude", 37.1234567));
+        assertThrows(IllegalArgumentException.class,
+                () -> builder.rejectUnknownField("longitude", 127.1234567));
     }
 
     private WorkplaceCreateRequest.Builder validBuilder() {
@@ -185,9 +155,7 @@ class WorkplaceCreateRequestValidationTest {
                 .representativeName("김사장")
                 .roadAddress("서울 강남구 테헤란로 1")
                 .detailAddress("2층")
-                .phone("0212345678")
-                .latitude(new BigDecimal("37.1234567"))
-                .longitude(new BigDecimal("127.1234567"));
+                .phone("0212345678");
     }
 
     private Set<ConstraintViolation<WorkplaceCreateRequest>> validate(

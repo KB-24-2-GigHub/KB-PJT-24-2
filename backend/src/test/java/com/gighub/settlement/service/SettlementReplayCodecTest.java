@@ -41,6 +41,27 @@ class SettlementReplayCodecTest {
     }
 
     @Test
+    void refundRoundTripRestoresTheFullOwnerRefund() {
+        SettlementResult refund = SettlementResult.builder()
+                .settlementId(12L)
+                .status("REFUNDED")
+                .settlementAmount(WAGE)
+                .originalEscrowAmount(WAGE)
+                .workerPaidAmount(0L)
+                .ownerRefundAmount(WAGE)
+                .completedAt(COMPLETED_AT)
+                .replayed(false)
+                .build();
+
+        SettlementResult replay = codec.readResponseBody(codec.writeResponseBody(refund));
+
+        assertEquals("REFUNDED", replay.getStatus());
+        assertEquals(0L, replay.getWorkerPaidAmount());
+        assertEquals(WAGE, replay.getOwnerRefundAmount());
+        assertTrue(replay.isReplayed());
+    }
+
+    @Test
     void writeFailsClosedWhenOriginalDoesNotMatchSettlementAmount() {
         assertThrows(
                 IllegalStateException.class,
@@ -58,6 +79,10 @@ class SettlementReplayCodecTest {
         assertThrows(
                 IllegalStateException.class,
                 () -> codec.readResponseBody(bodyWithAmounts(WAGE, WAGE - 1L, 0L)));
+        assertThrows(
+                IllegalStateException.class,
+                () -> codec.readResponseBody(
+                        bodyWithOutcome("REFUNDED", WAGE, WAGE, 0L)));
     }
 
     private SettlementResult completed(
@@ -84,7 +109,12 @@ class SettlementReplayCodecTest {
     }
 
     private String bodyWithAmounts(long original, long workerPaid, long ownerRefund) {
-        return "{\"data\":{\"settlementId\":12,\"status\":\"COMPLETED\","
+        return bodyWithOutcome("COMPLETED", original, workerPaid, ownerRefund);
+    }
+
+    private String bodyWithOutcome(
+            String status, long original, long workerPaid, long ownerRefund) {
+        return "{\"data\":{\"settlementId\":12,\"status\":\"" + status + "\","
                 + "\"originalEscrowAmount\":" + original
                 + ",\"workerPaidAmount\":" + workerPaid
                 + ",\"ownerRefundAmount\":" + ownerRefund

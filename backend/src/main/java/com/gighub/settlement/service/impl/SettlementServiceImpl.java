@@ -6,9 +6,11 @@ import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.idempotency.IdempotencyKeys;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.exception.SettlementTemporarilyUnavailableException;
+import com.gighub.settlement.service.NoShowRefundApprovalTransaction;
 import com.gighub.settlement.service.SettlementApprovalTransaction;
 import com.gighub.settlement.service.SettlementReplayCodec;
 import com.gighub.settlement.service.SettlementService;
+import com.gighub.settlement.service.command.NoShowRefundApproveCommand;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
 import com.gighub.wallet.exception.InvalidEscrowStateException;
@@ -25,11 +27,14 @@ import java.security.NoSuchAlgorithmException;
 @RequiredArgsConstructor
 public class SettlementServiceImpl implements SettlementService {
 
-    private static final String OPERATION_CODE = "SETTLEMENT_APPROVE";
+    private static final String APPROVE_OPERATION_CODE = "SETTLEMENT_APPROVE";
+    private static final String NO_SHOW_REFUND_OPERATION_CODE =
+            "SETTLEMENT_NO_SHOW_REFUND_APPROVE";
     private static final int MAX_TRANSACTION_ATTEMPTS = 3;
 
     private final IdempotencyClaimService claimService;
     private final SettlementApprovalTransaction approvalTransaction;
+    private final NoShowRefundApprovalTransaction noShowRefundApprovalTransaction;
     private final SettlementReplayCodec replayCodec;
 
     @Override
@@ -39,9 +44,9 @@ public class SettlementServiceImpl implements SettlementService {
 
         IdempotencyClaimResult claim = claimService.claim(
                 command.getApproverUserId(),
-                OPERATION_CODE,
+                APPROVE_OPERATION_CODE,
                 rawKey,
-                fingerprint(command.getWorkCaseId()));
+                fingerprint(APPROVE_OPERATION_CODE, command.getWorkCaseId()));
         if (claim.isReplay()) {
             if (claim.getResponseHttpStatus() != 200) {
                 throw new IllegalStateException("저장된 정산 승인 응답 상태가 올바르지 않습니다.");
@@ -50,6 +55,26 @@ public class SettlementServiceImpl implements SettlementService {
         }
 
         return executeClaimed(command, claim.getClaimId());
+    }
+
+    @Override
+    public SettlementResult approveNoShowRefund(NoShowRefundApproveCommand command) {
+        validateNoShowRefundCommand(command);
+        String rawKey = IdempotencyKeys.validate(command.getIdempotencyKey());
+
+        IdempotencyClaimResult claim = claimService.claim(
+                command.getApproverUserId(),
+                NO_SHOW_REFUND_OPERATION_CODE,
+                rawKey,
+                fingerprint(NO_SHOW_REFUND_OPERATION_CODE, command.getWorkCaseId()));
+        if (claim.isReplay()) {
+            if (claim.getResponseHttpStatus() != 200) {
+                throw new IllegalStateException("저장된 NO_SHOW 환불 응답 상태가 올바르지 않습니다.");
+            }
+            return replayCodec.readResponseBody(claim.getResponseBody());
+        }
+
+        return executeNoShowRefundClaimed(command, claim.getClaimId());
     }
 
     /**
@@ -78,6 +103,24 @@ public class SettlementServiceImpl implements SettlementService {
         throw new IllegalStateException("정산 지급 재시도 횟수 계산이 올바르지 않습니다.");
     }
 
+    private SettlementResult executeNoShowRefundClaimed(
+            NoShowRefundApproveCommand command, long claimId) {
+        for (int attempt = 1; attempt <= MAX_TRANSACTION_ATTEMPTS; attempt++) {
+            try {
+                return noShowRefundApprovalTransaction.execute(command, claimId);
+            } catch (PessimisticLockingFailureException transientFailure) {
+                if (attempt == MAX_TRANSACTION_ATTEMPTS) {
+                    claimService.abandon(claimId);
+                    throw new SettlementTemporarilyUnavailableException();
+                }
+            } catch (RuntimeException failure) {
+                claimService.abandon(claimId);
+                throw failure;
+            }
+        }
+        throw new IllegalStateException("NO_SHOW 환불 재시도 횟수 계산이 올바르지 않습니다.");
+    }
+
     private void validateCommand(SettlementApproveCommand command) {
         if (command == null
                 || command.getWorkCaseId() == null
@@ -91,9 +134,22 @@ public class SettlementServiceImpl implements SettlementService {
         }
     }
 
+    private void validateNoShowRefundCommand(NoShowRefundApproveCommand command) {
+        if (command == null
+                || command.getWorkCaseId() == null
+                || command.getWorkCaseId() <= 0
+                || command.getApproverUserId() == null
+                || command.getApproverUserId() <= 0) {
+            throw new InvalidEscrowStateException("NO_SHOW 환불 승인 요청 정보를 확인해 주세요.");
+        }
+        if (command.getApproverRole() != UserRole.OWNER) {
+            throw new RoleMismatchException("NO_SHOW 환불 승인은 OWNER만 사용할 수 있습니다.");
+        }
+    }
+
     /** Body가 없는 Endpoint이므로 Work Case ID만 같은 의도 판정에 포함합니다. */
-    private static byte[] fingerprint(long workCaseId) {
-        String source = OPERATION_CODE + "\n" + workCaseId;
+    private static byte[] fingerprint(String operationCode, long workCaseId) {
+        String source = operationCode + "\n" + workCaseId;
         try {
             return MessageDigest.getInstance("SHA-256")
                     .digest(source.getBytes(StandardCharsets.US_ASCII));
