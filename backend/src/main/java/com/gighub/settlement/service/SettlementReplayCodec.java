@@ -53,7 +53,6 @@ public class SettlementReplayCodec {
             String status = data.get("status").textValue();
             Instant completedAt = Instant.parse(data.get("completedAt").asText());
             if (settlementId <= 0
-                    || !"COMPLETED".equals(status)
                     || originalEscrowAmount <= 0
                     || workerPaidAmount < 0
                     || ownerRefundAmount < 0

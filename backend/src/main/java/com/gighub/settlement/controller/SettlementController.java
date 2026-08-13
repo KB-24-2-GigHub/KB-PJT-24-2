@@ -6,6 +6,7 @@ import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.RequestBodies;
 import com.gighub.settlement.dto.SettlementApproveResponse;
 import com.gighub.settlement.service.SettlementService;
+import com.gighub.settlement.service.command.NoShowRefundApproveCommand;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
 import lombok.RequiredArgsConstructor;
@@ -51,6 +52,32 @@ public class SettlementController {
                         .idempotencyKey(idempotencyKey)
                         .build());
 
+        return response(result);
+    }
+
+    /** 성공 출근이 없는 NO_SHOW 근무의 예치금을 해당 OWNER에게 전액 환불합니다. */
+    @PostMapping("/api/work-cases/{workCaseId}/settlement/no-show-refund/approve")
+    public ResponseEntity<ApiResponse<SettlementApproveResponse>> approveNoShowRefund(
+            @PathVariable Long workCaseId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            HttpServletRequest request,
+            Authentication authentication) {
+
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        RequestBodies.requireEmpty(request);
+
+        SettlementResult result = settlementService.approveNoShowRefund(
+                NoShowRefundApproveCommand.builder()
+                        .workCaseId(workCaseId)
+                        .approverUserId(principal.getUserId())
+                        .approverRole(principal.getRole())
+                        .idempotencyKey(idempotencyKey)
+                        .build());
+        return response(result);
+    }
+
+    private ResponseEntity<ApiResponse<SettlementApproveResponse>> response(
+            SettlementResult result) {
         ResponseEntity.BodyBuilder response = ResponseEntity.ok();
         if (result.isReplayed()) {
             response.header(REPLAYED_HEADER, "true");

@@ -4,7 +4,9 @@ import com.gighub.config.RootConfig;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.exception.SettlementAlreadyProcessedException;
+import com.gighub.settlement.exception.SettlementNotReadyException;
 import com.gighub.settlement.exception.SettlementOnHoldException;
+import com.gighub.settlement.service.command.NoShowRefundApproveCommand;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.command.SettlementPayoutCommand;
 import com.gighub.settlement.service.policy.SettlementPayoutDecision;
@@ -71,6 +73,215 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertFullPayoutAmounts(replay);
                 assertTrue(replay.isReplayed());
                 assertCompletedState(jdbcTemplate, fixture, first.getCompletedAt());
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void noShowRefundRestoresOnlyTheOwnerAndReplaysTheStoredResult() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createNoShowFixture(jdbcTemplate);
+            NoShowRefundApproveCommand command = noShowRefundCommand(fixture);
+
+            try {
+                SettlementResult first = settlementService.approveNoShowRefund(command);
+                SettlementResult replay = settlementService.approveNoShowRefund(command);
+
+                assertEquals("REFUNDED", first.getStatus());
+                assertEquals(WAGE, first.getOriginalEscrowAmount());
+                assertEquals(0L, first.getWorkerPaidAmount());
+                assertEquals(WAGE, first.getOwnerRefundAmount());
+                assertFalse(first.isReplayed());
+                assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertTrue(replay.isReplayed());
+                assertNoShowRefundedState(jdbcTemplate, fixture);
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void noShowRefundIsBlockedByAnOpenDisputeWithoutMovingMoney() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createNoShowFixture(jdbcTemplate);
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO disputes"
+                                + " (work_case_id, requester_id, dispute_type,"
+                                + " title, content, status)"
+                                + " VALUES (?, ?, 'WAGE', '노쇼 확인 요청',"
+                                + " '환불 전 확인이 필요합니다.', 'OPEN')",
+                        fixture.workCaseId(),
+                        fixture.workerId());
+
+                assertThrows(
+                        SettlementOnHoldException.class,
+                        () -> settlementService.approveNoShowRefund(
+                                noShowRefundCommand(fixture)));
+
+                assertNoShowFundsUnchanged(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code ="
+                                + " 'SETTLEMENT_NO_SHOW_REFUND_APPROVE'",
+                        fixture.employerId()));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void noShowRefundRejectsHistoricalSuccessfulCheckInWithoutMovingMoney() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createNoShowFixture(jdbcTemplate);
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO attendance_records"
+                                + " (work_case_id, worker_id, attendance_type,"
+                                + " captured_at, attempted_at, result)"
+                                + " VALUES (?, ?, 'CHECK_IN', NOW(6), NOW(6), 'SUCCESS')",
+                        fixture.workCaseId(),
+                        fixture.workerId());
+
+                assertThrows(
+                        SettlementNotReadyException.class,
+                        () -> settlementService.approveNoShowRefund(
+                                noShowRefundCommand(fixture)));
+
+                assertNoShowFundsUnchanged(jdbcTemplate, fixture);
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(25)
+    void concurrentDifferentKeysRefundOnlyOnce() throws Exception {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createNoShowFixture(jdbcTemplate);
+            CountDownLatch ready = new CountDownLatch(2);
+            CountDownLatch start = new CountDownLatch(1);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+
+            Callable<SettlementResult> firstRequest = concurrentRefundRequest(
+                    settlementService,
+                    noShowRefundCommand(fixture, fixture.approvalKey() + "-A"),
+                    ready,
+                    start);
+            Callable<SettlementResult> secondRequest = concurrentRefundRequest(
+                    settlementService,
+                    noShowRefundCommand(fixture, fixture.approvalKey() + "-B"),
+                    ready,
+                    start);
+
+            try {
+                List<Future<SettlementResult>> futures = List.of(
+                        executor.submit(firstRequest),
+                        executor.submit(secondRequest));
+                assertTrue(ready.await(5, TimeUnit.SECONDS));
+                start.countDown();
+
+                int successes = 0;
+                int conflicts = 0;
+                for (Future<SettlementResult> future : futures) {
+                    try {
+                        SettlementResult result = future.get(10, TimeUnit.SECONDS);
+                        assertEquals("REFUNDED", result.getStatus());
+                        successes++;
+                    } catch (ExecutionException executionException) {
+                        assertTrue(executionException.getCause()
+                                instanceof SettlementAlreadyProcessedException);
+                        conflicts++;
+                    }
+                }
+
+                assertEquals(1, successes);
+                assertEquals(1, conflicts);
+                assertNoShowRefundedState(jdbcTemplate, fixture);
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code ="
+                                + " 'SETTLEMENT_NO_SHOW_REFUND_APPROVE'",
+                        fixture.employerId()));
+            } finally {
+                start.countDown();
+                executor.shutdownNow();
+                executor.awaitTermination(5, TimeUnit.SECONDS);
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void refundLedgerCollisionRollsBackEveryMutationAndClaim() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createNoShowFixture(jdbcTemplate);
+            String ledgerKey = WalletIdempotencyKeys.settlementRefundOwner(
+                    fixture.settlementId());
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO wallet_transactions"
+                                + " (wallet_id, work_case_id, transaction_type, amount,"
+                                + " available_before, available_after, locked_before,"
+                                + " locked_after, reference_type, reference_id,"
+                                + " idempotency_key)"
+                                + " VALUES (?, ?, 'ESCROW_REFUND', ?, 0, ?, ?, 0,"
+                                + " 'ESCROW', ?, ?)",
+                        fixture.employerWalletId(),
+                        fixture.workCaseId(),
+                        WAGE,
+                        WAGE,
+                        WAGE,
+                        fixture.escrowId(),
+                        ledgerKey);
+
+                assertThrows(
+                        EscrowIntegrityException.class,
+                        () -> settlementService.approveNoShowRefund(
+                                noShowRefundCommand(fixture)));
+
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE idempotency_key = ?",
+                        ledgerKey));
+                jdbcTemplate.update(
+                        "DELETE FROM wallet_transactions WHERE idempotency_key = ?",
+                        ledgerKey);
+                assertNoShowFundsUnchanged(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code ="
+                                + " 'SETTLEMENT_NO_SHOW_REFUND_APPROVE'",
+                        fixture.employerId()));
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }
@@ -583,6 +794,35 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 .build();
     }
 
+    private NoShowRefundApproveCommand noShowRefundCommand(SettlementFixture fixture) {
+        return noShowRefundCommand(fixture, fixture.approvalKey());
+    }
+
+    private NoShowRefundApproveCommand noShowRefundCommand(
+            SettlementFixture fixture, String idempotencyKey) {
+        return NoShowRefundApproveCommand.builder()
+                .workCaseId(fixture.workCaseId())
+                .approverUserId(fixture.employerId())
+                .approverRole(UserRole.OWNER)
+                .idempotencyKey(idempotencyKey)
+                .build();
+    }
+
+    private Callable<SettlementResult> concurrentRefundRequest(
+            SettlementService settlementService,
+            NoShowRefundApproveCommand command,
+            CountDownLatch ready,
+            CountDownLatch start) {
+        return () -> {
+            ready.countDown();
+            if (!start.await(5, TimeUnit.SECONDS)) {
+                throw new IllegalStateException(
+                        "동시 NO_SHOW 환불 테스트 시작 신호를 기다리지 못했습니다.");
+            }
+            return settlementService.approveNoShowRefund(command);
+        };
+    }
+
     private Callable<SettlementResult> concurrentRequest(
             SettlementService settlementService,
             SettlementApproveCommand command,
@@ -833,6 +1073,108 @@ class SettlementIntegrityDatabaseIntegrationTest {
         ));
     }
 
+    private void assertNoShowFundsUnchanged(
+            JdbcTemplate jdbcTemplate,
+            SettlementFixture fixture) {
+        assertEquals(WAGE.longValue(), value(
+                jdbcTemplate,
+                "SELECT locked_balance FROM wallets WHERE id = ?",
+                fixture.employerWalletId()));
+        assertEquals(0L, value(
+                jdbcTemplate,
+                "SELECT available_balance FROM wallets WHERE id = ?",
+                fixture.employerWalletId()));
+        assertEquals(0L, value(
+                jdbcTemplate,
+                "SELECT available_balance + locked_balance FROM wallets WHERE id = ?",
+                fixture.workerWalletId()));
+        assertEquals("HELD", text(
+                jdbcTemplate,
+                "SELECT status FROM escrows WHERE id = ?",
+                fixture.escrowId()));
+        assertEquals("WAITING", text(
+                jdbcTemplate,
+                "SELECT status FROM settlements WHERE id = ?",
+                fixture.settlementId()));
+        assertEquals(1, count(
+                jdbcTemplate,
+                "SELECT COUNT(*) FROM wallet_transactions WHERE work_case_id = ?",
+                fixture.workCaseId()));
+    }
+
+    private void assertNoShowRefundedState(
+            JdbcTemplate jdbcTemplate,
+            SettlementFixture fixture) {
+        assertEquals(WAGE.longValue(), value(
+                jdbcTemplate,
+                "SELECT available_balance FROM wallets WHERE id = ?",
+                fixture.employerWalletId()));
+        assertEquals(0L, value(
+                jdbcTemplate,
+                "SELECT locked_balance FROM wallets WHERE id = ?",
+                fixture.employerWalletId()));
+        assertEquals(0L, value(
+                jdbcTemplate,
+                "SELECT available_balance + locked_balance FROM wallets WHERE id = ?",
+                fixture.workerWalletId()));
+        assertEquals("REFUNDED", text(
+                jdbcTemplate,
+                "SELECT status FROM escrows WHERE id = ?",
+                fixture.escrowId()));
+        assertNotNull(dateTime(
+                jdbcTemplate,
+                "SELECT refunded_at FROM escrows WHERE id = ?",
+                fixture.escrowId()));
+        assertEquals("REFUNDED", text(
+                jdbcTemplate,
+                "SELECT status FROM settlements WHERE id = ?",
+                fixture.settlementId()));
+        assertEquals("NO_SHOW", text(
+                jdbcTemplate,
+                "SELECT status FROM work_cases WHERE id = ?",
+                fixture.workCaseId()));
+        assertEquals(1, count(
+                jdbcTemplate,
+                "SELECT COUNT(*)"
+                        + " FROM wallet_transactions wt"
+                        + " JOIN wallets w ON w.id = wt.wallet_id"
+                        + " WHERE wt.work_case_id = ?"
+                        + " AND w.user_id = ?"
+                        + " AND wt.transaction_type = 'ESCROW_REFUND'"
+                        + " AND wt.available_before = 0"
+                        + " AND wt.available_after = ?"
+                        + " AND wt.locked_before = ?"
+                        + " AND wt.locked_after = 0"
+                        + " AND wt.idempotency_key LIKE 'SETTLEMENT_REFUND_OWNER:%'",
+                fixture.workCaseId(),
+                fixture.employerId(),
+                WAGE,
+                WAGE));
+        assertEquals(0, count(
+                jdbcTemplate,
+                "SELECT COUNT(*) FROM wallet_transactions"
+                        + " WHERE work_case_id = ?"
+                        + " AND wallet_id = ?",
+                fixture.workCaseId(),
+                fixture.workerWalletId()));
+        assertEquals(2, count(
+                jdbcTemplate,
+                "SELECT COUNT(*) FROM wallet_transactions WHERE work_case_id = ?",
+                fixture.workCaseId()));
+    }
+
+    private SettlementFixture createNoShowFixture(JdbcTemplate jdbcTemplate) {
+        SettlementFixture fixture = createFixture(jdbcTemplate);
+        jdbcTemplate.update(
+                "UPDATE work_cases SET status = 'NO_SHOW' WHERE id = ?",
+                fixture.workCaseId());
+        jdbcTemplate.update(
+                "UPDATE settlements SET status = 'WAITING', due_at = NULL"
+                        + " WHERE id = ?",
+                fixture.settlementId());
+        return fixture;
+    }
+
     private SettlementFixture createFixture(JdbcTemplate jdbcTemplate) {
         String token =
                 UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -1015,6 +1357,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
         );
         jdbcTemplate.update(
                 "DELETE FROM disputes WHERE work_case_id = ?",
+                fixture.workCaseId()
+        );
+        jdbcTemplate.update(
+                "DELETE FROM attendance_records WHERE work_case_id = ?",
                 fixture.workCaseId()
         );
         jdbcTemplate.update(

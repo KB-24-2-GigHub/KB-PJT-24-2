@@ -33,7 +33,6 @@ public class SettlementApproveResponse {
         if (result == null
                 || result.getSettlementId() == null
                 || result.getSettlementId() <= 0
-                || !"COMPLETED".equals(result.getStatus())
                 || result.getSettlementAmount() == null
                 || result.getOriginalEscrowAmount() == null
                 || result.getWorkerPaidAmount() == null
@@ -47,9 +46,22 @@ public class SettlementApproveResponse {
                 || !preservesEscrow(
                         result.getOriginalEscrowAmount(),
                         result.getWorkerPaidAmount(),
-                        result.getOwnerRefundAmount())) {
+                        result.getOwnerRefundAmount())
+                || !matchesOutcome(result)) {
             throw new IllegalStateException("정산 승인 응답 금액이 정산 원장과 일치하지 않습니다.");
         }
+    }
+
+    private static boolean matchesOutcome(SettlementResult result) {
+        if ("COMPLETED".equals(result.getStatus())) {
+            return result.getWorkerPaidAmount().equals(result.getOriginalEscrowAmount())
+                    && result.getOwnerRefundAmount() == 0L;
+        }
+        if ("REFUNDED".equals(result.getStatus())) {
+            return result.getWorkerPaidAmount() == 0L
+                    && result.getOwnerRefundAmount().equals(result.getOriginalEscrowAmount());
+        }
+        return false;
     }
 
     private static boolean preservesEscrow(long original, long paid, long refund) {
