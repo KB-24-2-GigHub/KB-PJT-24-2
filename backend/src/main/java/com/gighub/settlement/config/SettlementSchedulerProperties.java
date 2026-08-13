@@ -27,6 +27,9 @@ public class SettlementSchedulerProperties {
     public static final long DEFAULT_FIXED_DELAY_MS = 60_000L;
     public static final long DEFAULT_INITIAL_DELAY_MS = 60_000L;
 
+    /** SETTLE-003이 고정한 후보 배치 상한입니다. */
+    public static final int MAX_BATCH_SIZE = 100;
+
     private final int batchSize;
     private final Duration fixedDelay;
     private final Duration initialDelay;
@@ -40,7 +43,7 @@ public class SettlementSchedulerProperties {
     }
 
     SettlementSchedulerProperties(int batchSize, long fixedDelayMs, long initialDelayMs) {
-        this.batchSize = requirePositive(BATCH_SIZE_KEY, batchSize);
+        this.batchSize = requireBatchSizeInRange(batchSize);
         this.fixedDelay = Duration.ofMillis(requirePositive(FIXED_DELAY_MS_KEY, fixedDelayMs));
         this.initialDelay = Duration.ofMillis(requirePositive(INITIAL_DELAY_MS_KEY, initialDelayMs));
     }
@@ -60,9 +63,10 @@ public class SettlementSchedulerProperties {
         return initialDelay;
     }
 
-    private static int requirePositive(String key, int value) {
-        if (value <= 0) {
-            throw new IllegalStateException(key + "는 1 이상이어야 합니다.");
+    private static int requireBatchSizeInRange(int value) {
+        if (value < 1 || value > MAX_BATCH_SIZE) {
+            throw new IllegalStateException(
+                    BATCH_SIZE_KEY + "는 1~" + MAX_BATCH_SIZE + " 범위여야 합니다.");
         }
         return value;
     }

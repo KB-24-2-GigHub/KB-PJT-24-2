@@ -48,6 +48,27 @@ class SettlementSchedulerPropertiesTest {
     }
 
     @Test
+    void batchSizeAboveMaxFailsFastAtStartup() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(SettlementSchedulerProperties.BATCH_SIZE_KEY, "101");
+
+        assertThrows(
+                IllegalStateException.class, () -> new SettlementSchedulerProperties(environment));
+    }
+
+    @Test
+    void batchSizeAtMaxIsAccepted() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(
+                        SettlementSchedulerProperties.BATCH_SIZE_KEY,
+                        String.valueOf(SettlementSchedulerProperties.MAX_BATCH_SIZE));
+
+        SettlementSchedulerProperties properties = new SettlementSchedulerProperties(environment);
+
+        assertEquals(SettlementSchedulerProperties.MAX_BATCH_SIZE, properties.getBatchSize());
+    }
+
+    @Test
     void nonPositiveFixedDelayFailsFastAtStartup() {
         MockEnvironment environment = new MockEnvironment()
                 .withProperty(SettlementSchedulerProperties.FIXED_DELAY_MS_KEY, "-1");
