@@ -48,18 +48,18 @@ INSERT INTO workplaces (
     latitude, longitude, radius_meters, status
 ) VALUES (
     @owner_id, '0000000017', 'Gig-Hub 합성 테스트 매장',
-    '테스트 사장', '서울특별시 영등포구 테스트로 17', NULL, '0200000017',
-    37.5265000, 126.8962000, 100.00, 'ACTIVE'
+    '테스트 사장', '서울 광진구 능동로 195-16', NULL, '0200000017',
+    37.5481384, 127.0733972, 100.00, 'ACTIVE'
 )
 ON DUPLICATE KEY UPDATE
     owner_user_id = @owner_id,
     name = 'Gig-Hub 합성 테스트 매장',
     representative_name = '테스트 사장',
-    road_address = '서울특별시 영등포구 테스트로 17',
+    road_address = '서울 광진구 능동로 195-16',
     detail_address = NULL,
     phone = '0200000017',
-    latitude = 37.5265000,
-    longitude = 126.8962000,
+    latitude = 37.5481384,
+    longitude = 127.0733972,
     radius_meters = 100.00,
     status = 'ACTIVE',
     deleted_at = NULL;
@@ -233,8 +233,8 @@ INSERT INTO work_cases (
 SELECT
     @owner_id, @worker_id, @workplace_id, @seed_title,
     '2026-08-01 09:00:00.000000', '2026-08-01 18:00:00.000000', 60, 0,
-    'Gig-Hub 합성 테스트 매장', '서울특별시 영등포구 테스트로 17',
-    37.5265000, 126.8962000, 100.00,
+    'Gig-Hub 합성 테스트 매장', '서울 광진구 능동로 195-16',
+    37.5481384, 127.0733972, 100.00,
     300000, 1, 'ACCEPTED'
 WHERE @work_case_id IS NULL;
 
@@ -294,9 +294,9 @@ SET worker_id = @worker_id,
     break_minutes = 60,
     break_paid = 0,
     workplace_name = 'Gig-Hub 합성 테스트 매장',
-    workplace_address = '서울특별시 영등포구 테스트로 17',
-    workplace_latitude = 37.5265000,
-    workplace_longitude = 126.8962000,
+    workplace_address = '서울 광진구 능동로 195-16',
+    workplace_latitude = 37.5481384,
+    workplace_longitude = 127.0733972,
     allowed_radius_meters = 100.00,
     agreed_wage = 300000,
     terms_version = 1,
@@ -323,8 +323,8 @@ INSERT INTO work_contracts (
 ) VALUES (
     @work_case_id, @owner_id, @worker_id, '합성 테스트 근로계약서',
     '2026-08-01 09:00:00.000000', '2026-08-01 18:00:00.000000', 60, 0,
-    'Gig-Hub 합성 테스트 매장', '서울특별시 영등포구 테스트로 17',
-    37.5265000, 126.8962000, 100.00,
+    'Gig-Hub 합성 테스트 매장', '서울 광진구 능동로 195-16',
+    37.5481384, 127.0733972, 100.00,
     300000, 1,
     JSON_OBJECT(
         'synthetic', TRUE,

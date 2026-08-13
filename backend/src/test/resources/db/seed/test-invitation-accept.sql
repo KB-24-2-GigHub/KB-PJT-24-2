@@ -53,18 +53,18 @@ INSERT INTO workplaces (
     latitude, longitude, radius_meters, status
 ) VALUES (
     @owner_id, @business_registration_number, 'Gig-Hub 초대 수락 E2E 매장',
-    '초대 테스트 사장', '서울특별시 영등포구 테스트로 267', NULL, '0200000267',
-    37.5265000, 126.8962000, 100.00, 'ACTIVE'
+    '초대 테스트 사장', '서울 광진구 능동로 195-16', NULL, '0200000267',
+    37.5481384, 127.0733972, 100.00, 'ACTIVE'
 )
 ON DUPLICATE KEY UPDATE
     owner_user_id = @owner_id,
     name = 'Gig-Hub 초대 수락 E2E 매장',
     representative_name = '초대 테스트 사장',
-    road_address = '서울특별시 영등포구 테스트로 267',
+    road_address = '서울 광진구 능동로 195-16',
     detail_address = NULL,
     phone = '0200000267',
-    latitude = 37.5265000,
-    longitude = 126.8962000,
+    latitude = 37.5481384,
+    longitude = 127.0733972,
     radius_meters = 100.00,
     status = 'ACTIVE',
     deleted_at = NULL;
