@@ -1,0 +1,166 @@
+name: Deploy API
+
+# 브랜치 이름을 이 파일에 두지 않는다. 배포 대상은 아래 if 와
+# GitHub Variable DEPLOY_BRANCH 하나로 결정한다.
+#
+#   변수 = <브랜치명>   해당 브랜치 push 마다 자동 배포
+#   변수 삭제           자동 배포 꺼짐. 수동 버튼만 동작
+#
+#     gh variable set DEPLOY_BRANCH --body "dev"    # 켜기
+#     gh variable delete DEPLOY_BRANCH              # 끄기
+#
+# GitHub API 는 값이 빈 변수를 거부하므로(422) 끄는 방법은 삭제다. 정의되지 않은
+# 변수는 빈 문자열로 평가되고 github.ref_name 은 절대 빈 문자열이 아니므로
+# 조건이 거짓이 된다. 팀이 공유하는 브랜치에서는 삭제 상태를 기본으로 삼는다.
+on:
+  push:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || github.ref_name == vars.DEPLOY_BRANCH
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      packages: write
+
+    env:
+      IMAGE: ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api
+      API_HOST: api.gighub.store
+      WEB_ORIGIN: https://gighub.store
+      AWS_DEFAULT_REGION: ap-northeast-2
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # gradle check 는 war 를 의존하지 않는다. 이미지가 옛 WAR 을 담지 않도록
+      # 배포마다 반드시 새로 빌드한다.
+      - name: Build WAR
+        run: sh backend/gradlew -p backend war
+
+      - name: Compute image tag
+        id: tag
+        # 브랜치 이름의 슬래시는 Docker 태그에 쓸 수 없다.
+        run: echo "branch=$(echo '${{ github.ref_name }}' | tr '/' '-')" >> "$GITHUB_OUTPUT"
+
+      # 러너 기본 buildx 드라이버는 docker 이고 캐시 export 를 지원하지 않는다.
+      # cache-to: type=gha 를 쓰려면 docker-container 드라이버가 필요하다.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          tags: |
+            ${{ env.IMAGE }}:${{ github.sha }}
+            ${{ env.IMAGE }}:${{ steps.tag.outputs.branch }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # 22번 인바운드는 평소 닫혀 있다. 이 실행의 러너 IP 만 잠시 허용한다.
+      - name: Open SSH for this runner
+        id: sg
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set -euo pipefail
+          RUNNER_IP="$(curl -sS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
+          echo "runner_ip=${RUNNER_IP}" >> "$GITHUB_OUTPUT"
+          echo "Runner IP: ${RUNNER_IP}"
+          aws ec2 authorize-security-group-ingress \
+            --group-id "${{ secrets.EC2_SG_ID }}" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description='gh-actions run ${{ github.run_id }}'}]"
+
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          # script_stop 은 이 액션의 입력이 아니다(v1 에서 무시되며 경고만 남는다).
+          # 실패 중단은 스크립트의 set -euo pipefail 이 담당한다.
+          script: |
+            set -euo pipefail
+            cd /opt/gighub
+            export API_TAG=${{ github.sha }}
+            docker compose -f compose.prod.yaml pull app
+            docker compose -f compose.prod.yaml up -d app
+            docker image prune -f
+
+      # 배포 성공 여부와 무관하게 반드시 회수한다.
+      - name: Close SSH
+        if: always() && steps.sg.outputs.runner_ip != ''
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id "${{ secrets.EC2_SG_ID }}" \
+            --protocol tcp --port 22 \
+            --cidr "${{ steps.sg.outputs.runner_ip }}/32" \
+          || echo "::warning::SSH 규칙 회수 실패. 보안그룹을 직접 확인할 것"
+
+      # 상태 코드만으로는 배포 성공을 판정하지 않는다.
+      # /api/health 는 DB 를 조회하지 않는 순수 liveness 이고 HikariCP 는 지연
+      # 초기화라, DB 가 망가져도 200 을 반환한다. 옛 WAR 이 배포돼도 200 이다.
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+
+          echo "--- 1. DB 전 구간 (users 테이블 SELECT) ---"
+          curl -fsS --retry 12 --retry-delay 5 --retry-all-errors \
+            "https://${API_HOST}/api/auth/login-id-availability?loginId=ci-smoke-check"
+          echo
+
+          echo "--- 2. CSRF 쿠키 속성 ---"
+          COOKIE="$(curl -sS -D - -o /dev/null "https://${API_HOST}/api/auth/csrf" \
+                    | grep -i '^set-cookie:')"
+          echo "${COOKIE}"
+          echo "${COOKIE}" | grep -q 'Domain=gighub.store' \
+            || { echo "::error::CSRF 쿠키에 Domain 이 없다. security.cookie.domain 누락 또는 옛 WAR 배포"; exit 1; }
+          echo "${COOKIE}" | grep -qi '; *Secure' \
+            || { echo "::error::CSRF 쿠키에 Secure 가 없다. nginx X-Forwarded-Proto 누락 또는 RemoteIpValve 없는 옛 WAR"; exit 1; }
+
+          echo "--- 3. CORS 허용 Origin ---"
+          ACAO="$(curl -sS -D - -o /dev/null -X OPTIONS \
+                   -H "Origin: ${WEB_ORIGIN}" \
+                   -H "Access-Control-Request-Method: POST" \
+                   "https://${API_HOST}/api/auth/login" \
+                   | grep -i '^access-control-allow-origin:')"
+          echo "${ACAO}"
+          echo "${ACAO}" | grep -q "${WEB_ORIGIN}" \
+            || { echo "::error::CORS 가 프론트 Origin 을 허용하지 않는다. cors.allowed-origins 확인"; exit 1; }
+
+          echo "배포 검증 통과"
+
+      - name: Report deployed revision
+        if: success()
+        run: |
+          echo "### 배포 완료" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 커밋: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 이미지: \`${IMAGE}:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 롤백: EC2 에서 \`API_TAG=<이전sha> docker compose -f /opt/gighub/compose.prod.yaml up -d app\`" >> "$GITHUB_STEP_SUMMARY"
