@@ -12,6 +12,8 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.geocoding.AddressGeocoder;
+import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
@@ -32,11 +34,17 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
 
     private final WorkplaceMapper workplaceMapper;
     private final WorkplaceQrIssuer qrIssuer;
+    private final AddressGeocoder addressGeocoder;
 
     @Override
     @Transactional
     public Long create(AuthPrincipal principal, WorkplaceCreateCommand command) {
         requireOwner(principal, "사업장은 OWNER만 등록할 수 있습니다.");
+
+        // 저장을 시작하기 전에 좌표를 확정합니다. 변환 실패는 예외로 끝나므로 사업장 행도
+        // 활성 QR도 남지 않습니다. 요청이 보낸 좌표는 쓰지 않습니다 — SPEC-343-01은 좌표의
+        // 출처를 서버 주소 변환 하나로 고정합니다.
+        GeocodedCoordinates coordinates = addressGeocoder.geocode(command.getRoadAddress());
 
         WorkplaceInsertParam param = WorkplaceInsertParam.builder()
                 // 소유자는 요청 Body가 아니라 인증 Principal에서만 정합니다.
@@ -47,8 +55,8 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 .roadAddress(command.getRoadAddress())
                 .detailAddress(command.getDetailAddress())
                 .phone(command.getPhone())
-                .latitude(command.getLatitude())
-                .longitude(command.getLongitude())
+                .latitude(coordinates.latitude())
+                .longitude(coordinates.longitude())
                 .build();
 
         insertOrReportDuplicate(param);

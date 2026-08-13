@@ -5,12 +5,16 @@ import java.util.List;
 
 import com.gighub.attendance.service.WorkplaceQrIssuer;
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.common.api.ApiErrorCode;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.exception.WorkplaceGeocodingException;
+import com.gighub.workplace.geocoding.AddressGeocoder;
+import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
@@ -19,6 +23,7 @@ import com.gighub.workplace.service.impl.WorkplaceServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.http.HttpStatus;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -36,10 +41,18 @@ import static org.mockito.Mockito.when;
 
 class WorkplaceServiceImplTest {
 
+    private static final GeocodedCoordinates GEOCODED = new GeocodedCoordinates(
+            new BigDecimal("37.1234567"), new BigDecimal("127.1234567"));
+
     private final WorkplaceMapper workplaceMapper = mock(WorkplaceMapper.class);
     private final WorkplaceQrIssuer qrIssuer = mock(WorkplaceQrIssuer.class);
+    private final AddressGeocoder addressGeocoder = mock(AddressGeocoder.class);
     private final WorkplaceServiceImpl service =
-            new WorkplaceServiceImpl(workplaceMapper, qrIssuer);
+            new WorkplaceServiceImpl(workplaceMapper, qrIssuer, addressGeocoder);
+
+    WorkplaceServiceImplTest() {
+        when(addressGeocoder.geocode(any())).thenReturn(GEOCODED);
+    }
 
     @Test
     void issuesFixedQrForTheNewWorkplaceWithinTheSameCall() {
@@ -106,7 +119,12 @@ class WorkplaceServiceImplTest {
         assertThrows(ConflictException.class, () -> service.create(owner(7L), validCommand()));
     }
 
-    /** 좌표는 선택값이므로 없는 요청도 그대로 저장 파라미터에 전달돼야 합니다. */
+    /**
+     * 상세주소는 선택값이므로 없는 요청도 그대로 저장 파라미터에 전달돼야 합니다.
+     *
+     * <p>좌표는 더 이상 선택값이 아닙니다(SPEC-343-01). 요청이 좌표를 담지 않아도 서버가
+     * 주소로 확정한 값이 저장됩니다.</p>
+     */
     @Test
     void keepsOptionalValuesAbsentInsteadOfSubstituting() {
         doAnswer(invocation -> {
@@ -128,8 +146,85 @@ class WorkplaceServiceImplTest {
 
         WorkplaceInsertParam param = captor.getValue();
         assertEquals(null, param.getDetailAddress());
-        assertEquals(null, param.getLatitude());
-        assertEquals(null, param.getLongitude());
+        assertEquals(0, GEOCODED.latitude().compareTo(param.getLatitude()));
+        assertEquals(0, GEOCODED.longitude().compareTo(param.getLongitude()));
+    }
+
+    /**
+     * 좌표의 출처는 서버 주소 변환 하나뿐입니다(SPEC-343-01).
+     *
+     * <p>요청이 좌표를 보내도 저장 근거로 쓰지 않습니다. 이 단언이 없으면 클라이언트가 보낸
+     * 좌표가 조용히 저장돼 출퇴근 반경 판정의 기준점을 움직일 수 있습니다.</p>
+     */
+    @Test
+    void storesGeocodedCoordinatesInsteadOfClientSuppliedOnes() {
+        doAnswer(invocation -> {
+            invocation.getArgument(0, WorkplaceInsertParam.class).setId(44L);
+            return 1;
+        }).when(workplaceMapper).insert(any(WorkplaceInsertParam.class));
+
+        service.create(owner(7L), WorkplaceCreateCommand.builder()
+                .businessRegistrationNumber("1234567890")
+                .name("강남점")
+                .representativeName("김사장")
+                .roadAddress("서울 강남구 테헤란로 1")
+                .phone("0212345678")
+                .latitude(new BigDecimal("1.0000000"))
+                .longitude(new BigDecimal("2.0000000"))
+                .build());
+
+        ArgumentCaptor<WorkplaceInsertParam> captor =
+                ArgumentCaptor.forClass(WorkplaceInsertParam.class);
+        verify(workplaceMapper).insert(captor.capture());
+
+        WorkplaceInsertParam param = captor.getValue();
+        assertEquals(0, GEOCODED.latitude().compareTo(param.getLatitude()));
+        assertEquals(0, GEOCODED.longitude().compareTo(param.getLongitude()));
+        verify(addressGeocoder).geocode("서울 강남구 테헤란로 1");
+    }
+
+    /** 확정할 수 없는 주소는 422이고 사업장 행도 활성 QR도 남지 않아야 합니다. */
+    @Test
+    void doesNotStoreAnythingWhenAddressCannotBeResolved() {
+        when(addressGeocoder.geocode(any()))
+                .thenThrow(WorkplaceGeocodingException.addressNotResolvable());
+
+        WorkplaceGeocodingException exception = assertThrows(
+                WorkplaceGeocodingException.class, () -> service.create(owner(7L), validCommand()));
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, exception.getStatus());
+        assertEquals(ApiErrorCode.WORKPLACE_ADDRESS_NOT_RESOLVABLE, exception.getCode());
+        verify(workplaceMapper, never()).insert(any(WorkplaceInsertParam.class));
+        verifyNoInteractions(qrIssuer);
+    }
+
+    /**
+     * 외부 서비스 장애는 503이고 저장은 시작되지 않아야 합니다.
+     *
+     * <p>주소 오류와 상태·Code가 달라야 화면이 재시도 가능 여부를 구분해 안내할 수 있습니다.</p>
+     */
+    @Test
+    void doesNotStoreAnythingWhenGeocodingServiceIsUnavailable() {
+        when(addressGeocoder.geocode(any()))
+                .thenThrow(WorkplaceGeocodingException.temporarilyUnavailable());
+
+        WorkplaceGeocodingException exception = assertThrows(
+                WorkplaceGeocodingException.class, () -> service.create(owner(7L), validCommand()));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, exception.getStatus());
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE, exception.getCode());
+        verify(workplaceMapper, never()).insert(any(WorkplaceInsertParam.class));
+        verifyNoInteractions(qrIssuer);
+    }
+
+    /** 역할 거절이 외부 호출보다 먼저입니다 — 권한 없는 호출자가 외부 Quota를 소모할 수 없습니다. */
+    @Test
+    void rejectsNonOwnerBeforeCallingGeocoder() {
+        AuthPrincipal worker = new AuthPrincipal(9L, UserRole.WORKER, "김근로");
+
+        assertThrows(RoleMismatchException.class, () -> service.create(worker, validCommand()));
+        verifyNoInteractions(addressGeocoder);
     }
 
     /** 요청한 Page 값이 그대로 SQL 경계와 응답 Metadata에 반영돼야 합니다. */

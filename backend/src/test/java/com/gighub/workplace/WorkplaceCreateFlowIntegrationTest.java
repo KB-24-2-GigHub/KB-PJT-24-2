@@ -24,6 +24,8 @@ import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.config.RootConfig;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.controller.WorkplaceController;
+import com.gighub.workplace.geocoding.AddressGeocoder;
+import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.service.WorkplaceService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -32,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.mock.web.MockServletContext;
@@ -79,7 +82,7 @@ class WorkplaceCreateFlowIntegrationTest {
 
         rootContext = new AnnotationConfigWebApplicationContext();
         rootContext.setServletContext(mockServletContext);
-        rootContext.register(RootConfig.class);
+        rootContext.register(RootConfig.class, FixedGeocoderConfig.class);
         rootContext.refresh();
 
         servletContext = new AnnotationConfigWebApplicationContext();
@@ -377,6 +380,22 @@ class WorkplaceCreateFlowIntegrationTest {
                 role.name());
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM users WHERE login_id = ?", Long.class, loginId);
+    }
+
+    /**
+     * 이 Test의 대상은 Security 인가·CSRF·MyBatis Mapping·DB 제약이지 외부 주소 변환이
+     * 아닙니다. 실제 외부 호출을 그대로 두면 네트워크와 키 상태가 이 Test의 결과를 바꾸므로
+     * 결정적인 좌표를 돌려주는 구현으로 대체합니다.
+     */
+    @Configuration
+    static class FixedGeocoderConfig {
+
+        @Bean
+        @Primary
+        AddressGeocoder fixedAddressGeocoder() {
+            return roadAddress -> new GeocodedCoordinates(
+                    new BigDecimal("37.1234567"), new BigDecimal("127.1234567"));
+        }
     }
 
     @Configuration
