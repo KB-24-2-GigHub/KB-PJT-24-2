@@ -148,13 +148,21 @@
         LIMIT #{limit}
     </select>
 
+    <resultMap id="scheduledPayoutCandidateResult"
+               type="com.gighub.settlement.dto.ScheduledPayoutCandidate">
+        <constructor>
+            <idArg column="settlementId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
     <!--
         건별 짧은 Transaction 전용 잠금이다. SKIP LOCKED라 다른 실행 주체가 이미 잠근 행은
         대기 없이 결과에서 빠진다. 배치 조회와 이 잠금 사이의 시간차를 감안해 자격 조건을
-        한 번 더 검사한다.
+        한 번 더 검사한다. 지급 실행에 필요한 work_case_id를 함께 돌려줘 별도 조회를 없앤다.
     -->
-    <select id="lockScheduledPayoutCandidate" resultType="java.lang.Long">
-        SELECT s.id
+    <select id="lockScheduledPayoutCandidate" resultMap="scheduledPayoutCandidateResult">
+        SELECT s.id AS settlementId, s.work_case_id AS workCaseId
         FROM settlements s
         WHERE s.id = #{settlementId}
           AND s.status = 'SCHEDULED'
@@ -169,6 +177,21 @@
                 AND d.status IN ('OPEN', 'UNDER_REVIEW')
           )
         FOR UPDATE SKIP LOCKED
+    </select>
+
+    <!--
+        실패 감사 기록 직전 잠금 겸 조회다. 이 Transaction이 행을 잠그고 있는 동안에는 다른
+        Scheduler 인스턴스의 lockScheduledPayoutCandidate가 SKIP LOCKED로 이 행을 건너뛰므로
+        감사 기록과 다음 선점 사이에 경합이 끼어들지 않는다.
+    -->
+    <select id="findRetryCountForUpdate" resultType="java.lang.Integer">
+        SELECT retry_count
+        FROM settlements
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+          AND processing_at IS NULL
+          AND completed_at IS NULL
+        FOR UPDATE
     </select>
 
     <!--

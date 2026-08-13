@@ -1,5 +1,6 @@
 package com.gighub.settlement.mapper;
 
+import com.gighub.settlement.dto.ScheduledPayoutCandidate;
 import com.gighub.settlement.dto.SettlementSnapshot;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -78,13 +79,22 @@ public interface SettlementMapper {
      *
      * <p>{@code FOR UPDATE SKIP LOCKED}이므로 다른 Scheduler 인스턴스나 OWNER 승인이 같은
      * 행을 먼저 잠그고 있으면 대기하지 않고 즉시 {@code null}을 반환한다. 호출부는 {@code null}을
-     * "이번 실행에서는 건너뛴다"로 처리해야 한다.</p>
+     * "이번 실행에서는 건너뛴다"로 처리해야 한다. 배치 조회는 ID만 주므로 지급 실행에 필요한
+     * {@code workCaseId}는 이 잠금 조회가 함께 돌려준다.</p>
      *
-     * @return 잠금에 성공한 Settlement ID, 이미 잠겼거나 자격을 잃었으면 {@code null}
+     * @return 잠금에 성공한 후보, 이미 잠겼거나 자격을 잃었으면 {@code null}
      */
-    Long lockScheduledPayoutCandidate(
+    ScheduledPayoutCandidate lockScheduledPayoutCandidate(
             @Param("settlementId") Long settlementId,
             @Param("eligibilityTime") LocalDateTime eligibilityTime);
+
+    /**
+     * 실패 감사 기록 직전, 같은 Transaction에서 현재 실패 누적 횟수를 잠그고 읽는다.
+     *
+     * <p>{@code SCHEDULED}가 아니면(예: 그 사이 다른 실행 주체가 이미 완료했으면) 기록할
+     * 대상이 없다는 뜻이므로 {@code null}을 돌려주고, 호출부는 감사 기록을 건너뛴다.</p>
+     */
+    Integer findRetryCountForUpdate(@Param("settlementId") Long settlementId);
 
     /**
      * 일시 실패를 감사 기록하고 {@code SCHEDULED}로 남긴다.
