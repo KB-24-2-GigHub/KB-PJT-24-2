@@ -3,11 +3,12 @@
  * [F] 알바생 근무 정보 상세  ·  /worker/work/work-cases/:workCaseId  ·  WORKER(본인 근무)
  * 근무 정보 확인(제목·날짜·시간·휴게·일급·정산 상태).
  * 연계 API: GET /work-cases/{id} · GET /work-cases/{id}/workplace-contact  →  @/services/workCases
- * route.params.workCaseId 사용. 공통: StatusChip · 문의하기 시트 · 신고 진입.
+ * route.params.workCaseId 사용. 공통: StatusChip · 문의하기 시트.
+ * 임금분쟁 신고는 Backend(#175)가 Deferred라 버튼을 비활성 상태로만 노출한다.
  */
 import { FileText, Phone } from 'lucide-vue-next'
 import { computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
@@ -28,7 +29,6 @@ import {
 } from '@/utils/format'
 
 const route = useRoute()
-const router = useRouter()
 const ui = useUiStore()
 
 const workCaseId = computed(() => route.params.workCaseId)
@@ -112,10 +112,6 @@ async function openContact() {
     contactLoading.value = false
   }
 }
-
-function goReport() {
-  router.push(`/worker/work/work-cases/${workCaseId.value}/report`)
-}
 </script>
 
 <template>
@@ -184,8 +180,8 @@ function goReport() {
             <Phone :size="18" />
             사장님께 문의
           </BaseButton>
-          <BaseButton variant="danger" size="lg" block @click="goReport">
-            임금분쟁 신고
+          <BaseButton variant="secondary" size="lg" block disabled>
+            임금분쟁 신고 (준비 중)
           </BaseButton>
         </div>
       </template>
