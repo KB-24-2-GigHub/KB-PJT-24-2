@@ -6,7 +6,7 @@
  * route.params.workCaseId 사용. 공통: StatusChip · 문의하기 시트 · 신고 진입.
  */
 import { FileText, Phone } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
@@ -30,7 +30,7 @@ const route = useRoute()
 const router = useRouter()
 const ui = useUiStore()
 
-const workCaseId = route.params.workCaseId
+const workCaseId = computed(() => route.params.workCaseId)
 const workCase = ref(null)
 const loading = ref(true)
 const contractViewUrl = computed(() => {
@@ -38,15 +38,19 @@ const contractViewUrl = computed(() => {
   return documentId ? contractFileUrl(documentId, 'view') : ''
 })
 
-onMounted(async () => {
+async function load(id) {
+  workCase.value = null
+  loading.value = true
   try {
-    workCase.value = await getWorkCase(workCaseId)
+    workCase.value = await getWorkCase(id)
   } catch {
     ui.toast('근무 정보를 불러오지 못했습니다.', { type: 'danger' })
   } finally {
     loading.value = false
   }
-})
+}
+
+watch(workCaseId, load, { immediate: true })
 
 /* ---- 문의하기 시트 ---- */
 const contactOpen = ref(false)
@@ -60,7 +64,7 @@ async function openContact() {
   contactOpen.value = true
   contactLoading.value = true
   try {
-    contact.value = await getOwnerContact(workCaseId)
+    contact.value = await getOwnerContact(workCaseId.value)
   } catch (error) {
     contactError.value = error
     const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
@@ -74,7 +78,7 @@ async function openContact() {
 }
 
 function goReport() {
-  router.push(`/worker/work/work-cases/${workCaseId}/report`)
+  router.push(`/worker/work/work-cases/${workCaseId.value}/report`)
 }
 </script>
 
