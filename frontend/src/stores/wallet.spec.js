@@ -90,4 +90,27 @@ describe('wallet store', () => {
     expect(fetchTransactions).toHaveBeenCalledTimes(2)
     expect(store.transactions).toEqual([{ transactionId: 2, type: 'ESCROW_RELEASE' }])
   })
+
+  it('진행 중 조회가 실패해도 일반 중복 호출은 오류를 다시 전파하지 않는다', async () => {
+    let rejectFirst
+    const requestError = new Error('network error')
+    fetchTransactions.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          rejectFirst = reject
+        })
+    )
+    const store = useWalletStore()
+
+    const firstRequest = store.loadTransactions()
+    const duplicateRequest = store.loadTransactions({ type: 'FUNDING' })
+    const firstExpectation = expect(firstRequest).rejects.toBe(requestError)
+    const duplicateExpectation = expect(duplicateRequest).resolves.toBeUndefined()
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    rejectFirst(requestError)
+    await Promise.all([firstExpectation, duplicateExpectation])
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+  })
 })

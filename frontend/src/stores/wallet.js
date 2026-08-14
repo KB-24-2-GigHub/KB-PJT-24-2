@@ -32,14 +32,15 @@ export const useWalletStore = defineStore('wallet', () => {
 
   async function loadTransactions(params = {}, { append = false, force = false } = {}) {
     if (transactionsRequest) {
+      // 일반 중복 조회는 기존 계약대로 조용히 반환하고, 강제 갱신만 앞선 요청을 기다린다.
+      if (!force) return
       try {
         await transactionsRequest
-      } catch (requestError) {
-        if (!force) throw requestError
+      } catch {
+        // 앞선 조회가 실패해도 정산 결과 확인용 새 요청은 계속 진행한다.
       }
       // 정산 직후 강제 갱신은 기존 요청의 결과로 대신하지 않고 반드시 새 요청을 만든다.
-      if (force) return loadTransactions(params, { append, force: true })
-      return
+      return loadTransactions(params, { append, force: true })
     }
 
     const nextQuery = append
