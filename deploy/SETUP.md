@@ -932,6 +932,70 @@ kill %1 %2 ...      # 또는  pkill yes
 다시 하고 13.7절 2번으로 확인한다. 하지 않으면 저장소는 새 코드, 운영은 옛 코드가 되고
 이 어긋남은 어떤 지표에도 나타나지 않는다. 9.1절의 WAR 함정과 같은 종류의 실패다.
 
+## 14. seed 데이터 반복 적용
+
+스키마를 바꾼 뒤 데이터를 다시 맞출 때 쓴다. 8장의 Flyway 적용과 짝이지만 **버튼은 따로**다.
+Migration 은 한 번만 되돌릴 수 없이 적용되고 seed 는 반복 실행이 목적이라 성질이 반대다.
+한 버튼에 묶으면 seed 를 다시 넣으려다 DDL 까지 나간다.
+
+### 14.1 최초 1회 준비
+
+`compose.prod.yaml` 에 `seed` 서비스가 추가됐다. 배포 워크플로는 이 파일을 덮어쓰지 않으므로
+사람이 한 번 올려야 한다.
+
+```bash
+scp -i ~/.ssh/my-keypair.pem \
+  deploy/compose.prod.yaml \
+  ec2-user@13.125.191.199:/opt/gighub/compose.prod.yaml
+```
+
+확인:
+
+```bash
+ssh ... "docker compose -f /opt/gighub/compose.prod.yaml --profile tools config --services"
+```
+
+기대: 목록에 **`seed`** 가 있어야 한다. 없으면 워크플로가 첫 단계에서 이 안내와 함께 멈춘다.
+
+`.env` 에 값을 더할 필요는 없다. `apply-seed.sh` 가 기존 `FLYWAY_URL` 에서 host·port·database 를
+파싱하고 `FLYWAY_USER` / `FLYWAY_PASSWORD` 를 그대로 쓴다. mysql 전용 변수를 따로 두면 RDS
+엔드포인트가 바뀔 때 한쪽만 고쳐져 조용히 어긋나기 때문이다. 파싱은
+`scripts/apply-seed.test.js` 가 고정한다.
+
+### 14.2 실행
+
+Actions → **Seed DB** → Run workflow.
+
+| 입력      | 값                                                 |
+| --------- | -------------------------------------------------- |
+| `confirm` | `seed` — 다른 값이면 job 이 아예 돌지 않는다        |
+| `file`    | 적용할 파일명 (예: `test-contract-escrow.sql`)      |
+
+`backend/src/test/resources/db/seed/` 의 `.sql` 을 전부 서버로 올린 뒤 `file` 로 고른 하나만
+실행한다. 파일명은 경로 없이 파일명만 적는다. `../` 나 하위 디렉터리 표기는 거부된다.
+
+### 14.3 seed 를 새로 만들 때 지킬 것
+
+기존 두 seed 가 이미 지키고 있는 성질이며, 이게 깨지면 반복 적용이 안전하지 않다.
+
+- **멱등**: 모든 `INSERT` 에 `ON DUPLICATE KEY UPDATE` 를 붙인다. 몇 번을 돌려도 결과가 같아야 한다.
+- **범위 한정**: `DELETE` 는 반드시 자기 fixture 의 owner/workplace 로 좁힌다. 화면에서 손으로
+  만들어 둔 다른 데이터를 지우면 안 된다.
+
+이 두 가지는 현재 사람이 지키는 규칙이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
+파일이 실제로 들어오면 정적 검사 도입을 다시 판단한다.
+
+### 14.4 실패했을 때
+
+| 증상                                          | 원인                                                        |
+| --------------------------------------------- | ----------------------------------------------------------- |
+| `seed 서비스가 없다`                          | 14.1 을 하지 않음                                            |
+| `SEED_FILE must be a bare file name`          | `file` 에 경로를 적음                                        |
+| `seed file not found`                         | 저장소에 없는 파일명. 워크플로 첫 단계가 목록을 찍어 준다     |
+| `could not parse host/database`               | `.env` 의 `FLYWAY_URL` 형식이 `jdbc:mysql://host/db` 가 아님 |
+
+seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구 절차가 없다.
+
 ## 문제 해결
 
 | 증상                          | 확인 순서                                              |
