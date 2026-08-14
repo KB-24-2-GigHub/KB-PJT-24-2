@@ -41,14 +41,7 @@ public class AttendanceLifecycleTransitionExecutor {
             return false;
         }
 
-        AttendanceReadinessCheckRow readiness =
-                lifecycleMapper.findReadinessCheck(workCaseId);
-        if (readiness == null || !readiness.isComplete()) {
-            auditReadyBlocked(workCaseId, readiness);
-            return false;
-        }
-        if (!artifactQueryService.isReadable(workCaseId)) {
-            auditReadyBlocked(workCaseId, List.of("SIGNED_CONTRACT_ARTIFACT_UNREADABLE"));
+        if (!isAttendanceReady(workCaseId)) {
             return false;
         }
 
@@ -59,10 +52,15 @@ public class AttendanceLifecycleTransitionExecutor {
     public boolean advanceToNoShow(long workCaseId, LocalDateTime now) {
         WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
-                || row.status() != WorkCaseStatus.READY
+                || (row.status() != WorkCaseStatus.READY
+                        && row.status() != WorkCaseStatus.ACCEPTED)
                 || AttendanceWindowPolicy.noShowAt(
                         row.startsAt(), row.endsAt()).isAfter(now)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)) {
+            return false;
+        }
+        // Scheduler 지연으로 READY를 놓친 완전한 Aggregate만 ACCEPTED에서 직접 종료합니다.
+        if (row.status() == WorkCaseStatus.ACCEPTED && !isAttendanceReady(workCaseId)) {
             return false;
         }
         return transition(row, WorkCaseStatus.NO_SHOW);
@@ -86,6 +84,20 @@ public class AttendanceLifecycleTransitionExecutor {
             WorkCaseStatus target) {
         return workLifecycleCommandService.transition(
                 row.workCaseId(), row.status(), target);
+    }
+
+    private boolean isAttendanceReady(long workCaseId) {
+        AttendanceReadinessCheckRow readiness =
+                lifecycleMapper.findReadinessCheck(workCaseId);
+        if (readiness == null || !readiness.isComplete()) {
+            auditReadyBlocked(workCaseId, readiness);
+            return false;
+        }
+        if (!artifactQueryService.isReadable(workCaseId)) {
+            auditReadyBlocked(workCaseId, List.of("SIGNED_CONTRACT_ARTIFACT_UNREADABLE"));
+            return false;
+        }
+        return true;
     }
 
     private void auditReadyBlocked(

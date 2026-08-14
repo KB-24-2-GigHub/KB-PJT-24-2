@@ -1,5 +1,6 @@
 package com.gighub.attendance.service;
 
+import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,11 +34,11 @@ class AttendanceLifecycleSchedulerTest {
     @Test
     void usesApprovedBoundariesAndProcessesReadyBeforeTerminalTransitions() {
         when(lifecycleMapper.findReadyCandidateIds(
-                NOW.plusMinutes(30), NOW.minusHours(1), NOW,
-                AttendanceLifecycleScheduler.BATCH_SIZE))
+                NOW.plusMinutes(30), NOW.minusHours(1), AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenReturn(List.of(1L));
         when(lifecycleMapper.findNoShowCandidateIds(
-                NOW.minusHours(1), NOW, AttendanceLifecycleScheduler.BATCH_SIZE))
+                AttendanceWindowPolicy.noShowCandidateWindow(NOW),
+                AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenReturn(List.of(2L));
         when(lifecycleMapper.findCheckoutMissingCandidateIds(
                 NOW.minusHours(2), AttendanceLifecycleScheduler.BATCH_SIZE))
@@ -47,11 +48,11 @@ class AttendanceLifecycleSchedulerTest {
 
         InOrder order = inOrder(lifecycleMapper, transitionExecutor);
         order.verify(lifecycleMapper).findReadyCandidateIds(
-                NOW.plusMinutes(30), NOW.minusHours(1), NOW,
-                AttendanceLifecycleScheduler.BATCH_SIZE);
+                NOW.plusMinutes(30), NOW.minusHours(1), AttendanceLifecycleScheduler.BATCH_SIZE);
         order.verify(transitionExecutor).advanceToReady(1L, NOW);
         order.verify(lifecycleMapper).findNoShowCandidateIds(
-                NOW.minusHours(1), NOW, AttendanceLifecycleScheduler.BATCH_SIZE);
+                AttendanceWindowPolicy.noShowCandidateWindow(NOW),
+                AttendanceLifecycleScheduler.BATCH_SIZE);
         order.verify(transitionExecutor).advanceToNoShow(2L, NOW);
         order.verify(lifecycleMapper).findCheckoutMissingCandidateIds(
                 NOW.minusHours(2), AttendanceLifecycleScheduler.BATCH_SIZE);
@@ -61,12 +62,12 @@ class AttendanceLifecycleSchedulerTest {
     @Test
     void retriesTransientCandidateAndTransitionFailures() {
         when(lifecycleMapper.findReadyCandidateIds(
-                NOW.plusMinutes(30), NOW.minusHours(1), NOW,
-                AttendanceLifecycleScheduler.BATCH_SIZE))
+                NOW.plusMinutes(30), NOW.minusHours(1), AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenThrow(new CannotAcquireLockException("candidate lock"))
                 .thenReturn(List.of(1L));
         when(lifecycleMapper.findNoShowCandidateIds(
-                NOW.minusHours(1), NOW, AttendanceLifecycleScheduler.BATCH_SIZE))
+                AttendanceWindowPolicy.noShowCandidateWindow(NOW),
+                AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenReturn(List.of());
         when(lifecycleMapper.findCheckoutMissingCandidateIds(
                 NOW.minusHours(2), AttendanceLifecycleScheduler.BATCH_SIZE))
@@ -78,19 +79,18 @@ class AttendanceLifecycleSchedulerTest {
         scheduler().runOnce();
 
         verify(lifecycleMapper, times(2)).findReadyCandidateIds(
-                NOW.plusMinutes(30), NOW.minusHours(1), NOW,
-                AttendanceLifecycleScheduler.BATCH_SIZE);
+                NOW.plusMinutes(30), NOW.minusHours(1), AttendanceLifecycleScheduler.BATCH_SIZE);
         verify(transitionExecutor, times(2)).advanceToReady(1L, NOW);
     }
 
     @Test
     void isolatesOneCandidateAndContinuesWithTheRest() {
         when(lifecycleMapper.findReadyCandidateIds(
-                NOW.plusMinutes(30), NOW.minusHours(1), NOW,
-                AttendanceLifecycleScheduler.BATCH_SIZE))
+                NOW.plusMinutes(30), NOW.minusHours(1), AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenReturn(List.of(1L, 2L));
         when(lifecycleMapper.findNoShowCandidateIds(
-                NOW.minusHours(1), NOW, AttendanceLifecycleScheduler.BATCH_SIZE))
+                AttendanceWindowPolicy.noShowCandidateWindow(NOW),
+                AttendanceLifecycleScheduler.BATCH_SIZE))
                 .thenReturn(List.of());
         when(lifecycleMapper.findCheckoutMissingCandidateIds(
                 NOW.minusHours(2), AttendanceLifecycleScheduler.BATCH_SIZE))

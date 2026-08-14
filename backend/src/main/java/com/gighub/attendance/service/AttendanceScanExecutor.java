@@ -343,7 +343,6 @@ public class AttendanceScanExecutor {
                         workplaceId,
                         AttendanceWindowPolicy.readyLatestStartsAt(attemptedAt),
                         AttendanceWindowPolicy.readyEarliestStartsAt(attemptedAt),
-                        attemptedAt,
                         AttendanceWindowPolicy.checkOutEarliestEndsAt(attemptedAt));
         if (candidates.size() == 1) {
             return candidates.get(0);

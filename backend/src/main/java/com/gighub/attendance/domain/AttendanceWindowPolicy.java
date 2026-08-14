@@ -3,6 +3,7 @@ package com.gighub.attendance.domain;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.util.Objects;
 
 /**
  * 근태 자동 판정과 QR 스캔이 함께 쓰는 시간 경계입니다.
@@ -42,9 +43,11 @@ public final class AttendanceWindowPolicy {
 
     /** 성공 출근이 없으면 결근으로 확정되는 시점입니다. */
     public static LocalDateTime noShowAt(LocalDateTime startsAt, LocalDateTime endsAt) {
+        Objects.requireNonNull(startsAt, "startsAt");
+        Objects.requireNonNull(endsAt, "endsAt");
         LocalDateTime graceBoundary = startsAt.plusHours(NO_SHOW_GRACE_HOURS);
         // 짧은 근무가 종료된 뒤에도 출근을 기다리지 않도록 두 경계 중 먼저 온 시각을 사용합니다.
-        return graceBoundary.isBefore(endsAt) ? graceBoundary : endsAt;
+        return endsAt.isBefore(graceBoundary) ? endsAt : graceBoundary;
     }
 
     /** 성공 퇴근이 없으면 퇴근 누락으로 확정되는 시점입니다. */
@@ -65,11 +68,16 @@ public final class AttendanceWindowPolicy {
     /**
      * 출근 스캔 후보의 {@code starts_at} 하한입니다.
      *
-     * <p>{@code attemptedAt < starts_at + 1시간}을 옮긴 값이며 경계는 열린 구간입니다.
-     * 종료 시각 조건은 후보 조회에서 별도로 함께 확인합니다.</p>
+     * <p>{@code attemptedAt < starts_at + 1시간}을 옮긴 값이며 경계는 열린 구간입니다.</p>
      */
     public static LocalDateTime readyEarliestStartsAt(LocalDateTime attemptedAt) {
         return attemptedAt.minusHours(NO_SHOW_GRACE_HOURS);
+    }
+
+    /** Scheduler가 조회할 NO_SHOW 시작·종료 경계를 순서가 뒤바뀌지 않는 값으로 묶습니다. */
+    public static NoShowCandidateWindow noShowCandidateWindow(LocalDateTime now) {
+        Objects.requireNonNull(now, "now");
+        return new NoShowCandidateWindow(readyEarliestStartsAt(now), now);
     }
 
     /**
@@ -91,5 +99,16 @@ public final class AttendanceWindowPolicy {
         return capturedAt != null
                 && !capturedAt.isBefore(receivedAt.minus(CAPTURE_MAX_AGE))
                 && !capturedAt.isAfter(receivedAt.plus(CAPTURE_MAX_SKEW));
+    }
+
+    /** NO_SHOW 후보 SQL에 전달하는 두 경계를 한 타입으로 고정합니다. */
+    public record NoShowCandidateWindow(
+            LocalDateTime latestStartsAt,
+            LocalDateTime latestEndsAt) {
+
+        public NoShowCandidateWindow {
+            Objects.requireNonNull(latestStartsAt, "latestStartsAt");
+            Objects.requireNonNull(latestEndsAt, "latestEndsAt");
+        }
     }
 }

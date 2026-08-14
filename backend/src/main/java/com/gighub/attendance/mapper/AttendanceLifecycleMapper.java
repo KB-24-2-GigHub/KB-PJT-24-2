@@ -1,5 +1,6 @@
 package com.gighub.attendance.mapper;
 
+import com.gighub.attendance.domain.AttendanceWindowPolicy.NoShowCandidateWindow;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
@@ -14,12 +15,10 @@ public interface AttendanceLifecycleMapper {
     List<Long> findReadyCandidateIds(
             @Param("readyAt") LocalDateTime readyAt,
             @Param("noShowAfter") LocalDateTime noShowAfter,
-            @Param("endsAfter") LocalDateTime endsAfter,
             @Param("batchSize") int batchSize);
 
     List<Long> findNoShowCandidateIds(
-            @Param("noShowStartsAt") LocalDateTime noShowStartsAt,
-            @Param("noShowEndsAt") LocalDateTime noShowEndsAt,
+            @Param("window") NoShowCandidateWindow window,
             @Param("batchSize") int batchSize);
 
     List<Long> findCheckoutMissingCandidateIds(
