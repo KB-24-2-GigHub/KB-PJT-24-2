@@ -1,12 +1,11 @@
 package com.gighub.document.validation;
 
 import com.gighub.common.exception.ValidationException;
+import com.gighub.document.storage.Sha256;
 import org.springframework.stereotype.Component;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Locale;
 import java.util.Map;
 
@@ -49,7 +48,7 @@ public class HealthCertificateFileValidator {
         }
 
         return new ValidatedHealthCertificateFile(
-                content, expectedType.storageExtension, expectedType.mimeType, sha256(content));
+                content, expectedType.storageExtension, expectedType.mimeType, Sha256.digest(content));
     }
 
     private String extractExtension(String originalFilename) {
@@ -68,14 +67,6 @@ public class HealthCertificateFileValidator {
             return file.getBytes();
         } catch (IOException e) {
             throw new ValidationException("보건증 파일을 읽을 수 없습니다.", "file", "UNREADABLE");
-        }
-    }
-
-    private byte[] sha256(byte[] content) {
-        try {
-            return MessageDigest.getInstance("SHA-256").digest(content);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 알고리즘을 사용할 수 없습니다.", e);
         }
     }
 
