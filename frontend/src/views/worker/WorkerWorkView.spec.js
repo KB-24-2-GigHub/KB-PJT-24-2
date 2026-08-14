@@ -98,4 +98,60 @@ describe('WorkerWorkView', () => {
 
     expect(wrapper.find('.help-btn').exists()).toBe(false)
   })
+
+  it('settlementStatus가 SCHEDULED이고 settlementDueAt이 있으면 정산 예정 시각을 표시한다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([
+        {
+          ...sampleWorkCase,
+          settlementStatus: 'SCHEDULED',
+          settlementDueAt: '2026-08-21T00:00:00Z'
+        }
+      ])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('2026.08.21 09:00 지급 예정')
+  })
+
+  it('settlementDueAt이 없으면 예정 시각을 표시하지 않는다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase]))
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('지급 예정')
+  })
+
+  it('due_at은 지급 완료·실패 후에도 남아있는 값이라 SCHEDULED가 아니면 지급 예정을 표시하지 않는다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([
+        {
+          ...sampleWorkCase,
+          settlementStatus: 'COMPLETED',
+          settlementDueAt: '2026-08-21T00:00:00Z'
+        },
+        {
+          ...sampleWorkCase,
+          workCaseId: 102,
+          settlementStatus: 'FAILED',
+          settlementDueAt: '2026-08-21T00:00:00Z'
+        }
+      ])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('지급 예정')
+  })
+
+  it('401·403·409·5xx 등 오류에서 빈 상태 대신 오류 상태를 보여주고 이전 성공 상태를 표시하지 않는다', async () => {
+    listWorkerWorkCases.mockRejectedValueOnce(new Error('server error'))
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('근무 내역을 불러오지 못했습니다.')
+    expect(wrapper.text()).not.toContain('아직 근무 내역이 없어요.')
+    expect(wrapper.findAll('.work-case')).toHaveLength(0)
+  })
 })

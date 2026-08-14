@@ -38,11 +38,11 @@ export const SETTLE_STATUS = {
  * 정산(settlements.status)과 다른 축이라 SETTLE_STATUS 와 섞지 않는다.
  */
 export const ESCROW_STATUS = {
-  UNFUNDED: { label: '미예치' },
-  HELD: { label: '예치중' },
-  RELEASED: { label: '지급완료' },
-  REFUNDED: { label: '환불완료' },
-  ON_HOLD: { label: '보류' }
+  UNFUNDED: { label: '미예치', color: 'var(--color-text-sub)' },
+  HELD: { label: '예치중', color: 'var(--color-brand)' },
+  RELEASED: { label: '지급완료', color: 'var(--color-success)' },
+  REFUNDED: { label: '환불완료', color: 'var(--color-text-sub)' },
+  ON_HOLD: { label: '보류', color: 'var(--color-warning)' }
 }
 
 /** 에스크로 상태 → 표기 라벨(없으면 원문 반환). */
