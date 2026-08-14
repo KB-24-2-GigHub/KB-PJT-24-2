@@ -20,7 +20,7 @@
     "test:fe": "npm --prefix frontend run test:run",
     "build:fe": "npm --prefix frontend run build",
     "format:staged": "lint-staged",
-    "test:harness": "node --test deploy/lambda/slack-alert/index.test.mjs scripts/assert-disposable-database.test.js scripts/backfill-workplace-coordinates.test.js scripts/check-project-guardrails.test.js scripts/prepare-invitation-fixture.test.js scripts/project-automation-workflow.test.js scripts/run-precommit.test.js",
+    "test:harness": "node --test deploy/lambda/slack-alert/index.test.mjs scripts/apply-seed.test.js scripts/assert-disposable-database.test.js scripts/backfill-workplace-coordinates.test.js scripts/check-project-guardrails.test.js scripts/prepare-invitation-fixture.test.js scripts/project-automation-workflow.test.js scripts/resolve-seed-file.test.js scripts/run-precommit.test.js",
     "check": "npm run check:guardrails && npm run test:harness && npm run test:fe && npm run build:fe && npm run lint"
   },
   "devDependencies": {
