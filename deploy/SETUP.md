@@ -972,7 +972,11 @@ Actions → **Seed DB** → Run workflow.
 | `file`    | 적용할 파일명 (예: `test-contract-escrow.sql`)      |
 
 `backend/src/test/resources/db/seed/` 의 `.sql` 을 전부 서버로 올린 뒤 `file` 로 고른 하나만
-실행한다. 파일명은 경로 없이 파일명만 적는다. `../` 나 하위 디렉터리 표기는 거부된다.
+실행한다.
+
+`file` 은 **그 디렉터리에 실제로 있는 `.sql` 파일 이름과 정확히 일치해야 한다.** 경로 표기,
+`../`, 다른 확장자는 모두 거부된다. 워크플로가 임의 문자열을 받아 셸로 넘기지 않게 하려는
+것이므로, 목록에 없는 이름이면 보안그룹을 열기 전에 멈추고 사용 가능한 이름을 찍어 준다.
 
 ### 14.3 seed 를 새로 만들 때 지킬 것
 
@@ -987,12 +991,12 @@ Actions → **Seed DB** → Run workflow.
 
 ### 14.4 실패했을 때
 
-| 증상                                          | 원인                                                        |
-| --------------------------------------------- | ----------------------------------------------------------- |
-| `seed 서비스가 없다`                          | 14.1 을 하지 않음                                            |
-| `SEED_FILE must be a bare file name`          | `file` 에 경로를 적음                                        |
-| `seed file not found`                         | 저장소에 없는 파일명. 워크플로 첫 단계가 목록을 찍어 준다     |
-| `could not parse host/database`               | `.env` 의 `FLYWAY_URL` 형식이 `jdbc:mysql://host/db` 가 아님 |
+| 증상                                          | 원인                                                          |
+| --------------------------------------------- | ------------------------------------------------------------- |
+| `not an allowed seed file`                    | `file` 이 저장소의 `.sql` 이름과 다름. 같은 로그에 목록이 찍힌다 |
+| `seed 서비스가 없다`                          | 14.1 을 하지 않음                                              |
+| `could not parse host/database`               | `.env` 의 `FLYWAY_URL` 형식이 `jdbc:mysql://host/db` 가 아님   |
+| `SEED_FILE must be a bare file name`          | 컨테이너 쪽 심층 방어가 걸린 경우. 정상 경로에서는 보이지 않는다 |
 
 seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구 절차가 없다.
 
