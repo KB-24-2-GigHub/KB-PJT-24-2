@@ -19,6 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.TimeZone;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * {@link ContractSnapshot}로 근로계약서 ORIGINAL PDF(Version 1)를 렌더링합니다
@@ -50,6 +52,8 @@ public class ContractPdfRenderer {
     /** 서명 전 ORIGINAL의 근로자 서명란에 넣는 안내다. */
     private static final String UNSIGNED_NAME = "(서명 전)";
     private static final String UNSIGNED_DATE = "-";
+
+    private static final Pattern PLACEHOLDER = Pattern.compile("\\$\\{(\\w+)}");
 
     static {
         // 렌더러 기본 설정은 CSS 경고를 java.util.logging으로 흘려보내므로 저장소 Log 경계 밖으로 나간다.
@@ -135,13 +139,22 @@ public class ContractPdfRenderer {
         }
     }
 
-    /** 사용자 입력이 Template의 Markup을 깨지 않도록 Escape한 뒤 자리표시자를 치환한다. */
+    /**
+     * 사용자 입력이 Template의 Markup을 깨지 않도록 Escape한 뒤 자리표시자를 치환한다.
+     *
+     * <p>Template을 한 번만 훑으며 채워 넣으므로, 치환된 값 안에 {@code ${...}} 모양 문자열이
+     * 들어 있어도 그 값이 다시 자리표시자로 해석되지 않는다.</p>
+     */
     private String fill(String template, Map<String, String> values) {
-        String filled = template;
-        for (Map.Entry<String, String> value : values.entrySet()) {
-            filled = filled.replace("${" + value.getKey() + "}", escapeXml(value.getValue()));
+        Matcher matcher = PLACEHOLDER.matcher(template);
+        StringBuilder filled = new StringBuilder();
+        while (matcher.find()) {
+            String value = values.get(matcher.group(1));
+            String replacement = value == null ? matcher.group(0) : escapeXml(value);
+            matcher.appendReplacement(filled, Matcher.quoteReplacement(replacement));
         }
-        return filled;
+        matcher.appendTail(filled);
+        return filled.toString();
     }
 
     private String escapeXml(String value) {

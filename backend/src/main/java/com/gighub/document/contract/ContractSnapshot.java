@@ -11,8 +11,8 @@ import java.time.LocalDateTime;
  *
  * <p>{@code employerPhone}·{@code workerPhone}은 {@code users.phone}이 선택 입력이라
  * 비어 있을 수 있습니다. 이 Record는 렌더링 전용 값 전달체이며 {@code work_contracts.terms_snapshot}의
- * 승인된 JSON Shape와는 별개라, 연락처처럼 저장하지 않고 매번 다시 읽는 값을 자유롭게 더할 수
- * 있습니다.</p>
+ * 승인된 JSON Shape와는 별개라, 연락처처럼 저장하지 않고 수락 Aggregate가 확정한 시점의 값을
+ * 자유롭게 더할 수 있습니다.</p>
  *
  * <p>{@code employerActionAt}은 사업주 서명란에 표시하는 근무 등록 일시({@code work_cases.created_at})
  * 입니다. 사업주는 별도 서명 절차 없이 근무 조건을 등록한 시점을 계약 제시 시점으로 봅니다.</p>

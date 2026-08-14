@@ -127,6 +127,35 @@ class ContractPdfRendererTest {
     }
 
     @Test
+    void doesNotReinterpretAPlaceholderLookingStringInsideASubstitutedValue()
+            throws IOException {
+        ContractSnapshot placeholderLookingTitle = new ContractSnapshot(
+                1L,
+                "업무 ${agreedWage} 확인",
+                LocalDateTime.of(2026, 7, 22, 10, 0),
+                LocalDateTime.of(2026, 7, 22, 18, 0),
+                60,
+                false,
+                "기가 허브",
+                "서울시 강남구 테스트로 1",
+                90_000L,
+                "김사장",
+                null,
+                "이알바",
+                null,
+                3,
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
+
+        byte[] pdf = renderer.render(placeholderLookingTitle);
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("업무 ${agreedWage} 확인"));
+        }
+    }
+
+    @Test
     void fixesDocumentTimestampsToAcceptedAtInsteadOfRenderTime() throws IOException {
         byte[] pdf = renderer.render(snapshot());
 
