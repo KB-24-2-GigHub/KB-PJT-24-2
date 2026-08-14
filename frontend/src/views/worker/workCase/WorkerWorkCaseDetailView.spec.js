@@ -278,6 +278,22 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('정산이 보류됐어요')
   })
 
+  it('NO_SHOW·CHECK_OUT_MISSING이어도 ON_HOLD는 서버 상태 그대로 보류로 표시한다', async () => {
+    getWorkCase.mockResolvedValueOnce(
+      baseWorkCase({
+        status: 'NO_SHOW',
+        escrow: { status: 'ON_HOLD', amount: 120000 },
+        settlement: { status: 'ON_HOLD', amount: 120000, dueAt: null, completedAt: null }
+      })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산이 보류됐어요')
+    expect(wrapper.text()).not.toContain('환불 승인 대기')
+    expect(wrapper.text()).not.toContain('환불 완료')
+  })
+
   it('임금분쟁 신고 버튼은 비활성 상태로만 노출한다', async () => {
     getWorkCase.mockResolvedValueOnce(baseWorkCase())
     const wrapper = mountView()

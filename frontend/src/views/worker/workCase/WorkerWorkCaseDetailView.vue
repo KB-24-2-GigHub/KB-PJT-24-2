@@ -47,6 +47,10 @@ const settlementMessage = computed(() => {
   const settlement = wc?.settlement
   if (!settlement) return null
 
+  // ON_HOLD는 근무 상태와 무관하게 서버 값 그대로 보류로 표시한다(NO_SHOW·CHECK_OUT_MISSING도 포함).
+  if (settlement.status === 'ON_HOLD') {
+    return '정산이 보류됐어요'
+  }
   if (wc.status === 'NO_SHOW') {
     return settlement.status === 'REFUNDED'
       ? '사장님 환불 완료 · 회원님 지급 내역은 없어요'
@@ -67,8 +71,6 @@ const settlementMessage = computed(() => {
         : `${formatKRW(settlement.amount)} 지급 완료`
     case 'FAILED':
       return '정산이 실패했어요'
-    case 'ON_HOLD':
-      return '정산이 보류됐어요'
     default:
       return null
   }
