@@ -60,8 +60,10 @@ const ICONS = {
   PROCESSING: Loader,
   FAILED: CircleX,
   ON_HOLD: Pause,
-  // 에스크로(escrows.status 5종 — ck_escrows_status). HELD·REFUNDED·ON_HOLD는 위와 공유.
+  // 에스크로(escrows.status 5종 — ck_escrows_status). REFUNDED·ON_HOLD는 위와 공유.
+  // HELD는 settle/tx의 HOLD와 철자가 달라 별도 키가 필요하다(공유 시 UNFUNDED와 같은 기본 아이콘으로 떨어짐).
   UNFUNDED: Clock,
+  HELD: Lock,
   RELEASED: CircleCheck
 }
 
