@@ -49,7 +49,7 @@ public class ContractPdfRenderer {
 
     /** 서명 전 ORIGINAL의 근로자 서명란에 넣는 안내다. */
     private static final String UNSIGNED_NAME = "(서명 전)";
-    private static final String UNSIGNED_META = "초대 수락 시 이름 직접 입력으로 서명한다.";
+    private static final String UNSIGNED_DATE = "-";
 
     static {
         // 렌더러 기본 설정은 CSS 경고를 java.util.logging으로 흘려보내므로 저장소 Log 경계 밖으로 나간다.
@@ -115,14 +115,14 @@ public class ContractPdfRenderer {
         values.put("workerContactLine", contactLine(snapshot.workerPhone()));
         values.put("sourceTermsVersion", String.valueOf(snapshot.sourceTermsVersion()));
         values.put("acceptedAt", formatDateTime(snapshot.acceptedAt()));
+        values.put("employerActionAt", formatDateTime(snapshot.employerActionAt()));
 
         if (signature == null) {
             values.put("workerSignatureName", UNSIGNED_NAME);
-            values.put("workerSignatureMeta", UNSIGNED_META);
+            values.put("workerSignatureDate", UNSIGNED_DATE);
         } else {
             values.put("workerSignatureName", signature.typedName());
-            values.put("workerSignatureMeta",
-                    "이름 직접 입력(TYPED_NAME) · 서명 일시 " + formatDateTime(signature.signedAt()));
+            values.put("workerSignatureDate", formatDateTime(signature.signedAt()));
         }
         return values;
     }

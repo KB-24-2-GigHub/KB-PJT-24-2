@@ -98,7 +98,8 @@
                workplace_address,
                workplace_latitude,
                workplace_longitude,
-               allowed_radius_meters
+               allowed_radius_meters,
+               created_at
         FROM work_cases
         WHERE id = #{workCaseId}
         FOR UPDATE

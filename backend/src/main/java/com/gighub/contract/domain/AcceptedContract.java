@@ -10,24 +10,28 @@ public final class AcceptedContract {
     private final long contractId;
     private final LocalDateTime acceptedAt;
     private final ContractTermsSnapshot terms;
+    private final LocalDateTime workCaseCreatedAt;
 
     private AcceptedContract(
             long workCaseId,
             long contractId,
             LocalDateTime acceptedAt,
-            ContractTermsSnapshot terms) {
+            ContractTermsSnapshot terms,
+            LocalDateTime workCaseCreatedAt) {
         this.workCaseId = workCaseId;
         this.contractId = contractId;
         this.acceptedAt = Objects.requireNonNull(acceptedAt, "acceptedAt");
         this.terms = Objects.requireNonNull(terms, "terms");
+        this.workCaseCreatedAt = Objects.requireNonNull(workCaseCreatedAt, "workCaseCreatedAt");
     }
 
     public static AcceptedContract of(
             long workCaseId,
             long contractId,
             LocalDateTime acceptedAt,
-            ContractTermsSnapshot terms) {
-        return new AcceptedContract(workCaseId, contractId, acceptedAt, terms);
+            ContractTermsSnapshot terms,
+            LocalDateTime workCaseCreatedAt) {
+        return new AcceptedContract(workCaseId, contractId, acceptedAt, terms, workCaseCreatedAt);
     }
 
     public long getWorkCaseId() {
@@ -44,5 +48,10 @@ public final class AcceptedContract {
 
     public ContractTermsSnapshot getTerms() {
         return terms;
+    }
+
+    /** 계약서 사업주란에 표시하는 근무 등록 일시입니다. 계약 조건 자체가 아니라 표시 전용입니다. */
+    public LocalDateTime getWorkCaseCreatedAt() {
+        return workCaseCreatedAt;
     }
 }

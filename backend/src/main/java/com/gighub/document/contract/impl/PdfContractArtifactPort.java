@@ -174,7 +174,8 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
                 terms.getWorker().getName(),
                 findPhone(terms.getWorker().getUserId()),
                 terms.getTermsVersion(),
-                command.getAcceptedAt());
+                command.getAcceptedAt(),
+                command.getWorkCaseCreatedAt());
     }
 
     /**

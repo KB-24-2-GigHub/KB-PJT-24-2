@@ -104,6 +104,7 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
                 .workplaceLatitude(workCase.getWorkplaceLatitude())
                 .workplaceLongitude(workCase.getWorkplaceLongitude())
                 .allowedRadiusMeters(workCase.getAllowedRadiusMeters())
+                .workCaseCreatedAt(workCase.getCreatedAt())
                 .build();
     }
 
@@ -160,7 +161,8 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
                 context.getWorkCaseId(),
                 Objects.requireNonNull(param.getId(), "생성된 계약 식별자"),
                 acceptedAt,
-                snapshot);
+                snapshot,
+                context.getWorkCaseCreatedAt());
     }
 
     private void requireUsableInvitation(InvitationRow invitation, LocalDateTime now) {

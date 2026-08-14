@@ -71,20 +71,29 @@ class ContractPdfRendererTest {
     }
 
     @Test
-    void rendersTypedNameSignatureEvidenceOnlyInTheSignedVersion() throws IOException {
+    void rendersWorkerSignatureDateOnlyInTheSignedVersion() throws IOException {
         byte[] original = renderer.render(snapshot());
         byte[] signed = renderer.render(snapshot(), new ContractSnapshot.Signature(
                 "이알바", LocalDateTime.of(2026, 7, 22, 13, 1)));
 
         try (PDDocument document = Loader.loadPDF(signed)) {
             String text = new PDFTextStripper().getText(document);
-            assertTrue(text.contains("TYPED_NAME"));
-            assertTrue(text.contains("2026-07-22 13:01"));
+            assertTrue(text.contains("서명 일시: 2026-07-22 13:01"));
         }
         try (PDDocument document = Loader.loadPDF(original)) {
             String text = new PDFTextStripper().getText(document);
-            assertFalse(text.contains("TYPED_NAME"));
+            assertTrue(text.contains("(서명 전)"));
             assertFalse(text.contains("2026-07-22 13:01"));
+        }
+    }
+
+    @Test
+    void rendersEmployerActionDateFromWorkCaseCreation() throws IOException {
+        byte[] pdf = renderer.render(snapshot());
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("근무등록 일시: 2026-07-01 09:00"));
         }
     }
 
@@ -106,7 +115,8 @@ class ContractPdfRendererTest {
                 "이알바",
                 null,
                 3,
-                LocalDateTime.of(2026, 7, 22, 13, 0));
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
 
         byte[] pdf = renderer.render(markupInValue);
 
@@ -147,7 +157,8 @@ class ContractPdfRendererTest {
                 "이알바",
                 null,
                 3,
-                LocalDateTime.of(2026, 7, 22, 13, 0));
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
 
         byte[] pdf = renderer.render(longAddress);
 
@@ -178,6 +189,7 @@ class ContractPdfRendererTest {
                 "이알바",
                 workerPhone,
                 3,
-                LocalDateTime.of(2026, 7, 22, 13, 0));
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
     }
 }
