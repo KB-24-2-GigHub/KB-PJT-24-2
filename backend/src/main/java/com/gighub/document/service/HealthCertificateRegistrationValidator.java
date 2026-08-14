@@ -4,10 +4,10 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.validation.HealthCertificateFileValidator;
+import com.gighub.document.validation.UploadedFile;
 import com.gighub.member.domain.UserRole;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 
 import java.time.Clock;
 import java.time.LocalDate;
@@ -39,7 +39,7 @@ public class HealthCertificateRegistrationValidator {
     }
 
     public ValidatedHealthCertificateRegistration validate(
-            AuthPrincipal principal, String docType, LocalDate issuedDate, MultipartFile file) {
+            AuthPrincipal principal, String docType, LocalDate issuedDate, UploadedFile file) {
         requireWorkerRole(principal);
         requireHealthCertificateType(docType);
         requireNotFutureIssuedDate(issuedDate);

@@ -10,15 +10,23 @@ import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.service.DocumentQueryService;
+import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.validation.UploadedFile;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 import javax.servlet.http.HttpServletRequest;
+import java.io.IOException;
+import java.time.LocalDate;
 import java.util.Set;
 
 @RestController
@@ -29,6 +37,7 @@ public class DocumentController {
             Set.of("workplaceId", "docType", "page", "size");
 
     private final DocumentQueryService documentQueryService;
+    private final HealthCertificateRegisterService healthCertificateRegisterService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
@@ -60,6 +69,30 @@ public class DocumentController {
         AuthPrincipal principal = AuthPrincipals.resolve(authentication);
         return ResponseEntity.ok(ApiResponse.of(documentQueryService.findDocument(
                 principal.getUserId(), principal.getRole(), documentId, workCaseId)));
+    }
+
+    // DOC-005: 보건증 등록
+    @PostMapping("/api/documents")
+    public ResponseEntity<ApiResponse<DocumentListItem>> registerHealthCertificate(
+            @RequestParam String docType,
+            @RequestParam MultipartFile file,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issuedDate,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        DocumentListItem registered = healthCertificateRegisterService.register(
+                principal, docType, issuedDate, toUploadedFile(file));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.of(registered));
+    }
+
+    private UploadedFile toUploadedFile(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return new UploadedFile(new byte[0], null, null);
+        }
+        try {
+            return new UploadedFile(file.getBytes(), file.getOriginalFilename(), file.getContentType());
+        } catch (IOException e) {
+            throw new ValidationException("보건증 파일을 읽을 수 없습니다.", "file", "UNREADABLE");
+        }
     }
 
     // SHARE-002: 문서 공유 현황

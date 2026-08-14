@@ -3,9 +3,7 @@ package com.gighub.document.validation;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.storage.Sha256;
 import org.springframework.stereotype.Component;
-import org.springframework.web.multipart.MultipartFile;
 
-import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
 
@@ -26,23 +24,23 @@ public class HealthCertificateFileValidator {
             "png", SignedType.PNG,
             "pdf", SignedType.PDF);
 
-    public ValidatedHealthCertificateFile validate(MultipartFile file) {
-        if (file == null || file.isEmpty()) {
+    public ValidatedHealthCertificateFile validate(UploadedFile file) {
+        if (file == null || file.content() == null || file.content().length == 0) {
             throw new ValidationException("보건증 파일이 필요합니다.", "file", "REQUIRED");
         }
-        if (file.getSize() > MAX_SIZE_BYTES) {
+        if (file.content().length > MAX_SIZE_BYTES) {
             throw new ValidationException("보건증 파일은 10 MiB 이하만 허용합니다.", "file", "SIZE_EXCEEDED");
         }
 
-        SignedType expectedType = EXTENSION_TYPES.get(extractExtension(file.getOriginalFilename()));
+        SignedType expectedType = EXTENSION_TYPES.get(extractExtension(file.originalFilename()));
         if (expectedType == null) {
             throw new ValidationException("보건증은 JPG, PNG, PDF만 허용합니다.", "file", "UNSUPPORTED_TYPE");
         }
-        if (!expectedType.mimeType.equalsIgnoreCase(file.getContentType())) {
+        if (!expectedType.mimeType.equalsIgnoreCase(file.declaredContentType())) {
             throw new ValidationException("파일 형식이 확장자와 일치하지 않습니다.", "file", "MIME_MISMATCH");
         }
 
-        byte[] content = readContent(file);
+        byte[] content = file.content();
         if (!expectedType.matchesSignature(content)) {
             throw new ValidationException("파일 내용이 확장자와 일치하지 않습니다.", "file", "SIGNATURE_MISMATCH");
         }
@@ -60,14 +58,6 @@ public class HealthCertificateFileValidator {
             return "";
         }
         return originalFilename.substring(dotIndex + 1).toLowerCase(Locale.ROOT);
-    }
-
-    private byte[] readContent(MultipartFile file) {
-        try {
-            return file.getBytes();
-        } catch (IOException e) {
-            throw new ValidationException("보건증 파일을 읽을 수 없습니다.", "file", "UNREADABLE");
-        }
     }
 
     private enum SignedType {

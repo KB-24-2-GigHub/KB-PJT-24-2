@@ -2,7 +2,6 @@ package com.gighub.document.validation;
 
 import com.gighub.common.exception.ValidationException;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
 
 import java.security.MessageDigest;
 import java.util.Arrays;
@@ -24,8 +23,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void acceptsAJpegFileAndComputesItsSha256Checksum() throws Exception {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "photo.jpg", "image/jpeg", JPEG_BYTES);
+        UploadedFile file = new UploadedFile(JPEG_BYTES, "photo.jpg", "image/jpeg");
 
         ValidatedHealthCertificateFile result = validator.validate(file);
 
@@ -37,8 +35,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void acceptsAPngFile() {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "photo.png", "image/png", PNG_BYTES);
+        UploadedFile file = new UploadedFile(PNG_BYTES, "photo.png", "image/png");
 
         ValidatedHealthCertificateFile result = validator.validate(file);
 
@@ -48,8 +45,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void acceptsAPdfFile() {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "cert.pdf", "application/pdf", PDF_BYTES);
+        UploadedFile file = new UploadedFile(PDF_BYTES, "cert.pdf", "application/pdf");
 
         ValidatedHealthCertificateFile result = validator.validate(file);
 
@@ -69,8 +65,7 @@ class HealthCertificateFileValidatorTest {
     void rejectsAFileLargerThan10Mebibytes() {
         byte[] oversized = Arrays.copyOf(JPEG_BYTES, 10 * 1024 * 1024 + 1);
         System.arraycopy(JPEG_BYTES, 0, oversized, 0, JPEG_BYTES.length);
-        MockMultipartFile file =
-                new MockMultipartFile("file", "photo.jpg", "image/jpeg", oversized);
+        UploadedFile file = new UploadedFile(oversized, "photo.jpg", "image/jpeg");
 
         ValidationException exception =
                 assertThrows(ValidationException.class, () -> validator.validate(file));
@@ -80,8 +75,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void rejectsAnUnsupportedExtension() {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "cert.gif", "image/gif", JPEG_BYTES);
+        UploadedFile file = new UploadedFile(JPEG_BYTES, "cert.gif", "image/gif");
 
         ValidationException exception =
                 assertThrows(ValidationException.class, () -> validator.validate(file));
@@ -91,8 +85,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void rejectsADeclaredMimeTypeThatDoesNotMatchTheExtension() {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "photo.jpg", "image/png", JPEG_BYTES);
+        UploadedFile file = new UploadedFile(JPEG_BYTES, "photo.jpg", "image/png");
 
         ValidationException exception =
                 assertThrows(ValidationException.class, () -> validator.validate(file));
@@ -102,8 +95,7 @@ class HealthCertificateFileValidatorTest {
 
     @Test
     void rejectsAFileWhoseContentSignatureDoesNotMatchItsDeclaredExtensionAndMimeType() {
-        MockMultipartFile file =
-                new MockMultipartFile("file", "photo.jpg", "image/jpeg", PNG_BYTES);
+        UploadedFile file = new UploadedFile(PNG_BYTES, "photo.jpg", "image/jpeg");
 
         ValidationException exception =
                 assertThrows(ValidationException.class, () -> validator.validate(file));

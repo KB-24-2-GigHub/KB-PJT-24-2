@@ -4,10 +4,10 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.validation.HealthCertificateFileValidator;
+import com.gighub.document.validation.UploadedFile;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockMultipartFile;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -38,7 +38,7 @@ class HealthCertificateRegistrationValidatorTest {
     @Test
     void acceptsAWorkersHealthCertificateRegistrationOnTheServerDate() {
         LocalDate issuedDate = LocalDate.of(2026, 8, 14);
-        MockMultipartFile file = jpegFile();
+        UploadedFile file = jpegFile();
 
         ValidatedHealthCertificateRegistration result =
                 validator.validate(WORKER, "HEALTH_CERTIFICATE", issuedDate, file);
@@ -79,7 +79,7 @@ class HealthCertificateRegistrationValidatorTest {
         assertEquals("REQUIRED", exception.getFieldErrors().get(0).getReason());
     }
 
-    private MockMultipartFile jpegFile() {
-        return new MockMultipartFile("file", "photo.jpg", "image/jpeg", JPEG_BYTES);
+    private UploadedFile jpegFile() {
+        return new UploadedFile(JPEG_BYTES, "photo.jpg", "image/jpeg");
     }
 }

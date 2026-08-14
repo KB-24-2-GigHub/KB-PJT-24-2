@@ -11,10 +11,12 @@ import org.apache.ibatis.annotations.Param;
 import java.util.List;
 
 /**
- * 근로계약서 자동 생성이 쓰는 {@code documents} 계열 행 생성·조회 진입점입니다.
- *
- * <p>{@link com.gighub.contract.ContractArtifactPort} 구현 전용입니다. 조회용 API가 쓰는
- * {@link DocumentQueryMapper}, {@link DocumentAccessMapper}와는 관심사가 달라 나눕니다.</p>
+ * {@code documents} 계열 행을 만드는 {@code documents}·{@code document_versions}의 단일
+ * writer입니다(MODULE_BOUNDARIES.md). 근로계약서 자동 생성({@link com.gighub.contract.ContractArtifactPort})과
+ * 보건증 등록({@link com.gighub.document.service.HealthCertificateRegisterTransaction})이
+ * 함께 쓰며, {@code findPromotionRowsByWorkCaseId}처럼 계약서 전용인 조회만 예외다. 조회용
+ * API가 쓰는 {@link DocumentQueryMapper}, {@link DocumentAccessMapper}와는 관심사가 달라
+ * 나눈다.
  */
 @Mapper
 public interface ContractDocumentWriteMapper {

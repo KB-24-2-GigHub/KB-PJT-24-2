@@ -12,6 +12,7 @@ import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentVersionItem;
 import com.gighub.document.service.DocumentQueryService;
+import com.gighub.document.service.HealthCertificateRegisterService;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -19,6 +20,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,10 +37,12 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -52,6 +56,9 @@ class DocumentControllerTest {
     @Mock
     private DocumentQueryService documentQueryService;
 
+    @Mock
+    private HealthCertificateRegisterService healthCertificateRegisterService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -63,7 +70,8 @@ class DocumentControllerTest {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DocumentController(documentQueryService))
+                .standaloneSetup(new DocumentController(
+                        documentQueryService, healthCertificateRegisterService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -218,6 +226,44 @@ class DocumentControllerTest {
                 any(Long.class), any(), any(), any(), any(Integer.class), any(Integer.class));
         verify(documentQueryService, never()).findDocument(
                 anyLong(), any(), anyLong(), any());
+    }
+
+    @Test
+    void registersAHealthCertificateAndReturnsTheCreatedItem() throws Exception {
+        DocumentListItem registered = DocumentListItem.of(
+                DOCUMENT_ID,
+                "HEALTH_CERTIFICATE",
+                "ACTIVE",
+                "image/jpeg",
+                LocalDate.of(2026, 8, 14),
+                LocalDate.of(2027, 8, 14),
+                1,
+                "OWN",
+                "김근로",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                LocalDateTime.of(2026, 8, 14, 12, 0));
+        when(healthCertificateRegisterService.register(
+                eq(principal), eq("HEALTH_CERTIFICATE"), eq(LocalDate.of(2026, 8, 14)), any()))
+                .thenReturn(registered);
+
+        mockMvc.perform(multipart("/api/documents")
+                        .file(new MockMultipartFile(
+                                "file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3}))
+                        .param("docType", "HEALTH_CERTIFICATE")
+                        .param("issuedDate", "2026-08-14")
+                        .principal(authentication))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.documentId").value(DOCUMENT_ID))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.capabilities.canShare").value(false));
+
+        verify(healthCertificateRegisterService).register(
+                eq(principal), eq("HEALTH_CERTIFICATE"), eq(LocalDate.of(2026, 8, 14)), any());
     }
 
     private DocumentListItem listItem() {
