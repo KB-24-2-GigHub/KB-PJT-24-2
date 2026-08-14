@@ -22,6 +22,7 @@ import {
   formatDuration,
   formatKRW,
   formatPhoneInput,
+  formatSeoulDateTime,
   formatSeoulTimeRange,
   onlyDigits
 } from '@/utils/format'
@@ -36,6 +37,41 @@ const loading = ref(true)
 const contractViewUrl = computed(() => {
   const documentId = workCase.value?.contract?.documentId
   return documentId ? contractFileUrl(documentId, 'view') : ''
+})
+
+// Settlement(정산)과 Escrow(예치)는 서로 다른 상태 축이라 칩은 각각 그대로 노출하고,
+// 이 문구는 두 축을 조합했을 때만 뜻이 분명해지는 경우(NO_SHOW 환불 vs WORKER 지급,
+// CHECK_OUT_MISSING 결정 전 등)만 보충 설명한다. 서버가 보내지 않은 시각·금액은 만들지 않는다.
+const settlementMessage = computed(() => {
+  const wc = workCase.value
+  const settlement = wc?.settlement
+  if (!settlement) return null
+
+  if (wc.status === 'NO_SHOW') {
+    return settlement.status === 'REFUNDED'
+      ? '사장님 환불 완료 · 회원님 지급 내역은 없어요'
+      : '사장님 환불 승인 대기 중 · 회원님 획득 금액은 0원이에요'
+  }
+  if (wc.status === 'CHECK_OUT_MISSING') {
+    return '퇴근 기록 확인 중 · 정산 결정 전이에요'
+  }
+
+  switch (settlement.status) {
+    case 'SCHEDULED':
+      return settlement.dueAt ? `${formatSeoulDateTime(settlement.dueAt)} 지급 예정` : '지급 예정'
+    case 'PROCESSING':
+      return '정산 처리 중이에요'
+    case 'COMPLETED':
+      return settlement.completedAt
+        ? `${formatSeoulDateTime(settlement.completedAt)} · ${formatKRW(settlement.amount)} 지급 완료`
+        : `${formatKRW(settlement.amount)} 지급 완료`
+    case 'FAILED':
+      return '정산이 실패했어요'
+    case 'ON_HOLD':
+      return '정산이 보류됐어요'
+    default:
+      return null
+  }
 })
 
 async function load(id) {
@@ -104,8 +140,11 @@ function goReport() {
                 :status="workCase.settlement.status"
                 kind="settle"
               />
+              <StatusChip v-if="workCase.escrow" :status="workCase.escrow.status" kind="escrow" />
             </div>
           </header>
+
+          <p v-if="settlementMessage" class="settlement-message">{{ settlementMessage }}</p>
 
           <dl class="info">
             <div class="detail-row">
@@ -209,6 +248,11 @@ function goReport() {
   align-items: flex-end;
   gap: var(--space-xs);
   flex-shrink: 0;
+}
+.settlement-message {
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
 }
 .info {
   margin-top: var(--space-lg);

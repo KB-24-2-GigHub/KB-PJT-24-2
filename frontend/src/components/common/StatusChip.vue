@@ -6,7 +6,7 @@
  * (assets/README.md 리스트 상태 표시 규약 준수).
  *
  * 사용: <StatusChip :status="workCase.status" kind="workCase" />
- *   kind: 'workCase' | 'tx' | 'settle'
+ *   kind: 'workCase' | 'tx' | 'settle' | 'escrow'
  */
 import {
   Ban,
@@ -25,7 +25,7 @@ import {
 import { computed } from 'vue'
 
 import { WORK_CASE_STATUS } from '@/constants/workCaseStatus'
-import { SETTLE_STATUS, TX_STATUS } from '@/utils/constants'
+import { ESCROW_STATUS, SETTLE_STATUS, TX_STATUS } from '@/utils/constants'
 
 const props = defineProps({
   status: { type: String, required: true },
@@ -35,7 +35,8 @@ const props = defineProps({
 const LABEL_MAPS = {
   workCase: WORK_CASE_STATUS,
   tx: TX_STATUS,
-  settle: SETTLE_STATUS
+  settle: SETTLE_STATUS,
+  escrow: ESCROW_STATUS
 }
 
 // 상태값(enum) → lucide 아이콘. 서로 다른 kind 가 같은 상태값을 공유한다.
@@ -58,7 +59,10 @@ const ICONS = {
   SCHEDULED: Clock,
   PROCESSING: Loader,
   FAILED: CircleX,
-  ON_HOLD: Pause
+  ON_HOLD: Pause,
+  // 에스크로(escrows.status 5종 — ck_escrows_status). HELD·REFUNDED·ON_HOLD는 위와 공유.
+  UNFUNDED: Clock,
+  RELEASED: CircleCheck
 }
 
 const meta = computed(() => {
