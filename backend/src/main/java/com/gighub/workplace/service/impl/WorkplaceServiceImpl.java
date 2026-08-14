@@ -210,6 +210,7 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 workplaceId,
                 principal.getUserId(),
                 command,
+                recalculatesCoordinates,
                 coordinates,
                 recalculatesCoordinates ? storedRoadAddress : null);
 
@@ -225,11 +226,17 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
      *
      * <p>{@code null} 좌표를 그대로 넘겨도 Mapper가 SET에서 빼지만, 값이 없다는 사실만으로
      * 좌표를 건드리지 않는다고 읽히면 안 되므로 여기서 명시적으로 분기합니다.</p>
+     *
+     * <p>{@code road_address}는 저장 주소와 실제로 다를 때만 SET에 넣습니다. 같은 주소를 다시
+     * 보낸 요청은 좌표를 다시 확정하지 않으므로 갱신 조건({@code expectedRoadAddress})도 없는데,
+     * 이때 주소까지 다시 쓰면 그 사이 주소와 좌표를 함께 바꾼 다른 요청의 주소만 과거 값으로
+     * 되돌려 좌표와 어긋나게 만듭니다. 바꿀 값이 없으니 쓰지도 않는 편이 안전합니다.</p>
      */
     private WorkplaceUpdateParam toUpdateParam(
             Long workplaceId,
             Long ownerUserId,
             WorkplaceUpdateCommand command,
+            boolean changesRoadAddress,
             GeocodedCoordinates coordinates,
             String expectedRoadAddress) {
         return WorkplaceUpdateParam.builder()
@@ -237,7 +244,7 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
                 .ownerUserId(ownerUserId)
                 .nameProvided(command.isNameProvided())
                 .name(command.getName())
-                .roadAddressProvided(command.isRoadAddressProvided())
+                .roadAddressProvided(changesRoadAddress)
                 .roadAddress(command.getRoadAddress())
                 .detailAddressProvided(command.isDetailAddressProvided())
                 .detailAddress(command.getDetailAddress())

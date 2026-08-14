@@ -26,7 +26,9 @@ public class WorkplaceUpdateParam {
     private final boolean nameProvided;
     private final String name;
 
+    /** 저장 주소와 실제로 달라 좌표까지 다시 확정하는 수정에서만 {@code true}입니다. */
     private final boolean roadAddressProvided;
+
     private final String roadAddress;
 
     private final boolean detailAddressProvided;

@@ -491,6 +491,42 @@ class WorkplaceServiceImplTest {
         assertNull(param.getExpectedRoadAddress(), "좌표를 바꾸지 않는 수정은 주소 조건을 걸지 않습니다.");
     }
 
+    /**
+     * 같은 주소를 다시 보낸 요청은 {@code road_address}를 아예 쓰지 않아야 합니다.
+     *
+     * <p>이 요청은 좌표를 다시 확정하지 않으므로 갱신 조건도 없습니다. 그 상태에서 주소를 다시
+     * 쓰면 다음 순서로 주소와 좌표가 어긋납니다.</p>
+     *
+     * <ol>
+     *   <li>요청 A가 저장 주소 {@code old}를 읽고 같은 값을 보내 변환을 생략합니다.</li>
+     *   <li>요청 B가 주소를 {@code new}로 바꾸고 좌표도 {@code new} 기준으로 갱신합니다.</li>
+     *   <li>요청 A가 조건 없이 {@code road_address = old}만 되돌립니다.</li>
+     * </ol>
+     *
+     * <p>결과는 주소 {@code old} + 좌표 {@code new}이며, 좌표가 주소의 파생값이라는
+     * SPEC-349-01의 핵심 불변식이 깨집니다.</p>
+     */
+    @Test
+    void doesNotRewriteRoadAddressWhenRequestRepeatsStoredAddress() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(1);
+
+        service.update(owner(7L), 11L, WorkplaceUpdateCommand.builder()
+                .nameProvided(true)
+                .name("강남 2호점")
+                .roadAddressProvided(true)
+                .roadAddress("서울 강남구 테헤란로 1")
+                .build());
+
+        WorkplaceUpdateParam param = capturedUpdateParam();
+        assertFalse(
+                param.isRoadAddressProvided(),
+                "같은 주소 요청은 road_address 를 SET 대상에서 빼야 다른 요청의 주소를 되돌리지 않습니다.");
+        assertNull(param.getExpectedRoadAddress());
+        assertTrue(param.isNameProvided(), "함께 보낸 다른 필드는 그대로 반영돼야 합니다.");
+    }
+
     @Test
     void doesNotCallGeocoderWhenRoadAddressIsAbsent() {
         when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
