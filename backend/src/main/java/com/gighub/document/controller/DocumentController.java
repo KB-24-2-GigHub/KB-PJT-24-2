@@ -10,6 +10,7 @@ import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.HealthCertificateUpdateRequest;
+import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
 import com.gighub.document.service.HealthCertificateUpdateService;
@@ -19,6 +20,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -45,6 +47,7 @@ public class DocumentController {
     private final DocumentQueryService documentQueryService;
     private final HealthCertificateRegisterService healthCertificateRegisterService;
     private final HealthCertificateUpdateService healthCertificateUpdateService;
+    private final DocumentDeleteService documentDeleteService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
@@ -112,6 +115,15 @@ public class DocumentController {
         DocumentListItem updated = healthCertificateUpdateService.updateIssuedDate(
                 principal, documentId, request.getIssuedDate());
         return ResponseEntity.ok(ApiResponse.of(updated));
+    }
+
+    // DOC-006: 보건증 논리 삭제(근로계약서는 409로 거부)
+    @DeleteMapping("/api/documents/{documentId}")
+    public ResponseEntity<Void> deleteDocument(
+            @PathVariable long documentId, Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        documentDeleteService.delete(principal, documentId);
+        return ResponseEntity.noContent().build();
     }
 
     // SHARE-002: 문서 공유 현황

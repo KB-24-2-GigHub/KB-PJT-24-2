@@ -5,10 +5,12 @@ import com.gighub.document.mapper.param.DocumentShareInsertParam;
 import com.gighub.document.mapper.param.DocumentSignatureInsertParam;
 import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
+import com.gighub.document.mapper.result.DocumentOwnershipRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 
 /**
@@ -48,6 +50,20 @@ public interface ContractDocumentWriteMapper {
             @Param("ownerUserId") long ownerUserId,
             @Param("issuedOn") LocalDate issuedOn,
             @Param("expiresOn") LocalDate expiresOn);
+
+    /**
+     * 삭제 대상 문서를 잠그고 유형·상태를 읽는다(DOC-006). 소유자의 요청 처리 도중 다른
+     * Transaction이 같은 행을 바꾸지 못하게 막는다. 없거나 비소유면 {@code null}이다.
+     */
+    DocumentOwnershipRow lockOwnDocument(
+            @Param("documentId") long documentId, @Param("ownerUserId") long ownerUserId);
+
+    /** ACTIVE 보건증만 논리 삭제한다. 대상이 이미 다른 상태면 0을 돌려준다. */
+    int deleteHealthCertificate(@Param("documentId") long documentId);
+
+    /** 문서의 ACTIVE 공유를 모두 REVOKED로 철회한다. 대상이 없어도 성공이다. */
+    int revokeActiveShares(
+            @Param("documentId") long documentId, @Param("revokedAt") LocalDateTime revokedAt);
 
     /**
      * 특정 근무의 EMPLOYMENT_CONTRACT 문서에 딸린 Version들의 승격 정보를 읽는다.

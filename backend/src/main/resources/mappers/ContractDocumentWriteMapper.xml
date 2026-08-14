@@ -53,6 +53,31 @@
           AND status = 'ACTIVE'
     </update>
 
+    <select id="lockOwnDocument" resultType="com.gighub.document.mapper.result.DocumentOwnershipRow">
+        SELECT document_type AS documentType,
+               status AS status
+        FROM documents
+        WHERE id = #{documentId}
+          AND owner_user_id = #{ownerUserId}
+        FOR UPDATE
+    </select>
+
+    <update id="deleteHealthCertificate">
+        UPDATE documents
+        SET status = 'DELETED'
+        WHERE id = #{documentId}
+          AND document_type = 'HEALTH_CERTIFICATE'
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="revokeActiveShares">
+        UPDATE document_shares
+        SET status = 'REVOKED',
+            revoked_at = #{revokedAt}
+        WHERE document_id = #{documentId}
+          AND status = 'ACTIVE'
+    </update>
+
     <select id="findPromotionRowsByWorkCaseId"
             resultType="com.gighub.document.mapper.result.ContractVersionPromotionRow">
         SELECT dv.document_id  AS documentId,

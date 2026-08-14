@@ -11,6 +11,9 @@ import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentVersionItem;
+import com.gighub.document.exception.ContractRetentionRequiredException;
+import com.gighub.document.exception.DocumentNotFoundException;
+import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
 import com.gighub.document.service.HealthCertificateUpdateService;
@@ -40,9 +43,11 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -65,6 +70,9 @@ class DocumentControllerTest {
     @Mock
     private HealthCertificateUpdateService healthCertificateUpdateService;
 
+    @Mock
+    private DocumentDeleteService documentDeleteService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -79,7 +87,8 @@ class DocumentControllerTest {
                 .standaloneSetup(new DocumentController(
                         documentQueryService,
                         healthCertificateRegisterService,
-                        healthCertificateUpdateService))
+                        healthCertificateUpdateService,
+                        documentDeleteService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -319,6 +328,36 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         verify(healthCertificateUpdateService, never()).updateIssuedDate(any(), anyLong(), any());
+    }
+
+    @Test
+    void deletesAHealthCertificateAndReturnsNoContent() throws Exception {
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isNoContent());
+
+        verify(documentDeleteService).delete(principal, DOCUMENT_ID);
+    }
+
+    @Test
+    void rejectsDeletingAnEmploymentContractWithConflict() throws Exception {
+        doThrow(new ContractRetentionRequiredException("근로계약서는 삭제할 수 없습니다."))
+                .when(documentDeleteService).delete(principal, DOCUMENT_ID);
+
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONTRACT_RETENTION_REQUIRED"));
+    }
+
+    @Test
+    void returnsNotFoundWhenDeletingAMissingOrUnownedDocument() throws Exception {
+        doThrow(new DocumentNotFoundException("문서를 찾을 수 없습니다."))
+                .when(documentDeleteService).delete(principal, DOCUMENT_ID);
+
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isNotFound());
     }
 
     private DocumentListItem listItem() {
