@@ -13,7 +13,13 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
 import { listWorkerWorkCases } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
-import { formatDate, formatKRW, formatSeoulDateKey, formatSeoulTimeRange } from '@/utils/format'
+import {
+  formatDate,
+  formatKRW,
+  formatSeoulDateKey,
+  formatSeoulDateTime,
+  formatSeoulTimeRange
+} from '@/utils/format'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -79,6 +85,9 @@ function goDetail(workCase) {
             <StatusChip :status="workCase.status" kind="workCase" />
             <StatusChip :status="workCase.settlementStatus" kind="settle" />
           </div>
+          <p v-if="workCase.settlementDueAt" class="due-at">
+            {{ formatSeoulDateTime(workCase.settlementDueAt) }} 지급 예정
+          </p>
         </button>
       </li>
     </ul>
@@ -147,5 +156,10 @@ function goDetail(workCase) {
   display: flex;
   gap: var(--space-md);
   margin-top: var(--space-sm);
+}
+.due-at {
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
 }
 </style>
