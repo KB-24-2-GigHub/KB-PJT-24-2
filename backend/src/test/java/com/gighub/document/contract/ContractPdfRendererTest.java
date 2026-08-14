@@ -3,11 +3,13 @@ package com.gighub.document.contract;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.time.LocalDateTime;
 import java.util.Calendar;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -195,6 +197,91 @@ class ContractPdfRendererTest {
             assertEquals(1, document.getNumberOfPages());
             String text = new PDFTextStripper().getText(document);
             assertTrue(text.contains("401호"));
+        }
+    }
+
+    @Test
+    void keepsASpaceFreeLongValueWithinThePageWidthInsteadOfOverflowingOffscreen()
+            throws IOException {
+        // 한글은 단어 단위 언어가 아니라 CJK 줄바꿈 규칙상 word-wrap 없이도 글자 사이에서
+        // 자연히 줄이 바뀐다. 이 회귀는 라틴 문자·숫자처럼 공백 없이 이어지는 값에서만
+        // 재현되므로 알파벳으로 Token을 만든다.
+        String spaceFreeToken = "AB12".repeat(150);
+        ContractSnapshot longToken = new ContractSnapshot(
+                1L,
+                "주말 홀 서빙",
+                LocalDateTime.of(2026, 7, 22, 10, 0),
+                LocalDateTime.of(2026, 7, 22, 18, 0),
+                60,
+                false,
+                "기가 허브",
+                spaceFreeToken,
+                90_000L,
+                "김사장",
+                null,
+                "이알바",
+                null,
+                3,
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
+
+        byte[] pdf = renderer.render(longToken);
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            float pageWidth = document.getPage(0).getMediaBox().getWidth();
+            MaxXTextStripper stripper = new MaxXTextStripper();
+            stripper.getText(document);
+            assertTrue(
+                    stripper.maxX <= pageWidth,
+                    "텍스트가 페이지 폭(" + pageWidth + ") 밖으로 벗어났습니다: maxX=" + stripper.maxX);
+        }
+    }
+
+    @Test
+    void stripsXmlIllegalControlCharactersInsteadOfFailingToRender() throws IOException {
+        String titleWithNulCharacter = "주말" + (char) 0 + "홍 서빙";
+        ContractSnapshot controlCharacterInValue = new ContractSnapshot(
+                1L,
+                titleWithNulCharacter,
+                LocalDateTime.of(2026, 7, 22, 10, 0),
+                LocalDateTime.of(2026, 7, 22, 18, 0),
+                60,
+                false,
+                "기가 허브",
+                "서울시 강남구 테스트로 1",
+                90_000L,
+                "김사장",
+                null,
+                "이알바",
+                null,
+                3,
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
+
+        byte[] pdf = renderer.render(controlCharacterInValue);
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            assertEquals(1, document.getNumberOfPages());
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("주말"));
+            assertTrue(text.contains("홍 서빙"));
+        }
+    }
+
+    /** 페이지 폭을 넘는 위치에 글자를 그리는 회귀를 잡기 위해 각 글자의 오른쪽 끝 좌표를 추적한다. */
+    private static final class MaxXTextStripper extends PDFTextStripper {
+
+        private float maxX;
+
+        private MaxXTextStripper() throws IOException {
+            super();
+        }
+
+        @Override
+        protected void writeString(String text, List<TextPosition> textPositions) {
+            for (TextPosition position : textPositions) {
+                maxX = Math.max(maxX, position.getXDirAdj() + position.getWidthDirAdj());
+            }
         }
     }
 

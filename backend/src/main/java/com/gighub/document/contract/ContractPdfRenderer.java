@@ -158,11 +158,43 @@ public class ContractPdfRenderer {
     }
 
     private String escapeXml(String value) {
-        return value
+        return stripIllegalXmlCharacters(value)
                 .replace("&", "&amp;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;")
                 .replace("\"", "&quot;");
+    }
+
+    /**
+     * XML 1.0이 허용하지 않는 제어 문자를 제거한다.
+     *
+     * <p>Template은 XHTML로 엄격하게 파싱되므로, 값에 이런 문자가 그대로 남으면 Escape
+     * 여부와 무관하게 Template 전체가 유효하지 않은 XML이 되어 PDF 생성이 실패한다.
+     * 상위 BMP 문자를 나타내는 Surrogate Pair는 그대로 보존한다.</p>
+     */
+    private String stripIllegalXmlCharacters(String value) {
+        StringBuilder sanitized = new StringBuilder(value.length());
+        int i = 0;
+        while (i < value.length()) {
+            char c = value.charAt(i);
+            if (Character.isHighSurrogate(c) && i + 1 < value.length()
+                    && Character.isLowSurrogate(value.charAt(i + 1))) {
+                sanitized.append(c).append(value.charAt(i + 1));
+                i += 2;
+                continue;
+            }
+            if (isValidXmlChar(c)) {
+                sanitized.append(c);
+            }
+            i++;
+        }
+        return sanitized.toString();
+    }
+
+    private boolean isValidXmlChar(char c) {
+        return c == 0x9 || c == 0xA || c == 0xD
+                || (c >= 0x20 && c <= 0xD7FF)
+                || (c >= 0xE000 && c <= 0xFFFD);
     }
 
     /**
