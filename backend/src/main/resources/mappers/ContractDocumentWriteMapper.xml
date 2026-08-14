@@ -6,9 +6,9 @@
 
     <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO documents
-            (created_by_user_id, owner_user_id, work_case_id, document_type, status, issued_on)
+            (created_by_user_id, owner_user_id, work_case_id, document_type, status, issued_on, expires_on)
         VALUES
-            (#{createdByUserId}, #{ownerUserId}, #{workCaseId}, #{documentType}, #{status}, #{issuedOn})
+            (#{createdByUserId}, #{ownerUserId}, #{workCaseId}, #{documentType}, #{status}, #{issuedOn}, #{expiresOn})
     </insert>
 
     <insert id="insertVersion" useGeneratedKeys="true" keyProperty="id">

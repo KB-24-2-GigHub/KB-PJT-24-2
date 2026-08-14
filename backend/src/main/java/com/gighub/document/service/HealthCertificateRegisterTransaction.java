@@ -41,7 +41,7 @@ public class HealthCertificateRegisterTransaction {
         ValidatedHealthCertificateFile file = request.file();
         LocalDate expiresDate = request.issuedDate().plusYears(1);
 
-        long documentId = insertDocument(ownerUserId, request.issuedDate());
+        long documentId = insertDocument(ownerUserId, request.issuedDate(), expiresDate);
         String finalKey = HealthCertificateStorageKeys.finalKey(
                 ownerUserId, documentId, file.storageExtension());
         String pendingKey = HealthCertificateStorageKeys.pendingKey(
@@ -54,7 +54,7 @@ public class HealthCertificateRegisterTransaction {
                 documentId, pendingKey, finalKey, file.checksum(), expiresDate);
     }
 
-    private long insertDocument(long ownerUserId, LocalDate issuedDate) {
+    private long insertDocument(long ownerUserId, LocalDate issuedDate, LocalDate expiresDate) {
         DocumentInsertParam param = DocumentInsertParam.builder()
                 .createdByUserId(ownerUserId)
                 .ownerUserId(ownerUserId)
@@ -62,6 +62,7 @@ public class HealthCertificateRegisterTransaction {
                 .documentType(DOCUMENT_TYPE)
                 .status(DOCUMENT_STATUS_ACTIVE)
                 .issuedOn(issuedDate)
+                .expiresOn(expiresDate)
                 .build();
         if (documentMapper.insertDocument(param) != 1) {
             throw new IllegalStateException("보건증 문서 행을 저장하지 못했습니다.");

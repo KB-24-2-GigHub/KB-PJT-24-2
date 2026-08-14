@@ -67,6 +67,7 @@ class HealthCertificateRegisterTransactionTest {
         assertEquals("HEALTH_CERTIFICATE", documentCaptor.getValue().getDocumentType());
         assertEquals("ACTIVE", documentCaptor.getValue().getStatus());
         assertEquals(issuedDate, documentCaptor.getValue().getIssuedOn());
+        assertEquals(LocalDate.of(2027, 8, 14), documentCaptor.getValue().getExpiresOn());
 
         ArgumentCaptor<DocumentVersionInsertParam> versionCaptor =
                 ArgumentCaptor.forClass(DocumentVersionInsertParam.class);
