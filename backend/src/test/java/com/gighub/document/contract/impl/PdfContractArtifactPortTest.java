@@ -15,6 +15,7 @@ import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
+import com.gighub.member.service.MemberIdentityQueryService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.aop.framework.ProxyFactory;
@@ -55,9 +56,11 @@ class PdfContractArtifactPortTest {
     private final ContractDocumentWriteMapper documentMapper = mock(ContractDocumentWriteMapper.class);
     private final ContractPdfRenderer renderer = mock(ContractPdfRenderer.class);
     private final DocumentStorageAdapter storageAdapter = mock(DocumentStorageAdapter.class);
+    private final MemberIdentityQueryService memberIdentityQueryService =
+            mock(MemberIdentityQueryService.class);
 
     private final PdfContractArtifactPort port = new PdfContractArtifactPort(
-            documentMapper, renderer, storageAdapter);
+            documentMapper, renderer, storageAdapter, memberIdentityQueryService);
 
     @Test
     void prepareRejectsCallsWithoutTheAcceptanceOuterTransaction() {

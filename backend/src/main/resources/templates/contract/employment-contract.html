@@ -14,84 +14,56 @@
   <style>
     @page {
       size: A4;
-      margin: 14mm 16mm;
+      margin: 16mm 18mm;
     }
 
     body {
       font-family: "Pretendard", sans-serif;
-      font-size: 9.5pt;
-      line-height: 1.5;
+      font-size: 10pt;
+      line-height: 1.55;
       color: #111111;
     }
 
     h1 {
-      margin: 0 0 4mm 0;
-      font-size: 19pt;
+      margin: 0 0 6mm 0;
+      font-size: 18pt;
       font-weight: bold;
       text-align: center;
-      /*
-        letter-spacing으로 제목을 벌리면 추출 텍스트가 글자마다 끊겨 "근로계약서" 검색이
-        불가능해지므로 자간을 넓히지 않는다.
-      */
     }
 
-    .preamble {
-      margin: 0 0 4mm 0;
-      text-align: justify;
-    }
-
-    table.terms {
-      width: 100%;
-      border-collapse: collapse;
-      border-top: 1.4pt solid #111111;
-      border-bottom: 1.4pt solid #111111;
-    }
-
-    table.terms th,
-    table.terms td {
-      border-bottom: 0.5pt solid #b8b8b8;
-      padding: 2.2mm 3mm;
-      vertical-align: top;
-      text-align: left;
-    }
-
-    table.terms tr:last-child th,
-    table.terms tr:last-child td {
-      border-bottom: none;
-    }
-
-    table.terms th {
-      width: 30mm;
-      background-color: #f2f4f6;
+    h2 {
+      margin: 4mm 0 1.5mm 0;
+      font-size: 11pt;
       font-weight: bold;
-      white-space: nowrap;
+    }
+
+    .line {
+      margin: 0 0 0.8mm 0;
     }
 
     .value-sub {
       display: block;
-      margin-top: 0.8mm;
-      font-size: 8.5pt;
+      margin: 0.3mm 0 0 3.5mm;
+      font-size: 9pt;
       color: #555555;
     }
 
-    h2 {
-      margin: 3.5mm 0 1.2mm 0;
-      font-size: 10.5pt;
-      font-weight: bold;
-    }
-
-    ol.clauses {
-      margin: 0;
-      padding-left: 5mm;
-    }
-
-    ol.clauses li {
-      margin-bottom: 0.6mm;
+    .notice {
+      margin: 5mm 0 0 0;
+      padding: 2.5mm 3mm;
+      background-color: #f2f4f6;
+      font-size: 8.5pt;
+      color: #444444;
       text-align: justify;
     }
 
     .closing {
-      margin: 3.5mm 0 2.5mm 0;
+      margin: 5mm 0 3mm 0;
+      text-align: center;
+    }
+
+    .closing-date {
+      margin: 0 0 4mm 0;
       text-align: center;
     }
 
@@ -134,66 +106,38 @@
   </style>
 </head>
 <body>
-<h1>근로계약서</h1>
+<h1>단시간·일용 근로계약서</h1>
 
-<p class="preamble">
-  ${employerName}(이하 &#8220;사업주&#8221;)와(과) ${workerName}(이하 &#8220;근로자&#8221;)은
-  아래 근무 조건에 합의하고, 근로기준법이 정하는 바에 따라 다음과 같이 근로계약을 체결한다.
+<h2>1. 계약 당사자</h2>
+<p class="line">- 사업주: ${workplaceName} / 대표자 ${employerName}${employerContactLine}</p>
+<p class="line">- 근로자: ${workerName}${workerContactLine}</p>
+
+<h2>2. 근로계약 기간 및 장소</h2>
+<p class="line">- 근로일자: ${workDate} (1일간)</p>
+<p class="line">- 근무장소: ${workplaceName}<span class="value-sub">${workplaceAddress}</span></p>
+<p class="line">- 담당업무: ${title}</p>
+
+<h2>3. 근로시간 및 휴게시간</h2>
+<p class="line">- 근로시간: ${startsAt} ~ ${endsAt} (총 ${workDuration})</p>
+<p class="line">- 휴게시간: ${breakMinutes}분 (${breakPaidLabel})</p>
+
+<h2>4. 임금</h2>
+<p class="line">- 임금액: 일급 ${agreedWage}</p>
+<p class="line">- 지급방법: 근무 확정 후 서비스가 예치한 임금을 근로자 지갑으로 지급한다.</p>
+
+<p class="notice">
+  본 계약은 근로일 하루로 한정된 단시간 근로계약으로, 근로기준법상 계속근로를 전제로 하는
+  연차유급휴가와 주휴수당 발생 요건을 충족하지 않는다. 위 임금은 최저임금법에 따른 시간급
+  최저임금액 이상으로 정하며, 산업재해보상보험과 고용보험은 관계 법령에 따라 적용되고
+  국민연금과 건강보험은 1개월 미만 근로에 대해 적용이 제외될 수 있다. 사업주는 근로계약
+  체결과 동시에 이 계약서를 근로자에게 전자문서로 교부한다(근로기준법 제17조).
 </p>
 
-<table class="terms">
-  <tr>
-    <th>근로계약기간</th>
-    <td>${workDate} 하루<span class="value-sub">근무일 종료와 동시에 근로관계가 종료되며, 이후 근무에 대한 재계약을 약정하지 않는다.</span></td>
-  </tr>
-  <tr>
-    <th>업무 내용</th>
-    <td>${title}</td>
-  </tr>
-  <tr>
-    <th>근무 장소</th>
-    <td>${workplaceName}<span class="value-sub">${workplaceAddress}</span></td>
-  </tr>
-  <tr>
-    <th>근로 시간</th>
-    <td>${startsAt} ~ ${endsAt}<span class="value-sub">총 근로시간 ${workDuration}</span></td>
-  </tr>
-  <tr>
-    <th>휴게 시간</th>
-    <td>${breakMinutes}분 (${breakPaidLabel})</td>
-  </tr>
-  <tr>
-    <th>임금</th>
-    <td>${agreedWage}<span class="value-sub">1회 근무에 대한 합의 일급이며 세금 및 공제 전 금액이다. 최저임금법에 따른 시간급 최저임금액 이상으로 정한다.</span></td>
-  </tr>
-  <tr>
-    <th>지급 방법</th>
-    <td>근무 확정 후 서비스가 예치한 임금을 근로자 지갑으로 지급한다.</td>
-  </tr>
-  <tr>
-    <th>계약 당사자</th>
-    <td>사업주 ${employerName} / 근로자 ${workerName}</td>
-  </tr>
-</table>
-
-<h2>계약 조항</h2>
-<ol class="clauses">
-  <li>근로자는 위에 적힌 근무 장소에서 정해진 근로 시간 동안 업무 내용에 따른 근로를 제공한다.</li>
-  <li>사업주는 위 임금을 근무 확정 이후 지급 방법에 따라 지급한다.</li>
-  <li>휴게 시간은 근로 시간 도중에 부여하며, 무급으로 정한 경우 근로 시간에 산입하지 않는다.</li>
-  <li>이 계약에 정하지 않은 사항은 근로기준법 등 관계 법령과 서비스 이용약관 제${sourceTermsVersion}판을 따른다.</li>
-  <li>이 계약서는 초대 수락 시점의 근무 조건을 그대로 보존한 전자문서이며, 당사자가 임의로 수정하거나 삭제할 수 없다.</li>
-</ol>
-
-<h2>법정 고지 사항</h2>
-<ol class="clauses">
-  <li>연차유급휴가: 이 계약은 근로계약기간이 근무일 하루로 근로기준법 제60조가 정한 연차유급휴가 발생 요건(계속근로기간)을 충족하지 않아 연차유급휴가가 발생하지 않는다.</li>
-  <li>휴일: 이 계약은 단일 근무일에 대한 계약으로 주휴일을 정하지 않으며, 근로기준법상 주휴수당 발생 요건(1주 소정근로일 개근과 다음 주 계속근로 예정)을 충족하지 않는다.</li>
-  <li>사회보험: 산업재해보상보험과 고용보험은 관계 법령에 따라 원칙적으로 적용되고, 국민연금과 건강보험은 근로계약기간이 1개월 미만인 근로에 대해 관계 법령에 따라 적용이 제외될 수 있다. 구체적인 적용 여부와 신고는 관계 법령을 따른다.</li>
-  <li>근로계약서 교부: 사업주는 근로계약 체결과 동시에 이 계약서를 근로자에게 전자문서로 교부하며, 근로자는 문서함에서 언제든지 다시 열람·다운로드할 수 있다(근로기준법 제17조).</li>
-</ol>
-
-<p class="closing">${acceptedAt} 위 내용에 합의하여 이 계약을 체결한다.</p>
+<p class="closing">
+  본 계약을 증명하기 위하여 계약서 2부(전자문서)를 작성하여 양 당사자가 서명 후 각 1부씩
+  보관한다.
+</p>
+<p class="closing-date">${acceptedAt}</p>
 
 <table class="signatures">
   <tr>

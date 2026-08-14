@@ -110,7 +110,9 @@ public class ContractPdfRenderer {
         values.put("breakPaidLabel", snapshot.breakPaid() ? "유급" : "무급");
         values.put("agreedWage", formatWon(snapshot.agreedWage()));
         values.put("employerName", snapshot.employerName());
+        values.put("employerContactLine", contactLine(snapshot.employerPhone()));
         values.put("workerName", snapshot.workerName());
+        values.put("workerContactLine", contactLine(snapshot.workerPhone()));
         values.put("sourceTermsVersion", String.valueOf(snapshot.sourceTermsVersion()));
         values.put("acceptedAt", formatDateTime(snapshot.acceptedAt()));
 
@@ -204,5 +206,10 @@ public class ContractPdfRenderer {
 
     private String formatWon(long amount) {
         return String.format(Locale.KOREA, "%,d원", amount);
+    }
+
+    /** 연락처는 선택 입력이라 없으면 계약서에서 그 표시를 통째로 뺀다. */
+    private String contactLine(String phone) {
+        return (phone == null || phone.isBlank()) ? "" : " (연락처: " + phone + ")";
     }
 }

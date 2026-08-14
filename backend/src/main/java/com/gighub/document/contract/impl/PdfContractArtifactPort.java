@@ -16,6 +16,8 @@ import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.Sha256;
+import com.gighub.member.service.MemberIdentityQueryService;
+import com.gighub.member.service.result.MemberIdentitySnapshot;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,6 +65,7 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
     private final ContractDocumentWriteMapper documentMapper;
     private final ContractPdfRenderer renderer;
     private final DocumentStorageAdapter storageAdapter;
+    private final MemberIdentityQueryService memberIdentityQueryService;
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -167,9 +170,23 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
                 terms.getWorkplaceAddress(),
                 terms.getDailyWage(),
                 terms.getOwner().getName(),
+                findPhone(terms.getOwner().getUserId()),
                 terms.getWorker().getName(),
+                findPhone(terms.getWorker().getUserId()),
                 terms.getTermsVersion(),
                 command.getAcceptedAt());
+    }
+
+    /**
+     * 계약서 표시용으로만 쓰는 현재 연락처를 읽는다.
+     *
+     * <p>{@code work_contracts.terms_snapshot}의 승인된 JSON Shape에는 연락처가 없어 계약
+     * 확정 시점에 굳히지 않는다. 연락처는 선택 입력이라 없을 수 있다. {@code member} 모듈의
+     * Mapper를 직접 참조하지 않고 공개 경계인 {@link MemberIdentityQueryService}만 쓴다.</p>
+     */
+    private String findPhone(long userId) {
+        MemberIdentitySnapshot identity = memberIdentityQueryService.findById(userId);
+        return identity == null ? null : identity.phone();
     }
 
     private long insertDocument(ContractArtifactCommand command, ContractTermsSnapshot terms) {

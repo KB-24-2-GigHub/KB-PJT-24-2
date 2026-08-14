@@ -37,7 +37,7 @@ class ContractPdfRendererTest {
             assertTrue(text.contains("김사장"));
             assertTrue(text.contains("이알바"));
             assertTrue(text.contains("v3"));
-            assertTrue(text.contains("2026-07-22 하루"));
+            assertTrue(text.contains("2026-07-22 (1일간)"));
         }
     }
 
@@ -47,11 +47,26 @@ class ContractPdfRendererTest {
 
         try (PDDocument document = Loader.loadPDF(pdf)) {
             String text = new PDFTextStripper().getText(document);
-            assertTrue(text.contains("연차유급휴가가 발생하지 않는다"));
-            assertTrue(text.contains("주휴수당 발생 요건"));
+            assertTrue(text.contains("연차유급휴가와 주휴수당 발생 요건을"));
+            assertTrue(text.contains("최저임금법에 따른 시간급"));
             assertTrue(text.contains("산업재해보상보험과 고용보험"));
-            assertTrue(text.contains("최저임금법에 따른 시간급 최저임금액 이상"));
             assertTrue(text.contains("근로기준법 제17조"));
+        }
+    }
+
+    @Test
+    void rendersContactLineOnlyWhenPhoneIsPresent() throws IOException {
+        byte[] withPhone = renderer.render(snapshotWithPhones("010-1111-2222", "010-3333-4444"));
+        byte[] withoutPhone = renderer.render(snapshot());
+
+        try (PDDocument document = Loader.loadPDF(withPhone)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("010-1111-2222"));
+            assertTrue(text.contains("010-3333-4444"));
+        }
+        try (PDDocument document = Loader.loadPDF(withoutPhone)) {
+            String text = new PDFTextStripper().getText(document);
+            assertFalse(text.contains("연락처"));
         }
     }
 
@@ -87,7 +102,9 @@ class ContractPdfRendererTest {
                 "서울시 강남구 테스트로 1",
                 90_000L,
                 "김사장",
+                null,
                 "이알바",
+                null,
                 3,
                 LocalDateTime.of(2026, 7, 22, 13, 0));
 
@@ -126,7 +143,9 @@ class ContractPdfRendererTest {
                 "서울특별시 강남구 아주 아주 아주 아주 아주 아주 아주 아주 아주 긴 테스트 주소 12345번지 3층 401호",
                 90_000L,
                 "김사장",
+                null,
                 "이알바",
+                null,
                 3,
                 LocalDateTime.of(2026, 7, 22, 13, 0));
 
@@ -140,6 +159,10 @@ class ContractPdfRendererTest {
     }
 
     private ContractSnapshot snapshot() {
+        return snapshotWithPhones(null, null);
+    }
+
+    private ContractSnapshot snapshotWithPhones(String employerPhone, String workerPhone) {
         return new ContractSnapshot(
                 106L,
                 "주말 홀 서빙",
@@ -151,7 +174,9 @@ class ContractPdfRendererTest {
                 "서울시 강남구 테스트로 1",
                 90_000L,
                 "김사장",
+                employerPhone,
                 "이알바",
+                workerPhone,
                 3,
                 LocalDateTime.of(2026, 7, 22, 13, 0));
     }
