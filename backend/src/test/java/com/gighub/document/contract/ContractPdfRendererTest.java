@@ -10,6 +10,7 @@ import java.time.LocalDateTime;
 import java.util.Calendar;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ContractPdfRendererTest {
@@ -36,6 +37,50 @@ class ContractPdfRendererTest {
             assertTrue(text.contains("김사장"));
             assertTrue(text.contains("이알바"));
             assertTrue(text.contains("v3"));
+        }
+    }
+
+    @Test
+    void rendersTypedNameSignatureEvidenceOnlyInTheSignedVersion() throws IOException {
+        byte[] original = renderer.render(snapshot());
+        byte[] signed = renderer.render(snapshot(), new ContractSnapshot.Signature(
+                "이알바", LocalDateTime.of(2026, 7, 22, 13, 1)));
+
+        try (PDDocument document = Loader.loadPDF(signed)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("TYPED_NAME"));
+            assertTrue(text.contains("2026-07-22 13:01"));
+        }
+        try (PDDocument document = Loader.loadPDF(original)) {
+            String text = new PDFTextStripper().getText(document);
+            assertFalse(text.contains("TYPED_NAME"));
+            assertFalse(text.contains("2026-07-22 13:01"));
+        }
+    }
+
+    @Test
+    void escapesMarkupCharactersInSnapshotValuesInsteadOfBreakingTheTemplate()
+            throws IOException {
+        ContractSnapshot markupInValue = new ContractSnapshot(
+                1L,
+                "<b>주말</b> 홀 & 서빙",
+                LocalDateTime.of(2026, 7, 22, 10, 0),
+                LocalDateTime.of(2026, 7, 22, 18, 0),
+                60,
+                false,
+                "기가 허브",
+                "서울시 강남구 테스트로 1",
+                90_000L,
+                "김사장",
+                "이알바",
+                3,
+                LocalDateTime.of(2026, 7, 22, 13, 0));
+
+        byte[] pdf = renderer.render(markupInValue);
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("<b>주말</b> 홀 & 서빙"));
         }
     }
 

@@ -1,0 +1,203 @@
+<!--
+  근로계약서 PDF Template (DEC-CONTRACT-AUTO-GENERATION, DEC-DOCUMENT-STORAGE).
+
+  ContractPdfRenderer가 ${...} 자리표시자를 ContractSnapshot 값으로 치환한 뒤
+  이 XHTML을 그대로 PDF로 렌더링한다. XML로 파싱되므로 모든 태그를 닫아야 하고
+  주석 안에 붙임표를 두 번 연달아 쓰면 파싱이 실패한다.
+
+  ORIGINAL과 SIGNED는 같은 Template을 쓰고, 근로자 서명란 내용만 다르다.
+-->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>근로계약서</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 16mm;
+    }
+
+    body {
+      font-family: "Pretendard", sans-serif;
+      font-size: 9.5pt;
+      line-height: 1.5;
+      color: #111111;
+    }
+
+    h1 {
+      margin: 0 0 4mm 0;
+      font-size: 19pt;
+      font-weight: bold;
+      text-align: center;
+      /*
+        letter-spacing으로 제목을 벌리면 추출 텍스트가 글자마다 끊겨 "근로계약서" 검색이
+        불가능해지므로 자간을 넓히지 않는다.
+      */
+    }
+
+    .preamble {
+      margin: 0 0 4mm 0;
+      text-align: justify;
+    }
+
+    table.terms {
+      width: 100%;
+      border-collapse: collapse;
+      border-top: 1.4pt solid #111111;
+      border-bottom: 1.4pt solid #111111;
+    }
+
+    table.terms th,
+    table.terms td {
+      border-bottom: 0.5pt solid #b8b8b8;
+      padding: 2.2mm 3mm;
+      vertical-align: top;
+      text-align: left;
+    }
+
+    table.terms tr:last-child th,
+    table.terms tr:last-child td {
+      border-bottom: none;
+    }
+
+    table.terms th {
+      width: 30mm;
+      background-color: #f2f4f6;
+      font-weight: bold;
+      white-space: nowrap;
+    }
+
+    .value-sub {
+      display: block;
+      margin-top: 0.8mm;
+      font-size: 8.5pt;
+      color: #555555;
+    }
+
+    h2 {
+      margin: 5mm 0 1.5mm 0;
+      font-size: 10.5pt;
+      font-weight: bold;
+    }
+
+    ol.clauses {
+      margin: 0;
+      padding-left: 5mm;
+    }
+
+    ol.clauses li {
+      margin-bottom: 1mm;
+      text-align: justify;
+    }
+
+    .closing {
+      margin: 5mm 0 3mm 0;
+      text-align: center;
+    }
+
+    table.signatures {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    table.signatures td {
+      width: 50%;
+      border: 0.5pt solid #b8b8b8;
+      padding: 3mm;
+      vertical-align: top;
+    }
+
+    .sign-role {
+      font-weight: bold;
+    }
+
+    .sign-name {
+      display: block;
+      margin-top: 2mm;
+      font-size: 12pt;
+      font-weight: bold;
+    }
+
+    .sign-meta {
+      display: block;
+      margin-top: 1.5mm;
+      font-size: 8.5pt;
+      color: #555555;
+    }
+
+    .footnote {
+      margin-top: 4mm;
+      font-size: 8pt;
+      color: #777777;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<h1>근로계약서</h1>
+
+<p class="preamble">
+  ${employerName}(이하 &#8220;사업주&#8221;)와(과) ${workerName}(이하 &#8220;근로자&#8221;)은
+  아래 근무 조건에 합의하고, 근로기준법이 정하는 바에 따라 다음과 같이 근로계약을 체결한다.
+</p>
+
+<table class="terms">
+  <tr>
+    <th>업무 내용</th>
+    <td>${title}</td>
+  </tr>
+  <tr>
+    <th>근무 장소</th>
+    <td>${workplaceName}<span class="value-sub">${workplaceAddress}</span></td>
+  </tr>
+  <tr>
+    <th>근로 시간</th>
+    <td>${startsAt} ~ ${endsAt}<span class="value-sub">총 근로시간 ${workDuration}</span></td>
+  </tr>
+  <tr>
+    <th>휴게 시간</th>
+    <td>${breakMinutes}분 (${breakPaidLabel})</td>
+  </tr>
+  <tr>
+    <th>임금</th>
+    <td>${agreedWage}<span class="value-sub">1회 근무에 대한 합의 일급이며 세금 및 공제 전 금액이다.</span></td>
+  </tr>
+  <tr>
+    <th>지급 방법</th>
+    <td>근무 확정 후 서비스가 예치한 임금을 근로자 지갑으로 지급한다.</td>
+  </tr>
+  <tr>
+    <th>계약 당사자</th>
+    <td>사업주 ${employerName} / 근로자 ${workerName}</td>
+  </tr>
+</table>
+
+<h2>계약 조항</h2>
+<ol class="clauses">
+  <li>근로자는 위에 적힌 근무 장소에서 정해진 근로 시간 동안 업무 내용에 따른 근로를 제공한다.</li>
+  <li>사업주는 위 임금을 근무 확정 이후 지급 방법에 따라 지급한다.</li>
+  <li>휴게 시간은 근로 시간 도중에 부여하며, 무급으로 정한 경우 근로 시간에 산입하지 않는다.</li>
+  <li>이 계약에 정하지 않은 사항은 근로기준법 등 관계 법령과 서비스 이용약관 제${sourceTermsVersion}판을 따른다.</li>
+  <li>이 계약서는 초대 수락 시점의 근무 조건을 그대로 보존한 전자문서이며, 당사자가 임의로 수정하거나 삭제할 수 없다.</li>
+</ol>
+
+<p class="closing">${acceptedAt} 위 내용에 합의하여 이 계약을 체결한다.</p>
+
+<table class="signatures">
+  <tr>
+    <td>
+      <span class="sign-role">사업주</span>
+      <span class="sign-name">${employerName}</span>
+      <span class="sign-meta">근무 조건 등록으로 계약 조건을 제시함</span>
+    </td>
+    <td>
+      <span class="sign-role">근로자</span>
+      <span class="sign-name">${workerSignatureName}</span>
+      <span class="sign-meta">${workerSignatureMeta}</span>
+    </td>
+  </tr>
+</table>
+
+<p class="footnote">Work Case ${workCaseId} · 이용약관 v${sourceTermsVersion} · 수락 일시 ${acceptedAt}</p>
+</body>
+</html>
