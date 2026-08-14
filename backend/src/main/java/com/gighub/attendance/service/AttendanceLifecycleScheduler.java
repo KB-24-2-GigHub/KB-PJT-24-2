@@ -57,13 +57,16 @@ public class AttendanceLifecycleScheduler {
                 () -> lifecycleMapper.findReadyCandidateIds(
                         AttendanceWindowPolicy.readyLatestStartsAt(now),
                         AttendanceWindowPolicy.readyEarliestStartsAt(now),
+                        now,
                         BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToReady);
         processPhase(
                 "NO_SHOW",
                 () -> lifecycleMapper.findNoShowCandidateIds(
-                        AttendanceWindowPolicy.readyEarliestStartsAt(now), BATCH_SIZE),
+                        AttendanceWindowPolicy.readyEarliestStartsAt(now),
+                        now,
+                        BATCH_SIZE),
                 now,
                 transitionExecutor::advanceToNoShow);
         processPhase(

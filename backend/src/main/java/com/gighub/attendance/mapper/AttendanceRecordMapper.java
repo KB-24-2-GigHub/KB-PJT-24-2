@@ -32,6 +32,7 @@ public interface AttendanceRecordMapper {
             @Param("workplaceId") long workplaceId,
             @Param("readyLatestStartsAt") LocalDateTime readyLatestStartsAt,
             @Param("readyEarliestStartsAt") LocalDateTime readyEarliestStartsAt,
+            @Param("readyEndsAfter") LocalDateTime readyEndsAfter,
             @Param("checkOutEarliestEndsAt") LocalDateTime checkOutEarliestEndsAt);
 
     /**

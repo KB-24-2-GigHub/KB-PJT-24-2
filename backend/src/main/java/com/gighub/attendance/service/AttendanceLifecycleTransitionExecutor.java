@@ -36,7 +36,8 @@ public class AttendanceLifecycleTransitionExecutor {
         if (row == null
                 || row.status() != WorkCaseStatus.ACCEPTED
                 || AttendanceWindowPolicy.readyOpensAt(row.startsAt()).isAfter(now)
-                || !now.isBefore(AttendanceWindowPolicy.noShowAt(row.startsAt()))) {
+                || !now.isBefore(AttendanceWindowPolicy.noShowAt(
+                        row.startsAt(), row.endsAt()))) {
             return false;
         }
 
@@ -59,7 +60,8 @@ public class AttendanceLifecycleTransitionExecutor {
         WorkLifecycleSnapshot row = workLifecycleCommandService.lock(workCaseId);
         if (row == null
                 || row.status() != WorkCaseStatus.READY
-                || AttendanceWindowPolicy.noShowAt(row.startsAt()).isAfter(now)
+                || AttendanceWindowPolicy.noShowAt(
+                        row.startsAt(), row.endsAt()).isAfter(now)
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_IN)) {
             return false;
         }

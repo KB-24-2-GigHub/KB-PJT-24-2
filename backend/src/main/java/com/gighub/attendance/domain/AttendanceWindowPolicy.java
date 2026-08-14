@@ -41,8 +41,10 @@ public final class AttendanceWindowPolicy {
     }
 
     /** 성공 출근이 없으면 결근으로 확정되는 시점입니다. */
-    public static LocalDateTime noShowAt(LocalDateTime startsAt) {
-        return startsAt.plusHours(NO_SHOW_GRACE_HOURS);
+    public static LocalDateTime noShowAt(LocalDateTime startsAt, LocalDateTime endsAt) {
+        LocalDateTime graceBoundary = startsAt.plusHours(NO_SHOW_GRACE_HOURS);
+        // 짧은 근무가 종료된 뒤에도 출근을 기다리지 않도록 두 경계 중 먼저 온 시각을 사용합니다.
+        return graceBoundary.isBefore(endsAt) ? graceBoundary : endsAt;
     }
 
     /** 성공 퇴근이 없으면 퇴근 누락으로 확정되는 시점입니다. */
@@ -63,7 +65,8 @@ public final class AttendanceWindowPolicy {
     /**
      * 출근 스캔 후보의 {@code starts_at} 하한입니다.
      *
-     * <p>{@code attemptedAt < noShowAt(starts_at)}을 옮긴 값이며 경계는 열린 구간입니다.</p>
+     * <p>{@code attemptedAt < starts_at + 1시간}을 옮긴 값이며 경계는 열린 구간입니다.
+     * 종료 시각 조건은 후보 조회에서 별도로 함께 확인합니다.</p>
      */
     public static LocalDateTime readyEarliestStartsAt(LocalDateTime attemptedAt) {
         return attemptedAt.minusHours(NO_SHOW_GRACE_HOURS);

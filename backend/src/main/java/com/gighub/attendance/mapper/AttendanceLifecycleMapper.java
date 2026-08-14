@@ -14,10 +14,12 @@ public interface AttendanceLifecycleMapper {
     List<Long> findReadyCandidateIds(
             @Param("readyAt") LocalDateTime readyAt,
             @Param("noShowAfter") LocalDateTime noShowAfter,
+            @Param("endsAfter") LocalDateTime endsAfter,
             @Param("batchSize") int batchSize);
 
     List<Long> findNoShowCandidateIds(
-            @Param("noShowAt") LocalDateTime noShowAt,
+            @Param("noShowStartsAt") LocalDateTime noShowStartsAt,
+            @Param("noShowEndsAt") LocalDateTime noShowEndsAt,
             @Param("batchSize") int batchSize);
 
     List<Long> findCheckoutMissingCandidateIds(

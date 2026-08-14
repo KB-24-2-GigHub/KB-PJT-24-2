@@ -1,6 +1,8 @@
 package com.gighub.attendance.service;
 
+import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
+import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.config.RootConfig;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
@@ -145,7 +147,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 AttendanceLifecycleTransitionExecutor executor =
                         context.getBean(AttendanceLifecycleTransitionExecutor.class);
 
-                assertFalse(mapper.findNoShowCandidateIds(NOW.minusHours(1), 100)
+                assertFalse(mapper.findNoShowCandidateIds(NOW.minusHours(1), NOW, 100)
                         .contains(checkedIn.workCaseId()));
                 assertFalse(mapper.findCheckoutMissingCandidateIds(NOW.minusHours(2), 100)
                         .contains(checkedOut.workCaseId()));
@@ -165,25 +167,28 @@ class AttendanceLifecycleDatabaseIntegrationTest {
     void candidateBatchLimitDrainsRemainingRowsOnTheNextRun() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            // 공유 개발 DB의 기존 READY 행보다 먼저 정렬해 테스트 픽스처만 전이합니다.
+            LocalDateTime fixtureStartsAt = LocalDateTime.of(1001, 1, 1, 9, 0);
             List<Fixture> fixtures = List.of(
                     createFixture(
                             context,
                             jdbcTemplate,
                             "READY",
-                            NOW.minusHours(1),
-                            NOW.plusHours(7)),
+                            fixtureStartsAt,
+                            fixtureStartsAt.plusHours(8)),
                     createFixture(
                             context,
                             jdbcTemplate,
                             "READY",
-                            NOW.minusHours(1),
-                            NOW.plusHours(7)),
+                            fixtureStartsAt,
+                            fixtureStartsAt.plusHours(8)),
                     createFixture(
                             context,
                             jdbcTemplate,
                             "READY",
-                            NOW.minusHours(1),
-                            NOW.plusHours(7)));
+                            fixtureStartsAt,
+                            fixtureStartsAt.plusHours(8)));
+            List<Long> fixtureIds = fixtures.stream().map(Fixture::workCaseId).toList();
 
             try {
                 AttendanceLifecycleMapper mapper =
@@ -191,14 +196,20 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 AttendanceLifecycleTransitionExecutor executor =
                         context.getBean(AttendanceLifecycleTransitionExecutor.class);
 
-                List<Long> firstBatch = mapper.findNoShowCandidateIds(NOW.minusHours(1), 2);
+                List<Long> firstBatch = mapper.findNoShowCandidateIds(
+                        NOW.minusHours(1), NOW, 2);
                 assertEquals(2, firstBatch.size());
+                assertTrue(fixtureIds.containsAll(firstBatch));
                 firstBatch.forEach(workCaseId ->
                         assertTrue(executor.advanceToNoShow(workCaseId, NOW)));
 
-                List<Long> nextBatch = mapper.findNoShowCandidateIds(NOW.minusHours(1), 2);
-                assertEquals(1, nextBatch.size());
-                assertTrue(executor.advanceToNoShow(nextBatch.get(0), NOW));
+                List<Long> nextBatch = mapper.findNoShowCandidateIds(
+                        NOW.minusHours(1), NOW, 2);
+                List<Long> remainingFixtureIds = nextBatch.stream()
+                        .filter(fixtureIds::contains)
+                        .toList();
+                assertEquals(1, remainingFixtureIds.size());
+                assertTrue(executor.advanceToNoShow(remainingFixtureIds.get(0), NOW));
                 assertEquals(3, fixtures.stream()
                         .filter(fixture -> "NO_SHOW".equals(workCaseStatus(jdbcTemplate, fixture)))
                         .count());
@@ -206,6 +217,83 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 for (int index = fixtures.size() - 1; index >= 0; index--) {
                     deleteFixture(context, jdbcTemplate, fixtures.get(index));
                 }
+            }
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    void shortWorkEndBoundaryExcludesCheckInAndReadyAndAdvancesToNoShow() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            Fixture ready = createFixture(
+                    context,
+                    jdbcTemplate,
+                    "READY",
+                    NOW.minusMinutes(5),
+                    NOW);
+            Fixture accepted = createFixture(
+                    context,
+                    jdbcTemplate,
+                    "ACCEPTED",
+                    NOW.minusMinutes(5),
+                    NOW);
+            Fixture beforeBoundary = createFixture(
+                    context,
+                    jdbcTemplate,
+                    "READY",
+                    NOW.minusMinutes(5),
+                    NOW.plusMinutes(1));
+
+            try {
+                AttendanceLifecycleMapper lifecycleMapper =
+                        context.getBean(AttendanceLifecycleMapper.class);
+                AttendanceRecordMapper recordMapper =
+                        context.getBean(AttendanceRecordMapper.class);
+                AttendanceLifecycleTransitionExecutor executor =
+                        context.getBean(AttendanceLifecycleTransitionExecutor.class);
+
+                assertTrue(lifecycleMapper.findNoShowCandidateIds(
+                                AttendanceWindowPolicy.readyEarliestStartsAt(NOW), NOW, 100)
+                        .contains(ready.workCaseId()));
+                assertFalse(recordMapper.findActiveScanCandidates(
+                                ready.workerId(),
+                                ready.workplaceId(),
+                                AttendanceWindowPolicy.readyLatestStartsAt(NOW),
+                                AttendanceWindowPolicy.readyEarliestStartsAt(NOW),
+                                NOW,
+                                AttendanceWindowPolicy.checkOutEarliestEndsAt(NOW))
+                        .stream()
+                        .anyMatch(candidate -> candidate.getWorkCaseId() == ready.workCaseId()));
+                assertTrue(recordMapper.findActiveScanCandidates(
+                                beforeBoundary.workerId(),
+                                beforeBoundary.workplaceId(),
+                                AttendanceWindowPolicy.readyLatestStartsAt(NOW),
+                                AttendanceWindowPolicy.readyEarliestStartsAt(NOW),
+                                NOW,
+                                AttendanceWindowPolicy.checkOutEarliestEndsAt(NOW))
+                        .stream()
+                        .anyMatch(candidate ->
+                                candidate.getWorkCaseId() == beforeBoundary.workCaseId()));
+                assertFalse(lifecycleMapper.findNoShowCandidateIds(
+                                AttendanceWindowPolicy.readyEarliestStartsAt(NOW), NOW, 100)
+                        .contains(beforeBoundary.workCaseId()));
+                assertFalse(executor.advanceToNoShow(beforeBoundary.workCaseId(), NOW));
+                assertFalse(lifecycleMapper.findReadyCandidateIds(
+                                AttendanceWindowPolicy.readyLatestStartsAt(NOW),
+                                AttendanceWindowPolicy.readyEarliestStartsAt(NOW),
+                                NOW,
+                                100)
+                        .contains(accepted.workCaseId()));
+                assertFalse(executor.advanceToReady(accepted.workCaseId(), NOW));
+                assertTrue(executor.advanceToNoShow(ready.workCaseId(), NOW));
+                assertEquals("ACCEPTED", workCaseStatus(jdbcTemplate, accepted));
+                assertEquals("NO_SHOW", workCaseStatus(jdbcTemplate, ready));
+                assertEquals("READY", workCaseStatus(jdbcTemplate, beforeBoundary));
+            } finally {
+                deleteFixture(context, jdbcTemplate, beforeBoundary);
+                deleteFixture(context, jdbcTemplate, accepted);
+                deleteFixture(context, jdbcTemplate, ready);
             }
         }
     }

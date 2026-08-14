@@ -240,7 +240,8 @@ public class AttendanceScanExecutor {
      */
     private boolean isReadyWindowClosed(WorkLifecycleSnapshot lock, LocalDateTime attemptedAt) {
         return attemptedAt.isBefore(AttendanceWindowPolicy.readyOpensAt(lock.startsAt()))
-                || !attemptedAt.isBefore(AttendanceWindowPolicy.noShowAt(lock.startsAt()));
+                || !attemptedAt.isBefore(AttendanceWindowPolicy.noShowAt(
+                        lock.startsAt(), lock.endsAt()));
     }
 
     /** 지각은 저장 상태가 아니라 시작 시각과의 양의 차이를 분 단위로 올린 파생값입니다. */
@@ -342,6 +343,7 @@ public class AttendanceScanExecutor {
                         workplaceId,
                         AttendanceWindowPolicy.readyLatestStartsAt(attemptedAt),
                         AttendanceWindowPolicy.readyEarliestStartsAt(attemptedAt),
+                        attemptedAt,
                         AttendanceWindowPolicy.checkOutEarliestEndsAt(attemptedAt));
         if (candidates.size() == 1) {
             return candidates.get(0);

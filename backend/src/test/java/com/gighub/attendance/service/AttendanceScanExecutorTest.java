@@ -263,6 +263,26 @@ class AttendanceScanExecutorTest {
     }
 
     @Test
+    void checkInAtShortWorkEndBoundaryIsRejectedAfterRowLock() {
+        LocalDateTime shortEndsAt = STARTS_AT.plusMinutes(30);
+        Instant receivedAt = toInstant(shortEndsAt);
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_IN);
+        when(workLifecycleCommandService.lock(WORK_CASE_ID)).thenReturn(
+                new WorkLifecycleSnapshot(
+                        WORK_CASE_ID, WorkCaseStatus.READY, STARTS_AT, shortEndsAt));
+
+        AttendanceScanOutcome outcome = executor().execute(
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
+
+        assertTrue(outcome.isRejected());
+        assertEquals(AttendanceFailureReason.TIME_WINDOW_CLOSED, outcome.getFailureReason());
+        verify(attendanceRecordMapper, never()).insertAttempt(any());
+        verify(workLifecycleCommandService, never()).transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS);
+    }
+
+    @Test
     void settlementScheduleFailureRollsBackTheWholeCheckOut() {
         Instant receivedAt = toInstant(ENDS_AT.plusMinutes(10));
         givenActiveWorkplaceAndQr();
@@ -321,13 +341,20 @@ class AttendanceScanExecutorTest {
 
     private void givenCandidate(AttendanceType scanType) {
         when(attendanceRecordMapper.findActiveScanCandidates(
-                eq(WORKER_ID), eq(WORKPLACE_ID), any(), any(), any()))
+                eq(WORKER_ID), eq(WORKPLACE_ID), any(), any(), any(), any()))
                 .thenReturn(List.of(candidate(scanType)));
     }
 
     private void givenLock(WorkCaseStatus status) {
+        givenLock(status, STARTS_AT, ENDS_AT);
+    }
+
+    private void givenLock(
+            WorkCaseStatus status,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt) {
         when(workLifecycleCommandService.lock(WORK_CASE_ID))
-                .thenReturn(new WorkLifecycleSnapshot(WORK_CASE_ID, status, STARTS_AT, ENDS_AT));
+                .thenReturn(new WorkLifecycleSnapshot(WORK_CASE_ID, status, startsAt, endsAt));
         when(attendanceRecordMapper.insertAttempt(any())).thenReturn(1);
     }
 

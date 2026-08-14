@@ -85,9 +85,30 @@ class AttendanceLifecycleTransitionExecutorTest {
     }
 
     @Test
+    void doesNotEnterReadyAtShortWorkEndBoundary() {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.minusMinutes(5), NOW));
+
+        assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
+
+        verify(lifecycleMapper, never()).findReadinessCheck(WORK_CASE_ID);
+    }
+
+    @Test
     void advancesReadyWorkToNoShowAtOneHourBoundary() {
         when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.READY, NOW.minusHours(1), NOW.plusHours(7)));
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW))
+                .thenReturn(true);
+
+        assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
+    }
+
+    @Test
+    void advancesReadyWorkToNoShowAtShortWorkEndBoundary() {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.READY, NOW.minusMinutes(5), NOW));
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW))
                 .thenReturn(true);

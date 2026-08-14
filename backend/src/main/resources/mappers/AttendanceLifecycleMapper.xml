@@ -10,6 +10,7 @@
         WHERE status = 'ACCEPTED'
           AND starts_at &lt;= #{readyAt}
           AND starts_at &gt; #{noShowAfter}
+          AND ends_at &gt; #{endsAfter}
         ORDER BY starts_at, id
         LIMIT #{batchSize}
     </select>
@@ -18,7 +19,10 @@
         SELECT wc.id
         FROM work_cases wc
         WHERE wc.status = 'READY'
-          AND wc.starts_at &lt;= #{noShowAt}
+          AND (
+              wc.starts_at &lt;= #{noShowStartsAt}
+              OR wc.ends_at &lt;= #{noShowEndsAt}
+          )
           AND NOT EXISTS (
               SELECT 1
               FROM attendance_records ar

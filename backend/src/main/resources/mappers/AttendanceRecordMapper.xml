@@ -18,7 +18,7 @@
     <!--
         활성 후보를 승인된 두 조건으로만 고릅니다.
 
-        - READY이고 starts_at - 30분 <= attemptedAt < starts_at + 1시간이면 CHECK_IN
+        - READY이고 starts_at - 30분 <= attemptedAt < min(starts_at + 1시간, ends_at)이면 CHECK_IN
         - 성공 CHECK_IN이 있는 IN_PROGRESS이고 attemptedAt < ends_at + 2시간이면 CHECK_OUT
 
         경계는 컬럼에 함수를 씌우지 않고 attemptedAt 쪽을 옮겨 계산해 넘기므로
@@ -43,6 +43,7 @@
                   wc.status = 'READY'
                   AND wc.starts_at &lt;= #{readyLatestStartsAt}
                   AND wc.starts_at &gt; #{readyEarliestStartsAt}
+                  AND wc.ends_at &gt; #{readyEndsAfter}
               )
               OR (
                   wc.status = 'IN_PROGRESS'
