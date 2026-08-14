@@ -6,10 +6,14 @@ import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.HealthCertificateStorageKeys;
 import com.gighub.document.validation.ValidatedHealthCertificateFile;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDate;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -94,6 +98,62 @@ class HealthCertificateRegisterTransactionTest {
                         new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM))));
 
         verify(storageAdapter, never()).writePending(any(), any());
+    }
+
+    @AfterEach
+    void clearSynchronization() {
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void deletesThePendingFileWhenTheSurroundingTransactionRollsBack() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        TransactionSynchronizationManager.initSynchronization();
+
+        HealthCertificateRegistrationHandle handle = transaction.register(
+                new ValidatedHealthCertificateRegistration(
+                        OWNER_ID, LocalDate.of(2026, 8, 14),
+                        new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM)));
+        fireAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+
+        verify(storageAdapter).deletePending(handle.pendingStorageKey());
+    }
+
+    @Test
+    void keepsThePendingFileWhenTheSurroundingTransactionCommits() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        TransactionSynchronizationManager.initSynchronization();
+
+        transaction.register(new ValidatedHealthCertificateRegistration(
+                OWNER_ID, LocalDate.of(2026, 8, 14),
+                new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM)));
+        fireAfterCompletion(TransactionSynchronization.STATUS_COMMITTED);
+
+        verify(storageAdapter, never()).deletePending(any());
+    }
+
+    @Test
+    void pendingCleanupFailureDuringRollbackNeverEscapes() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        doThrow(new RuntimeException("storage unavailable")).when(storageAdapter).deletePending(any());
+        TransactionSynchronizationManager.initSynchronization();
+
+        transaction.register(new ValidatedHealthCertificateRegistration(
+                OWNER_ID, LocalDate.of(2026, 8, 14),
+                new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM)));
+
+        fireAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+    }
+
+    private void fireAfterCompletion(int status) {
+        List<TransactionSynchronization> synchronizations =
+                TransactionSynchronizationManager.getSynchronizations();
+        synchronizations.forEach(synchronization -> synchronization.afterCompletion(status));
     }
 
     private void stubGeneratedDocumentId() {
