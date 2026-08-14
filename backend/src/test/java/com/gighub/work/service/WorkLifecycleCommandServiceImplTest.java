@@ -67,15 +67,25 @@ class WorkLifecycleCommandServiceImplTest {
                 WORK_CASE_ID,
                 List.of(WorkCaseStatus.READY),
                 WorkCaseStatus.NO_SHOW)).thenReturn(1);
+        when(workCaseMapper.updateWorkStatus(
+                WORK_CASE_ID,
+                List.of(WorkCaseStatus.ACCEPTED),
+                WorkCaseStatus.NO_SHOW)).thenReturn(1);
 
         assertTrue(service.transition(
                 WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW));
+        assertTrue(service.transition(
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.NO_SHOW));
         assertFalse(service.transition(
                 WORK_CASE_ID, WorkCaseStatus.DRAFT, WorkCaseStatus.NO_SHOW));
 
         verify(workCaseMapper, times(1)).updateWorkStatus(
                 WORK_CASE_ID,
                 List.of(WorkCaseStatus.READY),
+                WorkCaseStatus.NO_SHOW);
+        verify(workCaseMapper).updateWorkStatus(
+                WORK_CASE_ID,
+                List.of(WorkCaseStatus.ACCEPTED),
                 WorkCaseStatus.NO_SHOW);
     }
 }

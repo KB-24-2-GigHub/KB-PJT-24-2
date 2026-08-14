@@ -263,6 +263,24 @@ class AttendanceScanExecutorTest {
     }
 
     @Test
+    void checkInAtShortWorkEndBoundaryIsRejectedAfterRowLock() {
+        LocalDateTime shortEndsAt = STARTS_AT.plusMinutes(30);
+        Instant receivedAt = toInstant(shortEndsAt);
+        givenActiveWorkplaceAndQr();
+        givenCandidate(AttendanceType.CHECK_IN, STARTS_AT, shortEndsAt);
+        givenLock(WorkCaseStatus.READY, STARTS_AT, shortEndsAt);
+
+        AttendanceScanOutcome outcome = executor().execute(
+                principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
+
+        assertTrue(outcome.isRejected());
+        assertEquals(AttendanceFailureReason.TIME_WINDOW_CLOSED, outcome.getFailureReason());
+        verify(attendanceRecordMapper, never()).insertAttempt(any());
+        verify(workLifecycleCommandService, never()).transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS);
+    }
+
+    @Test
     void settlementScheduleFailureRollsBackTheWholeCheckOut() {
         Instant receivedAt = toInstant(ENDS_AT.plusMinutes(10));
         givenActiveWorkplaceAndQr();
@@ -320,15 +338,29 @@ class AttendanceScanExecutorTest {
     }
 
     private void givenCandidate(AttendanceType scanType) {
+        givenCandidate(scanType, STARTS_AT, ENDS_AT);
+    }
+
+    private void givenCandidate(
+            AttendanceType scanType,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt) {
         when(attendanceRecordMapper.findActiveScanCandidates(
                 eq(WORKER_ID), eq(WORKPLACE_ID), any(), any(), any()))
-                .thenReturn(List.of(candidate(scanType)));
+                .thenReturn(List.of(candidate(scanType, startsAt, endsAt)));
     }
 
     private void givenLock(WorkCaseStatus status) {
-        when(workLifecycleCommandService.lock(WORK_CASE_ID))
-                .thenReturn(new WorkLifecycleSnapshot(WORK_CASE_ID, status, STARTS_AT, ENDS_AT));
+        givenLock(status, STARTS_AT, ENDS_AT);
         when(attendanceRecordMapper.insertAttempt(any())).thenReturn(1);
+    }
+
+    private void givenLock(
+            WorkCaseStatus status,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt) {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(new WorkLifecycleSnapshot(WORK_CASE_ID, status, startsAt, endsAt));
     }
 
     private static QrTokenRow activeQr() {
@@ -340,13 +372,20 @@ class AttendanceScanExecutorTest {
     }
 
     private static AttendanceScanCandidateRow candidate(AttendanceType scanType) {
+        return candidate(scanType, STARTS_AT, ENDS_AT);
+    }
+
+    private static AttendanceScanCandidateRow candidate(
+            AttendanceType scanType,
+            LocalDateTime startsAt,
+            LocalDateTime endsAt) {
         return AttendanceScanCandidateRow.builder()
                 .workCaseId(WORK_CASE_ID)
                 .status(scanType == AttendanceType.CHECK_IN
                         ? WorkCaseStatus.READY
                         : WorkCaseStatus.IN_PROGRESS)
-                .startsAt(STARTS_AT)
-                .endsAt(ENDS_AT)
+                .startsAt(startsAt)
+                .endsAt(endsAt)
                 .scanType(scanType)
                 .build();
     }

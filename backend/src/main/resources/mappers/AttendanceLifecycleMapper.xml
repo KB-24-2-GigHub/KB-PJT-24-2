@@ -17,8 +17,11 @@
     <select id="findNoShowCandidateIds" resultType="java.lang.Long">
         SELECT wc.id
         FROM work_cases wc
-        WHERE wc.status = 'READY'
-          AND wc.starts_at &lt;= #{noShowAt}
+        WHERE wc.status IN ('READY', 'ACCEPTED')
+          AND (
+              wc.starts_at &lt;= #{window.latestStartsAt}
+              OR wc.ends_at &lt;= #{window.latestEndsAt}
+          )
           AND NOT EXISTS (
               SELECT 1
               FROM attendance_records ar
@@ -26,7 +29,10 @@
                 AND ar.attendance_type = 'CHECK_IN'
                 AND ar.result = 'SUCCESS'
           )
-        ORDER BY wc.starts_at, wc.id
+        -- READY를 먼저 소진해 준비 미완료 ACCEPTED가 기존 NO_SHOW 처리를 막지 않게 합니다.
+        ORDER BY CASE WHEN wc.status = 'READY' THEN 0 ELSE 1 END,
+                 wc.starts_at,
+                 wc.id
         LIMIT #{batchSize}
     </select>
 
