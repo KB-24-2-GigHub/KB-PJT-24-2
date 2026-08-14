@@ -8,6 +8,7 @@ import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
+import java.time.LocalDate;
 import java.util.List;
 
 /**
@@ -36,6 +37,17 @@ public interface ContractDocumentWriteMapper {
             @Param("documentId") long documentId,
             @Param("expectedStatus") String expectedStatus,
             @Param("status") String status);
+
+    /**
+     * 소유 WORKER의 ACTIVE 보건증 발급일·만료일만 바꾼다(DOC-006). 파일·Version은 건드리지
+     * 않는다. 대상이 없거나(존재하지 않음, 비소유, 다른 문서 유형, 이미 삭제됨) 이미 삭제된
+     * 경우 0을 돌려준다.
+     */
+    int updateHealthCertificateIssuedDate(
+            @Param("documentId") long documentId,
+            @Param("ownerUserId") long ownerUserId,
+            @Param("issuedOn") LocalDate issuedOn,
+            @Param("expiresOn") LocalDate expiresOn);
 
     /**
      * 특정 근무의 EMPLOYMENT_CONTRACT 문서에 딸린 Version들의 승격 정보를 읽는다.

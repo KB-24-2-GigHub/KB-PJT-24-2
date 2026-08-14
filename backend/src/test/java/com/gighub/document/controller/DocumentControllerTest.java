@@ -13,12 +13,14 @@ import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentVersionItem;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -43,6 +45,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -59,6 +62,9 @@ class DocumentControllerTest {
     @Mock
     private HealthCertificateRegisterService healthCertificateRegisterService;
 
+    @Mock
+    private HealthCertificateUpdateService healthCertificateUpdateService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -71,7 +77,9 @@ class DocumentControllerTest {
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mockMvc = MockMvcBuilders
                 .standaloneSetup(new DocumentController(
-                        documentQueryService, healthCertificateRegisterService))
+                        documentQueryService,
+                        healthCertificateRegisterService,
+                        healthCertificateUpdateService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -264,6 +272,53 @@ class DocumentControllerTest {
 
         verify(healthCertificateRegisterService).register(
                 eq(principal), eq("HEALTH_CERTIFICATE"), eq(LocalDate.of(2026, 8, 14)), any());
+    }
+
+    @Test
+    void updatesAHealthCertificateIssuedDateAndReturnsTheUpdatedItem() throws Exception {
+        DocumentListItem updated = DocumentListItem.of(
+                DOCUMENT_ID,
+                "HEALTH_CERTIFICATE",
+                "ACTIVE",
+                "image/jpeg",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2027, 9, 1),
+                1,
+                "OWN",
+                "김근로",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                LocalDateTime.of(2026, 8, 14, 12, 0));
+        when(healthCertificateUpdateService.updateIssuedDate(
+                principal, DOCUMENT_ID, LocalDate.of(2026, 9, 1)))
+                .thenReturn(updated);
+
+        mockMvc.perform(patch("/api/documents/{documentId}", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"issuedDate\":\"2026-09-01\"}")
+                        .principal(authentication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.issuedDate").value("2026-09-01"))
+                .andExpect(jsonPath("$.data.expiresDate").value("2027-09-01"));
+
+        verify(healthCertificateUpdateService).updateIssuedDate(
+                principal, DOCUMENT_ID, LocalDate.of(2026, 9, 1));
+    }
+
+    @Test
+    void rejectsAHealthCertificateUpdateWithoutAnIssuedDate() throws Exception {
+        mockMvc.perform(patch("/api/documents/{documentId}", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+                        .principal(authentication))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(healthCertificateUpdateService, never()).updateIssuedDate(any(), anyLong(), any());
     }
 
     private DocumentListItem listItem() {

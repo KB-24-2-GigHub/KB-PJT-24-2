@@ -43,6 +43,16 @@
           AND status = #{expectedStatus}
     </update>
 
+    <update id="updateHealthCertificateIssuedDate">
+        UPDATE documents
+        SET issued_on = #{issuedOn},
+            expires_on = #{expiresOn}
+        WHERE id = #{documentId}
+          AND owner_user_id = #{ownerUserId}
+          AND document_type = 'HEALTH_CERTIFICATE'
+          AND status = 'ACTIVE'
+    </update>
+
     <select id="findPromotionRowsByWorkCaseId"
             resultType="com.gighub.document.mapper.result.ContractVersionPromotionRow">
         SELECT dv.document_id  AS documentId,

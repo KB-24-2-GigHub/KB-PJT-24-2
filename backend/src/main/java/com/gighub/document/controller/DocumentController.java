@@ -9,8 +9,10 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
+import com.gighub.document.dto.HealthCertificateUpdateRequest;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.document.validation.UploadedFile;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -18,11 +20,15 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
+import javax.validation.Valid;
 
 import javax.servlet.http.HttpServletRequest;
 import java.io.IOException;
@@ -38,6 +44,7 @@ public class DocumentController {
 
     private final DocumentQueryService documentQueryService;
     private final HealthCertificateRegisterService healthCertificateRegisterService;
+    private final HealthCertificateUpdateService healthCertificateUpdateService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
@@ -93,6 +100,18 @@ public class DocumentController {
         } catch (IOException e) {
             throw new ValidationException("보건증 파일을 읽을 수 없습니다.", "file", "UNREADABLE");
         }
+    }
+
+    // DOC-006: 보건증 발급일 수정
+    @PatchMapping("/api/documents/{documentId}")
+    public ResponseEntity<ApiResponse<DocumentListItem>> updateHealthCertificate(
+            @PathVariable long documentId,
+            @Valid @RequestBody HealthCertificateUpdateRequest request,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        DocumentListItem updated = healthCertificateUpdateService.updateIssuedDate(
+                principal, documentId, request.getIssuedDate());
+        return ResponseEntity.ok(ApiResponse.of(updated));
     }
 
     // SHARE-002: 문서 공유 현황

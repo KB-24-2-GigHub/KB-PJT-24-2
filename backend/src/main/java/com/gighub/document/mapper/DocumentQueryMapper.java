@@ -33,6 +33,12 @@ public interface DocumentQueryMapper {
             @Param("documentId") Long documentId,
             @Param("ownerUserId") Long ownerUserId);
 
+    /** 등록·수정 직후 재조회용입니다. 없거나 소유자가 아니면 {@code null}입니다. */
+    DocumentListRow findOwnHealthCertificateById(
+            @Param("userId") Long userId,
+            @Param("documentId") Long documentId,
+            @Param("today") LocalDate today);
+
     List<DocumentShareRow> findSharesByDocumentId(
             @Param("documentId") Long documentId,
             @Param("now") LocalDateTime now,
