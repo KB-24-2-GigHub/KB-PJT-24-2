@@ -1,0 +1,197 @@
+name: Update Project completion date
+
+on:
+  issues:
+    types:
+      - closed
+      - reopened
+
+permissions:
+  contents: read
+
+concurrency:
+  group: project-completion-date-${{ github.event.issue.number }}
+  cancel-in-progress: false
+
+env:
+  PROJECT_ID: ${{ vars.PROJECT_ID }}
+  PROJECT_END_DATE_FIELD: End date
+  PROJECT_TIME_ZONE: Asia/Seoul
+
+jobs:
+  update-completion-date:
+    name: Update issue completion date
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check automation prerequisites
+        env:
+          PROJECTS_TOKEN: ${{ secrets.PROJECTS_TOKEN }}
+        run: |
+          if [[ -z "${PROJECT_ID}" ]]; then
+            echo "::error::Repository variable PROJECT_ID is required."
+            exit 1
+          fi
+
+          if [[ -z "${PROJECTS_TOKEN}" ]]; then
+            echo "::error::Repository secret PROJECTS_TOKEN is required."
+            exit 1
+          fi
+
+      - name: Set or clear End date
+        uses: actions/github-script@d746ffe35508b1917358783b479e04febd2b8f71 # v9.0.0
+        with:
+          github-token: ${{ secrets.PROJECTS_TOKEN }}
+          retries: 3
+          script: |
+            const projectId = process.env.PROJECT_ID;
+            const fieldName = process.env.PROJECT_END_DATE_FIELD;
+            const timeZone = process.env.PROJECT_TIME_ZONE;
+            const issueId = context.payload.issue.node_id;
+
+            // close/reopen 이벤트가 겹쳐도 실행 시점의 실제 이슈 상태를 기준으로 최종 값을 맞춘다.
+            const result = await github.graphql(
+              `
+                query GetIssueProjectItem($issueId: ID!) {
+                  node(id: $issueId) {
+                    ... on Issue {
+                      number
+                      state
+                      closedAt
+                      projectItems(first: 50, includeArchived: false) {
+                        nodes {
+                          id
+                          project {
+                            id
+                            title
+                            fields(first: 100) {
+                              nodes {
+                                ... on ProjectV2Field {
+                                  id
+                                  name
+                                  dataType
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              `,
+              { issueId },
+            );
+
+            const issue = result.node;
+            if (!issue) {
+              core.setFailed(`Issue node ${issueId} was not found.`);
+              return;
+            }
+
+            const item = issue.projectItems.nodes.find(
+              (candidate) => candidate.project?.id === projectId,
+            );
+
+            // 보드 미등록은 설정 오류가 아니라 자동화 대상이 아닌 상태다. 등록되지 않은
+            // 이슈를 닫을 때마다 실패로 끝나면 실행 이력이 빨간불로 덮여 진짜 설정 오류를
+            // 가린다. 다만 info 로 내리면 "보드에 없다"는 사실이 실행 목록에서 사라지므로
+            // warning 으로 남긴다. 실행은 성공하되 요약에 annotation 이 보인다.
+            // 아래 PROJECT_ID·필드 검증은 자동화가 조용히 죽는 경우이므로 계속 실패다.
+            if (!item) {
+              core.warning(
+                `Issue #${issue.number} is not in the configured Project. Skipping.`,
+              );
+              return;
+            }
+
+            const field = item.project.fields.nodes.find(
+              (candidate) =>
+                candidate?.name === fieldName && candidate?.dataType === 'DATE',
+            );
+
+            if (!field) {
+              core.setFailed(
+                `Project "${item.project.title}" has no DATE field named "${fieldName}".`,
+              );
+              return;
+            }
+
+            if (issue.state === 'OPEN') {
+              await github.graphql(
+                `
+                  mutation ClearIssueEndDate(
+                    $projectId: ID!
+                    $itemId: ID!
+                    $fieldId: ID!
+                  ) {
+                    clearProjectV2ItemFieldValue(
+                      input: {
+                        projectId: $projectId
+                        itemId: $itemId
+                        fieldId: $fieldId
+                      }
+                    ) {
+                      projectV2Item {
+                        id
+                      }
+                    }
+                  }
+                `,
+                { projectId, itemId: item.id, fieldId: field.id },
+              );
+
+              core.info(`Cleared "${fieldName}" for reopened issue #${issue.number}.`);
+              return;
+            }
+
+            if (!issue.closedAt) {
+              core.setFailed(`Closed issue #${issue.number} has no closedAt value.`);
+              return;
+            }
+
+            const dateParts = Object.fromEntries(
+              new Intl.DateTimeFormat('en-CA', {
+                timeZone,
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+              })
+                .formatToParts(new Date(issue.closedAt))
+                .map(({ type, value }) => [type, value]),
+            );
+            const completionDate = `${dateParts.year}-${dateParts.month}-${dateParts.day}`;
+
+            await github.graphql(
+              `
+                mutation SetIssueEndDate(
+                  $projectId: ID!
+                  $itemId: ID!
+                  $fieldId: ID!
+                  $date: Date!
+                ) {
+                  updateProjectV2ItemFieldValue(
+                    input: {
+                      projectId: $projectId
+                      itemId: $itemId
+                      fieldId: $fieldId
+                      value: { date: $date }
+                    }
+                  ) {
+                    projectV2Item {
+                      id
+                    }
+                  }
+                }
+              `,
+              {
+                projectId,
+                itemId: item.id,
+                fieldId: field.id,
+                date: completionDate,
+              },
+            );
+
+            core.info(
+              `Set "${fieldName}" to ${completionDate} for issue #${issue.number}.`,
+            );
