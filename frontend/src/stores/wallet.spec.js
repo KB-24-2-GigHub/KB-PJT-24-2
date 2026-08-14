@@ -61,4 +61,56 @@ describe('wallet store', () => {
       expect.objectContaining({ type: 'FUNDING', page: 1, size: 1 })
     )
   })
+
+  it('진행 중 조회를 기다린 뒤 정산 확인용 새 거래 요청을 보장한다', async () => {
+    let resolveFirst
+    fetchTransactions
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveFirst = resolve
+          })
+      )
+      .mockResolvedValueOnce({
+        content: [{ transactionId: 2, type: 'ESCROW_RELEASE' }],
+        page: { number: 0, size: 20, totalElements: 1, totalPages: 1 }
+      })
+    const store = useWalletStore()
+
+    const firstRequest = store.loadTransactions()
+    const refreshRequest = store.refreshTransactions()
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    resolveFirst({
+      content: [{ transactionId: 1 }],
+      page: { number: 0, size: 20, totalElements: 1, totalPages: 1 }
+    })
+    await Promise.all([firstRequest, refreshRequest])
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(2)
+    expect(store.transactions).toEqual([{ transactionId: 2, type: 'ESCROW_RELEASE' }])
+  })
+
+  it('진행 중 조회가 실패해도 일반 중복 호출은 오류를 다시 전파하지 않는다', async () => {
+    let rejectFirst
+    const requestError = new Error('network error')
+    fetchTransactions.mockImplementationOnce(
+      () =>
+        new Promise((resolve, reject) => {
+          rejectFirst = reject
+        })
+    )
+    const store = useWalletStore()
+
+    const firstRequest = store.loadTransactions()
+    const duplicateRequest = store.loadTransactions({ type: 'FUNDING' })
+    const firstExpectation = expect(firstRequest).rejects.toBe(requestError)
+    const duplicateExpectation = expect(duplicateRequest).resolves.toBeUndefined()
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+    rejectFirst(requestError)
+    await Promise.all([firstExpectation, duplicateExpectation])
+
+    expect(fetchTransactions).toHaveBeenCalledTimes(1)
+  })
 })

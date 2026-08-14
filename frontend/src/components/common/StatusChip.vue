@@ -49,7 +49,7 @@ const ICONS = {
   COMPLETED: CircleCheck,
   NO_SHOW: UserX,
   CANCELED: Ban,
-  // 정산·거래(settlements.status 6종 — ck_settlements_status)
+  // 정산·거래(settlements.status 7종 — ck_settlements_status)
   HOLD: Lock,
   SETTLED: CircleCheck,
   REFUNDED: RotateCcw,
