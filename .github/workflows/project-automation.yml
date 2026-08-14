@@ -93,9 +93,13 @@ jobs:
               (candidate) => candidate.project?.id === projectId,
             );
 
+            // 보드 미등록은 설정 오류가 아니라 자동화 대상이 아닌 상태다. 등록되지 않은
+            // 이슈를 닫을 때마다 실패로 끝나면 실행 이력이 빨간불로 덮여 진짜 설정 오류를
+            // 가린다. 아래 PROJECT_ID·필드 검증은 자동화가 조용히 죽는 경우이므로 계속
+            // 실패로 남긴다.
             if (!item) {
-              core.setFailed(
-                `Issue #${issue.number} is not in the configured Project.`,
+              core.info(
+                `Issue #${issue.number} is not in the configured Project. Skipping.`,
               );
               return;
             }
