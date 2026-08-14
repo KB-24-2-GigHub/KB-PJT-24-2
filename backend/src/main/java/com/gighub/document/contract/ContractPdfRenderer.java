@@ -109,7 +109,8 @@ public class ContractPdfRenderer {
         values.put("workDate", snapshot.startsAt().toLocalDate().format(DATE_FORMAT));
         values.put("startsAt", formatDateTime(snapshot.startsAt()));
         values.put("endsAt", formatDateTime(snapshot.endsAt()));
-        values.put("workDuration", formatDuration(snapshot.startsAt(), snapshot.endsAt()));
+        values.put("workDuration",
+                formatDuration(snapshot.startsAt(), snapshot.endsAt(), snapshot.breakMinutes()));
         values.put("breakMinutes", String.valueOf(snapshot.breakMinutes()));
         values.put("breakPaidLabel", snapshot.breakPaid() ? "유급" : "무급");
         values.put("agreedWage", formatWon(snapshot.agreedWage()));
@@ -238,9 +239,9 @@ public class ContractPdfRenderer {
         return value.format(DATE_TIME_FORMAT);
     }
 
-    /** 휴게 시간을 빼지 않은 계약상 구속 시간을 사람이 읽는 형태로 적는다. */
-    private String formatDuration(LocalDateTime startsAt, LocalDateTime endsAt) {
-        Duration duration = Duration.between(startsAt, endsAt);
+    /** 휴게 시간을 뺀 실근로시간을 사람이 읽는 형태로 적는다. */
+    private String formatDuration(LocalDateTime startsAt, LocalDateTime endsAt, int breakMinutes) {
+        Duration duration = Duration.between(startsAt, endsAt).minusMinutes(breakMinutes);
         long hours = duration.toHours();
         long minutes = duration.toMinutesPart();
         if (minutes == 0) {

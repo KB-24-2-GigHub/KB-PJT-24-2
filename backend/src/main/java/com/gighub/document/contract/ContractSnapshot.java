@@ -1,5 +1,6 @@
 package com.gighub.document.contract;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 
 /**
@@ -34,6 +35,14 @@ public record ContractSnapshot(
         int sourceTermsVersion,
         LocalDateTime acceptedAt,
         LocalDateTime employerActionAt) {
+
+    public ContractSnapshot {
+        long shiftMinutes = Duration.between(startsAt, endsAt).toMinutes();
+        if (breakMinutes < 0 || breakMinutes > shiftMinutes) {
+            throw new IllegalArgumentException(
+                    "휴게시간(" + breakMinutes + "분)이 근무시간(" + shiftMinutes + "분)을 벗어났습니다.");
+        }
+    }
 
     /** SIGNED Version에만 붙는 서명 증거입니다(TYPED_NAME). */
     public record Signature(String typedName, LocalDateTime signedAt) {

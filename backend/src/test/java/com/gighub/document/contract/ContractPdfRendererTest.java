@@ -33,6 +33,7 @@ class ContractPdfRendererTest {
             assertTrue(text.contains("서울시 강남구 테스트로 1"));
             assertTrue(text.contains("2026-07-22 10:00"));
             assertTrue(text.contains("2026-07-22 18:00"));
+            assertTrue(text.contains("휴게 제외 총 7시간"));
             assertTrue(text.contains("60분"));
             assertTrue(text.contains("무급"));
             assertTrue(text.contains("90,000원"));
@@ -63,11 +64,43 @@ class ContractPdfRendererTest {
         byte[] pdf = renderer.render(snapshot());
 
         try (PDDocument document = Loader.loadPDF(pdf)) {
+            // 한글은 낱말 사이 공백 없이도 줄이 바뀌므로, 인접 문구 길이가 바뀌면 줄바꿈
+            // 위치도 옮겨간다. 어디서 줄이 갈리든 검사가 깨지지 않도록 공백을 모두 지우고 비교한다.
+            String text = new PDFTextStripper().getText(document).replaceAll("\\s+", "");
+            assertTrue(text.contains("연차유급휴가및주휴수당대상에해당하지않습니다"));
+            assertTrue(text.contains("최저임금법등관계법령을준수하며"));
+            assertFalse(text.contains("최저임금액이상으로정하며"));
+            assertTrue(text.contains("산재·고용보험이적용됩니다"));
+            assertTrue(text.contains("국민연금·건강보험제외"));
+            assertTrue(text.contains("근로기준법제17조"));
+        }
+    }
+
+    @Test
+    void excludesBreakMinutesFromTheDisplayedWorkDuration() throws IOException {
+        ContractSnapshot ninetyMinuteBreak = new ContractSnapshot(
+                106L,
+                "주말 홀 서빙",
+                LocalDateTime.of(2026, 7, 22, 10, 0),
+                LocalDateTime.of(2026, 7, 22, 18, 0),
+                90,
+                false,
+                "기가 허브",
+                "서울시 강남구 테스트로 1",
+                90_000L,
+                "김사장",
+                null,
+                "이알바",
+                null,
+                3,
+                LocalDateTime.of(2026, 7, 22, 13, 0),
+                LocalDateTime.of(2026, 7, 1, 9, 0));
+
+        byte[] pdf = renderer.render(ninetyMinuteBreak);
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
             String text = new PDFTextStripper().getText(document);
-            assertTrue(text.contains("연차유급휴가와 주휴수당 발생 요건을"));
-            assertTrue(text.contains("최저임금법에 따른 시간급"));
-            assertTrue(text.contains("산업재해보상보험과 고용보험"));
-            assertTrue(text.contains("근로기준법 제17조"));
+            assertTrue(text.contains("휴게 제외 총 6시간 30분"));
         }
     }
 
