@@ -85,7 +85,10 @@ function goDetail(workCase) {
             <StatusChip :status="workCase.status" kind="workCase" />
             <StatusChip :status="workCase.settlementStatus" kind="settle" />
           </div>
-          <p v-if="workCase.settlementDueAt" class="due-at">
+          <p
+            v-if="workCase.settlementStatus === 'SCHEDULED' && workCase.settlementDueAt"
+            class="due-at"
+          >
             {{ formatSeoulDateTime(workCase.settlementDueAt) }} 지급 예정
           </p>
         </button>
