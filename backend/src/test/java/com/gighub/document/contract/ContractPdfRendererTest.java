@@ -37,6 +37,21 @@ class ContractPdfRendererTest {
             assertTrue(text.contains("김사장"));
             assertTrue(text.contains("이알바"));
             assertTrue(text.contains("v3"));
+            assertTrue(text.contains("2026-07-22 하루"));
+        }
+    }
+
+    @Test
+    void rendersStatutoryNoticesRequiredByLaborStandardsActArticle17() throws IOException {
+        byte[] pdf = renderer.render(snapshot());
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            String text = new PDFTextStripper().getText(document);
+            assertTrue(text.contains("연차유급휴가가 발생하지 않는다"));
+            assertTrue(text.contains("주휴수당 발생 요건"));
+            assertTrue(text.contains("산업재해보상보험과 고용보험"));
+            assertTrue(text.contains("최저임금법에 따른 시간급 최저임금액 이상"));
+            assertTrue(text.contains("근로기준법 제17조"));
         }
     }
 

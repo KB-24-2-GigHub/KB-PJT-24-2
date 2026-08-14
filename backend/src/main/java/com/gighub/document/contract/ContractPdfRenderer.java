@@ -44,6 +44,8 @@ public class ContractPdfRenderer {
     private static final String FONT_FAMILY = "Pretendard";
     private static final DateTimeFormatter DATE_TIME_FORMAT =
             DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.KOREA);
+    private static final DateTimeFormatter DATE_FORMAT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd", Locale.KOREA);
 
     /** 서명 전 ORIGINAL의 근로자 서명란에 넣는 안내다. */
     private static final String UNSIGNED_NAME = "(서명 전)";
@@ -100,6 +102,7 @@ public class ContractPdfRenderer {
         values.put("title", snapshot.title());
         values.put("workplaceName", snapshot.workplaceName());
         values.put("workplaceAddress", snapshot.workplaceAddress());
+        values.put("workDate", snapshot.startsAt().toLocalDate().format(DATE_FORMAT));
         values.put("startsAt", formatDateTime(snapshot.startsAt()));
         values.put("endsAt", formatDateTime(snapshot.endsAt()));
         values.put("workDuration", formatDuration(snapshot.startsAt(), snapshot.endsAt()));
