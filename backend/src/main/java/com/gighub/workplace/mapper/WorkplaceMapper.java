@@ -4,6 +4,7 @@ import java.math.BigDecimal;
 import java.util.List;
 
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
+import com.gighub.workplace.mapper.param.WorkplaceUpdateParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import org.apache.ibatis.annotations.Mapper;
@@ -134,4 +135,29 @@ public interface WorkplaceMapper {
             @Param("workplaceId") Long workplaceId,
             @Param("latitude") BigDecimal latitude,
             @Param("longitude") BigDecimal longitude);
+
+    /**
+     * 인증 OWNER가 소유한 {@code ACTIVE} 사업장의 현재 도로명주소를 읽습니다.
+     *
+     * <p>수정 요청이 좌표 재확정을 동반하는지 판단하려면 저장된 주소가 필요합니다. 잠그지
+     * 않는 이유는 이 값이 판단 근거일 뿐이고, 실제 보호는 갱신 문장의 주소 조건이 하기
+     * 때문입니다. 여기서 잠그면 외부 주소 변환이 끝날 때까지 행을 붙잡게 됩니다.</p>
+     *
+     * @return 소유한 {@code ACTIVE} 사업장이 아니면 {@code null}
+     */
+    String findOwnedActiveRoadAddress(
+            @Param("workplaceId") Long workplaceId,
+            @Param("ownerUserId") Long ownerUserId);
+
+    /**
+     * 인증 OWNER가 소유한 {@code ACTIVE} 사업장의 수정 가능한 필드를 갱신합니다.
+     *
+     * <p>{@code expectedRoadAddress}가 있으면 좌표를 다시 확정하는 수정이므로 그 주소가
+     * 아직 저장된 값일 때만 갱신합니다. 이 조건이 없으면 주소 변환이 진행되는 동안 다른
+     * 요청이 바꾼 주소를, 이전 주소로 구한 좌표와 함께 덮어씁니다.</p>
+     *
+     * @return 실제로 갱신된 행 수. 소유 {@code ACTIVE} 사업장이 아니거나 기대한 주소가
+     *         아니면 {@code 0}
+     */
+    int updateOwnedActive(WorkplaceUpdateParam param);
 }

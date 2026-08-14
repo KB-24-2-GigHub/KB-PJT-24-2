@@ -13,9 +13,11 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
 import com.gighub.workplace.exception.WorkplaceCoordinatesAlreadySetException;
+import com.gighub.workplace.exception.WorkplaceGeocodingException;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -25,7 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
@@ -36,6 +40,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -365,6 +370,147 @@ class WorkplaceControllerTest {
                 .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
 
         verify(workplaceService, never()).confirmLocation(any(), any(), any());
+    }
+
+    /** 성공은 본문 없는 204이고, 보낸 필드만 존재 표시와 함께 Service로 넘어가야 합니다. */
+    @Test
+    void updateReturnsNoContentAndPassesOnlyProvidedFieldsToService() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{"
+                                + "\"roadAddress\":\"  서울 강남구 테헤란로 2  \","
+                                + "\"phone\":\"02-1234-5679\""
+                                + "}"))
+                .andExpect(status().isNoContent())
+                .andExpect(content().string(""));
+
+        ArgumentCaptor<WorkplaceUpdateCommand> captor =
+                ArgumentCaptor.forClass(WorkplaceUpdateCommand.class);
+        verify(workplaceService).update(any(), eq(11L), captor.capture());
+
+        WorkplaceUpdateCommand command = captor.getValue();
+        assertTrue(command.isRoadAddressProvided());
+        assertEquals("서울 강남구 테헤란로 2", command.getRoadAddress());
+        assertTrue(command.isPhoneProvided());
+        assertEquals("0212345679", command.getPhone());
+        assertFalse(command.isNameProvided());
+        assertFalse(command.isDetailAddressProvided());
+    }
+
+    /**
+     * 상세주소만 값과 존재 여부를 함께 구분해야 하는 필드입니다.
+     *
+     * <p>명시적 {@code null}은 삭제 요청이고 생략은 유지 요청이라, 둘이 같은 Command가 되면
+     * 지우려는 시도가 조용히 무시됩니다.</p>
+     */
+    @Test
+    void updateDistinguishesExplicitNullDetailAddressFromOmission() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"detailAddress\":null}"))
+                .andExpect(status().isNoContent());
+
+        ArgumentCaptor<WorkplaceUpdateCommand> captor =
+                ArgumentCaptor.forClass(WorkplaceUpdateCommand.class);
+        verify(workplaceService).update(any(), eq(11L), captor.capture());
+
+        assertTrue(captor.getValue().isDetailAddressProvided());
+        assertNull(captor.getValue().getDetailAddress());
+    }
+
+    /** 수정할 수 없는 필드는 Service에 닿기 전에 끊겨야 합니다. */
+    @Test
+    void updateRejectsImmutableFieldsBeforeService() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"representativeName\":\"박사장\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"roadAddress\":\"서울 강남구 테헤란로 2\",\"latitude\":37.1234567}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(workplaceService, never()).update(any(), any(), any());
+    }
+
+    /** 아무것도 바꾸지 않는 성공을 만들지 않기 위해 빈 요청은 400입니다. */
+    @Test
+    void updateRejectsRequestWithoutAnyEditableField() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(workplaceService, never()).update(any(), any(), any());
+    }
+
+    /** 필수 값은 보낼 수는 있어도 비울 수는 없습니다. DB CHECK 위반을 요청 단계에서 막습니다. */
+    @Test
+    void updateRejectsBlankRequiredValues() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"name\":\"   \"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"phone\":\"\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(workplaceService, never()).update(any(), any(), any());
+    }
+
+    /** 두 변환 실패는 화면이 재시도 가능 여부를 구분할 수 있도록 다른 Code로 나가야 합니다. */
+    @Test
+    void updateSurfacesGeocodingFailuresAsApprovedCodes() throws Exception {
+        doThrow(WorkplaceGeocodingException.addressNotResolvable())
+                .when(workplaceService).update(any(), any(), any());
+
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content(validUpdateBody()))
+                .andExpect(status().isUnprocessableEntity())
+                .andExpect(jsonPath("$.code").value("WORKPLACE_ADDRESS_NOT_RESOLVABLE"));
+
+        doThrow(WorkplaceGeocodingException.temporarilyUnavailable())
+                .when(workplaceService).update(any(), any(), any());
+
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .principal(ownerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content(validUpdateBody()))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code")
+                        .value("WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE"));
+    }
+
+    @Test
+    void updateWithoutAuthenticationIsRejectedBeforeService() throws Exception {
+        mockMvc.perform(patch("/api/workplaces/11")
+                        .contentType(APPLICATION_JSON)
+                        .content(validUpdateBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+
+        verify(workplaceService, never()).update(any(), any(), any());
+    }
+
+    private String validUpdateBody() {
+        return "{\"roadAddress\":\"서울 강남구 테헤란로 2\"}";
     }
 
     private String validCoordinateBody() {
