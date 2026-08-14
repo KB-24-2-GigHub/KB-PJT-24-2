@@ -53,6 +53,7 @@ import {
   clearSettlementIntent,
   getOrCreateSettlementIntent,
   hasSettlementTerminalState,
+  isAmount,
   isSettlementResultConsistent,
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
@@ -105,9 +106,7 @@ const settlementModalAmount = computed(() =>
     : workCase.value?.settlement?.amount
 )
 const settlementModalAmountText = computed(() =>
-  Number.isSafeInteger(settlementModalAmount.value) && settlementModalAmount.value >= 0
-    ? formatKRW(settlementModalAmount.value)
-    : '금액 확인 필요'
+  isAmount(settlementModalAmount.value) ? formatKRW(settlementModalAmount.value) : '금액 확인 필요'
 )
 
 const settlementGuidance = computed(() => {
@@ -415,10 +414,10 @@ async function refreshSettlementSources({ notify = false } = {}) {
 
     if (detailResult.status === 'fulfilled') {
       workCase.value = detailResult.value
-      if (detailResult.value?.settlement?.status === 'COMPLETED') {
+      if (hasSettlementTerminalState(SETTLEMENT_ACTION.PAYOUT, detailResult.value)) {
         discardSettlementIntent(SETTLEMENT_ACTION.PAYOUT)
       }
-      if (detailResult.value?.settlement?.status === 'REFUNDED') {
+      if (hasSettlementTerminalState(SETTLEMENT_ACTION.NO_SHOW_REFUND, detailResult.value)) {
         discardSettlementIntent(SETTLEMENT_ACTION.NO_SHOW_REFUND)
       }
     }
@@ -471,8 +470,7 @@ async function onApproveSettlement() {
 
     settlementModalAction.value = null
     if (!isSettlementResultConsistent(action, result)) {
-      discardSettlementIntent(action)
-      pendingSettlementConvergenceAction.value = action
+      // 응답만 손상됐을 수 있으므로 상세에서 종결 상태를 확인하기 전에는 같은 멱등 의도를 보존한다.
       await refreshSettlementSources()
       ui.toast('서버 정산 결과의 상태와 금액이 일치하지 않아 완료로 표시하지 않았어요.', {
         type: 'danger',

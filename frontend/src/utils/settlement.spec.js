@@ -6,6 +6,7 @@ import {
   clearSettlementIntent,
   getOrCreateSettlementIntent,
   hasSettlementTerminalState,
+  isAmount,
   isSettlementResultConsistent,
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
@@ -60,6 +61,15 @@ describe('settlement approval state', () => {
 })
 
 describe('settlement result conservation', () => {
+  it('금액은 0 이상의 안전한 정수만 허용한다', () => {
+    expect(isAmount(0)).toBe(true)
+    expect(isAmount(90000)).toBe(true)
+
+    for (const value of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1, '90000', null]) {
+      expect(isAmount(value)).toBe(false)
+    }
+  })
+
   it('정상 지급은 WORKER 전액·OWNER 0원만 승인한다', () => {
     expect(
       isSettlementResultConsistent(SETTLEMENT_ACTION.PAYOUT, {

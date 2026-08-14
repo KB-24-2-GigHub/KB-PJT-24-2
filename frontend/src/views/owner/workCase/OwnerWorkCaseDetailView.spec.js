@@ -524,13 +524,15 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('정산예정')
   })
 
-  it('보존식이 맞지 않는 성공 응답은 완료로 안내하지 않는다', async () => {
+  it('보존식이 맞지 않는 성공 응답은 완료로 안내하지 않고 같은 멱등 의도를 보존한다', async () => {
     getWorkCase.mockReset().mockResolvedValue(PAYOUT_READY_DETAIL)
-    approveSettlement.mockResolvedValue({
-      ...PAYOUT_RESULT,
-      workerPaidAmount: 80000,
-      ownerRefundAmount: 0
-    })
+    approveSettlement
+      .mockResolvedValueOnce({
+        ...PAYOUT_RESULT,
+        workerPaidAmount: 80000,
+        ownerRefundAmount: 0
+      })
+      .mockResolvedValueOnce(PAYOUT_RESULT)
     const wrapper = mountView()
     await flushPromises()
 
@@ -549,6 +551,24 @@ describe('OwnerWorkCaseDetailView', () => {
     )
     expect(toastMessages().join(' ')).not.toContain('알바생에게 지급됐어요')
     expect(wrapper.text()).toContain('정산예정')
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('일급 전액 지급'))
+      .trigger('click')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(newIdempotencyKey).toHaveBeenCalledTimes(1)
+    expect(approveSettlement).toHaveBeenNthCalledWith(1, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveSettlement).toHaveBeenNthCalledWith(2, 42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
   })
 
   it('기한이 지난 PENDING 초대는 상태만이 아니라 기한 경과를 함께 알린다', async () => {

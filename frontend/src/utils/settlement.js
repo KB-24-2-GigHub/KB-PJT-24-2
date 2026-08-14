@@ -81,7 +81,7 @@ export function canApproveNoShowRefund(workCase) {
   )
 }
 
-function isAmount(value) {
+export function isAmount(value) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
 }
 
