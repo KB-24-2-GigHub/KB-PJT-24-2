@@ -40,6 +40,13 @@
       font-weight: bold;
     }
 
+    /* 두문. 조사는 괄호 안 고정 문구("사업주", "근로자")의 끝 음절을 따르므로
+       당사자 이름의 받침 유무와 관계없이 항상 맞는다. */
+    .preamble {
+      margin: 0 0 5mm 0;
+      text-align: justify;
+    }
+
     .line {
       margin: 0 0 0.8mm 0;
     }
@@ -110,6 +117,11 @@
 </head>
 <body>
 <h1>단시간·일용 근로계약서</h1>
+
+<p class="preamble">
+  ${workplaceName}(대표 ${employerName}, 이하 "사업주")와 ${workerName}(이하 "근로자")는
+  다음과 같이 단시간·일용 근로계약을 체결한다.
+</p>
 
 <h2>1. 계약 당사자</h2>
 <p class="line">- 사업주: ${workplaceName} / 대표자 ${employerName}${employerContactLine}</p>

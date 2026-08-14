@@ -43,6 +43,21 @@ class ContractPdfRendererTest {
         }
     }
 
+    /**
+     * 두문의 조사는 당사자 이름이 아니라 괄호 안 고정 문구를 따르므로, 이름의 받침 유무와
+     * 관계없이 항상 "사업주")와 · "근로자")는 로 이어져야 한다.
+     */
+    @Test
+    void rendersPreambleNamingBothContractingParties() throws IOException {
+        byte[] pdf = renderer.render(snapshot());
+
+        try (PDDocument document = Loader.loadPDF(pdf)) {
+            String text = new PDFTextStripper().getText(document).replaceAll("\\s+", " ");
+            assertTrue(text.contains("기가 허브(대표 김사장, 이하 \"사업주\")와"));
+            assertTrue(text.contains("이알바(이하 \"근로자\")는 다음과 같이 단시간·일용 근로계약을 체결한다."));
+        }
+    }
+
     @Test
     void rendersStatutoryNoticesRequiredByLaborStandardsActArticle17() throws IOException {
         byte[] pdf = renderer.render(snapshot());
