@@ -76,15 +76,22 @@ const settlementMessage = computed(() => {
   }
 })
 
+// workCaseId가 빠르게 바뀌면(뒤로가기 후 다른 근무 진입 등) 먼저 보낸 요청이 나중에
+// 도착해 최신 화면을 덮어쓸 수 있다. 시퀀스 번호로 최신 요청의 응답만 반영한다.
+let loadSeq = 0
 async function load(id) {
+  const seq = ++loadSeq
   workCase.value = null
   loading.value = true
   try {
-    workCase.value = await getWorkCase(id)
+    const data = await getWorkCase(id)
+    if (seq !== loadSeq) return
+    workCase.value = data
   } catch {
+    if (seq !== loadSeq) return
     ui.toast('근무 정보를 불러오지 못했습니다.', { type: 'danger' })
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 

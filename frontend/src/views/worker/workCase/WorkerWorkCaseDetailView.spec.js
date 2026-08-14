@@ -113,6 +113,36 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).not.toContain('정산대기')
   })
 
+  it('먼저 보낸 요청이 늦게 도착해도 최신 workCaseId 응답을 덮어쓰지 않는다', async () => {
+    let resolveFirst
+    getWorkCase.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveFirst = resolve
+        })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    getWorkCase.mockResolvedValueOnce(
+      baseWorkCase({
+        workCaseId: 77,
+        title: '두 번째 근무',
+        settlement: { status: 'WAITING', amount: 90000 }
+      })
+    )
+    route.params.workCaseId = '77'
+    await flushPromises()
+    expect(wrapper.text()).toContain('두 번째 근무')
+
+    // 42 요청(첫 번째)이 77 응답보다 늦게 도착 — 화면은 계속 77이어야 한다.
+    resolveFirst(baseWorkCase({ workCaseId: 42, title: '첫 번째 근무' }))
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('두 번째 근무')
+    expect(wrapper.text()).not.toContain('첫 번째 근무')
+  })
+
   it('workCaseId 변경 후 조회 실패 시 이전 근무 정보를 유지하지 않는다', async () => {
     getWorkCase.mockResolvedValueOnce(baseWorkCase({ workCaseId: 42 }))
     const wrapper = mountView()
