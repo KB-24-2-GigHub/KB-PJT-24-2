@@ -82,6 +82,43 @@ class QrTokenCodecTest {
         assertTrue(codec.verify(token).isPresent());
     }
 
+    /**
+     * 벽에 붙은 QR은 만료되지 않으므로 키를 교체해도 계속 검증돼야 합니다. 교체 전 활성
+     * 키로 서명한 Token을 교체 후 Codec으로 검증해, 등록만 유지하면 인쇄물이 살아 있음을
+     * 확인합니다. 여기가 깨지면 매장에 부착된 QR이 한꺼번에 무효가 됩니다.
+     */
+    @Test
+    void tokenSignedBeforeRotationStillVerifiesWhileItsKeyStaysRegistered() {
+        QrTokenCodec beforeRotation = new QrTokenCodec(
+                new QrHmacKeys("k0", Map.of("k0", KEY_B)));
+        String printedToken = beforeRotation.sign(7L, NONCE);
+
+        QrTokenCodec afterRotation = new QrTokenCodec(
+                new QrHmacKeys("k1", Map.of("k1", KEY_A, "k0", KEY_B)));
+
+        Optional<QrTokenPayload> verified = afterRotation.verify(printedToken);
+
+        assertTrue(verified.isPresent());
+        assertEquals(7L, verified.get().workplaceId());
+        assertArrayEquals(NONCE, verified.get().nonce());
+    }
+
+    /**
+     * 교체 목록에서 내린 키는 더 이상 검증되지 않아야 합니다. 폐기가 실제로 폐기여야
+     * 유출된 구 키로 만든 Token을 막을 수 있습니다.
+     */
+    @Test
+    void tokenSignedWithARetiredKeyIsRejectedOnceThatKeyIsUnregistered() {
+        QrTokenCodec beforeRotation = new QrTokenCodec(
+                new QrHmacKeys("k0", Map.of("k0", KEY_B)));
+        String retiredToken = beforeRotation.sign(7L, NONCE);
+
+        QrTokenCodec afterRetirement = new QrTokenCodec(
+                new QrHmacKeys("k1", Map.of("k1", KEY_A)));
+
+        assertFalse(afterRetirement.verify(retiredToken).isPresent());
+    }
+
     @Test
     void verifyRejectsStructurallyInvalidTokens() {
         List<String> invalid = List.of(
