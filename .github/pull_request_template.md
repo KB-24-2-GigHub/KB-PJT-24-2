@@ -1,6 +1,7 @@
 ## 관련 이슈와 통합
 
-- Refs #이슈번호
+- `dev` 병합으로 이슈가 완료될 때: Closes #이슈번호
+- 프로그램 브랜치 통합 또는 수동 종료가 필요할 때: Refs #이슈번호
 - Parent: #이슈번호 또는 `N/A`
 - Native blocked-by: #이슈번호 목록 또는 `N/A`
 - Target integration branch: `dev`, 승인된 프로그램 브랜치 또는 `main`
