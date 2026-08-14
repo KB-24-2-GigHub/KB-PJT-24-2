@@ -5,6 +5,7 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
 
 /** 사업장 등록과 소유 사업장 조회의 승인 규칙을 적용합니다. */
 public interface WorkplaceService {
@@ -46,4 +47,17 @@ public interface WorkplaceService {
      */
     void confirmLocation(
             AuthPrincipal principal, Long workplaceId, WorkplaceCoordinateConfirmCommand command);
+
+    /**
+     * 인증 OWNER가 소유한 {@code ACTIVE} 사업장의 수정 가능한 필드를 바꿉니다.
+     *
+     * <p>도로명주소가 저장된 값과 달라지면 새 주소를 변환해 좌표도 함께 확정합니다. 변환에
+     * 실패하면 주소를 포함해 어떤 필드도 바뀌지 않습니다 — 주소만 바뀌고 좌표가 과거 위치에
+     * 남는 중간 상태를 만들지 않기 위해서입니다(SPEC-349-01).</p>
+     *
+     * @param principal   소유자를 결정하는 인증 Principal
+     * @param workplaceId 수정 대상 사업장 식별자
+     * @param command     검증을 통과한 부분 수정 입력
+     */
+    void update(AuthPrincipal principal, Long workplaceId, WorkplaceUpdateCommand command);
 }

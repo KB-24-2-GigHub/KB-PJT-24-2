@@ -131,7 +131,25 @@ export async function reissueInvite(workCaseId) {
 }
 
 export async function approveSettlement() {
-  return { settlementId: 1, status: 'COMPLETED', completedAt: new Date().toISOString() }
+  return {
+    settlementId: 1,
+    status: 'COMPLETED',
+    originalEscrowAmount: 90000,
+    workerPaidAmount: 90000,
+    ownerRefundAmount: 0,
+    completedAt: new Date().toISOString()
+  }
+}
+
+export async function approveNoShowRefund() {
+  return {
+    settlementId: 1,
+    status: 'REFUNDED',
+    originalEscrowAmount: 90000,
+    workerPaidAmount: 0,
+    ownerRefundAmount: 90000,
+    completedAt: new Date().toISOString()
+  }
 }
 
 export async function getOwnerContact() {

@@ -3,8 +3,8 @@
  * [C] 근무 상세  ·  /owner/attendance/work-cases/:workCaseId  ·  OWNER
  * 근무 상세 + 매칭 알바생 성실 뱃지. 수정·삭제·연결 링크 발급은 수락 전(DRAFT)만.
  * 확정(날인) 후 수정·삭제 버튼 숨김 — 서버도 409 WORK_CASE_LOCKED.
- * 연계 API: GET /work-cases/{id} · PATCH /work-cases/{id} · DELETE /work-cases/{id} · POST /work-cases/{id}/invitations
- *   →  @/services/workCases (getWorkCase, updateWorkCase, deleteWorkCase, createInvite)
+ * 연계 API: 근무 CRUD·초대와 OWNER 정상 지급·NO_SHOW 환불 승인
+ *   →  @/services/workCases, 승인 뒤 @/stores/wallet 재조회
  * route.params.workCaseId 사용. 공통: TrustBadge(알바생 뱃지) · StatusChip · BaseModal(삭제 확인)
  */
 import { FileText, Link2, Pencil, RefreshCw, Trash2 } from 'lucide-vue-next'
@@ -25,8 +25,10 @@ import {
   isInvitationUsable
 } from '@/constants/workCaseStatus'
 import { contractFileUrl } from '@/services/documents'
-import { fieldErrorMap } from '@/services/http'
+import { fieldErrorMap, newIdempotencyKey } from '@/services/http'
 import {
+  approveNoShowRefund,
+  approveSettlement,
   createInvite,
   deleteWorkCase,
   getWorkCase,
@@ -34,6 +36,7 @@ import {
   updateWorkCase
 } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
+import { useWalletStore } from '@/stores/wallet'
 import { copyText } from '@/utils/clipboard'
 import { escrowStatusLabel } from '@/utils/constants'
 import {
@@ -44,11 +47,23 @@ import {
   formatSeoulTime,
   formatSeoulTimeRange
 } from '@/utils/format'
+import {
+  canApproveNoShowRefund as canApproveNoShowRefundState,
+  canApprovePayout as canApprovePayoutState,
+  clearSettlementIntent,
+  getOrCreateSettlementIntent,
+  hasSettlementTerminalState,
+  isAmount,
+  isSettlementResultConsistent,
+  SETTLEMENT_ACTION,
+  settlementApprovalErrorPolicy
+} from '@/utils/settlement'
 import { isPositiveAmount, isRequired } from '@/utils/validators'
 
 const route = useRoute()
 const router = useRouter()
 const ui = useUiStore()
+const wallet = useWalletStore()
 
 const workCase = ref(null)
 const loading = ref(true)
@@ -57,6 +72,12 @@ const submitting = ref(false)
 const deleteOpen = ref(false)
 const reissueOpen = ref(false) // 재발급은 이전 링크를 무효화하므로 확인을 받는다
 const copying = ref(false) // 연결 링크 생성 중(중복 클릭 방지)
+const settlementModalAction = ref(null)
+const settlementSubmitting = ref(false)
+const settlementRefreshing = ref(false)
+const settlementRefreshError = ref(false)
+const settlementIntent = ref(null)
+const pendingSettlementConvergenceAction = ref(null)
 
 /** 수정·삭제는 서버와 같이 DRAFT 만 허용한다. */
 const canModify = computed(() => isDraft(workCase.value?.status))
@@ -70,6 +91,50 @@ const latestInvitation = computed(() => workCase.value?.latestInvitation ?? null
 const canReissueInviteLink = computed(
   () => canIssueInviteLink.value && isInvitationUsable(latestInvitation.value)
 )
+
+const canApprovePayout = computed(() => canApprovePayoutState(workCase.value))
+const canApproveNoShowRefund = computed(() => canApproveNoShowRefundState(workCase.value))
+const settlementModalOpen = computed(() => settlementModalAction.value != null)
+const settlementModalTitle = computed(() =>
+  settlementModalAction.value === SETTLEMENT_ACTION.NO_SHOW_REFUND
+    ? '노쇼 예치금을 환불할까요?'
+    : '일급 전액을 지급할까요?'
+)
+const settlementModalAmount = computed(() =>
+  settlementModalAction.value === SETTLEMENT_ACTION.NO_SHOW_REFUND
+    ? workCase.value?.escrow?.amount
+    : workCase.value?.settlement?.amount
+)
+const settlementModalAmountText = computed(() =>
+  isAmount(settlementModalAmount.value) ? formatKRW(settlementModalAmount.value) : '금액 확인 필요'
+)
+
+const settlementGuidance = computed(() => {
+  if (workCase.value?.status === 'CHECK_OUT_MISSING') {
+    return '퇴근 누락 확인 전에는 지급하거나 환불할 수 없어요.'
+  }
+
+  switch (workCase.value?.settlement?.status) {
+    case 'WAITING':
+      return workCase.value?.status === 'NO_SHOW'
+        ? '출근 기록이 없는 노쇼 근무예요. 예치금 전액 환불을 승인할 수 있어요.'
+        : '근무 종료 결과가 확정되면 정산할 수 있어요.'
+    case 'SCHEDULED':
+      return '자동 지급 예정 시각 전후 모두, 자동 처리가 먼저 시작되지 않았다면 지금 지급할 수 있어요.'
+    case 'ON_HOLD':
+      return '열린 분쟁이 있어 지급 또는 환불이 보류됐어요.'
+    case 'PROCESSING':
+      return '정산을 처리하고 있어요. 중복 요청하지 않고 최신 상태를 확인해주세요.'
+    case 'COMPLETED':
+      return '약정 일급 전액이 알바생에게 지급됐어요.'
+    case 'REFUNDED':
+      return '예치금 전액이 사장님 지갑으로 환불됐어요.'
+    case 'FAILED':
+      return '자동 정산이 완료되지 않았어요. 운영 확인이 필요합니다.'
+    default:
+      return ''
+  }
+})
 
 /**
  * 초대 이력이 있으면 서버 DELETE 는 행을 지우지 않고 CANCELED 로 전이한다
@@ -305,6 +370,138 @@ async function onReissueInvite() {
     copying.value = false
   }
 }
+
+function openSettlementModal(action) {
+  if (settlementSubmitting.value) return
+  settlementModalAction.value = action
+}
+
+function closeSettlementModal() {
+  if (!settlementSubmitting.value) settlementModalAction.value = null
+}
+
+/** 응답 유실·처리 경합 뒤에도 한 사용자 의도에는 같은 Key를 유지한다. */
+function getSettlementIntent(action) {
+  const workCaseId = workCase.value.workCaseId
+  if (
+    !settlementIntent.value ||
+    settlementIntent.value.action !== action ||
+    settlementIntent.value.workCaseId !== workCaseId
+  ) {
+    settlementIntent.value = {
+      action,
+      workCaseId,
+      idempotencyKey: getOrCreateSettlementIntent(workCaseId, action, newIdempotencyKey)
+    }
+  }
+  return settlementIntent.value
+}
+
+function discardSettlementIntent(action) {
+  clearSettlementIntent(workCase.value.workCaseId, action)
+  if (settlementIntent.value?.action === action) settlementIntent.value = null
+}
+
+/** 승인 결과를 화면에서 추정하지 않고 상세·지갑·거래내역 세 원천으로 다시 수렴시킨다. */
+async function refreshSettlementSources({ notify = false } = {}) {
+  settlementRefreshing.value = true
+  try {
+    const [detailResult, walletResult, transactionsResult] = await Promise.allSettled([
+      getWorkCase(route.params.workCaseId),
+      wallet.loadWallet(),
+      wallet.refreshTransactions()
+    ])
+
+    if (detailResult.status === 'fulfilled') {
+      workCase.value = detailResult.value
+      if (hasSettlementTerminalState(SETTLEMENT_ACTION.PAYOUT, detailResult.value)) {
+        discardSettlementIntent(SETTLEMENT_ACTION.PAYOUT)
+      }
+      if (hasSettlementTerminalState(SETTLEMENT_ACTION.NO_SHOW_REFUND, detailResult.value)) {
+        discardSettlementIntent(SETTLEMENT_ACTION.NO_SHOW_REFUND)
+      }
+    }
+
+    const sourcesRefreshed = [detailResult, walletResult, transactionsResult].every(
+      (result) => result.status === 'fulfilled'
+    )
+    const refreshed =
+      sourcesRefreshed &&
+      (!pendingSettlementConvergenceAction.value ||
+        hasSettlementTerminalState(pendingSettlementConvergenceAction.value, workCase.value))
+    if (refreshed) pendingSettlementConvergenceAction.value = null
+    settlementRefreshError.value = !refreshed
+
+    if (notify) {
+      ui.toast(
+        refreshed
+          ? '최신 정산 상태와 지갑 내역을 불러왔어요.'
+          : '최신 정보 일부를 불러오지 못했어요. 잠시 후 다시 확인해주세요.',
+        { type: refreshed ? 'success' : 'warning' }
+      )
+    }
+    return refreshed
+  } finally {
+    settlementRefreshing.value = false
+  }
+}
+
+function settlementSuccessMessage(action, result) {
+  return action === SETTLEMENT_ACTION.NO_SHOW_REFUND
+    ? `노쇼 환불을 승인했어요. ${formatKRW(result.ownerRefundAmount)}이 사장님 지갑으로 반환됐어요.`
+    : `지급을 승인했어요. ${formatKRW(result.workerPaidAmount)}이 알바생에게 지급됐어요.`
+}
+
+async function onApproveSettlement() {
+  const action = settlementModalAction.value
+  if (!action || settlementSubmitting.value) return
+
+  const intent = getSettlementIntent(action)
+  settlementSubmitting.value = true
+  try {
+    const result =
+      action === SETTLEMENT_ACTION.NO_SHOW_REFUND
+        ? await approveNoShowRefund(workCase.value.workCaseId, {
+            idempotencyKey: intent.idempotencyKey
+          })
+        : await approveSettlement(workCase.value.workCaseId, {
+            idempotencyKey: intent.idempotencyKey
+          })
+
+    settlementModalAction.value = null
+    if (!isSettlementResultConsistent(action, result)) {
+      // 응답만 손상됐을 수 있으므로 상세에서 종결 상태를 확인하기 전에는 같은 멱등 의도를 보존한다.
+      await refreshSettlementSources()
+      ui.toast('서버 정산 결과의 상태와 금액이 일치하지 않아 완료로 표시하지 않았어요.', {
+        type: 'danger',
+        duration: 6000
+      })
+      return
+    }
+
+    pendingSettlementConvergenceAction.value = action
+    const converged = await refreshSettlementSources()
+    discardSettlementIntent(action)
+    ui.toast(
+      converged
+        ? settlementSuccessMessage(action, result)
+        : '승인 응답은 확인했지만 최신 상태 일부를 불러오지 못했어요. 다시 조회해주세요.',
+      { type: converged ? 'success' : 'warning', duration: 6000 }
+    )
+  } catch (error) {
+    const policy = settlementApprovalErrorPolicy(error?.code)
+    settlementModalAction.value = null
+    if (!policy.preserveIntent) discardSettlementIntent(action)
+    if (error?.code === 'SETTLEMENT_ALREADY_PROCESSED') {
+      pendingSettlementConvergenceAction.value = action
+    }
+    if (policy.refresh) await refreshSettlementSources()
+    ui.toast(policy.message, { type: 'danger', duration: 6000 })
+    if (policy.returnToList) await router.push('/owner/attendance')
+  } finally {
+    settlementSubmitting.value = false
+  }
+}
 </script>
 
 <template>
@@ -403,7 +600,55 @@ async function onReissueInvite() {
                 <dt>정산 상태</dt>
                 <dd><StatusChip :status="workCase.settlement.status" kind="settle" /></dd>
               </div>
+              <div v-if="workCase.settlement?.dueAt" class="detail-row">
+                <dt>자동 지급 예정</dt>
+                <dd>{{ formatSeoulDateTime(workCase.settlement.dueAt) }}</dd>
+              </div>
+              <div v-if="workCase.settlement?.completedAt" class="detail-row">
+                <dt>처리 완료</dt>
+                <dd>{{ formatSeoulDateTime(workCase.settlement.completedAt) }}</dd>
+              </div>
             </dl>
+
+            <p v-if="settlementGuidance" class="settlement-guidance">
+              {{ settlementGuidance }}
+            </p>
+
+            <div v-if="settlementRefreshError" class="settlement-refresh" role="alert">
+              <p>상세·지갑·거래내역 중 일부가 최신 상태가 아니에요.</p>
+              <BaseButton
+                variant="secondary"
+                block
+                :disabled="settlementRefreshing || settlementSubmitting"
+                @click="refreshSettlementSources({ notify: true })"
+              >
+                <RefreshCw :size="16" />
+                {{ settlementRefreshing ? '다시 불러오는 중…' : '정산 정보 다시 불러오기' }}
+              </BaseButton>
+            </div>
+
+            <div v-if="canApprovePayout || canApproveNoShowRefund" class="settlement-actions">
+              <BaseButton
+                v-if="canApprovePayout"
+                variant="owner"
+                size="lg"
+                block
+                :disabled="settlementSubmitting || settlementRefreshing || settlementRefreshError"
+                @click="openSettlementModal(SETTLEMENT_ACTION.PAYOUT)"
+              >
+                알바생에게 일급 전액 지급
+              </BaseButton>
+              <BaseButton
+                v-if="canApproveNoShowRefund"
+                variant="owner"
+                size="lg"
+                block
+                :disabled="settlementSubmitting || settlementRefreshing || settlementRefreshError"
+                @click="openSettlementModal(SETTLEMENT_ACTION.NO_SHOW_REFUND)"
+              >
+                노쇼 예치금 전액 환불
+              </BaseButton>
+            </div>
           </section>
 
           <!-- 뱃지 등급은 배지 API(M7) 범위라 여기서는 기본(미부여)만 보여준다. -->
@@ -526,6 +771,47 @@ async function onReissueInvite() {
       </template>
     </main>
 
+    <BaseModal
+      :open="settlementModalOpen"
+      :title="settlementModalTitle"
+      :closable="!settlementSubmitting"
+      @close="closeSettlementModal"
+    >
+      <template v-if="settlementModalAction === SETTLEMENT_ACTION.NO_SHOW_REFUND">
+        <p>알바생에게 지급하지 않고, 서버가 확인한 원 예치액 전액을 사장님 지갑으로 반환합니다.</p>
+        <dl class="settlement-confirm-summary">
+          <dt>환불 대상 예치금</dt>
+          <dd>{{ settlementModalAmountText }}</dd>
+        </dl>
+      </template>
+      <template v-else>
+        <p>지각 여부와 관계없이 서버가 확인한 약정 일급 전액을 알바생에게 지급합니다.</p>
+        <dl class="settlement-confirm-summary">
+          <dt>지급 대상 일급</dt>
+          <dd>{{ settlementModalAmountText }}</dd>
+        </dl>
+      </template>
+      <p class="settlement-confirm-note">승인 뒤 상세 상태와 지갑·거래내역을 다시 불러옵니다.</p>
+      <template #footer>
+        <BaseButton
+          variant="secondary"
+          block
+          :disabled="settlementSubmitting"
+          @click="closeSettlementModal"
+        >
+          취소
+        </BaseButton>
+        <BaseButton
+          variant="owner"
+          block
+          :disabled="settlementSubmitting"
+          @click="onApproveSettlement"
+        >
+          {{ settlementSubmitting ? '처리 중…' : '승인하기' }}
+        </BaseButton>
+      </template>
+    </BaseModal>
+
     <BaseModal :open="reissueOpen" title="새 링크로 교체할까요?" @close="reissueOpen = false">
       지금 링크는 즉시 사용할 수 없게 됩니다. 이미 보낸 링크로는 알바생이 수락할 수 없어요.
       <template #footer>
@@ -629,6 +915,53 @@ async function onReissueInvite() {
 }
 .progress-section .detail {
   margin-top: var(--space-sm);
+}
+.settlement-guidance {
+  margin-top: var(--space-sm);
+  padding: var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  color: var(--color-text-sub);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+.settlement-actions {
+  margin-top: var(--space-md);
+}
+.settlement-refresh {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-sm);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+.settlement-confirm-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+}
+.settlement-confirm-summary dt {
+  color: var(--color-text-sub);
+  font-size: var(--text-sm);
+}
+.settlement-confirm-summary dd {
+  color: var(--color-owner);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
+}
+.settlement-confirm-note {
+  margin-top: var(--space-md);
+  color: var(--color-text-sub);
+  font-size: var(--text-sm);
 }
 
 /* ---- 매칭 알바생 ---- */

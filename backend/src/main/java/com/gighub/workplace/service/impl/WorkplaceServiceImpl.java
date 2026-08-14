@@ -20,12 +20,14 @@ import com.gighub.workplace.geocoding.AddressGeocoder;
 import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
+import com.gighub.workplace.mapper.param.WorkplaceUpdateParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.WorkplaceOwnershipService;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
@@ -172,6 +174,86 @@ public class WorkplaceServiceImpl implements WorkplaceService, WorkplaceOwnershi
             throw new IllegalStateException(
                     "현장 위치 확정이 반영되지 않았습니다. workplaceId=" + workplaceId);
         }
+    }
+
+    /**
+     * 저장된 주소를 읽어 좌표 재확정 여부를 정한 뒤, 변환을 트랜잭션 밖에서 끝내고 한 문장으로
+     * 반영합니다.
+     *
+     * <p>변환을 트랜잭션 밖에 두는 이유는 등록 경로와 같습니다 — 외부 호출이 느려질 때 DB
+     * 커넥션을 붙잡지 않기 위해서입니다. 그 결과 판단(읽기)과 반영(쓰기) 사이가 벌어지므로,
+     * 좌표를 바꾸는 수정은 판단 근거였던 주소를 갱신 조건에 함께 넣습니다. 그 사이 다른 요청이
+     * 주소를 바꿨다면 갱신이 0행이 되고 충돌로 보고합니다. 이 조건이 없으면 이전 주소로 구한
+     * 좌표가 새 주소 위에 조용히 덮입니다.</p>
+     *
+     * <p>주소와 좌표를 한 UPDATE에 함께 넣어, 주소만 바뀌고 좌표가 과거 위치에 남는 중간
+     * 상태를 만들지 않습니다(SPEC-349-01).</p>
+     */
+    @Override
+    public void update(
+            AuthPrincipal principal, Long workplaceId, WorkplaceUpdateCommand command) {
+        requireOwner(principal, "사업장 정보는 OWNER만 수정할 수 있습니다.");
+
+        String storedRoadAddress =
+                workplaceMapper.findOwnedActiveRoadAddress(workplaceId, principal.getUserId());
+        if (storedRoadAddress == null) {
+            throw new ResourceNotFoundException("사업장을 찾을 수 없습니다.");
+        }
+
+        boolean recalculatesCoordinates = command.changesRoadAddressFrom(storedRoadAddress);
+        // 주소가 그대로면 변환을 부르지 않습니다. 상호만 바꾸는 수정까지 외부 서비스의 장애를
+        // 실패 사유로 떠안을 이유가 없습니다.
+        GeocodedCoordinates coordinates =
+                recalculatesCoordinates ? addressGeocoder.geocode(command.getRoadAddress()) : null;
+
+        WorkplaceUpdateParam param = toUpdateParam(
+                workplaceId,
+                principal.getUserId(),
+                command,
+                recalculatesCoordinates,
+                coordinates,
+                recalculatesCoordinates ? storedRoadAddress : null);
+
+        int updated = transactionTemplate.execute(
+                status -> workplaceMapper.updateOwnedActive(param));
+        if (updated != 1) {
+            throw new ConflictException("사업장 정보가 방금 변경됐습니다. 다시 확인해주세요.");
+        }
+    }
+
+    /**
+     * 좌표는 변환에 성공했을 때만 채웁니다.
+     *
+     * <p>{@code null} 좌표를 그대로 넘겨도 Mapper가 SET에서 빼지만, 값이 없다는 사실만으로
+     * 좌표를 건드리지 않는다고 읽히면 안 되므로 여기서 명시적으로 분기합니다.</p>
+     *
+     * <p>{@code road_address}는 저장 주소와 실제로 다를 때만 SET에 넣습니다. 같은 주소를 다시
+     * 보낸 요청은 좌표를 다시 확정하지 않으므로 갱신 조건({@code expectedRoadAddress})도 없는데,
+     * 이때 주소까지 다시 쓰면 그 사이 주소와 좌표를 함께 바꾼 다른 요청의 주소만 과거 값으로
+     * 되돌려 좌표와 어긋나게 만듭니다. 바꿀 값이 없으니 쓰지도 않는 편이 안전합니다.</p>
+     */
+    private WorkplaceUpdateParam toUpdateParam(
+            Long workplaceId,
+            Long ownerUserId,
+            WorkplaceUpdateCommand command,
+            boolean changesRoadAddress,
+            GeocodedCoordinates coordinates,
+            String expectedRoadAddress) {
+        return WorkplaceUpdateParam.builder()
+                .workplaceId(workplaceId)
+                .ownerUserId(ownerUserId)
+                .nameProvided(command.isNameProvided())
+                .name(command.getName())
+                .roadAddressProvided(changesRoadAddress)
+                .roadAddress(command.getRoadAddress())
+                .detailAddressProvided(command.isDetailAddressProvided())
+                .detailAddress(command.getDetailAddress())
+                .phoneProvided(command.isPhoneProvided())
+                .phone(command.getPhone())
+                .latitude(coordinates == null ? null : coordinates.latitude())
+                .longitude(coordinates == null ? null : coordinates.longitude())
+                .expectedRoadAddress(expectedRoadAddress)
+                .build();
     }
 
     /**

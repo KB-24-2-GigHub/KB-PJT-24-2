@@ -143,4 +143,48 @@
           AND latitude IS NULL
     </update>
 
+    <!--
+        수정 판단에만 쓰는 조회라 잠그지 않습니다. 잠그면 외부 주소 변환이 끝날 때까지 행을
+        붙잡게 되고, 실제 보호는 updateOwnedActive 의 road_address 조건이 담당합니다.
+    -->
+    <select id="findOwnedActiveRoadAddress" resultType="java.lang.String">
+        SELECT road_address
+        FROM workplaces
+        WHERE id = #{workplaceId}
+          AND owner_user_id = #{ownerUserId}
+          AND status = 'ACTIVE'
+    </select>
+
+    <!--
+        SET 목록은 값의 NULL 여부가 아니라 *Provided 플래그로 정합니다. detail_address 는
+        NULL 로 지우는 것이 정상 입력이라, 값으로 판단하면 "지움"이 "안 바꿈"으로 바뀝니다.
+
+        latitude 와 longitude 는 항상 함께 넣습니다. 하나만 바뀌면 두 값이 서로 다른 지점을
+        가리키는 행이 남습니다.
+
+        expectedRoadAddress 는 좌표를 다시 확정하는 수정에서만 채워집니다. 주소 변환이 진행되는
+        동안 다른 요청이 주소를 바꿨다면 이 조건이 0행을 만들고, Service 가 이를 충돌로
+        보고합니다. updated_at 은 ON UPDATE 절이 없는 Column 이라 여기서 직접 적습니다.
+    -->
+    <update id="updateOwnedActive">
+        UPDATE workplaces
+        <set>
+            <if test="nameProvided">name = #{name},</if>
+            <if test="roadAddressProvided">road_address = #{roadAddress},</if>
+            <if test="detailAddressProvided">detail_address = #{detailAddress},</if>
+            <if test="phoneProvided">phone = #{phone},</if>
+            <if test="coordinatesProvided">
+                latitude = #{latitude},
+                longitude = #{longitude},
+            </if>
+            updated_at = CURRENT_TIMESTAMP(6)
+        </set>
+        WHERE id = #{workplaceId}
+          AND owner_user_id = #{ownerUserId}
+          AND status = 'ACTIVE'
+        <if test="expectedRoadAddress != null">
+            AND road_address = #{expectedRoadAddress}
+        </if>
+    </update>
+
 </mapper>

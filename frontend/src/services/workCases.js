@@ -58,7 +58,11 @@ export function reissueInvite(workCaseId) {
 }
 
 export function approveSettlement(workCaseId, options = {}) {
-  return invokeUnavailable('approveSettlement', [workCaseId, options], '#170-#173')
+  return invokeLive('approveSettlement', [workCaseId, options])
+}
+
+export function approveNoShowRefund(workCaseId, options = {}) {
+  return invokeLive('approveNoShowRefund', [workCaseId, options])
 }
 
 export function getOwnerContact(workCaseId) {

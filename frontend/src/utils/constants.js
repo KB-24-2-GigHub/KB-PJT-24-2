@@ -23,7 +23,7 @@ export const SETTLE_STATUS = {
   REFUNDED: { label: '환불완료', color: 'var(--color-text-sub)' },
 
   // settlements.status 저장 값(ck_settlements_status). 위 네 값은 아직 실연동 전인 화면들이
-  // 쓰는 표시 전용 값이라 그대로 두고, 서버가 실제로 내려주는 6종을 함께 매핑한다.
+  // 쓰는 표시 전용 값이라 그대로 두고, 서버가 실제로 내려주는 7종을 함께 매핑한다.
   // 매핑이 없으면 StatusChip 이 원문("WAITING")을 그대로 노출한다.
   WAITING: { label: '정산대기', color: 'var(--color-text-sub)' },
   SCHEDULED: { label: '정산예정', color: 'var(--color-brand)' },
