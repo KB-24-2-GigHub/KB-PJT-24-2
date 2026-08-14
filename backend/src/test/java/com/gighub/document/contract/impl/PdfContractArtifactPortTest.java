@@ -15,7 +15,6 @@ import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
-import com.gighub.member.service.MemberIdentityQueryService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.aop.framework.ProxyFactory;
@@ -57,11 +56,9 @@ class PdfContractArtifactPortTest {
     private final ContractDocumentWriteMapper documentMapper = mock(ContractDocumentWriteMapper.class);
     private final ContractPdfRenderer renderer = mock(ContractPdfRenderer.class);
     private final DocumentStorageAdapter storageAdapter = mock(DocumentStorageAdapter.class);
-    private final MemberIdentityQueryService memberIdentityQueryService =
-            mock(MemberIdentityQueryService.class);
 
     private final PdfContractArtifactPort port = new PdfContractArtifactPort(
-            documentMapper, renderer, storageAdapter, memberIdentityQueryService);
+            documentMapper, renderer, storageAdapter);
 
     @Test
     void prepareRejectsCallsWithoutTheAcceptanceOuterTransaction() {
@@ -92,7 +89,8 @@ class PdfContractArtifactPortTest {
 
         ContractArtifactHandle handle = port.prepare(
                 ContractArtifactCommand.from(AcceptedContract.of(
-                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT)));
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT,
+                        "010-1111-2222", "010-3333-4444")));
 
         assertEquals(WORK_CASE_ID, handle.getWorkCaseId());
         assertEquals(CONTRACT_ID, handle.getContractId());
@@ -147,7 +145,8 @@ class PdfContractArtifactPortTest {
         assertThrows(
                 RuntimeException.class,
                 () -> port.prepare(ContractArtifactCommand.from(AcceptedContract.of(
-                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT))));
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT,
+                        "010-1111-2222", "010-3333-4444"))));
 
         verify(storageAdapter).writePending(
                 ContractStorageKeys.pendingKey(WORK_CASE_ID, 9L, 1),

@@ -162,7 +162,9 @@ public class AcceptanceWorkParticipantImpl implements AcceptanceWorkParticipant 
                 Objects.requireNonNull(param.getId(), "생성된 계약 식별자"),
                 acceptedAt,
                 snapshot,
-                context.getWorkCaseCreatedAt());
+                context.getWorkCaseCreatedAt(),
+                employer.phone(),
+                worker.phone());
     }
 
     private void requireUsableInvitation(InvitationRow invitation, LocalDateTime now) {
