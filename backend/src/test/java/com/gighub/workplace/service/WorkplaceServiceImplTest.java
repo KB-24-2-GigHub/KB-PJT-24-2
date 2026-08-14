@@ -21,9 +21,11 @@ import com.gighub.workplace.geocoding.AddressGeocoder;
 import com.gighub.workplace.geocoding.GeocodedCoordinates;
 import com.gighub.workplace.mapper.WorkplaceMapper;
 import com.gighub.workplace.mapper.param.WorkplaceInsertParam;
+import com.gighub.workplace.mapper.param.WorkplaceUpdateParam;
 import com.gighub.workplace.mapper.result.WorkplaceListRow;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
 import com.gighub.workplace.service.impl.WorkplaceServiceImpl;
 import com.gighub.workplace.service.result.WorkplaceLocationSnapshot;
 import org.junit.jupiter.api.Test;
@@ -37,6 +39,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -438,6 +441,177 @@ class WorkplaceServiceImplTest {
                 () -> service.confirmLocation(
                         worker, 11L, confirmCommand(GEOCODED_LATITUDE, GEOCODED_LONGITUDE)));
         verifyNoInteractions(workplaceMapper);
+    }
+
+    /**
+     * 주소가 바뀌면 새 주소로 확정한 좌표가 같은 갱신에 함께 실려야 합니다(SPEC-349-01).
+     *
+     * <p>변환 근거였던 저장 주소가 갱신 조건으로 넘어가는지도 함께 확인합니다. 이 값이 빠지면
+     * 변환 중 다른 요청이 바꾼 주소를 이전 주소로 구한 좌표가 덮어씁니다.</p>
+     */
+    @Test
+    void recalculatesCoordinatesWhenRoadAddressChanges() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(1);
+
+        service.update(owner(7L), 11L, WorkplaceUpdateCommand.builder()
+                .roadAddressProvided(true)
+                .roadAddress("서울 강남구 테헤란로 2")
+                .build());
+
+        verify(addressGeocoder).geocode("서울 강남구 테헤란로 2");
+
+        WorkplaceUpdateParam param = capturedUpdateParam();
+        assertEquals("서울 강남구 테헤란로 2", param.getRoadAddress());
+        assertEquals(0, GEOCODED_LATITUDE.compareTo(param.getLatitude()));
+        assertEquals(0, GEOCODED_LONGITUDE.compareTo(param.getLongitude()));
+        assertEquals("서울 강남구 테헤란로 1", param.getExpectedRoadAddress());
+    }
+
+    /** 같은 주소를 다시 보낸 수정까지 외부 변환을 부르면 상호만 바꾸는 수정도 장애에 묶입니다. */
+    @Test
+    void doesNotCallGeocoderWhenRoadAddressIsUnchanged() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(1);
+
+        service.update(owner(7L), 11L, WorkplaceUpdateCommand.builder()
+                .nameProvided(true)
+                .name("강남 2호점")
+                .roadAddressProvided(true)
+                .roadAddress("서울 강남구 테헤란로 1")
+                .build());
+
+        verifyNoInteractions(addressGeocoder);
+
+        WorkplaceUpdateParam param = capturedUpdateParam();
+        assertNull(param.getLatitude());
+        assertNull(param.getLongitude());
+        assertNull(param.getExpectedRoadAddress(), "좌표를 바꾸지 않는 수정은 주소 조건을 걸지 않습니다.");
+    }
+
+    @Test
+    void doesNotCallGeocoderWhenRoadAddressIsAbsent() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(1);
+
+        service.update(owner(7L), 11L, WorkplaceUpdateCommand.builder()
+                .phoneProvided(true)
+                .phone("0212345679")
+                .build());
+
+        verifyNoInteractions(addressGeocoder);
+        assertFalse(capturedUpdateParam().isRoadAddressProvided());
+    }
+
+    /** 상세주소는 명시적 삭제가 정상 입력이라 값이 아니라 존재 여부로 전달돼야 합니다. */
+    @Test
+    void carriesExplicitDetailAddressRemovalIntoUpdate() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(1);
+
+        service.update(owner(7L), 11L, WorkplaceUpdateCommand.builder()
+                .detailAddressProvided(true)
+                .detailAddress(null)
+                .build());
+
+        WorkplaceUpdateParam param = capturedUpdateParam();
+        assertTrue(param.isDetailAddressProvided());
+        assertNull(param.getDetailAddress());
+    }
+
+    /** 변환할 수 없는 새 주소는 422이고 주소도 좌표도 바뀌지 않아야 합니다. */
+    @Test
+    void doesNotUpdateAnythingWhenNewAddressCannotBeResolved() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(addressGeocoder.geocode(any()))
+                .thenThrow(WorkplaceGeocodingException.addressNotResolvable());
+
+        WorkplaceGeocodingException exception = assertThrows(
+                WorkplaceGeocodingException.class,
+                () -> service.update(owner(7L), 11L, addressChangeCommand()));
+
+        assertEquals(HttpStatus.UNPROCESSABLE_ENTITY, exception.getStatus());
+        assertEquals(ApiErrorCode.WORKPLACE_ADDRESS_NOT_RESOLVABLE, exception.getCode());
+        verify(workplaceMapper, never()).updateOwnedActive(any(WorkplaceUpdateParam.class));
+    }
+
+    /** 외부 장애는 503이고, 주소만 바뀌고 좌표가 과거 위치에 남는 상태를 만들면 안 됩니다. */
+    @Test
+    void doesNotUpdateAnythingWhenGeocodingServiceIsUnavailableDuringUpdate() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(addressGeocoder.geocode(any()))
+                .thenThrow(WorkplaceGeocodingException.temporarilyUnavailable());
+
+        WorkplaceGeocodingException exception = assertThrows(
+                WorkplaceGeocodingException.class,
+                () -> service.update(owner(7L), 11L, addressChangeCommand()));
+
+        assertEquals(HttpStatus.SERVICE_UNAVAILABLE, exception.getStatus());
+        assertEquals(
+                ApiErrorCode.WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE, exception.getCode());
+        verify(workplaceMapper, never()).updateOwnedActive(any(WorkplaceUpdateParam.class));
+    }
+
+    /** 없는 사업장과 다른 OWNER의 사업장을 구분하지 않고 404여야 합니다. */
+    @Test
+    void reportsNotFoundWhenUpdateTargetIsNotOwnedOrNotActive() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L)).thenReturn(null);
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () -> service.update(owner(7L), 11L, addressChangeCommand()));
+
+        verifyNoInteractions(addressGeocoder);
+        verify(workplaceMapper, never()).updateOwnedActive(any(WorkplaceUpdateParam.class));
+    }
+
+    /**
+     * 변환 중 다른 요청이 주소를 바꾸면 갱신 조건이 0행을 만들고, 그때 성공으로 끝내면 안 됩니다.
+     *
+     * <p>0행을 흘리면 아무것도 저장하지 않은 204가 나가 호출자는 수정이 반영됐다고 믿습니다.</p>
+     */
+    @Test
+    void reportsConflictWhenStoredAddressChangedWhileGeocoding() {
+        when(workplaceMapper.findOwnedActiveRoadAddress(11L, 7L))
+                .thenReturn("서울 강남구 테헤란로 1");
+        when(workplaceMapper.updateOwnedActive(any(WorkplaceUpdateParam.class))).thenReturn(0);
+
+        assertThrows(
+                ConflictException.class,
+                () -> service.update(owner(7L), 11L, addressChangeCommand()));
+    }
+
+    /** 역할 거절이 조회·외부 호출보다 먼저입니다. */
+    @Test
+    void rejectsNonOwnerBeforeReadingOrGeocodingOnUpdate() {
+        AuthPrincipal worker = new AuthPrincipal(9L, UserRole.WORKER, "김근로");
+
+        assertThrows(
+                RoleMismatchException.class,
+                () -> service.update(worker, 11L, addressChangeCommand()));
+
+        verifyNoInteractions(workplaceMapper);
+        verifyNoInteractions(addressGeocoder);
+    }
+
+    private WorkplaceUpdateParam capturedUpdateParam() {
+        ArgumentCaptor<WorkplaceUpdateParam> captor =
+                ArgumentCaptor.forClass(WorkplaceUpdateParam.class);
+        verify(workplaceMapper).updateOwnedActive(captor.capture());
+        return captor.getValue();
+    }
+
+    private WorkplaceUpdateCommand addressChangeCommand() {
+        return WorkplaceUpdateCommand.builder()
+                .roadAddressProvided(true)
+                .roadAddress("서울 강남구 테헤란로 2")
+                .build();
     }
 
     private WorkplaceCoordinateConfirmCommand confirmCommand(BigDecimal latitude, BigDecimal longitude) {

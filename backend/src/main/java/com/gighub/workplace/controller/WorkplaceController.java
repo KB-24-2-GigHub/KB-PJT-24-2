@@ -11,13 +11,16 @@ import com.gighub.workplace.dto.WorkplaceCoordinateConfirmRequest;
 import com.gighub.workplace.dto.WorkplaceCreateRequest;
 import com.gighub.workplace.dto.WorkplaceCreateResponse;
 import com.gighub.workplace.dto.WorkplaceListItemResponse;
+import com.gighub.workplace.dto.WorkplaceUpdateRequest;
 import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
+import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -84,6 +87,23 @@ public class WorkplaceController {
     }
 
     /**
+     * 소유 사업장의 수정 가능한 필드를 부분 수정합니다.
+     *
+     * <p>도로명주소가 바뀌면 서버가 좌표를 다시 확정합니다(SPEC-349-01). 성공은 본문 없는
+     * 204입니다 — 좌표는 응답에 싣지 않는 값이라 돌려줄 표현이 없습니다.</p>
+     */
+    @PatchMapping("/{workplaceId}")
+    public ResponseEntity<Void> update(
+            @PathVariable Long workplaceId,
+            @Valid @RequestBody WorkplaceUpdateRequest request,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        workplaceService.update(principal, workplaceId, toCommand(request));
+
+        return ResponseEntity.noContent().build();
+    }
+
+    /**
      * 검증을 통과한 요청을 Service 입력으로 옮깁니다.
      *
      * <p>요청 DTO를 그대로 넘기지 않아 Service가 HTTP·JSON 계약에 의존하지 않습니다.
@@ -105,6 +125,25 @@ public class WorkplaceController {
                 .latitude(request.getLatitude())
                 .longitude(request.getLongitude())
                 .capturedAt(request.getCapturedAt())
+                .build();
+    }
+
+    /**
+     * 값과 함께 "요청에 그 필드가 있었는지"를 옮깁니다.
+     *
+     * <p>값만 옮기면 상세주소를 지우는 요청과 건드리지 않는 요청이 Service에서 같은 입력이
+     * 됩니다.</p>
+     */
+    private WorkplaceUpdateCommand toCommand(WorkplaceUpdateRequest request) {
+        return WorkplaceUpdateCommand.builder()
+                .nameProvided(request.isNameProvided())
+                .name(request.getName())
+                .roadAddressProvided(request.isRoadAddressProvided())
+                .roadAddress(request.getRoadAddress())
+                .detailAddressProvided(request.isDetailAddressProvided())
+                .detailAddress(request.getDetailAddress())
+                .phoneProvided(request.isPhoneProvided())
+                .phone(request.getPhone())
                 .build();
     }
 }
