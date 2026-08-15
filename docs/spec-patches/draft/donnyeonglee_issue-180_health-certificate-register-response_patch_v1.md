@@ -28,7 +28,8 @@ targets:
   `latestVersion`, `source`, `sharedByName`, `workplaceId`, `workplaceName`, `workCaseId`,
   `capabilities`, `createdAt`). 새 응답 DTO를 따로 만들지 않는다.
 - `status`는 `documents.status`(`ACTIVE`)가 아니라 목록·상세와 같은 계산 규칙으로 만든
-  외부 값이다: 서울 오늘 날짜가 `expiresDate` 이상이면 `EXPIRED`, 아니면 `ACTIVE`.
+  외부 값이다: `expiresDate`가 서울 오늘 날짜보다 이전이면 `EXPIRED`, 아니면 `ACTIVE`다.
+  만료일 당일은 아직 유효하므로 `ACTIVE`다.
 - `latestVersion`은 항상 `1`(ORIGINAL)이고, `source`는 `OWN`이다. `PATCH`는 파일·Version을
   바꾸지 않으므로 `mimeType`·`latestVersion`은 수정 전 값을 그대로 반환한다.
 - `capabilities.canShare`는 등록·수정 응답 모두에서 항상 `false`다. 공유 후보(ACTIVE
