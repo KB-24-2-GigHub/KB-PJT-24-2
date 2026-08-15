@@ -85,6 +85,16 @@ class AttendanceLifecycleTransitionExecutorTest {
     }
 
     @Test
+    void doesNotEnterReadyAtShortWorkEndBoundary() {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.minusMinutes(5), NOW));
+
+        assertFalse(executor().advanceToReady(WORK_CASE_ID, NOW));
+
+        verify(lifecycleMapper, never()).findReadinessCheck(WORK_CASE_ID);
+    }
+
+    @Test
     void advancesReadyWorkToNoShowAtOneHourBoundary() {
         when(workLifecycleCommandService.lock(WORK_CASE_ID))
                 .thenReturn(row(WorkCaseStatus.READY, NOW.minusHours(1), NOW.plusHours(7)));
@@ -93,6 +103,45 @@ class AttendanceLifecycleTransitionExecutorTest {
                 .thenReturn(true);
 
         assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
+    }
+
+    @Test
+    void advancesReadyWorkToNoShowAtShortWorkEndBoundary() {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.READY, NOW.minusMinutes(5), NOW));
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.NO_SHOW))
+                .thenReturn(true);
+
+        assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
+    }
+
+    @Test
+    void advancesCompleteAcceptedWorkToNoShowWhenReadyTransitionWasMissed() {
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.minusMinutes(5), NOW));
+        when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(completeReadiness());
+        when(artifactQueryService.isReadable(WORK_CASE_ID)).thenReturn(true);
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.NO_SHOW))
+                .thenReturn(true);
+
+        assertTrue(executor().advanceToNoShow(WORK_CASE_ID, NOW));
+    }
+
+    @Test
+    void preservesIncompleteAcceptedWorkAtNoShowBoundary() {
+        AttendanceReadinessCheckRow readiness = completeReadiness();
+        readiness.setSettlementWaiting(false);
+        when(workLifecycleCommandService.lock(WORK_CASE_ID))
+                .thenReturn(row(WorkCaseStatus.ACCEPTED, NOW.minusMinutes(5), NOW));
+        when(lifecycleMapper.findReadinessCheck(WORK_CASE_ID)).thenReturn(readiness);
+
+        assertFalse(executor().advanceToNoShow(WORK_CASE_ID, NOW));
+
+        verify(artifactQueryService, never()).isReadable(WORK_CASE_ID);
+        verify(workLifecycleCommandService, never()).transition(
+                WORK_CASE_ID, WorkCaseStatus.ACCEPTED, WorkCaseStatus.NO_SHOW);
     }
 
     @Test

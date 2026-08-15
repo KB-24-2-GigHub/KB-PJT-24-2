@@ -3,11 +3,12 @@
  * [F] 알바생 근무 정보 상세  ·  /worker/work/work-cases/:workCaseId  ·  WORKER(본인 근무)
  * 근무 정보 확인(제목·날짜·시간·휴게·일급·정산 상태).
  * 연계 API: GET /work-cases/{id} · GET /work-cases/{id}/workplace-contact  →  @/services/workCases
- * route.params.workCaseId 사용. 공통: StatusChip · 문의하기 시트 · 신고 진입.
+ * route.params.workCaseId 사용. 공통: StatusChip · 문의하기 시트.
+ * 임금분쟁 신고는 Backend(#175)가 Deferred라 버튼을 비활성 상태로만 노출한다.
  */
 import { FileText, Phone } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { computed, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
@@ -22,15 +23,15 @@ import {
   formatDuration,
   formatKRW,
   formatPhoneInput,
+  formatSeoulDateTime,
   formatSeoulTimeRange,
   onlyDigits
 } from '@/utils/format'
 
 const route = useRoute()
-const router = useRouter()
 const ui = useUiStore()
 
-const workCaseId = route.params.workCaseId
+const workCaseId = computed(() => route.params.workCaseId)
 const workCase = ref(null)
 const loading = ref(true)
 const contractViewUrl = computed(() => {
@@ -38,15 +39,63 @@ const contractViewUrl = computed(() => {
   return documentId ? contractFileUrl(documentId, 'view') : ''
 })
 
-onMounted(async () => {
-  try {
-    workCase.value = await getWorkCase(workCaseId)
-  } catch {
-    ui.toast('근무 정보를 불러오지 못했습니다.', { type: 'danger' })
-  } finally {
-    loading.value = false
+// Settlement(정산)과 Escrow(예치)는 서로 다른 상태 축이라 칩은 각각 그대로 노출하고,
+// 이 문구는 두 축을 조합했을 때만 뜻이 분명해지는 경우(NO_SHOW 환불 vs WORKER 지급,
+// CHECK_OUT_MISSING 결정 전 등)만 보충 설명한다. 서버가 보내지 않은 시각·금액은 만들지 않는다.
+const settlementMessage = computed(() => {
+  const wc = workCase.value
+  const settlement = wc?.settlement
+  if (!settlement) return null
+
+  // ON_HOLD는 근무 상태와 무관하게 서버 값 그대로 보류로 표시한다(NO_SHOW·CHECK_OUT_MISSING도 포함).
+  if (settlement.status === 'ON_HOLD') {
+    return '정산이 보류됐어요'
+  }
+  if (wc.status === 'NO_SHOW') {
+    return settlement.status === 'REFUNDED'
+      ? '사장님 환불 완료 · 회원님 지급 내역은 없어요'
+      : '사장님 환불 승인 대기 중 · 회원님 획득 금액은 0원이에요'
+  }
+  if (wc.status === 'CHECK_OUT_MISSING') {
+    return '퇴근 기록 확인 중 · 정산 결정 전이에요'
+  }
+
+  switch (settlement.status) {
+    case 'SCHEDULED':
+      return settlement.dueAt ? `${formatSeoulDateTime(settlement.dueAt)} 지급 예정` : '지급 예정'
+    case 'PROCESSING':
+      return '정산 처리 중이에요'
+    case 'COMPLETED':
+      return settlement.completedAt
+        ? `${formatSeoulDateTime(settlement.completedAt)} · ${formatKRW(settlement.amount)} 지급 완료`
+        : `${formatKRW(settlement.amount)} 지급 완료`
+    case 'FAILED':
+      return '정산이 실패했어요'
+    default:
+      return null
   }
 })
+
+// workCaseId가 빠르게 바뀌면(뒤로가기 후 다른 근무 진입 등) 먼저 보낸 요청이 나중에
+// 도착해 최신 화면을 덮어쓸 수 있다. 시퀀스 번호로 최신 요청의 응답만 반영한다.
+let loadSeq = 0
+async function load(id) {
+  const seq = ++loadSeq
+  workCase.value = null
+  loading.value = true
+  try {
+    const data = await getWorkCase(id)
+    if (seq !== loadSeq) return
+    workCase.value = data
+  } catch {
+    if (seq !== loadSeq) return
+    ui.toast('근무 정보를 불러오지 못했습니다.', { type: 'danger' })
+  } finally {
+    if (seq === loadSeq) loading.value = false
+  }
+}
+
+watch(workCaseId, load, { immediate: true })
 
 /* ---- 문의하기 시트 ---- */
 const contactOpen = ref(false)
@@ -60,7 +109,7 @@ async function openContact() {
   contactOpen.value = true
   contactLoading.value = true
   try {
-    contact.value = await getOwnerContact(workCaseId)
+    contact.value = await getOwnerContact(workCaseId.value)
   } catch (error) {
     contactError.value = error
     const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
@@ -71,10 +120,6 @@ async function openContact() {
   } finally {
     contactLoading.value = false
   }
-}
-
-function goReport() {
-  router.push(`/worker/work/work-cases/${workCaseId}/report`)
 }
 </script>
 
@@ -100,8 +145,11 @@ function goReport() {
                 :status="workCase.settlement.status"
                 kind="settle"
               />
+              <StatusChip v-if="workCase.escrow" :status="workCase.escrow.status" kind="escrow" />
             </div>
           </header>
+
+          <p v-if="settlementMessage" class="settlement-message">{{ settlementMessage }}</p>
 
           <dl class="info">
             <div class="detail-row">
@@ -141,8 +189,8 @@ function goReport() {
             <Phone :size="18" />
             사장님께 문의
           </BaseButton>
-          <BaseButton variant="danger" size="lg" block @click="goReport">
-            임금분쟁 신고
+          <BaseButton variant="secondary" size="lg" block disabled>
+            임금분쟁 신고 (준비 중)
           </BaseButton>
         </div>
       </template>
@@ -205,6 +253,11 @@ function goReport() {
   align-items: flex-end;
   gap: var(--space-xs);
   flex-shrink: 0;
+}
+.settlement-message {
+  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
 }
 .info {
   margin-top: var(--space-lg);

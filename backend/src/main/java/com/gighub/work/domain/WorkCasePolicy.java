@@ -83,7 +83,10 @@ public final class WorkCasePolicy {
                 Set.of(WorkCaseStatus.ACCEPTED, WorkCaseStatus.CANCELED));
         result.put(
                 WorkCaseStatus.ACCEPTED,
-                Set.of(WorkCaseStatus.READY, WorkCaseStatus.COMPLETED));
+                Set.of(
+                        WorkCaseStatus.READY,
+                        WorkCaseStatus.NO_SHOW,
+                        WorkCaseStatus.COMPLETED));
         result.put(
                 WorkCaseStatus.READY,
                 Set.of(

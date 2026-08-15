@@ -21,4 +21,5 @@ public class DocumentInsertParam {
     private final String documentType;
     private final String status;
     private final LocalDate issuedOn;
+    private final LocalDate expiresOn;
 }

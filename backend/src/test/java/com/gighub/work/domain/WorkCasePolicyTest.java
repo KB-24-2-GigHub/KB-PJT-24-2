@@ -62,6 +62,7 @@ class WorkCasePolicyTest {
                 "DRAFT->ACCEPTED",
                 "DRAFT->CANCELED",
                 "ACCEPTED->READY",
+                "ACCEPTED->NO_SHOW",
                 "ACCEPTED->COMPLETED",
                 "READY->IN_PROGRESS",
                 "READY->NO_SHOW",

@@ -61,3 +61,25 @@ services:
       # (예: CassandraDatabase -> NoClassDefFoundError DriverOption)
       # 루트 compose.yaml 도 같은 이유로 파일 단위 마운트를 쓴다.
       - /opt/gighub/drivers/mysql-connector-j-9.7.0.jar:/flyway/drivers/mysql-connector-j-9.7.0.jar:ro
+
+  # 수동 실행 전용. seed SQL 한 개를 RDS 에 적용한다.
+  #   docker compose -f ... --profile tools run --rm -e SEED_FILE=<이름>.sql seed
+  #
+  # flyway 와 나란히 두되 따로 둔다. Migration 은 한 번만 되돌릴 수 없이 적용되고
+  # seed 는 반복 실행이 목적이라 성질이 반대다. 한 명령에 묶으면 seed 를 다시
+  # 넣으려다 DDL 까지 건드리게 된다.
+  seed:
+    image: mysql:8.4.10
+    profiles: ["tools"]
+    environment:
+      # 접속값을 flyway 와 공유한다. mysql 전용 변수를 따로 두면 RDS 엔드포인트나
+      # 비밀번호가 바뀔 때 한쪽만 고쳐져 조용히 어긋난다. URL 파싱은 apply-seed.sh 가
+      # 하고, 그 파싱은 scripts/apply-seed.test.js 가 고정한다.
+      FLYWAY_URL: ${FLYWAY_URL}
+      FLYWAY_USER: ${FLYWAY_USER}
+      FLYWAY_PASSWORD: ${FLYWAY_PASSWORD}
+      SEED_FILE: ${SEED_FILE:-}
+    volumes:
+      - /opt/gighub/seed:/seed:ro
+      - /opt/gighub/apply-seed.sh:/apply-seed.sh:ro
+    entrypoint: ["sh", "/apply-seed.sh"]

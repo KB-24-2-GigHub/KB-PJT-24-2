@@ -11,14 +11,21 @@ import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.dto.DocumentVersionItem;
+import com.gighub.document.exception.ContractRetentionRequiredException;
+import com.gighub.document.exception.DocumentNotFoundException;
+import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
+import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.MediaType;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
@@ -35,10 +42,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -52,6 +64,15 @@ class DocumentControllerTest {
     @Mock
     private DocumentQueryService documentQueryService;
 
+    @Mock
+    private HealthCertificateRegisterService healthCertificateRegisterService;
+
+    @Mock
+    private HealthCertificateUpdateService healthCertificateUpdateService;
+
+    @Mock
+    private DocumentDeleteService documentDeleteService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -63,7 +84,11 @@ class DocumentControllerTest {
         objectMapper.registerModule(new JavaTimeModule());
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
         mockMvc = MockMvcBuilders
-                .standaloneSetup(new DocumentController(documentQueryService))
+                .standaloneSetup(new DocumentController(
+                        documentQueryService,
+                        healthCertificateRegisterService,
+                        healthCertificateUpdateService,
+                        documentDeleteService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -218,6 +243,121 @@ class DocumentControllerTest {
                 any(Long.class), any(), any(), any(), any(Integer.class), any(Integer.class));
         verify(documentQueryService, never()).findDocument(
                 anyLong(), any(), anyLong(), any());
+    }
+
+    @Test
+    void registersAHealthCertificateAndReturnsTheCreatedItem() throws Exception {
+        DocumentListItem registered = DocumentListItem.of(
+                DOCUMENT_ID,
+                "HEALTH_CERTIFICATE",
+                "ACTIVE",
+                "image/jpeg",
+                LocalDate.of(2026, 8, 14),
+                LocalDate.of(2027, 8, 14),
+                1,
+                "OWN",
+                "김근로",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                LocalDateTime.of(2026, 8, 14, 12, 0));
+        when(healthCertificateRegisterService.register(
+                eq(principal), eq("HEALTH_CERTIFICATE"), eq(LocalDate.of(2026, 8, 14)), any()))
+                .thenReturn(registered);
+
+        mockMvc.perform(multipart("/api/documents")
+                        .file(new MockMultipartFile(
+                                "file", "photo.jpg", "image/jpeg", new byte[]{1, 2, 3}))
+                        .param("docType", "HEALTH_CERTIFICATE")
+                        .param("issuedDate", "2026-08-14")
+                        .principal(authentication))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.documentId").value(DOCUMENT_ID))
+                .andExpect(jsonPath("$.data.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.data.capabilities.canShare").value(false));
+
+        verify(healthCertificateRegisterService).register(
+                eq(principal), eq("HEALTH_CERTIFICATE"), eq(LocalDate.of(2026, 8, 14)), any());
+    }
+
+    @Test
+    void updatesAHealthCertificateIssuedDateAndReturnsTheUpdatedItem() throws Exception {
+        DocumentListItem updated = DocumentListItem.of(
+                DOCUMENT_ID,
+                "HEALTH_CERTIFICATE",
+                "ACTIVE",
+                "image/jpeg",
+                LocalDate.of(2026, 9, 1),
+                LocalDate.of(2027, 9, 1),
+                1,
+                "OWN",
+                "김근로",
+                null,
+                null,
+                null,
+                null,
+                null,
+                false,
+                LocalDateTime.of(2026, 8, 14, 12, 0));
+        when(healthCertificateUpdateService.updateIssuedDate(
+                principal, DOCUMENT_ID, LocalDate.of(2026, 9, 1)))
+                .thenReturn(updated);
+
+        mockMvc.perform(patch("/api/documents/{documentId}", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"issuedDate\":\"2026-09-01\"}")
+                        .principal(authentication))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.issuedDate").value("2026-09-01"))
+                .andExpect(jsonPath("$.data.expiresDate").value("2027-09-01"));
+
+        verify(healthCertificateUpdateService).updateIssuedDate(
+                principal, DOCUMENT_ID, LocalDate.of(2026, 9, 1));
+    }
+
+    @Test
+    void rejectsAHealthCertificateUpdateWithoutAnIssuedDate() throws Exception {
+        mockMvc.perform(patch("/api/documents/{documentId}", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+                        .principal(authentication))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(healthCertificateUpdateService, never()).updateIssuedDate(any(), anyLong(), any());
+    }
+
+    @Test
+    void deletesAHealthCertificateAndReturnsNoContent() throws Exception {
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isNoContent());
+
+        verify(documentDeleteService).delete(principal, DOCUMENT_ID);
+    }
+
+    @Test
+    void rejectsDeletingAnEmploymentContractWithConflict() throws Exception {
+        doThrow(new ContractRetentionRequiredException("근로계약서는 삭제할 수 없습니다."))
+                .when(documentDeleteService).delete(principal, DOCUMENT_ID);
+
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONTRACT_RETENTION_REQUIRED"));
+    }
+
+    @Test
+    void returnsNotFoundWhenDeletingAMissingOrUnownedDocument() throws Exception {
+        doThrow(new DocumentNotFoundException("문서를 찾을 수 없습니다."))
+                .when(documentDeleteService).delete(principal, DOCUMENT_ID);
+
+        mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isNotFound());
     }
 
     private DocumentListItem listItem() {

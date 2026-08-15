@@ -264,6 +264,38 @@
           AND d.status = 'ACTIVE'
     </select>
 
+    <select id="findOwnHealthCertificateById" resultMap="documentListRowResult">
+        SELECT d.id AS document_id,
+               d.document_type AS doc_type,
+               CASE
+                   WHEN d.expires_on &lt; #{today} THEN 'EXPIRED'
+                   ELSE 'ACTIVE'
+               END AS status,
+               dv.mime_type AS mime_type,
+               d.issued_on AS issued_date,
+               d.expires_on AS expires_date,
+               dv.version_no AS latest_version,
+               'OWN' AS source,
+               document_owner.name AS owner_name,
+               NULL AS shared_by_name,
+               NULL AS workplace_id,
+               NULL AS workplace_name,
+               NULL AS work_case_id,
+               NULL AS worker_name,
+               FALSE AS can_share,
+               d.created_at AS created_at
+        FROM documents d
+        JOIN document_versions dv
+          ON dv.document_id = d.id
+         AND dv.version_type = 'ORIGINAL'
+         AND dv.version_no = 1
+        JOIN users document_owner ON document_owner.id = d.owner_user_id
+        WHERE d.id = #{documentId}
+          AND d.owner_user_id = #{userId}
+          AND d.document_type = 'HEALTH_CERTIFICATE'
+          AND d.status = 'ACTIVE'
+    </select>
+
     <select id="findSharesByDocumentId" resultMap="documentShareRowResult">
         SELECT share.id AS share_id,
                wp.id AS workplace_id,

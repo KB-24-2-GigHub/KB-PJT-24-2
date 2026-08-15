@@ -8,6 +8,7 @@ import com.gighub.attendance.exception.AttendanceScanException;
 import com.gighub.attendance.qr.QrTokenCodec;
 import com.gighub.attendance.service.result.AttendanceScanOutput;
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.common.api.ApiErrorCode;
 import com.gighub.config.RootConfig;
 import com.gighub.member.domain.UserRole;
 
@@ -117,6 +118,54 @@ class AttendanceScanDatabaseIntegrationTest {
                         String.class,
                         fixture.workCaseId());
                 assertEquals("IN_PROGRESS", status);
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(30)
+    void checkInAtShortWorkEndBoundaryReturnsAuditedTimeWindowConflict() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            LocalDateTime now = LocalDateTime.now(ZONE);
+            Fixture fixture = createFixture(
+                    context,
+                    jdbcTemplate,
+                    "READY",
+                    now.minusMinutes(20),
+                    now.minusSeconds(1),
+                    true);
+            AttendanceScanService scanService = context.getBean(AttendanceScanService.class);
+            AuthPrincipal principal =
+                    new AuthPrincipal(fixture.workerId(), UserRole.WORKER, "종료 경계 테스트");
+
+            try {
+                AttendanceScanException failure =
+                        org.junit.jupiter.api.Assertions.assertThrows(
+                                AttendanceScanException.class,
+                                () -> scanService.scan(
+                                        principal,
+                                        "SCAN-END-BOUNDARY-" + UUID.randomUUID(),
+                                        scanRequest(fixture.qrToken())));
+
+                assertEquals(org.springframework.http.HttpStatus.CONFLICT, failure.getStatus());
+                assertEquals(ApiErrorCode.ATTENDANCE_STATE_CONFLICT, failure.getCode());
+                Long rejectedRows = jdbcTemplate.queryForObject(
+                        "SELECT COUNT(*) FROM attendance_records"
+                                + " WHERE work_case_id = ?"
+                                + " AND attendance_type = 'CHECK_IN'"
+                                + " AND result = 'REJECTED'"
+                                + " AND failure_reason = 'TIME_WINDOW_CLOSED'",
+                        Long.class,
+                        fixture.workCaseId());
+                assertEquals(1L, rejectedRows);
+                String status = jdbcTemplate.queryForObject(
+                        "SELECT status FROM work_cases WHERE id = ?",
+                        String.class,
+                        fixture.workCaseId());
+                assertEquals("READY", status);
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }

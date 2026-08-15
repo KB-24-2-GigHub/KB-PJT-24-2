@@ -6,9 +6,9 @@
 
     <insert id="insertDocument" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO documents
-            (created_by_user_id, owner_user_id, work_case_id, document_type, status, issued_on)
+            (created_by_user_id, owner_user_id, work_case_id, document_type, status, issued_on, expires_on)
         VALUES
-            (#{createdByUserId}, #{ownerUserId}, #{workCaseId}, #{documentType}, #{status}, #{issuedOn})
+            (#{createdByUserId}, #{ownerUserId}, #{workCaseId}, #{documentType}, #{status}, #{issuedOn}, #{expiresOn})
     </insert>
 
     <insert id="insertVersion" useGeneratedKeys="true" keyProperty="id">
@@ -41,6 +41,41 @@
         SET status = #{status}
         WHERE id = #{documentId}
           AND status = #{expectedStatus}
+    </update>
+
+    <update id="updateHealthCertificateIssuedDate">
+        UPDATE documents
+        SET issued_on = #{issuedOn},
+            expires_on = #{expiresOn}
+        WHERE id = #{documentId}
+          AND owner_user_id = #{ownerUserId}
+          AND document_type = 'HEALTH_CERTIFICATE'
+          AND status = 'ACTIVE'
+    </update>
+
+    <select id="lockOwnDocument" resultType="com.gighub.document.mapper.result.DocumentOwnershipRow">
+        SELECT document_type AS documentType,
+               status AS status
+        FROM documents
+        WHERE id = #{documentId}
+          AND owner_user_id = #{ownerUserId}
+        FOR UPDATE
+    </select>
+
+    <update id="deleteHealthCertificate">
+        UPDATE documents
+        SET status = 'DELETED'
+        WHERE id = #{documentId}
+          AND document_type = 'HEALTH_CERTIFICATE'
+          AND status = 'ACTIVE'
+    </update>
+
+    <update id="revokeActiveShares">
+        UPDATE document_shares
+        SET status = 'REVOKED',
+            revoked_at = #{revokedAt}
+        WHERE document_id = #{documentId}
+          AND status = 'ACTIVE'
     </update>
 
     <select id="findPromotionRowsByWorkCaseId"

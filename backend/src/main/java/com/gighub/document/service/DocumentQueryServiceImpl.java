@@ -5,10 +5,10 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
+import com.gighub.document.dto.DocumentListItems;
 import com.gighub.document.dto.DocumentShareItem;
 import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.mapper.DocumentQueryMapper;
-import com.gighub.document.mapper.result.DocumentListRow;
 import com.gighub.document.mapper.result.DocumentShareRow;
 import com.gighub.member.domain.UserRole;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -81,7 +81,7 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                                 PageRequests.offset(page, size),
                                 size)
                         .stream()
-                        .map(this::toListItem)
+                        .map(DocumentListItems::from)
                         .toList(),
                 page,
                 size,
@@ -119,26 +119,6 @@ public class DocumentQueryServiceImpl implements DocumentQueryService {
                 page,
                 size,
                 documentQueryMapper.countSharesByDocumentId(documentId));
-    }
-
-    private DocumentListItem toListItem(DocumentListRow row) {
-        return DocumentListItem.of(
-                row.getDocumentId(),
-                row.getDocType(),
-                row.getStatus(),
-                row.getMimeType(),
-                row.getIssuedDate(),
-                row.getExpiresDate(),
-                row.getLatestVersion(),
-                row.getSource(),
-                row.getOwnerName(),
-                row.getSharedByName(),
-                row.getWorkplaceId(),
-                row.getWorkplaceName(),
-                row.getWorkCaseId(),
-                row.getWorkerName(),
-                Boolean.TRUE.equals(row.getCanShare()),
-                row.getCreatedAt());
     }
 
     private DocumentShareItem toShareItem(DocumentShareRow row) {

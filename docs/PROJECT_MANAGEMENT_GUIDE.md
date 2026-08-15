@@ -48,7 +48,7 @@ Issue Form을 변경할 때는 필드 안내를 별도 문서에 복제하지 �
 `required_operations`를, DB 영향과 명시적 관리자 승인이 있을 때만 `migration_scope`를 작성한다.
 문서 링크와 기존 Issue를 직접 연결하고, 같은 설명을 여러 필드에 반복하지 않는다.
 
-Issue Form은 저장소의 기본 브랜치인 `main`에 반영된 뒤 GitHub 이슈 생성 화면에 나타납니다. `dev` 단계에서는 YAML 구문과 변경 내용을 검토하고, `main` 반영 후 실제 화면을 확인합니다.
+Issue Form은 저장소의 기본 브랜치인 `dev`에 반영된 뒤 GitHub 이슈 생성 화면에 나타납니다. 변경 PR에서 YAML 구문과 내용을 검토하고, `dev` 반영 후 실제 화면을 확인합니다.
 
 ## 라벨과 Project 필드
 
@@ -84,7 +84,7 @@ Issue Form은 저장소의 기본 브랜치인 `main`에 반영된 뒤 GitHub �
 | 브랜치                   | 용도                                         |
 | ------------------------ | -------------------------------------------- |
 | `main`                   | 항상 배포 가능하거나 제출 가능한 기준 브랜치 |
-| `dev`                    | 기능을 모아 공동 검증하는 통합 개발 브랜치   |
+| `dev`                    | GitHub 기본 브랜치이자 공동 검증 통합 브랜치 |
 | `dev2`                   | 승인된 프로그램이 선언한 임시 통합 브랜치    |
 | `feature/12-login-page`  | 기능 개발                                    |
 | `fix/23-session-timeout` | 버그 수정                                    |
@@ -105,6 +105,8 @@ Issue Form은 저장소의 기본 브랜치인 `main`에 반영된 뒤 GitHub �
 
 - 일반 작업의 기본 통합 브랜치는 `dev`입니다. 현재 이슈 또는 승인된 Parent 프로그램이
   `dev2` 같은 별도 통합 브랜치를 선언하면 그 값을 사용합니다.
+- GitHub 기본 브랜치는 `dev`입니다. 기본 브랜치는 작업 통합과 GitHub 자동화의 기준이며,
+  배포·제출 기준인 `main`의 역할을 대신하지 않습니다.
 - 이슈, Parent와 Native dependency의 통합 브랜치 선언이 충돌하거나 원격 기준 브랜치가 없으면
   작업을 시작하지 않고 담당자에게 보고합니다.
 - `main`, `dev`와 프로그램별 통합 브랜치에는 직접 Push하지 않고 PR로만 반영합니다.
@@ -164,13 +166,15 @@ latest dev → dev2 → issue branch → dev2 → audited dev2 → dev → relea
 | 사실                                               | 종료 대상                   | 처리                       |
 | -------------------------------------------------- | --------------------------- | -------------------------- |
 | 서브 이슈 PR이 `dev2`에 병합되고 AC·필수 검증 충족 | 해당 서브 이슈              | 수동 Close, Project `Done` |
-| 최종 `dev2 → dev` PR이 통합 감사 후 병합           | Parent와 프로그램 Milestone | 수동 Close, Project `Done` |
+| 최종 `dev2 → dev` PR이 통합 감사 후 병합           | Parent와 프로그램 Milestone | `Closes`, Project `Done`   |
 | 검증된 `dev → main` PR 병합                        | 별도 Release item           | Release 사실 기록          |
 
-`dev2`와 `dev`가 기본 브랜치가 아니면 `Closes` 자동화에 의존하지 않는다. 통합 담당자가 실제
-base, merge SHA, AC와 검증을 확인한 뒤 이슈를 닫는다. `dev2` 또는 `dev` 통합 완료를 `main`
-Release 완료로 표현하지 않는다. Issue Form과 PR template은 기본 브랜치 `main`에 반영된 뒤
-GitHub 생성 화면에 활성화되므로, 소스 통합과 UI Release도 구분한다.
+`dev`는 GitHub 기본 브랜치이므로 `dev` 대상 PR의 `Closes`·`Fixes`·`Resolves`는 병합 시
+연결 이슈를 자동으로 닫는다. AC와 필수 검증을 충족해 `dev` 병합이 곧 이슈 완료인 경우에만
+종료 키워드를 사용한다. `dev2` 같은 비기본 프로그램 브랜치에서는 `Refs`로 연결하고 통합
+담당자가 base, merge SHA, AC와 검증을 확인한 뒤 수동으로 닫는다. `dev2` 또는 `dev` 통합
+완료를 `main` Release 완료로 표현하지 않는다. Issue Form과 PR template은 `dev` 반영 후
+GitHub 생성 화면에 활성화된다.
 
 ### 작업 브랜치 생성
 
@@ -205,9 +209,10 @@ Migration PR은 DB owner/reviewer, 통합 DDL·Schema 문서, 호환 코드와 �
 ## PR 규칙
 
 - PR 제목은 커밋 컨벤션과 비슷하게 작성합니다.
-- 일반 작업 PR은 승인된 통합 브랜치를 대상으로 만들고 본문에 `Refs #이슈번호`를 적습니다. 별도 선언이 없으면 대상은 `dev`입니다. 이 표기는 이슈를 교차 참조하지만 종료하지 않습니다.
-- 작업 통합 브랜치 대상 PR은 우측 `Development`에서 관련 이슈를 수동 연결해 작업 중인 PR로 표시합니다.
-- 프로그램 서브 이슈는 승인 프로그램 브랜치 병합 후 AC를 확인해 수동 종료하고, Parent와 Milestone은 최종 프로그램 브랜치 → `dev` 통합 후 종료합니다.
+- 일반 작업 PR은 승인된 통합 브랜치를 대상으로 만듭니다. 별도 선언이 없으면 대상은 `dev`입니다.
+- `dev` 병합이 이슈 완료인 일반 작업은 본문에 `Closes #이슈번호`를 적어 병합과 함께 자동 종료합니다. 프로그램 브랜치 통합이나 별도 완료 감사가 필요하면 `Refs #이슈번호`를 사용합니다.
+- `Refs`를 사용하는 작업은 우측 `Development`에서 관련 이슈를 수동 연결해 작업 중인 PR로 표시합니다.
+- 프로그램 서브 이슈는 승인 프로그램 브랜치 병합 후 AC를 확인해 수동 종료하고, Parent와 Milestone은 최종 프로그램 브랜치 → `dev` 통합 감사 PR의 `Closes`로 종료합니다.
 - 배포·제출 PR은 `dev`에서 `main`을 대상으로 만들고 Release item만 종료합니다. 프로그램 통합 완료와 같은 의미로 취급하지 않습니다.
 - 긴급 수정 PR은 `hotfix/*`에서 `main`을 대상으로 만들고, 머지 후 `main`에서 `dev`로 동기화합니다.
 - 변경 범위가 넓다면 기능별로 PR을 나눕니다.
