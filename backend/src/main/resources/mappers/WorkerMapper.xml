@@ -179,6 +179,11 @@
         사업장 단위로 합치지 않습니다. 같은 사업장에 후보가 둘 이상이면 그대로 여러 행이
         나오고, 실제 공유 요청이 후보 복수를 409로 거부합니다. 여기서 미리 하나로 접으면
         화면은 공유할 수 있다고 보여주고 요청은 실패하는 상태가 됩니다.
+
+        같은 상태 조건(wc.status IN ('ACCEPTED','READY') AND wp.status='ACTIVE')을
+        DocumentQueryMapper.xml의 findShareCandidates가 실제 공유 생성 검증에서 다시 쓴다.
+        두 Mapper Namespace를 넘나드는 <include> 재사용 선례가 이 Codebase에 없어 각자
+        자기 완결적으로 두지만, 후보 상태 목록을 바꿀 때는 반드시 그 쪽도 함께 확인한다.
     -->
     <sql id="shareableWorkplaceCondition">
         wc.worker_id = #{workerId}
