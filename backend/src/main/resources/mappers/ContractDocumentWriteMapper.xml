@@ -29,7 +29,7 @@
              #{consentedAt}, #{signedAt})
     </insert>
 
-    <insert id="insertShare">
+    <insert id="insertShare" useGeneratedKeys="true" keyProperty="id">
         INSERT INTO document_shares
             (document_id, work_case_id, shared_with_user_id, purpose)
         VALUES

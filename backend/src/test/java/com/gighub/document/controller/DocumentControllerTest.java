@@ -7,6 +7,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.CommonExceptionHandler;
+import com.gighub.common.exception.ConflictException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
@@ -16,6 +17,7 @@ import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateShareService;
 import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.BeforeEach;
@@ -51,6 +53,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -73,6 +76,9 @@ class DocumentControllerTest {
     @Mock
     private DocumentDeleteService documentDeleteService;
 
+    @Mock
+    private HealthCertificateShareService healthCertificateShareService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -88,7 +94,8 @@ class DocumentControllerTest {
                         documentQueryService,
                         healthCertificateRegisterService,
                         healthCertificateUpdateService,
-                        documentDeleteService))
+                        documentDeleteService,
+                        healthCertificateShareService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -356,6 +363,72 @@ class DocumentControllerTest {
                 .when(documentDeleteService).delete(principal, DOCUMENT_ID);
 
         mockMvc.perform(delete("/api/documents/{documentId}", DOCUMENT_ID)
+                        .principal(authentication))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void createsAHealthCertificateShareAndReturnsOnlyTheShareId() throws Exception {
+        when(healthCertificateShareService.share(principal, DOCUMENT_ID, 3L)).thenReturn(99L);
+
+        MvcResult result = mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workplaceId\":3}")
+                        .principal(authentication))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.data.shareId").value(99))
+                .andReturn();
+
+        // 서버가 파생한 관계는 응답으로 내보내지 않는다.
+        JsonNode data = objectMapper.readTree(result.getResponse().getContentAsString()).path("data");
+        assertEquals(Set.of("shareId"), fieldNames(data));
+    }
+
+    @Test
+    void rejectsAShareRequestWithoutAWorkplaceId() throws Exception {
+        mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{}")
+                        .principal(authentication))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(healthCertificateShareService, never()).share(any(), anyLong(), any());
+    }
+
+    /** workCaseId는 서버가 파생하므로 요청으로 받으면 조용히 무시하지 않고 거부한다. */
+    @Test
+    void rejectsAShareRequestThatTriesToChooseTheWorkCase() throws Exception {
+        mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workplaceId\":3,\"workCaseId\":21}")
+                        .principal(authentication))
+                .andExpect(status().isBadRequest());
+
+        verify(healthCertificateShareService, never()).share(any(), anyLong(), any());
+    }
+
+    @Test
+    void returnsConflictWhenTheSameWorkplaceIsAlreadyShared() throws Exception {
+        when(healthCertificateShareService.share(principal, DOCUMENT_ID, 3L))
+                .thenThrow(new ConflictException("이미 이 사업장에 공유 중인 보건증입니다."));
+
+        mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workplaceId\":3}")
+                        .principal(authentication))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"));
+    }
+
+    @Test
+    void returnsNotFoundWhenSharingAMissingOrUnownedDocument() throws Exception {
+        when(healthCertificateShareService.share(principal, DOCUMENT_ID, 3L))
+                .thenThrow(new DocumentNotFoundException("문서를 찾을 수 없습니다."));
+
+        mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"workplaceId\":3}")
                         .principal(authentication))
                 .andExpect(status().isNotFound());
     }
