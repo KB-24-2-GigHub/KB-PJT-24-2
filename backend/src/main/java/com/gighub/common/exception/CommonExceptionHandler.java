@@ -15,6 +15,7 @@ import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 
 import java.util.List;
 
@@ -102,6 +103,20 @@ public class CommonExceptionHandler {
                 ApiErrorCode.VALIDATION_ERROR,
                 "요청 파라미터 형식이 올바르지 않습니다.",
                 null,
+                request
+        );
+    }
+
+    /** Container Multipart 상한 초과는 각 도메인 파일 검증기와 같은 형태의 오류로 맞춘다. */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiErrorResponse> handleMaxUploadSizeExceeded(
+            MaxUploadSizeExceededException exception,
+            HttpServletRequest request) {
+        return body(
+                HttpStatus.BAD_REQUEST,
+                ApiErrorCode.VALIDATION_ERROR,
+                "업로드 파일 크기가 허용 범위를 벗어났습니다.",
+                List.of(new ApiFieldError("file", "SIZE_EXCEEDED")),
                 request
         );
     }

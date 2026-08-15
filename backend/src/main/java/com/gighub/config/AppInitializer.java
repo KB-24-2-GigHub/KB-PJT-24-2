@@ -5,8 +5,10 @@ import com.gighub.common.trace.TraceIdFilter;
 import java.nio.charset.StandardCharsets;
 
 import javax.servlet.Filter;
+import javax.servlet.MultipartConfigElement;
 import javax.servlet.ServletContext;
 import javax.servlet.ServletException;
+import javax.servlet.ServletRegistration;
 import javax.servlet.SessionCookieConfig;
 
 import org.springframework.web.filter.CharacterEncodingFilter;
@@ -17,11 +19,12 @@ import org.springframework.web.servlet.support.AbstractAnnotationConfigDispatche
  *
  * <p>Tomcat 9가 Servlet 4.0 애플리케이션을 시작할 때 이 클래스를 자동으로 발견합니다. 모든 요청은
  * DispatcherServlet의 {@code /} 매핑을 거치며, 요청과 응답은 UTF-8로 통일합니다.</p>
- *
- * <p>TODO: 파일 업로드 정책이 확정되면 허용 크기와 임시 저장 경로를 명시한 Multipart 설정을
- * 추가합니다.</p>
  */
 public class AppInitializer extends AbstractAnnotationConfigDispatcherServletInitializer {
+
+    /** 컨테이너 임시 저장소 상한입니다. 업로드 정책상 실제 허용 크기는 각 검증기가 정한다. */
+    private static final long MULTIPART_MAX_FILE_SIZE = 15L * 1024 * 1024;
+    private static final long MULTIPART_MAX_REQUEST_SIZE = 16L * 1024 * 1024;
 
     /**
      * 로컬 HTTP 개발 환경에서 사용할 Session Cookie 범위를 명시합니다.
@@ -85,6 +88,19 @@ public class AppInitializer extends AbstractAnnotationConfigDispatcherServletIni
         encodingFilter.setEncoding(StandardCharsets.UTF_8.name());
         encodingFilter.setForceEncoding(true);
         return new Filter[]{encodingFilter, new TraceIdFilter()};
+    }
+
+    /**
+     * DispatcherServlet에 Multipart 처리를 등록합니다. 컨테이너 상한은 업로드 정책의 실제
+     * 허용 크기(예: 보건증 10 MiB)보다 넉넉히 잡아, 정확한 거부 사유는 각 도메인 검증기가
+     * 안전한 오류 응답으로 돌려주게 한다.
+     *
+     * @param registration DispatcherServlet의 Servlet 등록 정보
+     */
+    @Override
+    protected void customizeRegistration(ServletRegistration.Dynamic registration) {
+        registration.setMultipartConfig(new MultipartConfigElement(
+                "", MULTIPART_MAX_FILE_SIZE, MULTIPART_MAX_REQUEST_SIZE, 0));
     }
 }
 

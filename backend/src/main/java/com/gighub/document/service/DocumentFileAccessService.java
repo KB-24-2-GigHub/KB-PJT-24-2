@@ -4,6 +4,7 @@ import com.gighub.document.mapper.result.DocumentFileAccessRow;
 import com.gighub.document.storage.ContractStorageKeys;
 import com.gighub.document.storage.DocumentStorageAdapter;
 import com.gighub.document.storage.DocumentStorageIntegrityException;
+import com.gighub.document.storage.HealthCertificateStorageKeys;
 import com.gighub.document.storage.Sha256;
 import com.gighub.member.domain.UserRole;
 import org.slf4j.Logger;
@@ -139,14 +140,14 @@ public class DocumentFileAccessService {
         if (extension == null) {
             return null;
         }
-        String finalKey = "health-certificates/%d/%d/v1.%s".formatted(
+        String finalKey = HealthCertificateStorageKeys.finalKey(
                 row.getOwnerUserId(), row.getDocumentId(), extension);
         if (!finalKey.equals(row.getStorageKey())) {
             return null;
         }
         return new StorageKeyPlan(
                 finalKey,
-                "health-certificates/%d/%d/.pending/v1.%s".formatted(
+                HealthCertificateStorageKeys.pendingKey(
                         row.getOwnerUserId(), row.getDocumentId(), extension));
     }
 

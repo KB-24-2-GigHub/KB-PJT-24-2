@@ -285,6 +285,36 @@ class DocumentQueryMapperTest {
         }
     }
 
+    @Test
+    void findsOwnHealthCertificateByIdAndHidesItFromOthersOrOtherTypes() {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            DocumentQueryMapper mapper = context.getBean(DocumentQueryMapper.class);
+            Fixture fixture = insertFixture(jdbc);
+
+            try {
+                DocumentListRow own = mapper.findOwnHealthCertificateById(
+                        fixture.workerId, fixture.healthDocumentId, TODAY);
+                assertEquals(fixture.healthDocumentId, own.getDocumentId());
+                assertEquals("ACTIVE", own.getStatus());
+                assertEquals("OWN", own.getSource());
+
+                assertEquals("EXPIRED", mapper.findOwnHealthCertificateById(
+                                fixture.workerId, fixture.healthDocumentId,
+                                LocalDate.of(2028, 1, 1))
+                        .getStatus());
+
+                assertNull(mapper.findOwnHealthCertificateById(
+                        fixture.ownerId, fixture.healthDocumentId, TODAY));
+                assertNull(mapper.findOwnHealthCertificateById(
+                        fixture.workerId, fixture.contractDocumentId, TODAY));
+            } finally {
+                deleteFixture(jdbc, fixture);
+            }
+        }
+    }
+
     private Fixture insertFixture(JdbcTemplate jdbc) {
         String token = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         long ownerId = insertUser(jdbc, "dq_owner_" + token, "OWNER", "김사장");
