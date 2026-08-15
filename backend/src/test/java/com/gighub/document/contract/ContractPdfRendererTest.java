@@ -71,7 +71,7 @@ class ContractPdfRendererTest {
             assertTrue(text.contains("최저임금법등관계법령을준수하며"));
             assertFalse(text.contains("최저임금액이상으로정하며"));
             assertTrue(text.contains("산재·고용보험이적용됩니다"));
-            assertTrue(text.contains("국민연금·건강보험제외"));
+            assertTrue(text.contains("국민연금·건강보험은1개월미만근로에대해적용이제외될수있습니다"));
             assertTrue(text.contains("근로기준법제17조"));
         }
     }
