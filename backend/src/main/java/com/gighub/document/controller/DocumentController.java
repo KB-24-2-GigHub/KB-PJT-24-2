@@ -9,10 +9,14 @@ import com.gighub.common.exception.ValidationException;
 import com.gighub.document.dto.DocumentDetailResponse;
 import com.gighub.document.dto.DocumentListItem;
 import com.gighub.document.dto.DocumentShareItem;
+import com.gighub.document.dto.HealthCertificateShareRequest;
+import com.gighub.document.dto.HealthCertificateShareResponse;
 import com.gighub.document.dto.HealthCertificateUpdateRequest;
 import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateShareRevokeService;
+import com.gighub.document.service.HealthCertificateShareService;
 import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.document.validation.UploadedFile;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +52,8 @@ public class DocumentController {
     private final HealthCertificateRegisterService healthCertificateRegisterService;
     private final HealthCertificateUpdateService healthCertificateUpdateService;
     private final DocumentDeleteService documentDeleteService;
+    private final HealthCertificateShareService healthCertificateShareService;
+    private final HealthCertificateShareRevokeService healthCertificateShareRevokeService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
@@ -126,6 +132,19 @@ public class DocumentController {
         return ResponseEntity.noContent().build();
     }
 
+    // DOC-007: 보건증 공유 생성. Client는 workplaceId만 보내고 나머지는 서버가 파생한다.
+    @PostMapping("/api/documents/{documentId}/shares")
+    public ResponseEntity<ApiResponse<HealthCertificateShareResponse>> shareHealthCertificate(
+            @PathVariable long documentId,
+            @Valid @RequestBody HealthCertificateShareRequest request,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        long shareId = healthCertificateShareService.share(
+                principal, documentId, request.getWorkplaceId());
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(ApiResponse.of(HealthCertificateShareResponse.of(shareId)));
+    }
+
     // SHARE-002: 문서 공유 현황
     @GetMapping("/api/documents/{documentId}/shares")
     public ResponseEntity<ApiResponse<PageResponse<DocumentShareItem>>> getDocumentShares(
@@ -137,6 +156,17 @@ public class DocumentController {
         return ResponseEntity.ok(
                 ApiResponse.of(documentQueryService.findShares(
                         actorUserId, documentId, page, size)));
+    }
+
+    // DOC-008: 보건증 공유 철회. 해당 사업장의 ACTIVE 공유만 멱등하게 REVOKED로 바꾼다.
+    @DeleteMapping("/api/documents/{documentId}/shares/{workplaceId}")
+    public ResponseEntity<Void> revokeHealthCertificateShare(
+            @PathVariable long documentId,
+            @PathVariable long workplaceId,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        healthCertificateShareRevokeService.revoke(principal, documentId, workplaceId);
+        return ResponseEntity.noContent().build();
     }
 
     private void requireApprovedListQuery(HttpServletRequest request) {

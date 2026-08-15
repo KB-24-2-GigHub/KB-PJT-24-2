@@ -5,6 +5,7 @@ import com.gighub.auth.security.AuthPrincipals;
 import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
+import com.gighub.work.dto.ShareableWorkplaceListItemResponse;
 import com.gighub.work.dto.WorkerHomeResponse;
 import com.gighub.work.dto.WorkerWorkCaseListItemResponse;
 import com.gighub.work.service.WorkerQueryService;
@@ -39,5 +40,17 @@ public class WorkerController {
         AuthPrincipal principal = AuthPrincipals.resolve(authentication);
 
         return ResponseEntity.ok(ApiResponse.of(workerQueryService.workCases(principal, page, size)));
+    }
+
+    // DOC-007: 보건증을 새로 공유할 수 있는 사업장 후보
+    @GetMapping("/api/worker/workplaces")
+    public ResponseEntity<ApiResponse<PageResponse<ShareableWorkplaceListItemResponse>>> workplaces(
+            @RequestParam(defaultValue = PageRequests.DEFAULT_PAGE_TEXT) int page,
+            @RequestParam(defaultValue = PageRequests.DEFAULT_SIZE_TEXT) int size,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+
+        return ResponseEntity.ok(
+                ApiResponse.of(workerQueryService.shareableWorkplaces(principal, page, size)));
     }
 }

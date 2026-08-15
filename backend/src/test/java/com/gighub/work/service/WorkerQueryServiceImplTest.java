@@ -1,17 +1,24 @@
 package com.gighub.work.service;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.common.api.ApiTimes;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.RoleMismatchException;
+import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
+import com.gighub.work.dto.ShareableWorkplaceListItemResponse;
 import com.gighub.work.dto.WorkerHomeResponse;
 import com.gighub.work.dto.WorkerWorkCaseListItemResponse;
 import com.gighub.work.mapper.WorkerMapper;
+import com.gighub.work.mapper.param.ShareableWorkplaceListQuery;
 import com.gighub.work.mapper.param.WorkerWorkCaseListQuery;
+import com.gighub.work.mapper.result.ShareableWorkplaceRow;
 import com.gighub.work.service.impl.WorkerQueryServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -19,6 +26,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -64,6 +72,67 @@ class WorkerQueryServiceImplTest {
         PageResponse<WorkerWorkCaseListItemResponse> response = service.workCases(worker(), 0, 20);
 
         assertEquals(0, response.getContent().size());
+    }
+
+    @Test
+    void shareableWorkplacesRejectsNonWorker() {
+        assertThrows(
+                RoleMismatchException.class, () -> service.shareableWorkplaces(owner(), 0, 20));
+
+        verifyNoInteractions(workerMapper);
+    }
+
+    @Test
+    void shareableWorkplacesRejectsOutOfRangePageQuery() {
+        assertThrows(
+                ValidationException.class, () -> service.shareableWorkplaces(worker(), 0, 101));
+
+        verifyNoInteractions(workerMapper);
+    }
+
+    @Test
+    void shareableWorkplacesQueriesTheAuthenticatedWorkerWithTheRequestedPageWindow() {
+        when(workerMapper.findShareableWorkplacePage(any(ShareableWorkplaceListQuery.class)))
+                .thenReturn(List.of());
+        when(workerMapper.countShareableWorkplaces(any(ShareableWorkplaceListQuery.class)))
+                .thenReturn(0L);
+
+        service.shareableWorkplaces(worker(), 2, 10);
+
+        ArgumentCaptor<ShareableWorkplaceListQuery> captor =
+                ArgumentCaptor.forClass(ShareableWorkplaceListQuery.class);
+        verify(workerMapper).findShareableWorkplacePage(captor.capture());
+        // Client가 보낸 값이 아니라 Session principal의 사용자 ID로만 조회한다.
+        assertEquals(WORKER_ID, captor.getValue().getWorkerId());
+        assertEquals(10, captor.getValue().getSize());
+        assertEquals(20L, captor.getValue().getOffset());
+    }
+
+    @Test
+    void shareableWorkplacesMapsOnlyTheApprovedItemFields() {
+        when(workerMapper.findShareableWorkplacePage(any(ShareableWorkplaceListQuery.class)))
+                .thenReturn(List.of(ShareableWorkplaceRow.builder()
+                        .workplaceId(9L)
+                        .workplaceName("강남점")
+                        .ownerName("김대표")
+                        .startsAt(LocalDateTime.of(2026, 8, 20, 10, 0))
+                        .endsAt(LocalDateTime.of(2026, 8, 20, 18, 0))
+                        .build()));
+        when(workerMapper.countShareableWorkplaces(any(ShareableWorkplaceListQuery.class)))
+                .thenReturn(1L);
+
+        PageResponse<ShareableWorkplaceListItemResponse> response =
+                service.shareableWorkplaces(worker(), 0, 20);
+
+        assertEquals(1, response.getContent().size());
+        ShareableWorkplaceListItemResponse item = response.getContent().get(0);
+        assertEquals(9L, item.getWorkplaceId());
+        assertEquals("강남점", item.getWorkplaceName());
+        assertEquals("김대표", item.getOwnerName());
+        assertEquals(
+                ApiTimes.toInstant(LocalDateTime.of(2026, 8, 20, 10, 0)), item.getStartsAt());
+        assertEquals(
+                ApiTimes.toInstant(LocalDateTime.of(2026, 8, 20, 18, 0)), item.getEndsAt());
     }
 
     private AuthPrincipal worker() {

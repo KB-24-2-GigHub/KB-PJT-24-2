@@ -332,6 +332,43 @@
         LIMIT #{size} OFFSET #{offset}
     </select>
 
+    <select id="findOwnActiveHealthCertificateExpiry" resultType="java.time.LocalDate">
+        SELECT d.expires_on
+        FROM documents d
+        WHERE d.id = #{documentId}
+          AND d.owner_user_id = #{ownerUserId}
+          AND d.document_type = 'HEALTH_CERTIFICATE'
+          AND d.status = 'ACTIVE'
+    </select>
+
+    <!--
+        신규 공유 후보만 봅니다. 상태는 ACCEPTED·READY 둘뿐이고 IN_PROGRESS는 넣지 않습니다.
+        접근 유효성 판정은 IN_PROGRESS까지 허용하지만 그것은 이미 만들어진 공유가 근무 중에도
+        살아 있게 하려는 조건이고, 새 공유를 만들 수 있는 구간은 근무 시작 전까지입니다.
+
+        접근 유효성 판정은 공유 행의 shared_with_user_id를 wc.employer_id와
+        wp.owner_user_id 양쪽에 대조하므로, 둘이 어긋난 관계로 공유를 만들면 생성 직후부터
+        영구히 EXPIRED로만 보이는 행이 남습니다. 그 조건을 여기서 다시 걸지는 않습니다.
+        복합 외래키 fk_work_cases_employer_workplace가 (employer_id, workplace_id)를
+        workplaces (owner_user_id, id)로 참조해 어긋난 행 자체를 만들 수 없기 때문입니다.
+
+        같은 상태 조건(wc.status IN ('ACCEPTED','READY') AND wp.status='ACTIVE')을
+        WorkerMapper.xml의 shareableWorkplaceCondition이 후보 목록 조회에서 다시 쓴다.
+        후보 상태 목록을 바꿀 때는 반드시 그 쪽도 함께 확인한다.
+    -->
+    <select id="findShareCandidates"
+            resultType="com.gighub.document.mapper.result.ShareCandidateRow">
+        SELECT wc.id            AS workCaseId,
+               wp.owner_user_id AS ownerUserId
+        FROM work_cases wc
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        WHERE wc.worker_id = #{workerId}
+          AND wc.workplace_id = #{workplaceId}
+          AND wc.status IN ('ACCEPTED', 'READY')
+          AND wp.status = 'ACTIVE'
+        ORDER BY wc.id ASC
+    </select>
+
     <select id="countSharesByDocumentId" resultType="long">
         SELECT COUNT(*)
         FROM document_shares share
