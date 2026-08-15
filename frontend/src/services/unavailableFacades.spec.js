@@ -13,7 +13,6 @@ import http, { idempotentPost } from '@/services/http'
 import { isMockOperationEnabled } from '@/services/mockOperations'
 import { listDocuments } from '@/services/documents'
 import { listNotifications } from '@/services/notifications'
-import { createReport } from '@/services/workCases'
 import { getWorkerHome, scan } from '@/services/worker'
 
 describe('unimplemented public facade operations', () => {
@@ -25,8 +24,7 @@ describe('unimplemented public facade operations', () => {
   it.each([
     // worker home·work-cases는 #168, attendance scan은 #167에서 LIVE로 전환됐다.
     ['documents', () => listDocuments(), '#132/#183'],
-    ['notifications', () => listNotifications(), '#167/#176'],
-    ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
+    ['notifications', () => listNotifications(), '#167/#176']
   ])('fails closed for %s and identifies its owner issue', async (_name, action, ownerIssue) => {
     await expect(action()).rejects.toMatchObject({
       code: 'FEATURE_UNAVAILABLE',

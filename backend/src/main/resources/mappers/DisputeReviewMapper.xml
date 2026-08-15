@@ -1,0 +1,135 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.settlement.mapper.DisputeReviewMapper">
+
+    <resultMap id="candidate" type="com.gighub.settlement.mapper.result.DisputeReviewCandidate">
+        <constructor>
+            <idArg column="reviewId" javaType="java.lang.Long"/>
+            <arg column="disputeId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="execution" type="com.gighub.settlement.mapper.result.DisputeReviewExecutionRow">
+        <constructor>
+            <idArg column="reviewId" javaType="java.lang.Long"/>
+            <arg column="disputeId" javaType="java.lang.Long"/>
+            <arg column="requestKey" javaType="java.lang.String"/>
+            <arg column="status"
+                 javaType="com.gighub.settlement.review.DisputeReviewExecutionStatus"/>
+            <arg column="source" javaType="java.lang.String"/>
+            <arg column="provider" javaType="java.lang.String"/>
+            <arg column="model" javaType="java.lang.String"/>
+            <arg column="promptVersion" javaType="java.lang.String"/>
+            <arg column="inputHash" javaType="java.lang.String"/>
+            <arg column="decision"
+                 javaType="com.gighub.settlement.review.DisputeReviewDecision"/>
+            <arg column="reasonCodesJson" javaType="java.lang.String"/>
+            <arg column="summary" javaType="java.lang.String"/>
+            <arg column="confidence" javaType="java.math.BigDecimal"/>
+            <arg column="providerResponseId" javaType="java.lang.String"/>
+            <arg column="failureCode" javaType="java.lang.String"/>
+            <arg column="leaseUntil" javaType="java.time.LocalDateTime"/>
+            <arg column="startedAt" javaType="java.time.LocalDateTime"/>
+            <arg column="completedAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <insert id="insertPending" useGeneratedKeys="true" keyProperty="reviewId">
+        INSERT INTO dispute_ai_reviews
+        (dispute_id, request_key, status, source, provider, model, prompt_version, input_hash)
+        VALUES
+        (#{disputeId}, #{requestKey}, 'PENDING', 'SIMULATED_LLM', #{provider}, #{model},
+         #{promptVersion}, #{inputHash})
+    </insert>
+
+    <select id="currentDatabaseTime" resultType="java.time.LocalDateTime">
+        SELECT NOW(6)
+    </select>
+
+    <!-- 후보 조회는 잠그지 않고, 실제 선점은 Work부터 다시 잠근 짧은 Transaction에서 한다. -->
+    <select id="findCandidates" resultMap="candidate">
+        SELECT r.id AS reviewId,
+               r.dispute_id AS disputeId,
+               d.work_case_id AS workCaseId
+        FROM dispute_ai_reviews r
+        JOIN disputes d ON d.id = r.dispute_id
+        WHERE r.status = 'PENDING'
+           OR (r.status = 'PROCESSING' AND r.lease_until &lt;= #{eligibilityTime})
+        ORDER BY r.created_at ASC, r.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findByIdForUpdate" resultMap="execution">
+        SELECT id AS reviewId,
+               dispute_id AS disputeId,
+               request_key AS requestKey,
+               status AS status,
+               source AS source,
+               provider AS provider,
+               model AS model,
+               prompt_version AS promptVersion,
+               input_hash AS inputHash,
+               decision AS decision,
+               CAST(reason_codes AS CHAR) AS reasonCodesJson,
+               summary AS summary,
+               confidence AS confidence,
+               provider_response_id AS providerResponseId,
+               failure_code AS failureCode,
+               lease_until AS leaseUntil,
+               started_at AS startedAt,
+               completed_at AS completedAt
+        FROM dispute_ai_reviews
+        WHERE id = #{reviewId}
+        FOR UPDATE
+    </select>
+
+    <update id="claimPending">
+        UPDATE dispute_ai_reviews
+        SET status = 'PROCESSING',
+            lease_until = #{leaseUntil},
+            started_at = NOW(6),
+            updated_at = NOW(6)
+        WHERE id = #{reviewId}
+          AND request_key = #{requestKey}
+          AND status = 'PENDING'
+    </update>
+
+    <update id="complete">
+        UPDATE dispute_ai_reviews
+        SET status = 'COMPLETED',
+            decision = #{decision},
+            reason_codes = #{reasonCodesJson},
+            summary = #{summary},
+            confidence = #{confidence},
+            provider_response_id = #{providerResponseId},
+            failure_code = NULL,
+            lease_until = NULL,
+            completed_at = NOW(6),
+            updated_at = NOW(6)
+        WHERE id = #{reviewId}
+          AND request_key = #{requestKey}
+          AND status = 'PROCESSING'
+    </update>
+
+    <update id="markFailed">
+        UPDATE dispute_ai_reviews
+        SET status = 'FAILED',
+            decision = NULL,
+            reason_codes = NULL,
+            summary = NULL,
+            confidence = NULL,
+            provider_response_id = NULL,
+            failure_code = #{failureCode},
+            lease_until = NULL,
+            started_at = COALESCE(started_at, NOW(6)),
+            completed_at = NOW(6),
+            updated_at = NOW(6)
+        WHERE id = #{reviewId}
+          AND request_key = #{requestKey}
+          AND status IN ('PENDING', 'PROCESSING')
+    </update>
+
+</mapper>

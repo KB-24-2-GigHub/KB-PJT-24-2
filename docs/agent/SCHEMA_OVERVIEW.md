@@ -78,7 +78,7 @@ Applied or shared versioned migrations are immutable. A newer `V*.sql` file or a
 | Work and contract                        | `work_cases`, `work_invitations`, `work_contracts`                                                                                                  |
 | Wallet, mock banking, escrow, settlement | `wallets`, `mock_bank_accounts`, `mock_bank_transactions`, `funding_orders`, `withdrawal_requests`, `wallet_transactions`, `escrows`, `settlements` |
 | Cross-domain request control             | `idempotency_requests`                                                                                                                              |
-| Attendance and dispute                   | `qr_tokens`, `attendance_records`, `disputes`                                                                                                       |
+| Attendance and dispute                   | `qr_tokens`, `attendance_records`, `disputes`, `dispute_ai_reviews`                                                                                 |
 | Documents and signatures                 | `documents`, `document_versions`, `document_signatures`, `document_shares`, `document_access_logs`                                                  |
 
 Inspect the ordered migrations before relying on an exact column, key, index, generated expression, or allowed status value.
@@ -162,6 +162,11 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - Generated open-slot uniqueness permits at most one `OPEN` or `UNDER_REVIEW` dispute per work case.
 - Every new dispute requires a trimmed title of 1 to 100 characters. Existing disputes without an
   approved original title block the migration and require owner-directed manual reconciliation.
+- `dispute_ai_reviews` keeps one active DEMO review per dispute while preserving completed and failed
+  execution history. Its foreign key uses `RESTRICT`, so audit rows cannot be erased by deleting a dispute.
+- Review request hashes, leases, lifecycle checks, provider response IDs, decisions, reason codes, and
+  failure messages are audit evidence. The application performs the external provider call outside a
+  database transaction and only applies a result after re-locking and rechecking the active request.
 
 ### Documents and signatures
 

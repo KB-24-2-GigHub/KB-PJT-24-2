@@ -66,6 +66,22 @@
         FOR UPDATE
     </select>
 
+    <update id="transitionScheduledToOnHold">
+        UPDATE settlements
+        SET status = 'ON_HOLD',
+            updated_at = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'SCHEDULED'
+    </update>
+
+    <update id="transitionOnHoldToScheduled">
+        UPDATE settlements
+        SET status = 'SCHEDULED',
+            updated_at = NOW(6)
+        WHERE id = #{settlementId}
+          AND status = 'ON_HOLD'
+    </update>
+
     <!--
         M5 퇴근 완료가 정산 지급을 예약한다. WAITING이면서 아직 예약되지 않은 행만
         SCHEDULED로 옮기고 지급 예정 시각을 함께 채운다. 금액과 승인·처리·완료 필드는

@@ -1,85 +1,142 @@
 <script setup>
-/**
- * [F] 임금분쟁 신고  ·  /worker/work/work-cases/:workCaseId/report  ·  WORKER(본인 근무)
- * 경위서 작성·제출. 기록·알림용 — 정산 영향 없음. 제출 시 사장 알림(WAGE_REPORTED).
- * 연계 API: POST /work-cases/{id}/disputes  →  @/services/workCases (createReport)
- * route.params.workCaseId 사용. 공통: BaseButton · 제출 후 useUiStore().toast + 뒤로가기.
- */
-import { computed, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+/** WORKER가 분쟁을 접수하고 같은 화면에서 저장된 DEMO 검토 상태를 확인합니다. */
+import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import { createReport } from '@/services/workCases'
+import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
+import { createReport, listReports } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
 
-const MIN_LENGTH = 10
+const TITLE_MAX_LENGTH = 100
+const CONTENT_MAX_LENGTH = 2000
 
 const route = useRoute()
-const router = useRouter()
 const ui = useUiStore()
-
 const workCaseId = route.params.workCaseId
+
+const title = ref('')
 const content = ref('')
+const reports = ref([])
+const loadingReports = ref(false)
 const submitting = ref(false)
 
-const trimmedLength = computed(() => content.value.trim().length)
-const canSubmit = computed(() => trimmedLength.value >= MIN_LENGTH && !submitting.value)
+const titleLength = computed(() => title.value.trim().length)
+const contentLength = computed(() => content.value.trim().length)
+const hasOpenReport = computed(() =>
+  reports.value.some((report) => ['OPEN', 'UNDER_REVIEW'].includes(report.status))
+)
+const canSubmit = computed(
+  () =>
+    titleLength.value >= 1 &&
+    titleLength.value <= TITLE_MAX_LENGTH &&
+    contentLength.value >= 1 &&
+    contentLength.value <= CONTENT_MAX_LENGTH &&
+    !hasOpenReport.value &&
+    !submitting.value
+)
+
+async function loadReports({ notify = false } = {}) {
+  loadingReports.value = true
+  try {
+    const page = await listReports(workCaseId)
+    reports.value = page.content ?? []
+  } catch {
+    if (notify) ui.toast('분쟁 상태를 불러오지 못했습니다.', { type: 'warning' })
+  } finally {
+    loadingReports.value = false
+  }
+}
 
 async function onSubmit() {
   if (!canSubmit.value) {
-    ui.toast(`경위서를 ${MIN_LENGTH}자 이상 작성해주세요.`, { type: 'warning' })
+    ui.toast('제목과 경위를 입력 범위에 맞게 작성해주세요.', { type: 'warning' })
     return
   }
 
   submitting.value = true
   try {
-    await createReport(workCaseId, { content: content.value.trim() })
-    ui.toast('신고가 접수되었습니다.', { type: 'success' })
-    router.back()
+    await createReport(workCaseId, {
+      title: title.value.trim(),
+      content: content.value.trim()
+    })
+    title.value = ''
+    content.value = ''
+    ui.toast('분쟁이 접수되어 예치금 흐름을 확인하고 있습니다.', { type: 'success' })
+    await loadReports()
   } catch (error) {
-    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
+    const duplicate = error?.code === 'DISPUTE_ALREADY_OPEN'
     ui.toast(
-      unavailable
-        ? '임금분쟁 신고는 현재 준비 중인 기능입니다.'
+      duplicate
+        ? '이미 처리 중인 분쟁이 있습니다. 아래 상태를 확인해주세요.'
         : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
-      { type: unavailable ? 'info' : 'danger' }
+      { type: duplicate ? 'warning' : 'danger' }
     )
+    if (duplicate) await loadReports()
   } finally {
     submitting.value = false
   }
 }
+
+onMounted(loadReports)
 </script>
 
 <template>
   <div class="sub-page">
-    <AppBackHeader title="임금분쟁 신고" />
+    <AppBackHeader title="임금분쟁 DEMO" />
     <main class="screen-body">
       <p class="notice">
-        신고 절차에는 시간이 소요될 수 있어요 · 신고 전에 먼저 사장님과 연락해보는 것을 권장드려요
+        접수 중에는 GigHub가 예치금 흐름을 일시 보류합니다. AI 검토는 외부 조정 시스템을 흉내 내는
+        DEMO이며 법적 판단이나 자문이 아닙니다.
       </p>
 
-      <label class="field">
-        <span class="label">경위서</span>
-        <textarea
-          v-model="content"
-          class="textarea"
-          rows="10"
-          placeholder="언제, 어떤 임금 문제가 있었는지 구체적으로 작성해주세요."
-        ></textarea>
-        <span class="counter">{{ trimmedLength }}자 (최소 {{ MIN_LENGTH }}자)</span>
-      </label>
+      <DisputeTimeline
+        :reports="reports"
+        :loading="loadingReports"
+        @refresh="loadReports({ notify: true })"
+      />
 
-      <BaseButton
-        class="submit"
-        variant="danger"
-        size="lg"
-        block
-        :disabled="!canSubmit"
-        @click="onSubmit"
-      >
-        {{ submitting ? '접수 중…' : '신고 제출' }}
-      </BaseButton>
+      <section class="form-card">
+        <h2>새 분쟁 접수</h2>
+        <p v-if="hasOpenReport" class="open-guide">
+          처리 중인 분쟁이 있어 새 신고는 접수할 수 없습니다.
+        </p>
+
+        <label class="field">
+          <span class="label">제목</span>
+          <input
+            v-model="title"
+            class="input"
+            :maxlength="TITLE_MAX_LENGTH"
+            placeholder="예: 약정 일급 지급 확인 요청"
+          />
+          <span class="counter">{{ titleLength }}/{{ TITLE_MAX_LENGTH }}자</span>
+        </label>
+
+        <label class="field">
+          <span class="label">경위</span>
+          <textarea
+            v-model="content"
+            class="textarea"
+            rows="8"
+            :maxlength="CONTENT_MAX_LENGTH"
+            placeholder="언제, 어떤 임금 문제가 있었는지 작성해주세요."
+          ></textarea>
+          <span class="counter">{{ contentLength }}/{{ CONTENT_MAX_LENGTH }}자</span>
+        </label>
+
+        <BaseButton
+          class="submit"
+          variant="danger"
+          size="lg"
+          block
+          :disabled="!canSubmit"
+          @click="onSubmit"
+        >
+          {{ submitting ? '접수 중…' : '분쟁 접수' }}
+        </BaseButton>
+      </section>
     </main>
   </div>
 </template>
@@ -91,12 +148,27 @@ async function onSubmit() {
   gap: var(--space-lg);
   padding: var(--space-lg);
 }
-.notice {
+.notice,
+.open-guide {
   padding: var(--space-md);
-  background: var(--color-bg);
   border-radius: var(--radius-md);
-  font-size: var(--text-sm);
+  background: var(--color-bg);
   color: var(--color-text-sub);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+.form-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  padding: var(--space-lg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.form-card h2 {
+  font-size: var(--text-lg);
+  font-weight: var(--weight-bold);
 }
 .field {
   display: flex;
@@ -104,29 +176,30 @@ async function onSubmit() {
   gap: var(--space-xs);
 }
 .label {
+  color: var(--color-text-sub);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-text-sub);
 }
+.input,
 .textarea {
   width: 100%;
   padding: var(--space-md);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   background: var(--color-surface);
+}
+.textarea {
   resize: vertical;
   line-height: 1.6;
 }
+.input:focus,
 .textarea:focus {
   outline: none;
   border-color: var(--color-primary);
 }
 .counter {
   align-self: flex-end;
-  font-size: var(--text-sm);
   color: var(--color-text-sub);
-}
-.submit {
-  margin-top: var(--space-sm);
+  font-size: var(--text-sm);
 }
 </style>

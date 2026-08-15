@@ -4,70 +4,121 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import WorkerReportView from '@/views/worker/workCase/WorkerReportView.vue'
 
-const back = vi.fn()
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { workCaseId: '101' } }),
-  useRouter: () => ({ back })
+  useRouter: () => ({ back: vi.fn() })
 }))
 
-vi.mock('@/services/workCases', () => ({ createReport: vi.fn() }))
+vi.mock('@/services/workCases', () => ({ createReport: vi.fn(), listReports: vi.fn() }))
 
-import { createReport } from '@/services/workCases'
+import { createReport, listReports } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
+
+const EMPTY_PAGE = {
+  content: [],
+  page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
+}
 
 describe('WorkerReportView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    back.mockClear()
-    createReport.mockReset()
-    createReport.mockResolvedValue({ reportId: 1 })
+    createReport.mockReset().mockResolvedValue({ reportId: 1 })
+    listReports.mockReset().mockResolvedValue(EMPTY_PAGE)
   })
 
-  it('신고 전 사장님 선연락을 권장하는 안내를 보여준다', () => {
+  it('법적 판단이 아닌 DEMO와 예치금 보류를 안내한다', async () => {
     const wrapper = mount(WorkerReportView)
+    await flushPromises()
 
-    expect(wrapper.text()).toContain('신고 절차에는 시간이 소요될 수 있어요')
-    expect(wrapper.text()).toContain('신고 전에 먼저 사장님과 연락해보는 것을 권장드려요')
-    expect(wrapper.text()).not.toContain('정산 진행에는 영향을 주지 않습니다')
+    expect(wrapper.text()).toContain('예치금 흐름을 일시 보류')
+    expect(wrapper.text()).toContain('법적 판단이나 자문이 아닙니다')
   })
 
-  it('경위서가 최소 길이 미만이면 제출 버튼이 비활성화된다', async () => {
+  it('제목과 경위가 모두 있어야 제출할 수 있다', async () => {
     const wrapper = mount(WorkerReportView)
+    await flushPromises()
     const submit = () => wrapper.find('button.submit')
 
+    await wrapper.find('input').setValue('임금 확인')
     expect(submit().attributes('disabled')).toBeDefined()
 
-    await wrapper.find('textarea').setValue('짧음')
-    expect(submit().attributes('disabled')).toBeDefined()
+    await wrapper.find('textarea').setValue('약정 일급 지급 여부를 확인해주세요.')
+    expect(submit().attributes('disabled')).toBeUndefined()
   })
 
-  it('충분히 작성하면 신고를 제출하고 뒤로 이동한다', async () => {
+  it('신고를 제출한 뒤 같은 화면에서 저장 상태를 다시 읽는다', async () => {
+    listReports.mockResolvedValueOnce(EMPTY_PAGE).mockResolvedValueOnce({
+      ...EMPTY_PAGE,
+      content: [
+        {
+          reportId: 1,
+          title: '임금 확인',
+          content: '약정 일급 지급 여부를 확인해주세요.',
+          status: 'OPEN',
+          createdAt: '2026-08-15T01:00:00Z',
+          demoReview: null
+        }
+      ]
+    })
     const wrapper = mount(WorkerReportView)
+    await flushPromises()
 
-    await wrapper.find('textarea').setValue('임금이 제때 지급되지 않았습니다.')
-    expect(wrapper.find('button.submit').attributes('disabled')).toBeUndefined()
-
+    await wrapper.find('input').setValue(' 임금 확인 ')
+    await wrapper.find('textarea').setValue(' 약정 일급 지급 여부를 확인해주세요. ')
     await wrapper.find('button.submit').trigger('click')
     await flushPromises()
 
     expect(createReport).toHaveBeenCalledWith('101', {
-      content: '임금이 제때 지급되지 않았습니다.'
+      title: '임금 확인',
+      content: '약정 일급 지급 여부를 확인해주세요.'
     })
-    expect(back).toHaveBeenCalled()
+    expect(listReports).toHaveBeenCalledTimes(2)
+    expect(wrapper.text()).toContain('접수됨 · AI 검토 대기')
   })
 
-  it('미구현 신고 operation은 성공으로 가장하지 않고 준비 중으로 안내한다', async () => {
-    createReport.mockRejectedValueOnce({ code: 'FEATURE_UNAVAILABLE' })
+  it('추가 자료 요청 결과와 사유 코드를 저장 응답 그대로 표시한다', async () => {
+    listReports.mockResolvedValueOnce({
+      ...EMPTY_PAGE,
+      content: [
+        {
+          reportId: 2,
+          title: '근태 확인',
+          content: '퇴근 기록을 확인해주세요.',
+          status: 'UNDER_REVIEW',
+          createdAt: '2026-08-15T01:00:00Z',
+          demoReview: {
+            source: 'SIMULATED_LLM',
+            decision: 'NEEDS_MORE_INFO',
+            reasonCodes: ['ATTENDANCE_EVIDENCE_NEEDED'],
+            summary: '근태 기록을 추가로 확인해야 합니다.',
+            confidence: 0.7,
+            reviewedAt: '2026-08-15T01:00:02Z'
+          }
+        }
+      ]
+    })
     const wrapper = mount(WorkerReportView)
+    await flushPromises()
 
-    await wrapper.find('textarea').setValue('임금이 제때 지급되지 않았습니다.')
+    expect(wrapper.text()).toContain('추가 자료 필요 · 보류 유지')
+    expect(wrapper.text()).toContain('근태 기록을 추가로 확인해야 합니다.')
+    expect(wrapper.text()).toContain('ATTENDANCE_EVIDENCE_NEEDED')
+    expect(wrapper.find('button.submit').attributes('disabled')).toBeDefined()
+  })
+
+  it('중복 신고는 처리 중 상태를 확인하라고 안내한다', async () => {
+    createReport.mockRejectedValueOnce({ code: 'DISPUTE_ALREADY_OPEN' })
+    const wrapper = mount(WorkerReportView)
+    await flushPromises()
+
+    await wrapper.find('input').setValue('임금 확인')
+    await wrapper.find('textarea').setValue('약정 일급 지급 여부를 확인해주세요.')
     await wrapper.find('button.submit').trigger('click')
     await flushPromises()
 
-    expect(back).not.toHaveBeenCalled()
     expect(useUiStore().toasts.at(-1)).toMatchObject({
-      message: '임금분쟁 신고는 현재 준비 중인 기능입니다.',
-      type: 'info'
+      message: '이미 처리 중인 분쟁이 있습니다. 아래 상태를 확인해주세요.',
+      type: 'warning'
     })
   })
 })

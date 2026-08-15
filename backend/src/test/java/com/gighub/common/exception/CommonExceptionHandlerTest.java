@@ -196,6 +196,7 @@ class CommonExceptionHandlerTest {
                         "ATTENDANCE_ALREADY_COMPLETED",
                         "ATTENDANCE_STATE_CONFLICT",
                         "ATTENDANCE_TEMPORARILY_UNAVAILABLE",
+                        "DISPUTE_ALREADY_OPEN",
                         "SETTLEMENT_ON_HOLD",
                         "SETTLEMENT_NOT_READY",
                         "SETTLEMENT_ALREADY_PROCESSED",

@@ -14,6 +14,7 @@ vi.mock('@/services/workCases', () => ({
   getWorkCase: vi.fn(),
   updateWorkCase: vi.fn(),
   deleteWorkCase: vi.fn(),
+  listReports: vi.fn(),
   createInvite: vi.fn(),
   reissueInvite: vi.fn(),
   approveSettlement: vi.fn(),
@@ -37,6 +38,7 @@ import {
   createInvite,
   deleteWorkCase,
   getWorkCase,
+  listReports,
   reissueInvite,
   updateWorkCase
 } from '@/services/workCases'
@@ -128,6 +130,10 @@ describe('OwnerWorkCaseDetailView', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-07-22T00:00:00Z'))
     getWorkCase.mockReset().mockResolvedValue({ ...DRAFT_DETAIL })
+    listReports.mockReset().mockResolvedValue({
+      content: [],
+      page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
+    })
     updateWorkCase.mockReset().mockResolvedValue(undefined)
     deleteWorkCase.mockReset().mockResolvedValue(undefined)
     createInvite.mockReset().mockResolvedValue({
@@ -668,5 +674,40 @@ describe('OwnerWorkCaseDetailView', () => {
     await flushPromises()
 
     expect(toastMessages().join(' ')).toContain('취소 처리했어요')
+  })
+
+  it('OWNER도 WORKER와 같은 DEMO 분쟁 결과를 확인한다', async () => {
+    getWorkCase.mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+    listReports.mockResolvedValueOnce({
+      content: [
+        {
+          reportId: 9,
+          title: '임금 확인',
+          content: '약정 일급 지급 여부를 확인해주세요.',
+          status: 'RESOLVED',
+          resolution: '기존 정산 흐름을 재개합니다.',
+          requesterRole: 'WORKER',
+          createdAt: '2026-08-15T01:00:00Z',
+          resolvedAt: '2026-08-15T01:00:02Z',
+          demoReview: {
+            source: 'SIMULATED_LLM',
+            decision: 'RESOLVE',
+            reasonCodes: ['AGREED_WAGE_UNPAID'],
+            summary: '약정 일급의 지급 여부를 확인했습니다.',
+            confidence: 0.91,
+            reviewedAt: '2026-08-15T01:00:02Z'
+          }
+        }
+      ],
+      page: { number: 0, size: 20, totalElements: 1, totalPages: 1 }
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(listReports).toHaveBeenCalledWith('42')
+    expect(wrapper.text()).toContain('AI DEMO')
+    expect(wrapper.text()).toContain('약정 일급의 지급 여부를 확인했습니다.')
+    expect(wrapper.text()).toContain('AGREED_WAGE_UNPAID')
   })
 })
