@@ -18,7 +18,7 @@ vi.mock('axios', () => ({
   }
 }))
 
-import { authRequiredRedirect, idempotentPost } from '@/services/http'
+import { authRequiredRedirect, errorMessage, idempotentPost } from '@/services/http'
 
 describe('authRequiredRedirect', () => {
   it('초대 화면의 401은 WORKER 로그인과 원래 경로로 보낸다', () => {
@@ -78,5 +78,30 @@ describe('idempotentPost', () => {
         headers: expect.objectContaining({ 'Idempotency-Key': 'accept-intent-1' })
       })
     )
+  })
+})
+
+describe('errorMessage', () => {
+  it('서버가 사유별로 구분해 준 문구를 그대로 쓴다', () => {
+    // 400 workplaceId(만료·후보 없음)와 409(중복 공유·복수 근무 건)를 한 문구로 뭉개면
+    // 사용자가 무엇을 해야 하는지 알 수 없다.
+    const expired = { response: { data: { message: '만료된 보건증은 공유할 수 없습니다.' } } }
+    const duplicated = {
+      response: { data: { message: '이미 이 사업장에 공유 중인 보건증입니다.' } }
+    }
+
+    expect(errorMessage(expired, '공유에 실패했어요.')).toBe('만료된 보건증은 공유할 수 없습니다.')
+    expect(errorMessage(duplicated, '공유에 실패했어요.')).toBe(
+      '이미 이 사업장에 공유 중인 보건증입니다.'
+    )
+  })
+
+  it.each([
+    ['본문이 없는 네트워크 오류', new Error('network')],
+    ['message 가 없는 응답', { response: { data: { code: 'INTERNAL_ERROR' } } }],
+    ['공백뿐인 message', { response: { data: { message: '   ' } } }],
+    ['message 가 문자열이 아닌 응답', { response: { data: { message: { ko: 'x' } } } }]
+  ])('%s 는 화면 기본 문구로 떨어진다', (_name, error) => {
+    expect(errorMessage(error, '공유에 실패했어요.')).toBe('공유에 실패했어요.')
   })
 })

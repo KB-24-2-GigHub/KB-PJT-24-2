@@ -1,11 +1,13 @@
 <script setup>
 /**
  * [G] 알바생 문서함  ·  /worker/documents  ·  WORKER  (탭 화면)
- * 근로계약서(자동 저장) + 보건증(업로드·발급일 수정·삭제·공유·공유 취소).
- * 레이아웃은 사장 문서함과 동일(탭 + 썸네일 카드). 등록·삭제는 확인 모달을 거친다.
- * 업로드=보건증만. 계약서 삭제=근무 종료 후. 카드에 공유중 지점 표시.
+ * 근로계약서(시스템 생성 최종본, 읽기 전용) + 보건증(등록·발급일 수정·논리 삭제·공유·철회).
  * 연계 API: GET/POST/PATCH/DELETE /documents · GET/POST/DELETE /documents/{id}/shares
- *   →  @/services/documents (전부)
+ *   · GET /worker/workplaces  →  @/services/documents · @/services/worker
+ * 정책(#113·#183): 등록·수정·삭제·공유는 보건증만이다. 계약서에는 어떤 조작 버튼도 걸지 않는다
+ *   — 서버가 409 CONTRACT_RETENTION_REQUIRED 로 거부한다. 삭제는 서버 capabilities.canDelete 로,
+ *   공유·발급일 수정은 서버가 준 source·docType 으로 정한다(PATCH 에 대응하는 capability 는
+ *   계약에 없다). 셋 다 서버 값이며 화면이 권한을 계산하지 않는다.
  * 공통: BaseBottomSheet(보건증 등록/공유) · BaseModal(발급일·삭제 확인) · 카드 클릭 → 뷰어
  */
 import {
@@ -17,7 +19,7 @@ import {
   Trash2,
   Upload
 } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppField from '@/components/common/AppField.vue'
@@ -34,8 +36,10 @@ import {
   updateDocumentIssuedDate,
   uploadDocument
 } from '@/services/documents'
+import { errorMessage, fieldErrorMap } from '@/services/http'
 import { listWorkerWorkplaces } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
+import { DOC_IMAGE_MIME_TYPES, DOC_TYPE } from '@/utils/constants'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
@@ -49,47 +53,55 @@ const loadError = ref(null)
 
 const TABS = [
   { value: 'ALL', label: '전체' },
-  { value: 'CONTRACT', label: '근로계약서' },
-  { value: 'HEALTH_CERT', label: '보건증' }
+  { value: 'EMPLOYMENT_CONTRACT', label: '근로계약서' },
+  { value: 'HEALTH_CERTIFICATE', label: '보건증' }
 ]
 const activeTab = ref('ALL')
-const filteredDocs = computed(() => {
-  if (activeTab.value === 'ALL') return docs.value
-  return docs.value.filter((d) => d.docType === activeTab.value)
-})
-
-const IMAGE_EXT = ['jpg', 'jpeg', 'png']
 
 onMounted(load)
+// 목록은 Page 단위(기본 20건)라 유형 필터를 화면에서 걸면 뒤 Page 문서가 사라진다.
+watch(activeTab, load)
+
+/** 소유 보건증만 공유 이력을 조회할 수 있다(다른 문서는 서버가 거부한다). */
+function ownsHealthCertificate(doc) {
+  return doc.docType === 'HEALTH_CERTIFICATE' && doc.source === 'OWN'
+}
+
+/** 카드에 '공유중 지점'을 표시하려면 보건증별 공유 현황이 필요하다. 상태는 서버 계산값이다. */
+async function loadActiveShares(doc) {
+  try {
+    const { content } = await getDocumentShares(doc.documentId)
+    doc.activeShares = (content ?? []).filter((share) => share.status === 'ACTIVE')
+  } catch {
+    doc.activeShares = []
+  }
+}
 
 async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const { content } = await listDocuments()
+    const { content } = await listDocuments({
+      docType: activeTab.value === 'ALL' ? undefined : activeTab.value
+    })
     const list = content ?? []
-    // 카드에 '공유중 지점' 을 표시하려면 보건증별 공유 현황이 필요하다.
-    await Promise.all(
-      list
-        .filter((d) => d.docType === 'HEALTH_CERT')
-        .map(async (d) => {
-          try {
-            d.shares = await getDocumentShares(d.documentId)
-          } catch {
-            d.shares = []
-          }
-        })
-    )
+    await Promise.all(list.filter(ownsHealthCertificate).map(loadActiveShares))
     docs.value = list
   } catch (error) {
     loadError.value = error
-    const unavailable = error?.code === 'FEATURE_UNAVAILABLE'
-    ui.toast(unavailable ? '문서함은 현재 준비 중인 기능입니다.' : '문서를 불러오지 못했어요.', {
-      type: unavailable ? 'info' : 'danger'
-    })
+    docs.value = []
+    ui.toast('문서를 불러오지 못했어요.', { type: 'danger' })
   } finally {
     loading.value = false
   }
+}
+
+function docTypeLabel(doc) {
+  return DOC_TYPE[doc.docType]?.label ?? '문서'
+}
+
+function isImage(doc) {
+  return DOC_IMAGE_MIME_TYPES.includes(doc.mimeType)
 }
 
 function goViewer(doc) {
@@ -134,6 +146,14 @@ function onFile(e) {
   fileName.value = picked.name
 }
 
+/** 서버 fieldErrors 를 입력 칸에 그대로 붙인다. 만료일은 서버가 계산하므로 보내지 않는다. */
+function applyUploadFieldErrors(error) {
+  const fields = fieldErrorMap(error)
+  fileError.value = fields.file ?? ''
+  issuedError.value = fields.issuedDate ?? ''
+  return Boolean(fields.file || fields.issuedDate)
+}
+
 async function submitUpload() {
   fileError.value = ''
   issuedError.value = ''
@@ -148,15 +168,17 @@ async function submitUpload() {
   submitting.value = true
   try {
     const formData = new FormData()
-    formData.append('docType', 'HEALTH_CERT')
+    formData.append('docType', 'HEALTH_CERTIFICATE')
     formData.append('file', file.value)
     formData.append('issuedDate', issuedDate.value)
     await uploadDocument(formData)
     ui.toast('보건증을 등록했어요.', { type: 'success' })
     registerOpen.value = false
     await load()
-  } catch {
-    ui.toast('보건증 등록에 실패했어요.', { type: 'danger' })
+  } catch (error) {
+    if (!applyUploadFieldErrors(error)) {
+      ui.toast(errorMessage(error, '보건증 등록에 실패했어요.'), { type: 'danger' })
+    }
   } finally {
     submitting.value = false
   }
@@ -166,33 +188,41 @@ async function submitUpload() {
 const editDoc = ref(null)
 const editDate = ref('')
 const editOpen = ref(false)
+const editError = ref('')
 const editSaving = ref(false)
 
 function openEdit(doc) {
   editDoc.value = doc
   editDate.value = doc.issuedDate ?? ''
+  editError.value = ''
   editOpen.value = true
 }
 
 async function saveEdit() {
   if (!editDate.value) {
-    ui.toast('발급일을 입력해 주세요.', { type: 'warning' })
+    editError.value = '발급일을 입력해 주세요.'
     return
   }
   editSaving.value = true
+  editError.value = ''
   try {
     await updateDocumentIssuedDate(editDoc.value.documentId, { issuedDate: editDate.value })
     ui.toast('발급일을 수정했어요.', { type: 'success' })
     editOpen.value = false
     await load()
-  } catch {
-    ui.toast('발급일 수정에 실패했어요.', { type: 'danger' })
+  } catch (error) {
+    const fields = fieldErrorMap(error)
+    if (fields.issuedDate) {
+      editError.value = fields.issuedDate
+    } else {
+      ui.toast(errorMessage(error, '발급일 수정에 실패했어요.'), { type: 'danger' })
+    }
   } finally {
     editSaving.value = false
   }
 }
 
-/* ---- 삭제 확인 모달 (계약서·보건증 공용) ---- */
+/* ---- 보건증 삭제 확인 모달 ---- */
 const deleteDoc = ref(null)
 const deleteOpen = ref(false)
 const deleting = ref(false)
@@ -206,15 +236,15 @@ async function confirmDelete() {
   deleting.value = true
   try {
     await deleteDocument(deleteDoc.value.documentId)
-    ui.toast('문서를 삭제했어요.', { type: 'success' })
+    ui.toast('보건증을 삭제했어요. 공유도 함께 해제됐어요.', { type: 'success' })
     deleteOpen.value = false
     await load()
-  } catch (e) {
-    // 계약서는 근무 종료 후에만 삭제 가능 — 서버가 최종 검증(409).
-    if (e?.response?.status === 409) {
-      ui.toast('진행 중인 근무가 있어 계약서를 삭제할 수 없어요.', { type: 'warning' })
+  } catch (error) {
+    // 계약서 삭제 요청이 남는 방어 경로 — 서버는 보존 정책을 409 로 알린다.
+    if (error?.code === 'CONTRACT_RETENTION_REQUIRED') {
+      ui.toast('근로계약서는 보존 정책에 따라 삭제할 수 없어요.', { type: 'warning' })
     } else {
-      ui.toast('삭제에 실패했어요.', { type: 'danger' })
+      ui.toast(errorMessage(error, '삭제에 실패했어요.'), { type: 'danger' })
     }
   } finally {
     deleting.value = false
@@ -228,7 +258,9 @@ const shareTargets = ref([])
 const shareLoading = ref(false)
 const shareBusy = ref(false)
 
-const sharedIds = computed(() => new Set((shareDoc.value?.shares ?? []).map((s) => s.workplaceId)))
+const activeShares = computed(() => shareDoc.value?.activeShares ?? [])
+const sharedIds = computed(() => new Set(activeShares.value.map((s) => s.workplaceId)))
+// 서버가 최종 판정하지만, 이미 공유한 지점을 다시 눌러 409 를 만나게 하지는 않는다.
 const availableTargets = computed(() =>
   shareTargets.value.filter((w) => !sharedIds.value.has(w.workplaceId))
 )
@@ -238,14 +270,11 @@ async function openShare(doc) {
   shareOpen.value = true
   shareLoading.value = true
   try {
-    const [targets, shares] = await Promise.all([
-      listWorkerWorkplaces(),
-      getDocumentShares(doc.documentId)
-    ])
-    shareTargets.value = targets
-    shareDoc.value.shares = shares
-  } catch {
-    ui.toast('공유 정보를 불러오지 못했어요.', { type: 'warning' })
+    const [workplaces] = await Promise.all([listWorkerWorkplaces(), loadActiveShares(doc)])
+    shareTargets.value = workplaces.content ?? []
+  } catch (error) {
+    shareTargets.value = []
+    ui.toast(errorMessage(error, '공유 정보를 불러오지 못했어요.'), { type: 'warning' })
   } finally {
     shareLoading.value = false
   }
@@ -256,13 +285,10 @@ async function doShare(workplace) {
   try {
     await shareDocument(shareDoc.value.documentId, { workplaceId: workplace.workplaceId })
     ui.toast(`${workplace.workplaceName}에 공유했어요.`, { type: 'success' })
-    shareDoc.value.shares = await getDocumentShares(shareDoc.value.documentId)
-  } catch (e) {
-    if (e?.response?.status === 409) {
-      ui.toast('이미 공유한 지점이에요.', { type: 'warning' })
-    } else {
-      ui.toast('공유에 실패했어요.', { type: 'danger' })
-    }
+    await loadActiveShares(shareDoc.value)
+  } catch (error) {
+    // 만료 보건증·후보 없음(400)과 중복 공유·복수 근무 건(409)을 서버 문구 그대로 구분한다.
+    ui.toast(errorMessage(error, '공유에 실패했어요.'), { type: 'danger' })
   } finally {
     shareBusy.value = false
   }
@@ -273,9 +299,9 @@ async function doRevoke(share) {
   try {
     await revokeShare(shareDoc.value.documentId, share.workplaceId)
     ui.toast('공유를 취소했어요.', { type: 'success' })
-    shareDoc.value.shares = await getDocumentShares(shareDoc.value.documentId)
-  } catch {
-    ui.toast('공유 취소에 실패했어요.', { type: 'danger' })
+    await loadActiveShares(shareDoc.value)
+  } catch (error) {
+    ui.toast(errorMessage(error, '공유 취소에 실패했어요.'), { type: 'danger' })
   } finally {
     shareBusy.value = false
   }
@@ -298,12 +324,7 @@ async function doRevoke(share) {
         </button>
       </div>
 
-      <button
-        type="button"
-        class="upload-btn"
-        :disabled="loadError?.code === 'FEATURE_UNAVAILABLE'"
-        @click="openRegister"
-      >
+      <button type="button" class="upload-btn" @click="openRegister">
         <Upload :size="16" /> 보건증 등록
       </button>
     </div>
@@ -311,48 +332,46 @@ async function doRevoke(share) {
     <p v-if="loading" class="loading">불러오는 중…</p>
 
     <template v-else>
-      <EmptyState
-        v-if="loadError"
-        :message="
-          loadError.code === 'FEATURE_UNAVAILABLE'
-            ? '문서함은 현재 준비 중인 기능입니다.'
-            : '문서를 불러오지 못했어요.'
-        "
-      />
+      <EmptyState v-if="loadError" message="문서를 불러오지 못했어요." />
 
-      <EmptyState v-else-if="filteredDocs.length === 0" message="표시할 문서가 없어요.">
+      <EmptyState v-else-if="docs.length === 0" message="표시할 문서가 없어요.">
         보건증을 등록하거나, 근무를 시작하면 근로계약서가 자동 저장돼요.
       </EmptyState>
 
       <ul v-else class="doc-list">
-        <li v-for="doc in filteredDocs" :key="doc.documentId" class="doc-card">
+        <li
+          v-for="doc in docs"
+          :key="`${doc.documentId}-${doc.workCaseId ?? 'own'}`"
+          class="doc-card"
+        >
           <button type="button" class="doc-main" @click="goViewer(doc)">
             <span class="thumb">
-              <ImageIcon v-if="IMAGE_EXT.includes(doc.fileExt)" :size="20" />
+              <ImageIcon v-if="isImage(doc)" :size="20" />
               <FileText v-else :size="20" />
             </span>
 
             <span class="doc-info">
               <span class="doc-name">{{ doc.fileName }}</span>
               <span class="doc-meta">
-                {{ formatDate(doc.issuedDate) }} ·
-                {{ doc.docType === 'CONTRACT' ? '근로계약서' : '보건증' }}
-                <template v-if="doc.docType === 'HEALTH_CERT' && doc.expiryDate">
-                  · 만료 {{ formatDate(doc.expiryDate) }}
-                </template>
+                {{ formatDate(doc.issuedDate) }} · {{ docTypeLabel(doc) }}
+                <template v-if="doc.expiresDate">
+                  · 만료 {{ formatDate(doc.expiresDate) }}</template
+                >
               </span>
-              <span v-if="doc.docType === 'HEALTH_CERT'" class="doc-share">
+              <span v-if="ownsHealthCertificate(doc)" class="doc-share">
                 <Share2 :size="13" />
-                <template v-if="doc.shares?.length">
-                  공유중 · {{ doc.shares.map((s) => s.workplaceName).join(', ') }}
+                <template v-if="doc.activeShares?.length">
+                  공유중 · {{ doc.activeShares.map((s) => s.workplaceName).join(', ') }}
                 </template>
                 <template v-else>공유 안 함</template>
               </span>
             </span>
+
+            <span v-if="doc.status === 'EXPIRED'" class="badge badge--expired">만료</span>
           </button>
 
           <div class="doc-side">
-            <template v-if="doc.docType === 'HEALTH_CERT'">
+            <template v-if="ownsHealthCertificate(doc)">
               <button type="button" class="act-btn" aria-label="공유 관리" @click="openShare(doc)">
                 <Share2 :size="16" />
               </button>
@@ -361,9 +380,10 @@ async function doRevoke(share) {
               </button>
             </template>
             <button
+              v-if="doc.capabilities?.canDelete"
               type="button"
               class="act-btn act-btn--danger"
-              aria-label="문서 삭제"
+              aria-label="보건증 삭제"
               @click="openDelete(doc)"
             >
               <Trash2 :size="16" />
@@ -374,8 +394,7 @@ async function doRevoke(share) {
     </template>
 
     <p class="notice">
-      보건증은 직접 등록·공유할 수 있어요 · 근로계약서는 근무 시작 시 자동 저장 · 계약서 삭제는 근무
-      종료 후 가능
+      보건증은 직접 등록·공유할 수 있어요 · 근로계약서는 근무 시작 시 자동 저장되고 삭제할 수 없어요
     </p>
 
     <!-- 보건증 등록 -->
@@ -390,6 +409,7 @@ async function doRevoke(share) {
           <p v-if="fileError" class="field-err">{{ fileError }}</p>
         </div>
         <AppField v-model="issuedDate" label="발급일" type="date" required :error="issuedError" />
+        <p class="form-hint">만료일은 발급일을 기준으로 서버가 계산해요.</p>
       </div>
       <template #footer>
         <BaseButton variant="worker" size="lg" block :disabled="submitting" @click="submitUpload">
@@ -405,8 +425,8 @@ async function doRevoke(share) {
         <template v-else>
           <section class="share-sec">
             <h3 class="share-h">공유중인 지점</h3>
-            <ul v-if="shareDoc?.shares?.length" class="share-list">
-              <li v-for="s in shareDoc.shares" :key="s.workplaceId" class="share-row">
+            <ul v-if="activeShares.length" class="share-list">
+              <li v-for="s in activeShares" :key="s.shareId" class="share-row">
                 <span class="wp"><MapPin :size="15" /> {{ s.workplaceName }}</span>
                 <BaseButton variant="ghost" :disabled="shareBusy" @click="doRevoke(s)">
                   공유 취소
@@ -418,7 +438,10 @@ async function doRevoke(share) {
 
           <section class="share-sec">
             <h3 class="share-h">공유할 지점</h3>
-            <ul v-if="availableTargets.length" class="share-list">
+            <ul
+              v-if="shareDoc?.capabilities?.canShare && availableTargets.length"
+              class="share-list"
+            >
               <li v-for="w in availableTargets" :key="w.workplaceId" class="share-row">
                 <span class="wp">
                   <MapPin :size="15" /> {{ w.workplaceName }}
@@ -429,6 +452,9 @@ async function doRevoke(share) {
                 </BaseButton>
               </li>
             </ul>
+            <p v-else-if="shareDoc?.status === 'EXPIRED'" class="muted">
+              만료된 보건증은 새로 공유할 수 없어요.
+            </p>
             <p v-else class="muted">공유할 수 있는 근무 예정 지점이 없어요.</p>
           </section>
         </template>
@@ -437,7 +463,7 @@ async function doRevoke(share) {
 
     <!-- 발급일 수정 -->
     <BaseModal :open="editOpen" title="발급일 수정" @close="editOpen = false">
-      <AppField v-model="editDate" label="발급일" type="date" />
+      <AppField v-model="editDate" label="발급일" type="date" :error="editError" />
       <template #footer>
         <BaseButton variant="secondary" block @click="editOpen = false">취소</BaseButton>
         <BaseButton variant="worker" block :disabled="editSaving" @click="saveEdit"
@@ -449,12 +475,9 @@ async function doRevoke(share) {
     <!-- 삭제 확인 -->
     <BaseModal :open="deleteOpen" title="삭제할까요?" @close="deleteOpen = false">
       <p class="del-msg">
-        <strong>{{ deleteDoc?.fileName }}</strong> 문서를 삭제합니다.
+        <strong>{{ deleteDoc?.fileName }}</strong> 보건증을 삭제합니다.
       </p>
-      <p v-if="deleteDoc?.docType === 'CONTRACT'" class="del-note">
-        근무가 종료된 계약서만 삭제할 수 있어요.
-      </p>
-      <p v-else class="del-note">공유한 지점에서도 함께 삭제돼요.</p>
+      <p class="del-note">공유중인 지점에서도 즉시 열람할 수 없게 돼요.</p>
       <template #footer>
         <BaseButton variant="secondary" block @click="deleteOpen = false">취소</BaseButton>
         <BaseButton variant="danger" block :disabled="deleting" @click="confirmDelete"
@@ -554,6 +577,7 @@ async function doRevoke(share) {
 }
 .doc-info {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
@@ -577,6 +601,19 @@ async function doRevoke(share) {
   gap: 4px;
   font-size: var(--text-sm);
   color: var(--color-worker);
+}
+.badge {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  padding: 2px var(--space-xs);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+.badge--expired {
+  color: var(--color-danger);
+  background: var(--color-danger-bg);
 }
 
 .doc-side {
@@ -604,6 +641,7 @@ async function doRevoke(share) {
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
   color: var(--color-text-sub);
+  word-break: keep-all;
 }
 
 /* 등록 시트 */
@@ -634,6 +672,10 @@ async function doRevoke(share) {
   margin-top: var(--space-xs);
   font-size: var(--text-sm);
   color: var(--color-danger);
+}
+.form-hint {
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
 }
 
 /* 공유 시트 */
