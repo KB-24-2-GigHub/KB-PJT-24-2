@@ -32,6 +32,7 @@ ext {
     lombokVersion = '1.18.46'
 
     pdfboxVersion = '3.0.8'
+    openHtmlToPdfVersion = '1.1.4'
     zxingVersion = '3.5.4'
 
     junitVersion = '5.14.3'
@@ -117,7 +118,14 @@ dependencies {
     runtimeOnly 'org.apache.logging.log4j:log4j-slf4j2-impl'
 
     // 프로젝트 기능: 계약 PDF
+    // 내장 HTML/CSS Template을 PDF로 렌더링한다. PDFBox 3 계열을 유지하는 Fork를 사용한다.
     implementation "org.apache.pdfbox:pdfbox:$pdfboxVersion"
+    implementation(
+            "at.datenwort.openhtmltopdf:openhtmltopdf-pdfbox:$openHtmlToPdfVersion"
+    ) {
+        // 계약 PDF 렌더링은 이미 직접 선언한 PDFBox 버전선을 따른다.
+        exclude group: 'org.apache.pdfbox', module: 'pdfbox'
+    }
 
     // 프로젝트 기능: QR 생성
     implementation "com.google.zxing:core:$zxingVersion"

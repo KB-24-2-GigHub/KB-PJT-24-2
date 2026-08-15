@@ -167,9 +167,12 @@ public class PdfContractArtifactPort implements ContractArtifactPort {
                 terms.getWorkplaceAddress(),
                 terms.getDailyWage(),
                 terms.getOwner().getName(),
+                command.getEmployerPhone(),
                 terms.getWorker().getName(),
+                command.getWorkerPhone(),
                 terms.getTermsVersion(),
-                command.getAcceptedAt());
+                command.getAcceptedAt(),
+                command.getWorkCaseCreatedAt());
     }
 
     private long insertDocument(ContractArtifactCommand command, ContractTermsSnapshot terms) {

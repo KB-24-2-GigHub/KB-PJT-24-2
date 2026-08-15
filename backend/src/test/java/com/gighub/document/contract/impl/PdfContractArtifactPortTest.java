@@ -51,6 +51,7 @@ class PdfContractArtifactPortTest {
     private static final long OWNER_ID = 1L;
     private static final long WORKER_ID = 2L;
     private static final LocalDateTime ACCEPTED_AT = LocalDateTime.of(2026, 8, 7, 10, 0);
+    private static final LocalDateTime WORK_CASE_CREATED_AT = LocalDateTime.of(2026, 8, 1, 9, 0);
 
     private final ContractDocumentWriteMapper documentMapper = mock(ContractDocumentWriteMapper.class);
     private final ContractPdfRenderer renderer = mock(ContractPdfRenderer.class);
@@ -88,7 +89,8 @@ class PdfContractArtifactPortTest {
 
         ContractArtifactHandle handle = port.prepare(
                 ContractArtifactCommand.from(AcceptedContract.of(
-                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms())));
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT,
+                        "010-1111-2222", "010-3333-4444")));
 
         assertEquals(WORK_CASE_ID, handle.getWorkCaseId());
         assertEquals(CONTRACT_ID, handle.getContractId());
@@ -143,7 +145,8 @@ class PdfContractArtifactPortTest {
         assertThrows(
                 RuntimeException.class,
                 () -> port.prepare(ContractArtifactCommand.from(AcceptedContract.of(
-                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms()))));
+                        WORK_CASE_ID, CONTRACT_ID, ACCEPTED_AT, terms(), WORK_CASE_CREATED_AT,
+                        "010-1111-2222", "010-3333-4444"))));
 
         verify(storageAdapter).writePending(
                 ContractStorageKeys.pendingKey(WORK_CASE_ID, 9L, 1),

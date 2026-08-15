@@ -10,24 +10,38 @@ public final class AcceptedContract {
     private final long contractId;
     private final LocalDateTime acceptedAt;
     private final ContractTermsSnapshot terms;
+    private final LocalDateTime workCaseCreatedAt;
+    private final String employerPhone;
+    private final String workerPhone;
 
     private AcceptedContract(
             long workCaseId,
             long contractId,
             LocalDateTime acceptedAt,
-            ContractTermsSnapshot terms) {
+            ContractTermsSnapshot terms,
+            LocalDateTime workCaseCreatedAt,
+            String employerPhone,
+            String workerPhone) {
         this.workCaseId = workCaseId;
         this.contractId = contractId;
         this.acceptedAt = Objects.requireNonNull(acceptedAt, "acceptedAt");
         this.terms = Objects.requireNonNull(terms, "terms");
+        this.workCaseCreatedAt = Objects.requireNonNull(workCaseCreatedAt, "workCaseCreatedAt");
+        this.employerPhone = employerPhone;
+        this.workerPhone = workerPhone;
     }
 
     public static AcceptedContract of(
             long workCaseId,
             long contractId,
             LocalDateTime acceptedAt,
-            ContractTermsSnapshot terms) {
-        return new AcceptedContract(workCaseId, contractId, acceptedAt, terms);
+            ContractTermsSnapshot terms,
+            LocalDateTime workCaseCreatedAt,
+            String employerPhone,
+            String workerPhone) {
+        return new AcceptedContract(
+                workCaseId, contractId, acceptedAt, terms, workCaseCreatedAt,
+                employerPhone, workerPhone);
     }
 
     public long getWorkCaseId() {
@@ -44,5 +58,20 @@ public final class AcceptedContract {
 
     public ContractTermsSnapshot getTerms() {
         return terms;
+    }
+
+    /** 계약서 사업주란에 표시하는 근무 등록 일시입니다. 계약 조건 자체가 아니라 표시 전용입니다. */
+    public LocalDateTime getWorkCaseCreatedAt() {
+        return workCaseCreatedAt;
+    }
+
+    /** 계약서 표시 전용 사업주 연락처입니다. {@code users.phone}이 선택 입력이라 비어 있을 수 있습니다. */
+    public String getEmployerPhone() {
+        return employerPhone;
+    }
+
+    /** 계약서 표시 전용 근로자 연락처입니다. {@code users.phone}이 선택 입력이라 비어 있을 수 있습니다. */
+    public String getWorkerPhone() {
+        return workerPhone;
     }
 }
