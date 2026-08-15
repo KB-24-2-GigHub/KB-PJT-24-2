@@ -15,6 +15,7 @@ import com.gighub.document.dto.HealthCertificateUpdateRequest;
 import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateShareRevokeService;
 import com.gighub.document.service.HealthCertificateShareService;
 import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.document.validation.UploadedFile;
@@ -52,6 +53,7 @@ public class DocumentController {
     private final HealthCertificateUpdateService healthCertificateUpdateService;
     private final DocumentDeleteService documentDeleteService;
     private final HealthCertificateShareService healthCertificateShareService;
+    private final HealthCertificateShareRevokeService healthCertificateShareRevokeService;
 
     // DOC-001: 문서 목록
     @GetMapping("/api/documents")
@@ -154,6 +156,17 @@ public class DocumentController {
         return ResponseEntity.ok(
                 ApiResponse.of(documentQueryService.findShares(
                         actorUserId, documentId, page, size)));
+    }
+
+    // DOC-008: 보건증 공유 철회. 해당 사업장의 ACTIVE 공유만 멱등하게 REVOKED로 바꾼다.
+    @DeleteMapping("/api/documents/{documentId}/shares/{workplaceId}")
+    public ResponseEntity<Void> revokeHealthCertificateShare(
+            @PathVariable long documentId,
+            @PathVariable long workplaceId,
+            Authentication authentication) {
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        healthCertificateShareRevokeService.revoke(principal, documentId, workplaceId);
+        return ResponseEntity.noContent().build();
     }
 
     private void requireApprovedListQuery(HttpServletRequest request) {

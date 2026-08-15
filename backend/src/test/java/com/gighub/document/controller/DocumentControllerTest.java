@@ -17,6 +17,7 @@ import com.gighub.document.exception.DocumentNotFoundException;
 import com.gighub.document.service.DocumentDeleteService;
 import com.gighub.document.service.DocumentQueryService;
 import com.gighub.document.service.HealthCertificateRegisterService;
+import com.gighub.document.service.HealthCertificateShareRevokeService;
 import com.gighub.document.service.HealthCertificateShareService;
 import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.member.domain.UserRole;
@@ -79,6 +80,9 @@ class DocumentControllerTest {
     @Mock
     private HealthCertificateShareService healthCertificateShareService;
 
+    @Mock
+    private HealthCertificateShareRevokeService healthCertificateShareRevokeService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
     private Authentication authentication;
@@ -95,7 +99,8 @@ class DocumentControllerTest {
                         healthCertificateRegisterService,
                         healthCertificateUpdateService,
                         documentDeleteService,
-                        healthCertificateShareService))
+                        healthCertificateShareService,
+                        healthCertificateShareRevokeService))
                 .setControllerAdvice(new CommonExceptionHandler())
                 .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
                 .build();
@@ -429,6 +434,43 @@ class DocumentControllerTest {
         mockMvc.perform(post("/api/documents/{documentId}/shares", DOCUMENT_ID)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"workplaceId\":3}")
+                        .principal(authentication))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void revokesAHealthCertificateShareAndReturnsNoContent() throws Exception {
+        mockMvc.perform(delete("/api/documents/{documentId}/shares/{workplaceId}",
+                        DOCUMENT_ID, 3L)
+                        .principal(authentication))
+                .andExpect(status().isNoContent());
+
+        verify(healthCertificateShareRevokeService).revoke(principal, DOCUMENT_ID, 3L);
+    }
+
+    /** 대상 공유가 없어도(이미 철회됐거나 애초에 없어도) 소유자 요청이면 멱등 204다. */
+    @Test
+    void returnsNoContentEvenWhenNoActiveShareMatchesTheWorkplace() throws Exception {
+        mockMvc.perform(delete("/api/documents/{documentId}/shares/{workplaceId}",
+                        DOCUMENT_ID, 3L)
+                        .principal(authentication))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(delete("/api/documents/{documentId}/shares/{workplaceId}",
+                        DOCUMENT_ID, 3L)
+                        .principal(authentication))
+                .andExpect(status().isNoContent());
+
+        verify(healthCertificateShareRevokeService, org.mockito.Mockito.times(2))
+                .revoke(principal, DOCUMENT_ID, 3L);
+    }
+
+    @Test
+    void returnsNotFoundWhenRevokingAMissingOrUnownedDocumentShare() throws Exception {
+        doThrow(new DocumentNotFoundException("문서를 찾을 수 없습니다."))
+                .when(healthCertificateShareRevokeService).revoke(principal, DOCUMENT_ID, 3L);
+
+        mockMvc.perform(delete("/api/documents/{documentId}/shares/{workplaceId}",
+                        DOCUMENT_ID, 3L)
                         .principal(authentication))
                 .andExpect(status().isNotFound());
     }

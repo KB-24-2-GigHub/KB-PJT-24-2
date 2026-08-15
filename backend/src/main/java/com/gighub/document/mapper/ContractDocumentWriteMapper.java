@@ -66,6 +66,16 @@ public interface ContractDocumentWriteMapper {
             @Param("documentId") long documentId, @Param("revokedAt") LocalDateTime revokedAt);
 
     /**
+     * 한 사업장과 연결된 문서의 ACTIVE 공유만 REVOKED로 철회한다(DOC-008). {@code work_cases}로
+     * 조인해 {@code workplaceId}를 판정하므로, 같은 문서가 다른 사업장에 공유한 행은 건드리지
+     * 않는다. 대상이 없어도 0을 돌려주며 이는 오류가 아니다(멱등 철회).
+     */
+    int revokeActiveSharesByWorkplace(
+            @Param("documentId") long documentId,
+            @Param("workplaceId") long workplaceId,
+            @Param("revokedAt") LocalDateTime revokedAt);
+
+    /**
      * 특정 근무의 EMPLOYMENT_CONTRACT 문서에 딸린 Version들의 승격 정보를 읽는다.
      *
      * <p>Commit 뒤 승격은 {@link com.gighub.contract.ContractArtifactHandle}이 저장 Key를

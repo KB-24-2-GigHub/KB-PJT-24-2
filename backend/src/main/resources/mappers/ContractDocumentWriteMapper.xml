@@ -78,6 +78,23 @@
           AND status = 'ACTIVE'
     </update>
 
+    <!--
+        work_cases 하위 Query로 정확히 그 사업장에 연결된 공유만 걸러낸다. document_id만으로
+        걸렀다면 같은 문서가 다른 사업장에 공유한 ACTIVE 행까지 함께 철회해 오철회가 된다.
+        Join UPDATE 대신 단일 대상 테이블 Subquery로 써서 DML 대상이 정적으로 한 Table로
+        식별되게 한다(Mapper DML 소유권 Guardrail).
+    -->
+    <update id="revokeActiveSharesByWorkplace">
+        UPDATE document_shares
+        SET status = 'REVOKED',
+            revoked_at = #{revokedAt}
+        WHERE document_id = #{documentId}
+          AND status = 'ACTIVE'
+          AND work_case_id IN (
+              SELECT id FROM work_cases WHERE workplace_id = #{workplaceId}
+          )
+    </update>
+
     <select id="findPromotionRowsByWorkCaseId"
             resultType="com.gighub.document.mapper.result.ContractVersionPromotionRow">
         SELECT dv.document_id  AS documentId,
