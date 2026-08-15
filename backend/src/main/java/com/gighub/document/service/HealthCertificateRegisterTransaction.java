@@ -59,17 +59,35 @@ public class HealthCertificateRegisterTransaction {
                 ownerUserId, documentId, file.storageExtension());
 
         insertVersion(documentId, finalKey, file);
-        storageAdapter.writePending(pendingKey, file.content());
-        registerPendingCleanupOnRollback(pendingKey);
+        writePendingWithCleanup(pendingKey, file);
 
         return new HealthCertificateRegistrationHandle(
                 documentId, pendingKey, finalKey, file.checksum(), expiresDate);
     }
 
     /**
-     * 이 Transaction이 Commit되지 않으면(Rollback·Commit 실패 모두 포함) 방금 쓴 임시
-     * Object를 정리한다. 단위 테스트처럼 실제 Transaction Proxy 밖에서 직접 호출될 때는
-     * 등록할 활성 Transaction이 없어 아무 일도 하지 않는다.
+     * 임시 Object를 쓰기 <em>전에</em> 정리 콜백을 먼저 등록한다. 저장소 구현은 파일을 만들고
+     * 일부만 기록한 뒤 실패할 수 있으므로, 쓰기 성공을 기다렸다 등록하면 그 부분 기록물이
+     * 대응하는 DB 행 없이 남는다.
+     *
+     * <p>활성 Transaction이 없는 호출 경로에서는 콜백을 등록할 수 없으므로, 쓰기 실패를
+     * 그 자리에서 보상하고 원래 예외를 그대로 올린다. Transaction이 있는 경로에서도 이
+     * 즉시 보상은 무해하다({@code deletePending}은 없는 Object에 대해 멱등이다).</p>
+     */
+    private void writePendingWithCleanup(String pendingKey, ValidatedHealthCertificateFile file) {
+        registerPendingCleanupOnRollback(pendingKey);
+        try {
+            storageAdapter.writePending(pendingKey, file.content());
+        } catch (RuntimeException failure) {
+            deletePendingQuietly(pendingKey);
+            throw failure;
+        }
+    }
+
+    /**
+     * 이 Transaction이 Commit되지 않으면(Rollback·Commit 실패 모두 포함) 임시 Object를
+     * 정리한다. 단위 테스트처럼 실제 Transaction Proxy 밖에서 직접 호출될 때는 등록할 활성
+     * Transaction이 없어 아무 일도 하지 않는다.
      */
     private void registerPendingCleanupOnRollback(String pendingKey) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
@@ -81,13 +99,24 @@ public class HealthCertificateRegisterTransaction {
                 if (status == TransactionSynchronization.STATUS_COMMITTED) {
                     return;
                 }
-                try {
-                    storageAdapter.deletePending(pendingKey);
-                } catch (RuntimeException failure) {
-                    log.warn("Rollback된 보건증 임시 파일 정리에 실패했습니다.", failure);
-                }
+                deletePendingQuietly(pendingKey);
             }
         });
+    }
+
+    /**
+     * 정리 실패는 등록 결과를 되돌리지 않으므로 기록만 남긴다. 저장 Key나 파일 경로가 예외
+     * 메시지에 섞일 수 있어(DEC-DOCUMENT-STORAGE) 구조화된 이유만 기록하고 Throwable은
+     * 넘기지 않는다.
+     */
+    private void deletePendingQuietly(String pendingKey) {
+        try {
+            storageAdapter.deletePending(pendingKey);
+        } catch (RuntimeException failure) {
+            log.warn(
+                    "보건증 임시 Object 정리에 실패했습니다. result=PENDING_OBJECT_RETAINED failureType={}",
+                    failure.getClass().getSimpleName());
+        }
     }
 
     private long insertDocument(long ownerUserId, LocalDate issuedDate, LocalDate expiresDate) {

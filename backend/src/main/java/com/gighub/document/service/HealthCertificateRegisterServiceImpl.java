@@ -67,13 +67,19 @@ public class HealthCertificateRegisterServiceImpl implements HealthCertificateRe
     /**
      * 승격은 Commit 뒤의 Best-Effort 경계다. 이미 확정된 등록을 실패로 되돌릴 수 없으므로
      * 실패는 기록만 남긴다. 조회 시점에 임시 Object를 다시 검증해 Fallback한다.
+     *
+     * <p>저장 Key나 파일 경로가 예외 메시지에 섞일 수 있어(DEC-DOCUMENT-STORAGE) 구조화된
+     * 이유만 기록하고 Throwable은 로그 경계로 넘기지 않는다.</p>
      */
     private void promote(HealthCertificateRegistrationHandle handle) {
         try {
             storageAdapter.promote(
                     handle.pendingStorageKey(), handle.finalStorageKey(), handle.checksum());
         } catch (RuntimeException failure) {
-            log.warn("보건증 파일 승격에 실패했습니다. documentId={}", handle.documentId(), failure);
+            log.warn(
+                    "보건증 파일 승격에 실패했습니다. documentId={} result=PENDING_FALLBACK failureType={}",
+                    handle.documentId(),
+                    failure.getClass().getSimpleName());
         }
     }
 

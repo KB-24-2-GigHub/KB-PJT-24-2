@@ -4,6 +4,7 @@ import com.gighub.document.mapper.ContractDocumentWriteMapper;
 import com.gighub.document.mapper.param.DocumentInsertParam;
 import com.gighub.document.mapper.param.DocumentVersionInsertParam;
 import com.gighub.document.storage.DocumentStorageAdapter;
+import com.gighub.document.storage.DocumentStorageIntegrityException;
 import com.gighub.document.storage.HealthCertificateStorageKeys;
 import com.gighub.document.validation.ValidatedHealthCertificateFile;
 import org.junit.jupiter.api.AfterEach;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -148,6 +150,68 @@ class HealthCertificateRegisterTransactionTest {
                 new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM)));
 
         fireAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+    }
+
+    /**
+     * 저장소는 Object를 만들고 일부만 기록한 뒤 실패할 수 있다. 정리 콜백이 쓰기 성공 뒤에만
+     * 등록되면 그 부분 기록물이 대응하는 DB 행 없이 남으므로, 쓰기 실패 경로에서도 임시
+     * Object가 정리되어야 한다.
+     */
+    @Test
+    void cleansUpThePendingObjectWhenTheWriteItselfFails() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        doThrow(new DocumentStorageIntegrityException("임시 계약 파일을 쓰지 못했습니다."))
+                .when(storageAdapter).writePending(any(), any());
+        TransactionSynchronizationManager.initSynchronization();
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> transaction.register(
+                new ValidatedHealthCertificateRegistration(
+                        OWNER_ID, LocalDate.of(2026, 8, 14),
+                        new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM))));
+
+        String pendingKey = HealthCertificateStorageKeys.pendingKey(OWNER_ID, DOCUMENT_ID, "jpg");
+        verify(storageAdapter).deletePending(pendingKey);
+
+        // 쓰기 전에 등록된 콜백이 남아 있어 Rollback 확정 뒤에도 같은 Key를 다시 정리한다.
+        fireAfterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+        verify(storageAdapter, times(2)).deletePending(pendingKey);
+    }
+
+    /** 활성 Transaction이 없어 콜백을 등록할 수 없는 경로에서도 쓰기 실패를 즉시 보상한다. */
+    @Test
+    void cleansUpThePendingObjectWhenTheWriteFailsWithoutAnActiveTransaction() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        doThrow(new DocumentStorageIntegrityException("임시 계약 파일을 쓰지 못했습니다."))
+                .when(storageAdapter).writePending(any(), any());
+
+        assertThrows(DocumentStorageIntegrityException.class, () -> transaction.register(
+                new ValidatedHealthCertificateRegistration(
+                        OWNER_ID, LocalDate.of(2026, 8, 14),
+                        new ValidatedHealthCertificateFile(CONTENT, "jpg", "image/jpeg", CHECKSUM))));
+
+        verify(storageAdapter).deletePending(
+                HealthCertificateStorageKeys.pendingKey(OWNER_ID, DOCUMENT_ID, "jpg"));
+    }
+
+    /** 쓰기 실패의 보상 자체가 실패해도 원래의 저장소 예외를 가리지 않는다. */
+    @Test
+    void keepsTheOriginalWriteFailureWhenTheImmediateCleanupAlsoFails() {
+        stubGeneratedDocumentId();
+        when(documentMapper.insertVersion(any())).thenReturn(1);
+        doThrow(new DocumentStorageIntegrityException("임시 계약 파일을 쓰지 못했습니다."))
+                .when(storageAdapter).writePending(any(), any());
+        doThrow(new RuntimeException("storage unavailable")).when(storageAdapter).deletePending(any());
+
+        DocumentStorageIntegrityException thrown = assertThrows(
+                DocumentStorageIntegrityException.class, () -> transaction.register(
+                        new ValidatedHealthCertificateRegistration(
+                                OWNER_ID, LocalDate.of(2026, 8, 14),
+                                new ValidatedHealthCertificateFile(
+                                        CONTENT, "jpg", "image/jpeg", CHECKSUM))));
+
+        assertEquals("임시 계약 파일을 쓰지 못했습니다.", thrown.getMessage());
     }
 
     private void fireAfterCompletion(int status) {
