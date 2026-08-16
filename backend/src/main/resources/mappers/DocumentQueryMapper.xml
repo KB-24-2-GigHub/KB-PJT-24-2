@@ -379,4 +379,11 @@
           AND share.purpose = 'HEALTH_CERTIFICATE'
     </select>
 
+    <!-- QX-003 범위의 읽기 전용 조회다. 알림 문구에 넣을 근무 제목만 가져온다. -->
+    <select id="findWorkCaseTitle" resultType="string">
+        SELECT title
+        FROM work_cases
+        WHERE id = #{workCaseId}
+    </select>
+
 </mapper>

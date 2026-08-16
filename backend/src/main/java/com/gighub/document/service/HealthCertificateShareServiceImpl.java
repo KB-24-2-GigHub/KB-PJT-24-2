@@ -3,12 +3,17 @@ package com.gighub.document.service;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.document.mapper.ContractDocumentWriteMapper;
+import com.gighub.document.mapper.DocumentQueryMapper;
 import com.gighub.document.mapper.param.DocumentShareInsertParam;
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -31,6 +36,8 @@ public class HealthCertificateShareServiceImpl implements HealthCertificateShare
 
     private final HealthCertificateShareValidator validator;
     private final ContractDocumentWriteMapper documentMapper;
+    private final DocumentQueryMapper documentQueryMapper;
+    private final NotificationRecorder notificationRecorder;
 
     @Override
     @Transactional
@@ -55,6 +62,31 @@ public class HealthCertificateShareServiceImpl implements HealthCertificateShare
             throw new ConflictException("이미 이 사업장에 공유 중인 보건증입니다.");
         }
 
-        return Objects.requireNonNull(param.getId(), "생성된 공유 식별자");
+        long shareId = Objects.requireNonNull(param.getId(), "생성된 공유 식별자");
+        recordSharedNotification(validated, shareId);
+        return shareId;
+    }
+
+    /**
+     * 공유 사실을 사업장 OWNER에게 알립니다.
+     *
+     * <p>이 Transaction 안에서 부르지만 적재는 Commit 이후이며, 알림이 실패해도 공유는 그대로
+     * 유지됩니다(SPEC-384-01). 중복 판정 기준은 근무가 아니라 방금 만든 공유 행이라, 철회 뒤
+     * 재공유하면 두 번째 알림도 정상으로 나갑니다.</p>
+     */
+    private void recordSharedNotification(
+            ValidatedHealthCertificateShare validated,
+            long shareId) {
+        String workCaseTitle = documentQueryMapper.findWorkCaseTitle(validated.workCaseId());
+        if (workCaseTitle == null) {
+            return;
+        }
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.DOC_SHARED)
+                .sourceId(shareId)
+                .workCaseId(validated.workCaseId())
+                .workCaseTitle(workCaseTitle)
+                .recipientUserIds(List.of(validated.sharedWithUserId()))
+                .build());
     }
 }

@@ -7,6 +7,7 @@ import com.gighub.contract.ContractArtifactPort;
 import com.gighub.document.storage.DocumentStorageProperties;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec;
 import com.gighub.invitation.config.InvitationLinkFactory;
 import com.gighub.invitation.dto.InvitationDetailResponse;
@@ -241,6 +242,7 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                         context.getBean(IdempotencyClaimService.class),
                         context.getBean(InvitationAcceptanceReplaySnapshotCodec.class),
                         context.getBean(ContractArtifactPort.class),
+                        context.getBean(NotificationRecorder.class),
                         clock),
                 definition -> definition.setPrimary(true));
         context.refresh();
