@@ -1,14 +1,14 @@
 <script setup>
 /**
  * [H] 알바생 마이페이지  ·  /worker/mypage  ·  WORKER
- * 성실근로자 뱃지 카드(등급 + 성실근로 N건 남음 + 정의 소자) + 회원정보/비밀번호 변경 진입
- * + 로그아웃 + 회원 탈퇴.
+ * 성실근로자 뱃지 카드(등급 + 다음 등급 안내 + 서버 진행 설명 + 정의 소자) + 회원정보/비밀번호
+ * 변경 진입 + 로그아웃 + 회원 탈퇴.
  * 연계 API: GET /users/me · GET /users/me/badge · DELETE /users/me
- *   →  @/services/users (getMe, getBadge, deleteMe)
- * 진입: /worker/mypage/{profile,password}. 공통: TrustBadge(role='worker').
+ *   →  @/services/users (getMe, deleteMe) · @/composables/useTrustBadge
+ * 진입: /worker/mypage/{profile,password}. 공통: TrustBadge.
  */
 import { ChevronRight, KeyRound, UserRound } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
@@ -16,9 +16,10 @@ import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
+import { BADGE_STATE, useTrustBadge } from '@/composables/useTrustBadge'
 import { PENDING_FEATURES } from '@/constants/pendingFeatures'
 import { fieldErrorMap } from '@/services/http'
-import { deleteMe, getBadge, getMe } from '@/services/users'
+import { deleteMe, getMe } from '@/services/users'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { isRequired } from '@/utils/validators'
@@ -28,18 +29,20 @@ const authStore = useAuthStore()
 const ui = useUiStore()
 
 const me = ref(null)
-const badge = ref(null)
 
-// 진행률: 등급 판정 기준(최근 15건) 대비 최근 실적 비율.
-const progressPercent = computed(() => {
-  const recent = badge.value?.recentCount ?? 0
-  return Math.min(100, Math.round((recent / 15) * 100))
-})
-
-const nextLevelLabel = computed(() => {
-  const level = badge.value?.level ?? 0
-  return level >= 3 ? '최고 등급' : `Lv.${level + 1}`
-})
+// 뱃지 값·등급은 전부 서버 소유다. 이 화면은 문턱 숫자를 알지 못한다.
+const {
+  badge,
+  state: badgeState,
+  role: badgeRole,
+  level: badgeLevel,
+  maxLevel: badgeMaxLevel,
+  countMetRatioShort,
+  nextLevelLabel,
+  progressPercent,
+  definition: badgeDefinition,
+  load: loadBadge
+} = useTrustBadge('worker')
 
 const menuItems = [
   { label: '회원정보 변경', to: '/worker/mypage/profile', icon: UserRound },
@@ -56,19 +59,16 @@ const withdrawError = ref('')
 const withdrawing = ref(false)
 const loggingOut = ref(false)
 
-// getMe·getBadge 는 서로 독립된 요청이다. 뱃지 Endpoint(#182) 하나가 404 를 내도
-// 프로필 카드 자체는 보여줘야 하므로 Promise.all 로 묶어 함께 실패시키지 않는다.
+// 내 정보와 뱃지는 서로 독립된 요청이다. 뱃지 조회 하나가 실패해도 프로필 카드 자체는
+// 보여줘야 하므로 Promise.all 로 묶어 함께 실패시키지 않는다.
+// 뱃지 실패는 loadBadge 안에서 상태로 흡수되므로 여기서 다시 잡지 않는다.
 onMounted(async () => {
   try {
     me.value = await getMe()
   } catch {
     // me 가 비어 있으면 프로필 카드 전체가 v-if 로 자연히 숨는다.
   }
-  try {
-    badge.value = await getBadge()
-  } catch {
-    // 뱃지 없이도 나머지 프로필 정보는 그대로 보여준다.
-  }
+  await loadBadge()
 })
 
 /**
@@ -134,8 +134,8 @@ async function confirmWithdraw() {
     <AppBackHeader title="마이페이지" />
 
     <main class="screen-body">
-      <!-- badge 는 별도 Endpoint(#182) 라 me 조회는 성공했는데 badge 만 실패할 수 있다.
-           그 경우에도 프로필 카드 자체는 보여줘야 하므로 badge 관련 조각만 따로 게이팅한다. -->
+      <!-- 뱃지는 별도 Endpoint 라 me 조회는 성공했는데 뱃지만 실패할 수 있다.
+           그 경우에도 프로필 카드 자체는 보여줘야 하므로 뱃지 조각만 따로 게이팅한다. -->
       <section v-if="me" class="profile-card">
         <div class="profile-top">
           <!-- 승인 프로필 응답에 사진 필드가 없어 기본 아이콘만 노출한다. -->
@@ -148,12 +148,18 @@ async function confirmWithdraw() {
             <p class="profile-sub">{{ me.loginId }} | {{ me.email }}</p>
           </div>
 
-          <div v-if="badge" class="badge-slot">
-            <TrustBadge role="worker" :level="badge.level" :size="40" />
+          <!-- 역할은 응답 badgeType 에서 파생한다 — 화면이 'worker' 를 고정하지 않는다.
+               고정하면 TRUST_OWNER 응답이 성실근로 뱃지로 그려진다(과거 Mock 이 그랬다). -->
+          <div v-if="badgeState === BADGE_STATE.READY" class="badge-slot">
+            <TrustBadge :role="badgeRole" :level="badgeLevel" :size="40" />
           </div>
         </div>
 
-        <template v-if="badge">
+        <p v-if="badgeState === BADGE_STATE.LOADING" class="badge-notice">
+          뱃지 정보를 불러오는 중이에요…
+        </p>
+
+        <template v-else-if="badgeState === BADGE_STATE.READY">
           <div
             class="bar"
             role="progressbar"
@@ -164,13 +170,38 @@ async function confirmWithdraw() {
             <div class="bar__fill" :style="{ width: progressPercent + '%' }"></div>
           </div>
 
+          <!--
+            남은 건수 0 은 두 가지 뜻이다 — 3단계(다음 등급 없음)이거나, 건수는 채웠는데
+            정상 비율이 모자란 상태다. 같은 문장으로 묶으면 뒤쪽이 곧 승급할 것처럼 읽힌다.
+          -->
           <p class="level-remaining">
-            다음 레벨 {{ nextLevelLabel }}까지 {{ badge.criterionLabel }}
-            {{ badge.remainingToNextLevel }}건 남음 (최근 15건 기준)
+            <template v-if="badgeMaxLevel">최고 등급이에요.</template>
+            <template v-else-if="countMetRatioShort">
+              다음 레벨 {{ nextLevelLabel }} 건수 조건은 채웠어요. 정상 비율이 더 필요해요.
+            </template>
+            <template v-else>
+              다음 레벨 {{ nextLevelLabel }}까지 {{ badge.criterionLabel }}
+              {{ badge.remainingToNextLevel }}건 남음
+            </template>
           </p>
 
+          <!-- 서버가 계산한 진행 설명문. 화면이 건수·비율을 다시 문장으로 만들지 않는다. -->
           <p class="badge-desc">{{ badge.criterionDesc }}</p>
+          <p class="badge-definition">{{ badgeDefinition }}</p>
         </template>
+
+        <p v-else-if="badgeState === BADGE_STATE.FORBIDDEN" class="badge-notice">
+          뱃지를 볼 권한이 없어요.
+        </p>
+
+        <p
+          v-else-if="badgeState === BADGE_STATE.EMPTY || badgeState === BADGE_STATE.MISMATCH"
+          class="badge-notice"
+        >
+          뱃지 정보를 표시할 수 없어요.
+        </p>
+
+        <p v-else class="badge-notice">뱃지 정보를 불러오지 못했어요.</p>
       </section>
 
       <nav class="menu-list">
@@ -289,6 +320,16 @@ async function confirmWithdraw() {
 }
 .badge-desc {
   margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
+}
+.badge-definition {
+  margin-top: var(--space-xs);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
+}
+.badge-notice {
+  margin-top: var(--space-lg);
   font-size: var(--text-sm);
   color: var(--color-text-sub);
 }

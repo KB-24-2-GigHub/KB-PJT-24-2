@@ -19,17 +19,6 @@ const mockMe = {
   status: 'ACTIVE'
 }
 
-// 사장=TRUST_OWNER(안심거래) / 알바생=TRUST_WORKER(성실근로).
-// level 0 = 이력 5건 미만(미부여). remainingToNextLevel = 다음 등급까지 남은 건수.
-const mockBadge = {
-  badgeType: 'TRUST_OWNER',
-  level: 2,
-  recentCount: 12,
-  remainingToNextLevel: 3,
-  criterionLabel: '안심거래',
-  criterionDesc: '*안심거래란? 임금분쟁 신고 없이 정상 정산 완료'
-}
-
 /** 내 정보 조회 (AUTH-008) */
 export async function getMe() {
   if (USE_MOCK) return { ...mockMe }
@@ -63,10 +52,17 @@ export async function deleteMe({ password }) {
   await http.post('/users/me/withdrawal', { password })
 }
 
-/** 내 뱃지 조회 (명세 10) */
+/**
+ * 내 뱃지 조회 (SPEC-178-06 · API_SPEC '최신 뱃지').
+ *
+ * #182 로 실 Endpoint 가 살아 Mock 분기를 제거했다. 이전 Mock 은 역할과 무관하게
+ * `TRUST_OWNER` 를 고정 반환해 WORKER 마이페이지에 OWNER 산정치를 그렸다 — 같은 실수가
+ * 돌아오지 않도록 여기서는 서버 응답만 반환하고, 응답의 `badgeType` 이 화면 역할과
+ * 맞는지는 `useTrustBadge` 가 판정한다.
+ *
+ * 이력이 없는 사용자도 `null` 이 아니라 `level=0`, `recentCount=0` 객체를 받는다.
+ */
 export async function getBadge() {
-  if (USE_MOCK) return { ...mockBadge }
-  // TODO(#182): 명세 10 구현 전까지 실 경로는 404 다.
   const { data } = await http.get('/users/me/badge')
   return data
 }

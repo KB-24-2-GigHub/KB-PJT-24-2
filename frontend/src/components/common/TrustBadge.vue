@@ -2,9 +2,13 @@
 /**
  * 신뢰 뱃지 — 사장 '안심일터' / 알바생 '성실근로자'.
  *
- * 마이페이지 뱃지 카드, 근무 확정(사장 뱃지), 근무 상세(알바생 뱃지)에서 공용.
- * level 0 = 이력 5건 미만(미부여) → 회색 아이콘 + '이력 쌓는 중'.
+ * 마이페이지 뱃지 카드와 초대 확인(사장 뱃지)에서 공용.
+ * level 0 = 미부여 → 회색 아이콘 + '이력 쌓는 중'.
  * showRemaining=true 면 'criterion N건 남음' 을 함께 표시한다.
+ *
+ * 등급 문턱(SPEC-178-06 의 누적 10/20/30건, 정상 비율 80/90/100%)은 서버 소유다.
+ * 이 컴포넌트는 등급을 판정하지 않고 받은 level 을 그림으로만 옮긴다 — 문턱이 바뀌어도
+ * 여기는 바뀌지 않아야 한다.
  *
  * 뱃지 정의 문구(*성실근로란?…)는 화면(마이페이지)에서 별도로 붙인다.
  */
@@ -20,7 +24,9 @@ import workerLv3 from '@/assets/images/badges/badge-worker-lv3.svg?url'
 
 const props = defineProps({
   role: { type: String, required: true }, // 'owner' | 'worker'
-  level: { type: Number, default: 0 }, // 0~3 (0 = 미부여)
+  // 0~3 (0 = 미부여). required — 기본값 0 을 두면 "등급을 모른다"와 "미부여"가 같은 그림이
+  // 되고, level 을 빼먹은 호출이 조용히 3단계 사용자를 미부여로 그린다(#184 이전 실제 증상).
+  level: { type: Number, required: true },
   size: { type: Number, default: 48 },
   showRemaining: { type: Boolean, default: false },
   remaining: { type: Number, default: 0 },

@@ -1,11 +1,11 @@
 <script setup>
 /**
  * [C] 근무 상세  ·  /owner/attendance/work-cases/:workCaseId  ·  OWNER
- * 근무 상세 + 매칭 알바생 성실 뱃지. 수정·삭제·연결 링크 발급은 수락 전(DRAFT)만.
+ * 근무 상세 + 매칭 알바생 이름. 수정·삭제·연결 링크 발급은 수락 전(DRAFT)만.
  * 확정(날인) 후 수정·삭제 버튼 숨김 — 서버도 409 WORK_CASE_LOCKED.
  * 연계 API: 근무 CRUD·초대와 OWNER 정상 지급·NO_SHOW 환불 승인
  *   →  @/services/workCases, 승인 뒤 @/stores/wallet 재조회
- * route.params.workCaseId 사용. 공통: TrustBadge(알바생 뱃지) · StatusChip · BaseModal(삭제 확인)
+ * route.params.workCaseId 사용. 공통: StatusChip · BaseModal(삭제 확인)
  */
 import { FileText, Link2, Pencil, RefreshCw, Trash2 } from 'lucide-vue-next'
 import { computed, onMounted, reactive, ref } from 'vue'
@@ -17,7 +17,6 @@ import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
-import TrustBadge from '@/components/common/TrustBadge.vue'
 import {
   canIssueInvitation,
   invitationStatusLabel,
@@ -651,11 +650,17 @@ async function onApproveSettlement() {
             </div>
           </section>
 
-          <!-- 뱃지 등급은 배지 API(M7) 범위라 여기서는 기본(미부여)만 보여준다. -->
+          <!--
+            알바생 뱃지는 표시하지 않는다. 승인된 계약에 타인 뱃지를 읽을 수단이 없다 —
+            GET /api/users/me/badge 는 본인만, 초대 Read Model 의 ownerBadge 는 사장만이고
+            Work Case 응답에는 workerBadge 가 없다. 예전에는 level 을 넘기지 않아 항상 0단계
+            회색 아이콘이 나왔는데, 그러면 3단계 알바생도 미부여로 보인다. 근거 없는 등급을
+            그리느니 비워 둔다. 연동하려면 Work Case 응답에 workerBadge 를 싣는 계약 결정이
+            먼저다(#184 제외 범위).
+          -->
           <section v-if="workCase.worker" class="worker">
             <h3 class="section-title">매칭된 알바생</h3>
             <div class="worker-card">
-              <TrustBadge role="worker" :size="40" />
               <span class="worker-name">{{ workCase.worker.name }}</span>
             </div>
           </section>

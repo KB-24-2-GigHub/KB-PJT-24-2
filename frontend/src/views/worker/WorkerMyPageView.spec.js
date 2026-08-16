@@ -1,8 +1,10 @@
 /**
  * 알바생 마이페이지 프로필 카드 렌더링 계약 테스트.
- * getMe·getBadge 는 서로 다른 Endpoint 다(뱃지는 #182 구현 전까지 404).
- * onMounted 에서 Promise.all 로 묶으면 badge 하나의 실패가 me 까지 함께 날려
- * `v-if="me && badge"` 게이트를 절대 통과하지 못한다 — 이 브랜치가 낳은 회귀다.
+ * getMe·getBadge 는 서로 다른 Endpoint 다. onMounted 에서 Promise.all 로 묶으면 badge 하나의
+ * 실패가 me 까지 함께 날려 `v-if="me && badge"` 게이트를 절대 통과하지 못한다 — 과거 회귀다.
+ *
+ * 뱃지 값의 파생 규칙 자체는 `useTrustBadge.spec.js` 가 지킨다. 여기서는 상태별 표시와,
+ * 이 화면이 OWNER 산정치를 성실근로 뱃지로 그리지 않는지를 본다(#184 이전 Mock 의 실제 증상).
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -31,13 +33,15 @@ import { useUiStore } from '@/stores/ui'
 import WorkerMyPageView from '@/views/worker/WorkerMyPageView.vue'
 
 const ME = { loginId: 'worker01', email: 'worker@test.com', name: '이알바', role: 'WORKER' }
+/** SPEC-178-06 기준 1단계(누적 10건 이상·정상 비율 80% 이상) 응답. */
 const BADGE = {
   badgeType: 'TRUST_WORKER',
   level: 1,
-  recentCount: 6,
-  remainingToNextLevel: 9,
+  recentCount: 12,
+  remainingToNextLevel: 8,
   criterionLabel: '성실근로',
-  criterionDesc: '*성실근로란? 무단 결근·지각 없이 근무 완료'
+  criterionDesc:
+    '누적 12건 중 정상 11건입니다. 다음 등급은 누적 20건 이상과 정상 비율 90% 이상이 필요하고, 건수는 8건 남았습니다.'
 }
 
 /** Teleport 를 stub 해 탈퇴 Modal 내용을 wrapper 안에서 찾을 수 있게 한다. */
@@ -68,7 +72,7 @@ describe('WorkerMyPageView', () => {
 
   it('뱃지 조회가 실패해도 프로필 카드는 뱃지 없이 그대로 보여준다', async () => {
     getMe.mockResolvedValue({ ...ME })
-    getBadge.mockRejectedValue(new Error('Request failed with status code 404'))
+    getBadge.mockRejectedValue({ response: { status: 500 } })
 
     const wrapper = mount(WorkerMyPageView)
     await flushPromises()
@@ -76,6 +80,7 @@ describe('WorkerMyPageView', () => {
     expect(wrapper.find('.profile-card').exists()).toBe(true)
     expect(wrapper.text()).toContain('이알바')
     expect(wrapper.find('.badge-slot').exists()).toBe(false)
+    expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 불러오지 못했어요.')
   })
 
   it('두 요청이 모두 성공하면 뱃지도 함께 보여준다', async () => {
@@ -87,6 +92,127 @@ describe('WorkerMyPageView', () => {
 
     expect(wrapper.find('.badge-slot').exists()).toBe(true)
     expect(wrapper.text()).toContain('성실근로')
+  })
+
+  describe('뱃지 표시 계약', () => {
+    beforeEach(() => {
+      getMe.mockResolvedValue({ ...ME })
+    })
+
+    /**
+     * #184 이전의 Mock 은 역할과 무관하게 TRUST_OWNER 를 돌려줬고, 이 화면은 role="worker" 를
+     * 하드코딩해 그 등급을 성실근로 뱃지로 그렸다. 응답 badgeType 을 보게 만든 이유다.
+     */
+    it('TRUST_OWNER 응답이 오면 성실근로 뱃지로 그리지 않는다', async () => {
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        badgeType: 'TRUST_OWNER',
+        level: 3,
+        criterionLabel: '안심거래'
+      })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('안심거래')
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 표시할 수 없어요.')
+    })
+
+    it('폐기된 "최근 15건" 기준을 문구에도 진행률에도 쓰지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('최근 15건')
+      // 진행률 분모는 서버가 준 recentCount + remainingToNextLevel = 20 이다.
+      expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('60')
+    })
+
+    it('서버 진행 설명문과 FE 정의문을 서로 대체하지 않고 함께 보여준다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-desc').text()).toBe(BADGE.criterionDesc)
+      expect(wrapper.find('.badge-definition').text()).toContain('성실근로란')
+    })
+
+    it('미부여(0단계)는 오류가 아니라 남은 건수를 안내한다', async () => {
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        level: 0,
+        recentCount: 0,
+        remainingToNextLevel: 10,
+        criterionDesc: '누적 0건 중 정상 0건입니다.'
+      })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+      expect(wrapper.find('.badge-notice').exists()).toBe(false)
+      expect(wrapper.find('.level-remaining').text()).toBe('다음 레벨 Lv.1까지 성실근로 10건 남음')
+    })
+
+    it('3단계는 남은 건수 문장 대신 최고 등급을 보여준다', async () => {
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        level: 3,
+        recentCount: 30,
+        remainingToNextLevel: 0,
+        criterionDesc: '누적 30건 중 정상 30건으로 최고 등급입니다.'
+      })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.level-remaining').text()).toBe('최고 등급이에요.')
+      expect(wrapper.text()).not.toContain('건 남음')
+    })
+
+    it('건수를 채웠지만 비율이 부족하면 승급 임박으로 읽히지 않게 구분한다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE, level: 1, recentCount: 25, remainingToNextLevel: 0 })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      const remaining = wrapper.find('.level-remaining').text()
+      expect(remaining).toContain('건수 조건은 채웠어요')
+      expect(remaining).not.toContain('0건 남음')
+      expect(remaining).not.toContain('최고 등급')
+    })
+
+    it('403 은 일반 실패와 다른 문구로 구분한다', async () => {
+      getBadge.mockRejectedValue({ response: { status: 403 } })
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지를 볼 권한이 없어요.')
+    })
+
+    it('빈 응답은 실패와 다른 문구로 구분한다', async () => {
+      getBadge.mockResolvedValue({})
+
+      const wrapper = mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 표시할 수 없어요.')
+    })
+
+    it('화면을 다시 열 때마다 뱃지를 다시 조회한다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      mount(WorkerMyPageView)
+      await flushPromises()
+      mount(WorkerMyPageView)
+      await flushPromises()
+
+      expect(getBadge).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('로그아웃을 누르면 세션을 정리하고 온보딩으로 이동한다', async () => {
