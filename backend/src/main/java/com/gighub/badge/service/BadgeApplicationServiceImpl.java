@@ -3,7 +3,6 @@ package com.gighub.badge.service;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
-import java.util.Objects;
 
 import com.gighub.badge.domain.TrustBadgeCriteria;
 import com.gighub.badge.domain.TrustBadgeResult;
@@ -13,6 +12,7 @@ import com.gighub.badge.mapper.UserBadgeMapper;
 import com.gighub.badge.mapper.param.UserBadgeUpsertParam;
 import com.gighub.badge.mapper.result.BadgeEvidenceCountsRow;
 import com.gighub.badge.service.result.BadgeCalculationResult;
+import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
 import com.gighub.member.mapper.UserMapper;
@@ -68,8 +68,10 @@ public class BadgeApplicationServiceImpl implements BadgeApplicationService {
     @Override
     @Transactional
     public BadgeCalculationResult recalculate(long userId) {
-        User user = Objects.requireNonNull(
-                userMapper.lockById(userId), "잠글 사용자 행이 없습니다.");
+        User user = userMapper.lockById(userId);
+        if (user == null) {
+            throw new ResourceNotFoundException("사용자를 찾을 수 없습니다.");
+        }
         UserRole role = user.getRole();
         TrustBadgeType badgeType = toBadgeType(role);
 
