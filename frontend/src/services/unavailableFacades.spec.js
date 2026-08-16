@@ -11,10 +11,9 @@ vi.mock('@/services/mockOperations', () => ({
 
 import http, { idempotentPost } from '@/services/http'
 import { isMockOperationEnabled } from '@/services/mockOperations'
-import { listDocuments } from '@/services/documents'
 import { listNotifications } from '@/services/notifications'
 import { createReport } from '@/services/workCases'
-import { getWorkerHome, scan } from '@/services/worker'
+import { getWorkerHome, listWorkerWorkplaces, scan } from '@/services/worker'
 
 describe('unimplemented public facade operations', () => {
   beforeEach(() => {
@@ -23,8 +22,8 @@ describe('unimplemented public facade operations', () => {
   })
 
   it.each([
-    // worker home·work-cases는 #168, attendance scan은 #167에서 LIVE로 전환됐다.
-    ['documents', () => listDocuments(), '#132/#183'],
+    // worker home·work-cases는 #168, attendance scan은 #167,
+    // documents(목록·상세·파일·보건증·공유)는 #183에서 LIVE로 전환됐다.
     ['notifications', () => listNotifications(), '#167/#176'],
     ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
   ])('fails closed for %s and identifies its owner issue', async (_name, action, ownerIssue) => {
@@ -45,6 +44,14 @@ describe('unimplemented public facade operations', () => {
 
     await expect(getWorkerHome()).resolves.toEqual({ todayWorkCase: null })
     expect(http.get).toHaveBeenCalledWith('/worker/home')
+  })
+
+  it('worker workplaces는 #181 Backend 구현 후 #183부터 LIVE로 전환되어 실제 API를 호출한다', async () => {
+    const page = { content: [], page: { number: 0, size: 20, totalElements: 0, totalPages: 0 } }
+    http.get.mockResolvedValueOnce({ data: page })
+
+    await expect(listWorkerWorkplaces()).resolves.toEqual(page)
+    expect(http.get).toHaveBeenCalledWith('/worker/workplaces', { params: {} })
   })
 
   it('allows an explicitly selected Development/Test mock for one operation', async () => {

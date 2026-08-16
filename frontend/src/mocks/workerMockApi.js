@@ -61,8 +61,22 @@ export async function listWorkerWorkCases() {
   }
 }
 
+// 승인 계약이 고정한 다섯 필드와 공통 Page Envelope 를 그대로 쓴다. workCaseId 는 응답에
+// 포함하지 않는다 — 공유 요청은 workplaceId 만 보내고 서버가 Work Case 를 파생한다.
 export async function listWorkerWorkplaces() {
-  return [{ workplaceId: 1, workplaceName: '강남점', ownerName: '김사장' }]
+  const workplaces = [
+    {
+      workplaceId: 1,
+      workplaceName: '강남점',
+      ownerName: '김사장',
+      startsAt: '2026-08-20T01:00:00Z',
+      endsAt: '2026-08-20T09:00:00Z'
+    }
+  ]
+  return {
+    content: workplaces,
+    page: { number: 0, size: 20, totalElements: workplaces.length, totalPages: 1 }
+  }
 }
 
 export async function scan() {

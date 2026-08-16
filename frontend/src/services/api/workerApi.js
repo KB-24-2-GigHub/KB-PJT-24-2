@@ -11,8 +11,8 @@ export async function listWorkerWorkCases(params = {}) {
   return data
 }
 
-export async function listWorkerWorkplaces() {
-  const { data } = await http.get('/worker/workplaces')
+export async function listWorkerWorkplaces(params = {}) {
+  const { data } = await http.get('/worker/workplaces', { params })
   return data
 }
 
