@@ -1,8 +1,10 @@
 /**
  * 사장 마이페이지 프로필 카드 렌더링 계약 테스트.
- * getMe·getBadge 는 서로 다른 Endpoint 다(뱃지는 #182 구현 전까지 404).
- * onMounted 에서 Promise.all 로 묶으면 badge 하나의 실패가 me 까지 함께 날려
- * `v-if="me && badge"` 게이트를 절대 통과하지 못한다 — 이 브랜치가 낳은 회귀다.
+ * getMe·getBadge 는 서로 다른 Endpoint 다. onMounted 에서 Promise.all 로 묶으면 badge 하나의
+ * 실패가 me 까지 함께 날려 `v-if="me && badge"` 게이트를 절대 통과하지 못한다 — 과거 회귀다.
+ *
+ * 뱃지 값의 파생 규칙 자체는 `useTrustBadge.spec.js` 가 지킨다. 여기서는 상태별로 화면에
+ * 무엇이 나오는지, 그리고 폐기된 "최근 15건" 기준이 다시 새지 않는지를 본다.
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -31,13 +33,16 @@ import { useUiStore } from '@/stores/ui'
 import OwnerMyPageView from '@/views/owner/OwnerMyPageView.vue'
 
 const ME = { loginId: 'owner01', email: 'owner@test.com', name: '김사장', role: 'OWNER' }
+
+/** SPEC-178-06 기준 2단계(누적 20건 이상·정상 비율 90% 이상) 응답. */
 const BADGE = {
   badgeType: 'TRUST_OWNER',
   level: 2,
-  recentCount: 12,
-  remainingToNextLevel: 3,
+  recentCount: 22,
+  remainingToNextLevel: 8,
   criterionLabel: '안심거래',
-  criterionDesc: '*안심거래란? 임금분쟁 신고 없이 정상 정산 완료'
+  criterionDesc:
+    '누적 22건 중 정상 21건입니다. 다음 등급은 누적 30건 이상과 정상 비율 100% 이상이 필요하고, 건수는 8건 남았습니다.'
 }
 
 /** Teleport 를 stub 해 탈퇴 Modal 내용을 wrapper 안에서 찾을 수 있게 한다. */
@@ -68,7 +73,7 @@ describe('OwnerMyPageView', () => {
 
   it('뱃지 조회가 실패해도 프로필 카드는 뱃지 없이 그대로 보여준다', async () => {
     getMe.mockResolvedValue({ ...ME })
-    getBadge.mockRejectedValue(new Error('Request failed with status code 404'))
+    getBadge.mockRejectedValue({ response: { status: 500 } })
 
     const wrapper = mount(OwnerMyPageView)
     await flushPromises()
@@ -76,6 +81,7 @@ describe('OwnerMyPageView', () => {
     expect(wrapper.find('.profile-card').exists()).toBe(true)
     expect(wrapper.text()).toContain('김사장')
     expect(wrapper.find('.badge-slot').exists()).toBe(false)
+    expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 불러오지 못했어요.')
   })
 
   it('두 요청이 모두 성공하면 뱃지도 함께 보여준다', async () => {
@@ -87,6 +93,184 @@ describe('OwnerMyPageView', () => {
 
     expect(wrapper.find('.badge-slot').exists()).toBe(true)
     expect(wrapper.text()).toContain('안심거래')
+  })
+
+  describe('뱃지 표시 계약', () => {
+    beforeEach(() => {
+      getMe.mockResolvedValue({ ...ME })
+    })
+
+    it('폐기된 "최근 15건" 기준을 문구에도 진행률에도 쓰지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.text()).not.toContain('최근 15건')
+      // 진행률 분모는 서버가 준 recentCount + remainingToNextLevel = 30 이다.
+      const bar = wrapper.find('.bar')
+      expect(bar.attributes('aria-valuenow')).toBe('73')
+      // 이름이 없으면 스크린리더가 맥락 없는 숫자만 읽는다.
+      expect(bar.attributes('aria-label')).toBe('다음 등급까지 진행률')
+    })
+
+    it('서버 진행 설명문과 FE 정의문을 서로 대체하지 않고 함께 보여준다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-desc').text()).toBe(BADGE.criterionDesc)
+      expect(wrapper.find('.badge-definition').text()).toContain('안심거래란')
+    })
+
+    it('미부여(0단계)는 오류가 아니라 남은 건수를 안내한다', async () => {
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        level: 0,
+        recentCount: 0,
+        remainingToNextLevel: 10,
+        criterionDesc: '누적 0건 중 정상 0건입니다.'
+      })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+      expect(wrapper.find('.badge-notice').exists()).toBe(false)
+      expect(wrapper.find('.level-remaining').text()).toBe('다음 레벨 Lv.1까지 안심거래 10건 남음')
+      expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('0')
+    })
+
+    it('3단계는 남은 건수 문장 대신 최고 등급을 보여준다', async () => {
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        level: 3,
+        recentCount: 30,
+        remainingToNextLevel: 0,
+        criterionDesc: '누적 30건 중 정상 30건으로 최고 등급입니다.'
+      })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.level-remaining').text()).toBe('최고 등급이에요.')
+      expect(wrapper.text()).not.toContain('건 남음')
+    })
+
+    it('건수를 채웠지만 비율이 부족하면 승급 임박으로 읽히지 않게 구분한다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE, level: 2, recentCount: 33, remainingToNextLevel: 0 })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      const remaining = wrapper.find('.level-remaining').text()
+      expect(remaining).toContain('건수 조건은 채웠어요')
+      expect(remaining).toContain('정상 비율이 더 필요해요')
+      expect(remaining).not.toContain('0건 남음')
+      expect(remaining).not.toContain('최고 등급')
+      // 가득 찬 바가 이 문구와 모순되고 스크린리더에는 "100 퍼센트"로 읽힌다.
+      expect(wrapper.find('.bar').exists()).toBe(false)
+    })
+
+    /*
+     * LOADING 분기는 flushPromises 뒤에는 절대 렌더되지 않는다. 해소되지 않은 promise 로
+     * 잡아 두지 않으면 이 블록을 통째로 지워도 테스트가 전부 통과하고, 지우면 v-else 가
+     * LOADING 을 받아 매 로드마다 오류 문구가 깜빡인다.
+     */
+    it('응답 전에는 오류가 아니라 로딩 안내를 보여준다', async () => {
+      let resolveBadge
+      getBadge.mockReturnValue(
+        new Promise((resolve) => {
+          resolveBadge = resolve
+        })
+      )
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 불러오는 중이에요…')
+      expect(wrapper.find('.badge-slot').exists()).toBe(false)
+
+      resolveBadge({ ...BADGE })
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').exists()).toBe(false)
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+    })
+
+    it('진행 설명문이 비면 빈 문단을 남기지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE, criterionDesc: '' })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+      expect(wrapper.find('.badge-desc').exists()).toBe(false)
+    })
+
+    /*
+     * 이 통계는 승인 Endpoint 가 없어 ref(0) 자리표시자였다. 뱃지가 실데이터가 된 뒤로는
+     * 같은 카드 안의 "정상 정산 0%" 가 자리표시자가 아니라 진짜 실적으로 읽힌다.
+     */
+    it('승인 Endpoint 가 없는 통계를 0으로 지어내 보여주지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      // 문자열이 아니라 요소로 단언한다 — '정상 정산'·'신고' 는 뱃지 정의문
+      // ('*안심거래란? 임금분쟁 신고 없이 정상 정산 완료')에도 정당하게 들어 있다.
+      expect(wrapper.find('.stats-row').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('최근 구인')
+    })
+
+    it('403 은 일반 실패와 다른 문구로 구분한다', async () => {
+      getBadge.mockRejectedValue({ response: { status: 403 } })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지를 볼 권한이 없어요.')
+    })
+
+    it('빈 응답은 실패와 다른 문구로 구분한다', async () => {
+      getBadge.mockResolvedValue(null)
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 표시할 수 없어요.')
+    })
+
+    it('TRUST_WORKER 응답이 오면 사장 뱃지로 그리지 않는다', async () => {
+      // 역할 불일치는 개발 중 원인을 남긴다 — 여기서는 출력만 가로챈다.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+      getBadge.mockResolvedValue({
+        ...BADGE,
+        badgeType: 'TRUST_WORKER',
+        criterionLabel: '성실근로'
+      })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+      warn.mockRestore()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('성실근로')
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 표시할 수 없어요.')
+    })
+
+    it('화면을 다시 열 때마다 뱃지를 다시 조회한다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      mount(OwnerMyPageView)
+      await flushPromises()
+      mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(getBadge).toHaveBeenCalledTimes(2)
+    })
   })
 
   it('내 정보 조회가 실패하면 프로필 카드를 보여주지 않는다', async () => {

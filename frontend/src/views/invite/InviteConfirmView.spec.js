@@ -105,6 +105,39 @@ describe('InviteConfirmView', () => {
   })
 
   /*
+   * 초대의 OWNER 뱃지는 승인 Read Model(GET /api/invitations/{token})이 내려주는 값만 쓴다.
+   * 0단계는 계약상 ownerBadge=null 이고, 1~3단계만 객체로 온다(SPEC-178-06).
+   * 이 화면이 타인 ID 로 Badge Endpoint 를 따로 부르면 승인되지 않은 조회 경로가 된다.
+   */
+  describe('OWNER 뱃지', () => {
+    it.each([1, 2, 3])('Read Model 이 준 %i단계를 그대로 그린다', async (level) => {
+      getInvite.mockResolvedValue({
+        ...INVITE,
+        ownerBadge: { badgeType: 'TRUST_OWNER', level }
+      })
+
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.find(`img[alt="owner 뱃지 ${level}단계"]`).exists()).toBe(true)
+      expect(wrapper.text()).not.toContain('등록된 배지 없음')
+    })
+
+    it('뱃지를 그리려고 별도 사용자 조회를 하지 않는다', async () => {
+      getInvite.mockResolvedValue({
+        ...INVITE,
+        ownerBadge: { badgeType: 'TRUST_OWNER', level: 2 }
+      })
+
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.find('img[alt="owner 뱃지 2단계"]').exists()).toBe(true)
+      expect(getInvite).toHaveBeenCalledTimes(1)
+    })
+  })
+
+  /*
    * termsVersion 은 서버가 조건 변경을 감지하는 내부 값이라 화면에 내보내지 않는다.
    * 수락 직전 화면이라 의미 없는 값이 오히려 오해를 준다. 픽스처의 termsVersion 은 3 이다.
    */

@@ -722,4 +722,22 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('분쟁 상태를 확인하지 못했어요')
     expect(wrapper.text()).not.toContain('접수된 분쟁이 없습니다')
   })
+
+  /**
+   * 승인 계약에 타인 뱃지를 읽을 수단이 없다 — GET /api/users/me/badge 는 본인만이고
+   * Work Case 응답에는 workerBadge 가 없다. 예전에는 level 을 넘기지 않은 TrustBadge 가
+   * 늘 0단계 회색 아이콘을 그려서, 3단계 알바생도 미부여로 보였다. 등급을 아는 척하는 대신
+   * "모른다"를 그대로 쓰고, 연동될 자리는 자리표시자로 남긴다(#184 제외 범위).
+   */
+  it('알바생 등급을 아는 척하지 않고 자리표시자만 보여준다', async () => {
+    getWorkCase.mockResolvedValue({ ...PAYOUT_READY_DETAIL })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.worker-card').text()).toContain('이알바')
+    expect(wrapper.find('.badge-placeholder').text()).toBe('등급 정보 없음')
+    // 등급 그림은 근거가 없으므로 0단계(미부여) 아이콘조차 그리지 않는다.
+    expect(wrapper.find('.worker-card .trust-badge').exists()).toBe(false)
+    expect(wrapper.find('.worker-card .no-badge').exists()).toBe(false)
+  })
 })

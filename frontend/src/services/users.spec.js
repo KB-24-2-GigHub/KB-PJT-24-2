@@ -10,7 +10,7 @@ vi.mock('@/services/http', () => ({
 }))
 
 import http from '@/services/http'
-import { getMe, updateMe } from '@/services/users'
+import { getBadge, getMe, updateMe } from '@/services/users'
 
 const serverProfile = {
   loginId: 'owner01',
@@ -34,6 +34,33 @@ describe('getMe', () => {
 
     expect(http.get).toHaveBeenCalledWith('/users/me')
     expect(me).toEqual(serverProfile)
+  })
+})
+
+describe('getBadge', () => {
+  beforeEach(() => {
+    http.get.mockReset()
+  })
+
+  it('단수 Endpoint 를 호출하고 승인 Payload 를 그대로 돌려준다', async () => {
+    http.get.mockResolvedValue({ data: { badgeType: 'TRUST_WORKER', level: 0 } })
+
+    const badge = await getBadge()
+
+    expect(http.get).toHaveBeenCalledWith('/users/me/badge')
+    expect(badge).toEqual({ badgeType: 'TRUST_WORKER', level: 0 })
+  })
+
+  /*
+   * 금지 형태를 열거하는 대신 승인된 호출 전체를 단언한다. `not.toContain('badges')` 로는
+   * `/users/1/badge` 처럼 사용자 ID 를 받는 경로가 그대로 통과한다.
+   */
+  it('본인 경로 한 번 외에는 어떤 호출도 하지 않는다', async () => {
+    http.get.mockResolvedValue({ data: { badgeType: 'TRUST_OWNER', level: 1 } })
+
+    await getBadge()
+
+    expect(http.get.mock.calls).toEqual([['/users/me/badge']])
   })
 })
 

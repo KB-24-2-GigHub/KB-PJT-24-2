@@ -1,14 +1,14 @@
 <script setup>
 /**
  * [H] 알바생 마이페이지  ·  /worker/mypage  ·  WORKER
- * 성실근로자 뱃지 카드(등급 + 성실근로 N건 남음 + 정의 소자) + 회원정보/비밀번호 변경 진입
- * + 로그아웃 + 회원 탈퇴.
+ * 성실근로자 뱃지 카드(등급 + 다음 등급 안내 + 서버 진행 설명 + 정의 소자) + 회원정보/비밀번호
+ * 변경 진입 + 로그아웃 + 회원 탈퇴.
  * 연계 API: GET /users/me · GET /users/me/badge · DELETE /users/me
- *   →  @/services/users (getMe, getBadge, deleteMe)
- * 진입: /worker/mypage/{profile,password}. 공통: TrustBadge(role='worker').
+ *   →  @/services/users (getMe, deleteMe) · @/composables/useTrustBadge
+ * 진입: /worker/mypage/{profile,password}. 공통: TrustBadge.
  */
 import { ChevronRight, KeyRound, UserRound } from 'lucide-vue-next'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
@@ -16,9 +16,11 @@ import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
+import TrustBadgeCard from '@/components/common/TrustBadgeCard.vue'
+import { BADGE_STATE, useTrustBadge } from '@/composables/useTrustBadge'
 import { PENDING_FEATURES } from '@/constants/pendingFeatures'
 import { fieldErrorMap } from '@/services/http'
-import { deleteMe, getBadge, getMe } from '@/services/users'
+import { deleteMe, getMe } from '@/services/users'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { isRequired } from '@/utils/validators'
@@ -28,18 +30,10 @@ const authStore = useAuthStore()
 const ui = useUiStore()
 
 const me = ref(null)
-const badge = ref(null)
 
-// 진행률: 등급 판정 기준(최근 15건) 대비 최근 실적 비율.
-const progressPercent = computed(() => {
-  const recent = badge.value?.recentCount ?? 0
-  return Math.min(100, Math.round((recent / 15) * 100))
-})
-
-const nextLevelLabel = computed(() => {
-  const level = badge.value?.level ?? 0
-  return level >= 3 ? '최고 등급' : `Lv.${level + 1}`
-})
+// 뱃지 값·등급은 전부 서버 소유다. 이 화면은 문턱 숫자를 알지 못한다.
+// 그림과 본문(TrustBadgeCard)이 같은 인스턴스를 공유해 한쪽만 다른 상태를 그리지 않는다.
+const badgeModel = useTrustBadge('worker')
 
 const menuItems = [
   { label: '회원정보 변경', to: '/worker/mypage/profile', icon: UserRound },
@@ -56,19 +50,18 @@ const withdrawError = ref('')
 const withdrawing = ref(false)
 const loggingOut = ref(false)
 
-// getMe·getBadge 는 서로 독립된 요청이다. 뱃지 Endpoint(#182) 하나가 404 를 내도
-// 프로필 카드 자체는 보여줘야 하므로 Promise.all 로 묶어 함께 실패시키지 않는다.
+// 내 정보와 뱃지는 서로 독립된 요청이다. 실패를 분리하려고 Promise.all 로 묶지 않지만,
+// 그렇다고 직렬로 보낼 이유도 없다 — 먼저 둘 다 띄운 뒤 각각 기다려 지연이 합이 아니라
+// 최댓값이 되게 한다. 뱃지 실패는 load 안에서 상태로 흡수되므로 여기서 다시 잡지 않는다.
 onMounted(async () => {
+  const mePromise = getMe()
+  const badgePromise = badgeModel.load()
   try {
-    me.value = await getMe()
+    me.value = await mePromise
   } catch {
     // me 가 비어 있으면 프로필 카드 전체가 v-if 로 자연히 숨는다.
   }
-  try {
-    badge.value = await getBadge()
-  } catch {
-    // 뱃지 없이도 나머지 프로필 정보는 그대로 보여준다.
-  }
+  await badgePromise
 })
 
 /**
@@ -134,8 +127,8 @@ async function confirmWithdraw() {
     <AppBackHeader title="마이페이지" />
 
     <main class="screen-body">
-      <!-- badge 는 별도 Endpoint(#182) 라 me 조회는 성공했는데 badge 만 실패할 수 있다.
-           그 경우에도 프로필 카드 자체는 보여줘야 하므로 badge 관련 조각만 따로 게이팅한다. -->
+      <!-- 뱃지는 별도 Endpoint 라 me 조회는 성공했는데 뱃지만 실패할 수 있다.
+           그 경우에도 프로필 카드 자체는 보여줘야 하므로 뱃지 조각만 따로 게이팅한다. -->
       <section v-if="me" class="profile-card">
         <div class="profile-top">
           <!-- 승인 프로필 응답에 사진 필드가 없어 기본 아이콘만 노출한다. -->
@@ -148,29 +141,14 @@ async function confirmWithdraw() {
             <p class="profile-sub">{{ me.loginId }} | {{ me.email }}</p>
           </div>
 
-          <div v-if="badge" class="badge-slot">
-            <TrustBadge role="worker" :level="badge.level" :size="40" />
+          <!-- 역할은 응답 badgeType 에서 파생한다 — 화면이 'worker' 를 고정하지 않는다.
+               고정하면 TRUST_OWNER 응답이 성실근로 뱃지로 그려진다(과거 Mock 이 그랬다). -->
+          <div v-if="badgeModel.state.value === BADGE_STATE.READY" class="badge-slot">
+            <TrustBadge :role="badgeModel.role.value" :level="badgeModel.level.value" :size="40" />
           </div>
         </div>
 
-        <template v-if="badge">
-          <div
-            class="bar"
-            role="progressbar"
-            :aria-valuenow="progressPercent"
-            aria-valuemin="0"
-            aria-valuemax="100"
-          >
-            <div class="bar__fill" :style="{ width: progressPercent + '%' }"></div>
-          </div>
-
-          <p class="level-remaining">
-            다음 레벨 {{ nextLevelLabel }}까지 {{ badge.criterionLabel }}
-            {{ badge.remainingToNextLevel }}건 남음 (최근 15건 기준)
-          </p>
-
-          <p class="badge-desc">{{ badge.criterionDesc }}</p>
-        </template>
+        <TrustBadgeCard :model="badgeModel" />
       </section>
 
       <nav class="menu-list">
@@ -268,29 +246,9 @@ async function confirmWithdraw() {
   flex-shrink: 0;
 }
 
-.bar {
-  height: 8px;
-  margin-top: var(--space-lg);
-  overflow: hidden;
-  background: var(--color-bg);
-  border-radius: var(--radius-pill);
-}
-.bar__fill {
-  height: 100%;
-  background: var(--color-worker);
-  border-radius: var(--radius-pill);
-}
-
-.level-remaining {
-  margin-top: var(--space-sm);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text);
-}
-.badge-desc {
-  margin-top: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
+/* 뱃지 본문 스타일은 TrustBadgeCard 가 소유한다. 진행바 색만 역할별 강조색으로 넘긴다. */
+.profile-card {
+  --badge-progress: var(--color-worker);
 }
 
 .menu-list {
