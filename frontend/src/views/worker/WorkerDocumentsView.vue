@@ -29,7 +29,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import {
   deleteDocument,
-  getDocumentShares,
+  listAllDocumentShares,
   listDocuments,
   revokeShare,
   shareDocument,
@@ -39,8 +39,9 @@ import {
 import { errorMessage, fieldErrorMap } from '@/services/http'
 import { listAllWorkerWorkplaces } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
-import { docTypeLabel, hasNextPage, isImageDocument } from '@/utils/document'
+import { docTypeLabel, isImageDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
+import { hasNextPage } from '@/utils/page'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -70,11 +71,17 @@ function ownsHealthCertificate(doc) {
   return doc.docType === 'HEALTH_CERTIFICATE' && doc.source === 'OWN'
 }
 
-/** 카드에 '공유중 지점'을 표시하려면 보건증별 공유 현황이 필요하다. 상태는 서버 계산값이다. */
+/**
+ * 카드와 공유 시트가 쓰는 활성 공유 현황. 상태는 서버 계산값이다.
+ *
+ * 이력 전체를 모은 뒤 ACTIVE 만 남긴다. 이력은 REVOKED·EXPIRED 를 포함한 최신 생성순이라
+ * 첫 Page 만 읽으면 오래된 ACTIVE 공유가 뒤 Page 로 밀려 사라지고, 그 사업장이 '공유할
+ * 지점'에 다시 나타나 409 를 만들며 철회 경로까지 없어진다.
+ */
 async function loadActiveShares(doc) {
   try {
-    const { content } = await getDocumentShares(doc.documentId)
-    doc.activeShares = (content ?? []).filter((share) => share.status === 'ACTIVE')
+    const shares = await listAllDocumentShares(doc.documentId)
+    doc.activeShares = shares.filter((share) => share.status === 'ACTIVE')
   } catch {
     doc.activeShares = []
   }

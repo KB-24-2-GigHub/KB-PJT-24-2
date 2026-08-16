@@ -30,9 +30,3 @@ export function isPdfDocument(doc) {
 export function documentAccessErrorMessage(error, notFoundMessage) {
   return error?.response?.status === 404 ? notFoundMessage : '문서를 불러오지 못했어요.'
 }
-
-/** 공통 Page Envelope 에 다음 Page 가 남아 있는지. */
-export function hasNextPage(page) {
-  if (!page) return false
-  return page.number + 1 < page.totalPages
-}

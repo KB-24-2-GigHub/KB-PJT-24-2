@@ -22,6 +22,7 @@ import {
   fetchDocumentFile,
   getDocument,
   getDocumentShares,
+  listAllDocumentShares,
   listDocuments,
   revokeShare,
   shareDocument,
@@ -137,6 +138,48 @@ describe('보건증 공유', () => {
 
     await expect(getDocumentShares(5)).resolves.toEqual({ content, page: PAGE })
     expect(http.get).toHaveBeenCalledWith('/documents/5/shares', { params: {} })
+  })
+
+  it('공유 이력은 Page 를 모두 모아 하나의 배열로 돌려준다', async () => {
+    // 첫 Page 만 읽으면 오래된 ACTIVE 공유가 화면에서 사라진다. 이력은 최신 생성순이고
+    // REVOKED·EXPIRED 까지 같은 목록에 섞여 있어 20건은 금방 넘는다.
+    const activeOnFirstPage = { shareId: 30, workplaceId: 1, status: 'ACTIVE' }
+    const revoked = { shareId: 20, workplaceId: 2, status: 'REVOKED' }
+    const activeOnSecondPage = { shareId: 10, workplaceId: 3, status: 'ACTIVE' }
+    http.get
+      .mockResolvedValueOnce({
+        data: {
+          content: [activeOnFirstPage, revoked],
+          page: { number: 0, size: 100, totalElements: 3, totalPages: 2 }
+        }
+      })
+      .mockResolvedValueOnce({
+        data: {
+          content: [activeOnSecondPage],
+          page: { number: 1, size: 100, totalElements: 3, totalPages: 2 }
+        }
+      })
+
+    await expect(listAllDocumentShares(5)).resolves.toEqual([
+      activeOnFirstPage,
+      revoked,
+      activeOnSecondPage
+    ])
+    expect(http.get).toHaveBeenCalledTimes(2)
+    // 승인 상한을 넘기면 서버가 400 으로 거부한다.
+    expect(http.get.mock.calls.map(([, config]) => config.params)).toEqual([
+      { page: 0, size: 100 },
+      { page: 1, size: 100 }
+    ])
+  })
+
+  it('공유 이력이 한 Page 로 끝나면 한 번만 요청한다', async () => {
+    http.get.mockResolvedValue({
+      data: { content: [], page: { number: 0, size: 100, totalElements: 0, totalPages: 1 } }
+    })
+
+    await expect(listAllDocumentShares(5)).resolves.toEqual([])
+    expect(http.get).toHaveBeenCalledTimes(1)
   })
 
   it('철회는 사업장 단위 경로를 호출한다', async () => {

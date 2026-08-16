@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/services/documents', () => ({
   deleteDocument: vi.fn(),
-  getDocumentShares: vi.fn(),
+  listAllDocumentShares: vi.fn(),
   listDocuments: vi.fn(),
   revokeShare: vi.fn(),
   shareDocument: vi.fn(),
@@ -24,7 +24,7 @@ vi.mock('@/services/worker', () => ({ listAllWorkerWorkplaces: vi.fn() }))
 
 import {
   deleteDocument,
-  getDocumentShares,
+  listAllDocumentShares,
   listDocuments,
   revokeShare,
   shareDocument,
@@ -89,7 +89,7 @@ describe('WorkerDocumentsView 역할별 조작 권한', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getDocumentShares.mockResolvedValue(pageOf([]))
+    listAllDocumentShares.mockResolvedValue([])
     listAllWorkerWorkplaces.mockResolvedValue([])
   })
 
@@ -134,7 +134,7 @@ describe('WorkerDocumentsView 역할별 조작 권한', () => {
     await flushPromises()
 
     // 소유 보건증이 아닌 문서의 공유 이력은 서버가 거부한다.
-    expect(getDocumentShares.mock.calls.map(([documentId]) => documentId)).toEqual([5])
+    expect(listAllDocumentShares.mock.calls.map(([documentId]) => documentId)).toEqual([5])
   })
 })
 
@@ -142,7 +142,7 @@ describe('WorkerDocumentsView 목록 조회', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getDocumentShares.mockResolvedValue(pageOf([]))
+    listAllDocumentShares.mockResolvedValue([])
     listAllWorkerWorkplaces.mockResolvedValue([])
     listDocuments.mockResolvedValue(pageOf([]))
   })
@@ -164,7 +164,7 @@ describe('WorkerDocumentsView 보건증 등록', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
-    getDocumentShares.mockResolvedValue(pageOf([]))
+    listAllDocumentShares.mockResolvedValue([])
     listAllWorkerWorkplaces.mockResolvedValue([])
     listDocuments.mockResolvedValue(pageOf([]))
     uploadDocument.mockResolvedValue({ documentId: 9 })
@@ -221,7 +221,7 @@ describe('WorkerDocumentsView 보건증 삭제', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     listDocuments.mockResolvedValue(pageOf([OWN_HEALTH_CERTIFICATE]))
-    getDocumentShares.mockResolvedValue(pageOf([]))
+    listAllDocumentShares.mockResolvedValue([])
     listAllWorkerWorkplaces.mockResolvedValue([])
     deleteDocument.mockResolvedValue(undefined)
   })
@@ -279,7 +279,7 @@ describe('WorkerDocumentsView 공유 관리', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     listDocuments.mockResolvedValue(pageOf([OWN_HEALTH_CERTIFICATE]))
-    getDocumentShares.mockResolvedValue(pageOf(SHARES))
+    listAllDocumentShares.mockResolvedValue(SHARES)
     listAllWorkerWorkplaces.mockResolvedValue([
       {
         workplaceId: 1,
@@ -326,12 +326,12 @@ describe('WorkerDocumentsView 공유 관리', () => {
     await wrapper.find('[aria-label="공유 관리"]').trigger('click')
     await flushPromises()
 
-    getDocumentShares.mockClear()
+    listAllDocumentShares.mockClear()
     await wrapper.findAll('.share-sec')[1].find('button').trigger('click')
     await flushPromises()
 
     expect(shareDocument).toHaveBeenCalledWith(5, { workplaceId: 4 })
-    expect(getDocumentShares).toHaveBeenCalledWith(5)
+    expect(listAllDocumentShares).toHaveBeenCalledWith(5)
   })
 
   it('철회는 사업장 단위로 요청하고 성공 후 현황을 다시 읽는다', async () => {
@@ -342,12 +342,49 @@ describe('WorkerDocumentsView 공유 관리', () => {
     await wrapper.find('[aria-label="공유 관리"]').trigger('click')
     await flushPromises()
 
-    getDocumentShares.mockClear()
+    listAllDocumentShares.mockClear()
     await wrapper.findAll('.share-sec')[0].find('button').trigger('click')
     await flushPromises()
 
     expect(revokeShare).toHaveBeenCalledWith(5, 1)
-    expect(getDocumentShares).toHaveBeenCalledWith(5)
+    expect(listAllDocumentShares).toHaveBeenCalledWith(5)
+  })
+
+  it('두 번째 Page 의 ACTIVE 공유도 카드와 시트에 나오고 철회할 수 있다', async () => {
+    // 이력은 REVOKED·EXPIRED 를 포함한 최신 생성순이라, 첫 Page 만 읽으면 오래된 ACTIVE
+    // 공유가 뒤로 밀려 사라진다. 그러면 그 사업장이 '공유할 지점'에 다시 나와 409 가 나고
+    // 철회 경로까지 없어진다.
+    const olderActive = {
+      shareId: 2,
+      workplaceId: 4,
+      workplaceName: '신촌점',
+      workCaseId: 204,
+      status: 'ACTIVE',
+      sharedAt: '2026-05-01T10:00:00Z',
+      revokedAt: null,
+      effectiveUntil: '2026-09-01T09:00:00Z'
+    }
+    // listAllDocumentShares 는 Page 를 모두 모아 하나의 배열로 돌려준다.
+    listAllDocumentShares.mockResolvedValue([...SHARES, olderActive])
+    revokeShare.mockResolvedValue(undefined)
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(normalized(wrapper.find('.doc-share'))).toBe('공유중 · 강남점, 신촌점')
+
+    await wrapper.find('[aria-label="공유 관리"]').trigger('click')
+    await flushPromises()
+
+    const sections = wrapper.findAll('.share-sec')
+    expect(sections[0].findAll('.wp').map(normalized)).toEqual(['강남점', '신촌점'])
+    // 이미 공유중인 신촌점이 '공유할 지점'에 다시 나오면 안 된다(409).
+    expect(sections[1].findAll('.wp').map(normalized)).toEqual([])
+
+    await sections[0].findAll('button')[1].trigger('click')
+    await flushPromises()
+
+    expect(revokeShare).toHaveBeenCalledWith(5, 4)
   })
 
   it('canShare=false 인 만료 보건증에는 공유 버튼을 그리지 않는다', async () => {

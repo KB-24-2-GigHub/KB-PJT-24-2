@@ -1,4 +1,5 @@
 import * as api from '@/services/api/documentsApi'
+import { collectAllPages } from '@/utils/page'
 
 /**
  * 문서 도메인 Facade.
@@ -43,6 +44,18 @@ export function fetchDocumentFile(documentId, mode = 'view') {
 
 export function getDocumentShares(documentId, params = {}) {
   return api.getDocumentShares(documentId, params)
+}
+
+/**
+ * 공유 이력 전체.
+ *
+ * 이력은 REVOKED·EXPIRED 를 포함해 최신 생성순으로 내려온다. 첫 Page 만 읽으면 오래된
+ * ACTIVE 공유가 뒤 Page 로 밀려 화면에서 사라지고, 그러면 세 가지가 한꺼번에 어긋난다 —
+ * 카드의 '공유중' 목록이 실제보다 적어지고, 숨은 사업장이 '공유할 지점'에 다시 나와
+ * 409 를 만들며, 그 공유를 철회할 경로 자체가 없어진다.
+ */
+export function listAllDocumentShares(documentId) {
+  return collectAllPages((params) => api.getDocumentShares(documentId, params))
 }
 
 export function shareDocument(documentId, payload) {

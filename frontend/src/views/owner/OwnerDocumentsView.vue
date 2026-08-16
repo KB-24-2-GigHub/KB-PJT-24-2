@@ -17,8 +17,9 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { listDocuments } from '@/services/documents'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { useUiStore } from '@/stores/ui'
-import { docTypeLabel, hasNextPage, isImageDocument } from '@/utils/document'
+import { docTypeLabel, isImageDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
+import { hasNextPage } from '@/utils/page'
 
 const router = useRouter()
 const ui = useUiStore()
