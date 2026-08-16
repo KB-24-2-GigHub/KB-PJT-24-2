@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor
 @AllArgsConstructor
 public class ContractRetentionVersionKeyRow {
+    private Long versionId;
     private Long workCaseId;
     private Integer versionNo;
     private String storageKey;

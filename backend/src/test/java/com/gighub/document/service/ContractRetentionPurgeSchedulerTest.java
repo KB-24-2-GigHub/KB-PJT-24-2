@@ -17,6 +17,7 @@ import java.util.List;
 import static com.gighub.document.service.ContractRetentionPurgeScheduler.BATCH_SIZE;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -51,6 +52,53 @@ class ContractRetentionPurgeSchedulerTest {
         verify(storageAdapter, never()).deleteFinal(anyString());
     }
 
+    /** 이슈 #131: Dry-run은 후보 수뿐 아니라 대상 ID와 예상 Storage 회수량도 보고한다. */
+    @Test
+    void dryRunReportsCandidateIdsAndEstimatedStorageBytes() {
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
+                ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
+        when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
+                .thenReturn(List.of());
+        when(documentMapper.sumVersionSizeBytesByDocumentIds(List.of(DOCUMENT_ID))).thenReturn(2048L);
+        ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
+                documentMapper, storageAdapter, new ContractRetentionProperties(new MockEnvironment()));
+
+        scheduler.runOnce();
+
+        verify(documentMapper).sumVersionSizeBytesByDocumentIds(List.of(DOCUMENT_ID));
+        verify(documentMapper, never()).markContractDeleted(anyLong());
+    }
+
+    /** SPEC-178-05: 한 Version의 Storage 삭제 실패가 같은 문서의 다른 Version을 막지 않는다. */
+    @Test
+    void aFailingVersionDoesNotStopOtherVersionsOfTheSameDocument() {
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
+                ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
+        when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
+                .thenReturn(List.of());
+        when(documentMapper.findVersionKeysByDocumentId(DOCUMENT_ID)).thenReturn(List.of(
+                ContractRetentionVersionKeyRow.builder()
+                        .versionId(1L).workCaseId(WORK_CASE_ID).versionNo(1)
+                        .storageKey("contracts/7/42/v1.pdf").build(),
+                ContractRetentionVersionKeyRow.builder()
+                        .versionId(2L).workCaseId(WORK_CASE_ID).versionNo(2)
+                        .storageKey("contracts/7/42/v2.pdf").build()));
+        doThrow(new RuntimeException("storage failure"))
+                .when(storageAdapter).deleteFinal("contracts/7/42/v1.pdf");
+        ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
+                documentMapper, storageAdapter, purgeEnabledProperties());
+
+        scheduler.runOnce();
+
+        verify(storageAdapter).deleteFinal("contracts/7/42/v1.pdf");
+        verify(storageAdapter).deleteFinal("contracts/7/42/v2.pdf");
+        verify(storageAdapter).deletePending(ContractStorageKeys.pendingKey(WORK_CASE_ID, DOCUMENT_ID, 2));
+        verify(storageAdapter, never())
+                .deletePending(ContractStorageKeys.pendingKey(WORK_CASE_ID, DOCUMENT_ID, 1));
+    }
+
     @Test
     void purgesAnExpiredContractsStatusAndAllVersionObjects() {
         when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
@@ -60,9 +108,11 @@ class ContractRetentionPurgeSchedulerTest {
                 .thenReturn(List.of());
         when(documentMapper.findVersionKeysByDocumentId(DOCUMENT_ID)).thenReturn(List.of(
                 ContractRetentionVersionKeyRow.builder()
-                        .workCaseId(WORK_CASE_ID).versionNo(1).storageKey("contracts/7/42/v1.pdf").build(),
+                        .versionId(1L).workCaseId(WORK_CASE_ID).versionNo(1)
+                        .storageKey("contracts/7/42/v1.pdf").build(),
                 ContractRetentionVersionKeyRow.builder()
-                        .workCaseId(WORK_CASE_ID).versionNo(2).storageKey("contracts/7/42/v2.pdf").build()));
+                        .versionId(2L).workCaseId(WORK_CASE_ID).versionNo(2)
+                        .storageKey("contracts/7/42/v2.pdf").build()));
         ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
                 documentMapper, storageAdapter, purgeEnabledProperties());
 

@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -167,11 +168,26 @@ class ContractDocumentWriteMapperTest {
                 List<Long> orphanIds = mapper.findOrphanedContractDocumentIds(0L, 100);
                 assertTrue(orphanIds.contains(orphanDocumentId));
 
+                assertEquals(
+                        1024L,
+                        mapper.sumVersionSizeBytesByDocumentIds(List.of(eligibleDocumentId)));
+                assertNull(mapper.sumVersionSizeBytesByDocumentIds(
+                        List.of(notYetEligibleDocumentId)));
+
                 List<ContractRetentionVersionKeyRow> versions =
                         mapper.findVersionKeysByDocumentId(eligibleDocumentId);
                 assertEquals(1, versions.size());
+                assertNotNull(versions.get(0).getVersionId());
                 assertEquals(eligibleWorkCaseId, versions.get(0).getWorkCaseId());
                 assertEquals(1, versions.get(0).getVersionNo());
+
+                // SPEC-178-05 1단계: markContractDeleted는 후보 조회와 별개로 연결된
+                // work_cases.ends_at이 지금도 만료 조건을 만족하는지 같은 문장에서 다시
+                // 검증한다. 아직 만료되지 않은 문서를 직접 호출해도 전이되지 않아야 한다.
+                assertEquals(0, mapper.markContractDeleted(notYetEligibleDocumentId));
+                assertEquals(
+                        "ACTIVE",
+                        mapper.lockOwnDocument(notYetEligibleDocumentId, ownerId).getStatus());
 
                 assertEquals(1, mapper.markContractDeleted(eligibleDocumentId));
                 assertEquals(
