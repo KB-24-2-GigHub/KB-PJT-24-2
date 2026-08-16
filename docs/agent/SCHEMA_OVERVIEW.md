@@ -7,18 +7,18 @@ This is the compact database context for repository agents. Read it before chang
 | Item                   | Current baseline                                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Status                 | Current                                                                                                        |
-| Last verified          | 2026-08-12                                                                                                     |
+| Last verified          | 2026-08-16                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
-| Migration head         | `202608121403`                                                                                                 |
-| Versioned migrations   | 19                                                                                                             |
-| Domain tables          | 24, excluding Flyway's `flyway_schema_history`                                                                 |
+| Migration head         | `202608162210`                                                                                                 |
+| Versioned migrations   | 20                                                                                                             |
+| Domain tables          | 25, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
-| Readable DDL snapshot  | [`schema-snapshot-202608121403.sql`](../database/schema-snapshot-202608121403.sql), owner-maintained reference |
+| Readable DDL snapshot  | [`schema-snapshot-202608162210.sql`](../database/schema-snapshot-202608162210.sql), owner-maintained reference |
 
 When this summary and executable configuration disagree, inspect the owner-authored or
 owner-adopted migrations, Git tracking, `compose.yaml`, `DatabaseConfig.java`, and
-`backend/build.gradle`. Versions `202607311427` through `202608121403` are approved parts of the
+`backend/build.gradle`. Versions `202607311427` through `202608162210` are approved parts of the
 current schema. Version `202608041614` adds the independent idempotency Claim store, and version
 `202608051337` replaces Mock bank-account user ownership with a four-digit Demo PIN while preserving
 account IDs and finance references. Version `202608061428` adds document-Version and structured
@@ -27,7 +27,10 @@ denial-reason detail to document access audit rows without rewriting historical 
 closes the `user_badges.badge_type` value set. Versions `202608121400` through `202608121403` add the
 currently proven funding, withdrawal, escrow, and work-cancellation lifecycle shapes. Each of those
 versions performs a count-only preflight, makes no guessed backfill, and owns one table-level
-`ALTER TABLE`. Recovery accepts an already present constraint only when its name, type, enforced state,
+`ALTER TABLE`. Version `202608162210` adds the in-app notification store; it separates the event
+identifier (`source_type`, `source_id`) from the navigation target (`work_case_id`) so a second
+legitimate event on the same work case is not rejected as a duplicate. Recovery accepts an already
+present constraint only when its name, type, enforced state,
 and normalized MySQL CHECK-clause SHA-256 exactly match the migration. Update this document when those authoritative
 sources prove the summary is stale.
 If the executable schema itself needs correction, report the required change to the owner and do
@@ -60,13 +63,14 @@ not edit or regenerate SQL.
 | `202608041614` | `V202608041614__add_idempotency_request_claims.sql`          | Add a user-and-operation-scoped Claim store for request fingerprints and successful response replay   |
 | `202608051337` | `V202608051337__replace_mock_bank_account_user_with_pin.sql` | Remove Mock account user ownership and add the four-digit ASCII Demo PIN without changing account IDs |
 | `202608061428` | `V202608061428__add_document_access_audit_details.sql`       | Link access audits to a version of the same document and store structured denial reasons              |
-| `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql` | Restrict audit `action` and audit `denial_reason` to the approved value sets                            |
-| `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`        | Restrict `user_badges.badge_type` to `TRUST_OWNER` and `TRUST_WORKER`                                  |
-| `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql` | Add settlement refund/retry lifecycle constraints and the required dispute title                        |
-| `202608121400` | `V202608121400__add_funding_order_lifecycle_check.sql`    | Constrain proven `READY` and `COMPLETED` funding-order result shapes                                   |
-| `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql` | Constrain proven `READY` and `COMPLETED` withdrawal result shapes                                    |
-| `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`           | Constrain timestamp shapes for `UNFUNDED`, `HELD`, `RELEASED`, and `REFUNDED` escrow states            |
-| `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`     | Require `canceled_at` exactly for `CANCELED` work cases                                                |
+| `202608111743` | `V202608111743__add_document_access_audit_allowlists.sql`    | Restrict audit `action` and audit `denial_reason` to the approved value sets                          |
+| `202608111744` | `V202608111744__add_user_badge_type_allowlist.sql`           | Restrict `user_badges.badge_type` to `TRUST_OWNER` and `TRUST_WORKER`                                 |
+| `202608112307` | `V202608112307__add_settlement_retry_and_dispute_title.sql`  | Add settlement refund/retry lifecycle constraints and the required dispute title                      |
+| `202608121400` | `V202608121400__add_funding_order_lifecycle_check.sql`       | Constrain proven `READY` and `COMPLETED` funding-order result shapes                                  |
+| `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql`  | Constrain proven `READY` and `COMPLETED` withdrawal result shapes                                     |
+| `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`              | Constrain timestamp shapes for `UNFUNDED`, `HELD`, `RELEASED`, and `REFUNDED` escrow states           |
+| `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`        | Require `canceled_at` exactly for `CANCELED` work cases                                               |
+| `202608162210` | `V202608162210__create_notifications.sql`                    | Add in-app notifications with per-event uniqueness, type pairing, and read-state consistency          |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
 
@@ -80,6 +84,7 @@ Applied or shared versioned migrations are immutable. A newer `V*.sql` file or a
 | Cross-domain request control             | `idempotency_requests`                                                                                                                              |
 | Attendance and dispute                   | `qr_tokens`, `attendance_records`, `disputes`                                                                                                       |
 | Documents and signatures                 | `documents`, `document_versions`, `document_signatures`, `document_shares`, `document_access_logs`                                                  |
+| Notification                             | `notifications`                                                                                                                                     |
 
 Inspect the ordered migrations before relying on an exact column, key, index, generated expression, or allowed status value.
 
@@ -186,15 +191,15 @@ that gap alone does not make the product decision unresolved. Outside a scoped a
 agents must route schema changes to the human Project Manager or Repository Administrator and must not
 edit Flyway or a DDL snapshot themselves.
 
-| Requirement area                  | Current schema fact                                                                                                            | Product status and schema handoff                                                                                                                                         |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Missing checkout (`ATT-006`)      | `CHECK_OUT_MISSING` is allowed and requires a worker; no attendance fact, transition, timestamp, or scheduler index is encoded | The approved contract uses an end-plus-two-hour Scheduler rule, no late/manual M5 correction, and `WAITING/due_at=null`; application behavior and any later DDL reinforcement remain separate work |
-| Fixed workplace radius            | `workplaces.radius_meters` defaults to 100, while it and `work_cases.allowed_radius_meters` accept every positive value        | The approved application policy always writes and checks 100m in current and snapshot data; the owner decides whether DB checks must also require exactly 100             |
-| System-generated contracts        | `documents.work_case_id` may be null even for `EMPLOYMENT_CONTRACT`                                                            | The approved service policy permits only system-generated, work-case-linked contracts; the owner decides whether stronger DB enforcement is required                      |
-| Three-year contract purge         | `documents.status=DELETED` exists; no dedicated retention, purge-completion, or retry column/index exists                       | SPEC 7.0.0 fixes the Seoul `ends_at` date + 3 years boundary, 02:00 keyset job, DB-first logical deletion, idempotent object purge, and indefinite metadata/audit retention; #131 owns runtime implementation without inferred DDL |
-| Trust-badge projection            | One row per user/type; type allowlist and current-row unique key are enforced, while approved evidence remains JSON              | SPEC 7.0.0 fixes cumulative thresholds and lock→recalculate→upsert; #182 owns runtime implementation, with no new columns, history table, or separate backfill             |
-| Idempotency request handling      | User, operation, and key Claims are unique; fingerprints, completed 2xx snapshots, and expiry can be stored                    | The application owns Claim acquisition, fingerprint comparison, immediate conflict handling, replay, interruption recovery, and expiry cleanup                           |
-| Non-owned Mock account execution  | Account rows have a four-digit PIN and no user FK; existing order, withdrawal, and bank-ledger references remain               | A compatible backend must resolve ACTIVE accounts by bank/account, verify PIN only for new funding, and treat withdrawal accounts as PIN-free destinations                |
+| Requirement area                 | Current schema fact                                                                                                            | Product status and schema handoff                                                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Missing checkout (`ATT-006`)     | `CHECK_OUT_MISSING` is allowed and requires a worker; no attendance fact, transition, timestamp, or scheduler index is encoded | The approved contract uses an end-plus-two-hour Scheduler rule, no late/manual M5 correction, and `WAITING/due_at=null`; application behavior and any later DDL reinforcement remain separate work                                 |
+| Fixed workplace radius           | `workplaces.radius_meters` defaults to 100, while it and `work_cases.allowed_radius_meters` accept every positive value        | The approved application policy always writes and checks 100m in current and snapshot data; the owner decides whether DB checks must also require exactly 100                                                                      |
+| System-generated contracts       | `documents.work_case_id` may be null even for `EMPLOYMENT_CONTRACT`                                                            | The approved service policy permits only system-generated, work-case-linked contracts; the owner decides whether stronger DB enforcement is required                                                                               |
+| Three-year contract purge        | `documents.status=DELETED` exists; no dedicated retention, purge-completion, or retry column/index exists                      | SPEC 7.0.0 fixes the Seoul `ends_at` date + 3 years boundary, 02:00 keyset job, DB-first logical deletion, idempotent object purge, and indefinite metadata/audit retention; #131 owns runtime implementation without inferred DDL |
+| Trust-badge projection           | One row per user/type; type allowlist and current-row unique key are enforced, while approved evidence remains JSON            | SPEC 7.0.0 fixes cumulative thresholds and lock→recalculate→upsert; #182 owns runtime implementation, with no new columns, history table, or separate backfill                                                                     |
+| Idempotency request handling     | User, operation, and key Claims are unique; fingerprints, completed 2xx snapshots, and expiry can be stored                    | The application owns Claim acquisition, fingerprint comparison, immediate conflict handling, replay, interruption recovery, and expiry cleanup                                                                                     |
+| Non-owned Mock account execution | Account rows have a four-digit PIN and no user FK; existing order, withdrawal, and bank-ledger references remain               | A compatible backend must resolve ACTIVE accounts by bank/account, verify PIN only for new funding, and treat withdrawal accounts as PIN-free destinations                                                                         |
 
 `CHECK_OUT_MISSING` is an approved persisted state distinct from `NO_SHOW`. The DDL only permits the
 state and requires an assigned worker. The approved product contract places the transition in a server
