@@ -136,8 +136,13 @@ public class DisputeReviewQueueService {
         LocalDateTime now = reviewMapper.currentDatabaseTime();
         DisputeReviewInput currentInput = inputOf(aggregate);
         String currentInputHash = DisputeReviewInputs.sha256(currentInput);
-        if (isLeaseExpired(aggregate.review(), now)
-                || !execution.getInputHash().equals(currentInputHash)
+        if (isLeaseExpired(aggregate.review(), now)) {
+            // 응답이 Lease 경계를 넘긴 경우 결과는 버리되, 분쟁이 영구 보류되지 않도록 새 검토를 예약합니다.
+            failLocked(aggregate, "WORKER_LEASE_EXPIRED");
+            enqueueRetryIfAllowed(aggregate, "WORKER_LEASE_EXPIRED");
+            return false;
+        }
+        if (!execution.getInputHash().equals(currentInputHash)
                 || !isCurrentAndApplicable(aggregate, currentInputHash)) {
             failLocked(aggregate, "STALE_REVIEW_RESPONSE");
             return false;

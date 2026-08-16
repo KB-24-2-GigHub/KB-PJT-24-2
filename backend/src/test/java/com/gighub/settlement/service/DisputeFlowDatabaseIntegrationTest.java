@@ -402,6 +402,64 @@ class DisputeFlowDatabaseIntegrationTest {
         }
     }
 
+    @Test
+    @Timeout(25)
+    void responseArrivingAfterLeaseExpiryFailsOldReviewAndCreatesRetry() {
+        try (AnnotationConfigApplicationContext context =
+                     fakeApplicationContext(DisputeReviewDecision.RESOLVE)) {
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            DisputeService disputeService = context.getBean(DisputeService.class);
+            DisputeReviewQueueService queueService =
+                    context.getBean(DisputeReviewQueueService.class);
+            Fixture fixture = createFixture(jdbc);
+
+            try {
+                disputeService.create(command(fixture));
+                DisputeReviewExecution execution = queueService.claim(
+                        pendingCandidate(context, fixture.workCaseId()));
+                assertNotNull(execution);
+                jdbc.update(
+                        "UPDATE dispute_ai_reviews"
+                                + " SET lease_until = DATE_SUB(NOW(6), INTERVAL 1 MICROSECOND)"
+                                + " WHERE id = ?",
+                        execution.getReviewId());
+
+                boolean lateApplied = queueService.complete(
+                        execution,
+                        new DisputeReviewProviderResult(
+                                "lease-expired-response",
+                                new DisputeReviewResult(
+                                        DisputeReviewDecision.RESOLVE,
+                                        List.of("LEASE_EXPIRED_RESULT"),
+                                        "Lease 만료 뒤 도착한 결과입니다.",
+                                        new BigDecimal("0.900"))));
+
+                assertFalse(lateApplied);
+                assertEquals("UNDER_REVIEW", text(jdbc,
+                        "SELECT status FROM disputes WHERE work_case_id = ?",
+                        fixture.workCaseId()));
+                assertEquals(1L, count(jdbc,
+                        "SELECT COUNT(*) FROM dispute_ai_reviews"
+                                + " WHERE dispute_id = (SELECT id FROM disputes"
+                                + " WHERE work_case_id = ?)"
+                                + " AND status = 'FAILED'"
+                                + " AND failure_code = 'WORKER_LEASE_EXPIRED'",
+                        fixture.workCaseId()));
+                assertEquals(1L, count(jdbc,
+                        "SELECT COUNT(*) FROM dispute_ai_reviews"
+                                + " WHERE dispute_id = (SELECT id FROM disputes"
+                                + " WHERE work_case_id = ?) AND status = 'PENDING'",
+                        fixture.workCaseId()));
+                assertEquals("ON_HOLD", text(jdbc,
+                        "SELECT status FROM settlements WHERE work_case_id = ?",
+                        fixture.workCaseId()));
+                assertMoneyUnchanged(jdbc, fixture);
+            } finally {
+                deleteFixture(jdbc, fixture);
+            }
+        }
+    }
+
     private static AnnotationConfigApplicationContext fakeApplicationContext(
             DisputeReviewDecision decision) {
         AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext();

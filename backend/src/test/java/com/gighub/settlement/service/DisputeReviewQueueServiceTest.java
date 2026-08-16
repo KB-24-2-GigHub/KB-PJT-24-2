@@ -238,6 +238,36 @@ class DisputeReviewQueueServiceTest {
     }
 
     @Test
+    void responseArrivingAfterLeaseExpiryCreatesFreshRetryInsteadOfPermanentHold() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.minusNanos(1)
+        );
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "WORKER_LEASE_EXPIRED"))
+                .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
+
+        assertFalse(queueService.complete(
+                execution(inputHash),
+                providerResponse(DisputeReviewDecision.RESOLVE, "임대 만료 뒤 도착한 결과입니다.")));
+
+        verify(reviewMapper).markFailed(REVIEW_ID, REQUEST_KEY, "WORKER_LEASE_EXPIRED");
+        verify(reviewMapper).insertPending(any());
+        verify(reviewMapper, never()).complete(any());
+        verify(disputeMapper, never()).transitionToClosed(any(), any(), any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
     void transientFailureStopsRetryingAtConfiguredAttemptLimit() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
