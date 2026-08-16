@@ -39,6 +39,7 @@ Architecture, 세부 문서 순으로 이동하며 같은 Milestone의 무관한
 | 요구사항 연결 확인 | [`specs/SPEC_TRACEABILITY.md`](specs/SPEC_TRACEABILITY.md)         | 요구사항과 API·DB 도메인의 안정적인 연결           |
 | DB 구조 확인       | [`agent/SCHEMA_OVERVIEW.md`](agent/SCHEMA_OVERVIEW.md)             | Migration과 핵심 불변식 요약                       |
 | DB 운영·검증       | [`runbooks/DATABASE_RUNBOOK.md`](runbooks/DATABASE_RUNBOOK.md)     | Compose, Flyway, Snapshot 검증 절차                |
+| 계약서 보존 파기 운영 | [`runbooks/CONTRACT_RETENTION_RUNBOOK.md`](runbooks/CONTRACT_RETENTION_RUNBOOK.md) | Dry-run 결과 확인, 재처리, 데모 시연 |
 | 전체 DB 관계 확인  | [`DATABASE_SCHEMA_ERD.md`](DATABASE_SCHEMA_ERD.md)                 | 전체·기능별 ERD와 제약                             |
 | 의존성·빌드 변경   | [`DEPENDENCY_SPECIFICATION.md`](DEPENDENCY_SPECIFICATION.md)       | 허용 기술, 버전, 변경 절차                         |
 
