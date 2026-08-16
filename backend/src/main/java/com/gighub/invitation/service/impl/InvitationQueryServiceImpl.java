@@ -2,7 +2,6 @@ package com.gighub.invitation.service.impl;
 
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.badge.service.BadgeApplicationService;
-import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
@@ -123,18 +122,20 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
     }
 
     /**
-     * 초대를 발급한 OWNER의 같은 산정 결과를 재사용합니다.
+     * 초대를 발급한 OWNER의 배지를, 잠금이나 재계산 없이 마지막 저장 값 그대로 보여줍니다.
      *
-     * <p>Badge Application 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준
-     * 결과이며, 0단계는 활성 Badge 없음과 같은 {@code null}로 응답한다는 기존 계약을
-     * 유지합니다.</p>
+     * <p>초대 열람은 단순 조회인데 매번 재계산·Upsert를 걸면 같은 OWNER가 보낸 여러 초대를
+     * WORKER들이 동시에 열 때 사용자 행 잠금 하나를 두고 줄을 서게 됩니다. 실제 근로는 일 단위라
+     * 초대 발급과 수락 사이에 시차가 있고, 그 사이 OWNER 배지가 자주 바뀔 만큼 정산·분쟁이
+     * 몰리는 규모도 아니어서, 초대를 발급한 시점 기준 배지를 그대로 보여줘도 무방하다고
+     * 판단했습니다. 최신 값은 초대 발급({@code InvitationIssueServiceImpl})이 그때 한 번
+     * {@code recalculate}로 저장해 둡니다. 0단계는 활성 Badge 없음과 같은 {@code null}로
+     * 응답한다는 기존 계약을 유지합니다.</p>
      */
     private OwnerBadgeResponse ownerBadge(Long employerId) {
-        BadgeCalculationResult result = badgeApplicationService.recalculate(employerId);
-        if (result.getLevel() <= 0) {
-            return null;
-        }
-        return OwnerBadgeResponse.of(result.getBadgeType(), result.getLevel());
+        return badgeApplicationService.currentBadge(employerId)
+                .map(snapshot -> OwnerBadgeResponse.of(snapshot.getBadgeType(), snapshot.getLevel()))
+                .orElse(null);
     }
 
     /**

@@ -1,5 +1,6 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.badge.service.BadgeApplicationService;
 import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
@@ -29,6 +30,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 
 /**
  * 초대 발급의 상태 판정, 재조회 계약과 잠금 순서를 확인합니다.
@@ -51,6 +57,38 @@ class InvitationIssueServiceImplTest {
                     "issue-test-invitation-secret-0123456789", null, WEB_ORIGIN)
     );
     private final StubInvitationMapper mapper = new StubInvitationMapper();
+    private final BadgeApplicationService badgeApplicationService =
+            mock(BadgeApplicationService.class);
+
+    @Test
+    void newInvitationRecalculatesTheIssuingOwnersBadgeOnce() {
+        mapper.workCase = draftWorkCase(3);
+
+        service(STARTS_AT.minusDays(1L)).issue(owner(), WORK_CASE_ID);
+
+        verify(badgeApplicationService).recalculate(OWNER_ID);
+    }
+
+    @Test
+    void existingActiveInvitationDoesNotTouchTheBadge() {
+        mapper.workCase = draftWorkCase(3);
+        mapper.activePending = pendingInvitation(11L, 3, STARTS_AT);
+
+        service(STARTS_AT.minusDays(1L)).issue(owner(), WORK_CASE_ID);
+
+        verifyNoInteractions(badgeApplicationService);
+    }
+
+    @Test
+    void rejectedIssueAttemptsDoNotTouchTheBadge() {
+        mapper.workCase = draftWorkCase(1).toBuilder().workerId(9L).build();
+
+        assertThrows(
+                WorkCaseLockedException.class,
+                () -> service(STARTS_AT.minusDays(1L)).issue(owner(), WORK_CASE_ID));
+
+        verify(badgeApplicationService, never()).recalculate(anyLong());
+    }
 
     @Test
     void issuesNewInvitationCopyingTermsVersionAndExpiryFromTheLockedWorkCase() {
@@ -259,6 +297,16 @@ class InvitationIssueServiceImplTest {
     }
 
     @Test
+    void reissueAlsoRecalculatesTheIssuingOwnersBadge() {
+        mapper.workCase = draftWorkCase(3);
+        mapper.activePending = pendingInvitation(11L, 3, STARTS_AT);
+
+        service(STARTS_AT.minusDays(1L)).reissue(owner(), WORK_CASE_ID);
+
+        verify(badgeApplicationService).recalculate(OWNER_ID);
+    }
+
+    @Test
     void reissueStopsWhenTheLockedInvitationWasNotRevoked() {
         mapper.workCase = draftWorkCase(3);
         mapper.activePending = pendingInvitation(11L, 3, STARTS_AT);
@@ -337,7 +385,11 @@ class InvitationIssueServiceImplTest {
 
     private InvitationIssueServiceImpl service(LocalDateTime now) {
         return new InvitationIssueServiceImpl(
-                mapper, codec, linkFactory, Clock.fixed(now.atZone(SEOUL).toInstant(), SEOUL));
+                mapper,
+                codec,
+                linkFactory,
+                badgeApplicationService,
+                Clock.fixed(now.atZone(SEOUL).toInstant(), SEOUL));
     }
 
     private static InvitationWorkCaseLockRow draftWorkCase(int termsVersion) {

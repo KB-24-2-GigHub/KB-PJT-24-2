@@ -1,6 +1,7 @@
 package com.gighub.invitation.service.impl;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
@@ -34,6 +35,11 @@ import java.util.Objects;
  * <p>잠금 순서는 <b>근무 행 → 초대 행</b>입니다. 근무 조건 수정 흐름도 근무 행을 먼저
  * 잠그므로 두 흐름이 동시에 실행돼도 교착이 생기지 않습니다. 근무 행을 잡고 있는 동안에는
  * 같은 근무의 다른 발급 요청이 대기하므로, 동시 발급도 순서대로 처리됩니다.</p>
+ *
+ * <p>새 초대를 만들 때 발급하는 OWNER의 배지를 한 번 재계산해 둡니다. 초대를 여는 WORKER
+ * 쪽(조회)은 이 값을 잠금 없이 읽기만 하므로, 배지는 "초대를 발급한 시점" 기준으로 고정되어
+ * 보입니다. OWNER 한 명이 초대를 발급하는 동작은 이미 근무 행 잠금으로 순차 처리되어 있어
+ * 여기서 재계산해도 새로운 동시성 경합이 생기지 않습니다.</p>
  */
 @Service
 public class InvitationIssueServiceImpl implements InvitationIssueService {
@@ -48,14 +54,21 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
     private final InvitationMapper invitationMapper;
     private final InvitationTokenCodec tokenCodec;
     private final InvitationLinkFactory linkFactory;
+    private final BadgeApplicationService badgeApplicationService;
     private final Clock clock;
 
     @Autowired
     public InvitationIssueServiceImpl(
             InvitationMapper invitationMapper,
             InvitationTokenCodec tokenCodec,
-            InvitationLinkFactory linkFactory) {
-        this(invitationMapper, tokenCodec, linkFactory, Clock.system(DATABASE_ZONE));
+            InvitationLinkFactory linkFactory,
+            BadgeApplicationService badgeApplicationService) {
+        this(
+                invitationMapper,
+                tokenCodec,
+                linkFactory,
+                badgeApplicationService,
+                Clock.system(DATABASE_ZONE));
     }
 
     /** 시작 시각 경계를 검증할 때만 고정 Clock을 주입합니다. */
@@ -63,10 +76,12 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
             InvitationMapper invitationMapper,
             InvitationTokenCodec tokenCodec,
             InvitationLinkFactory linkFactory,
+            BadgeApplicationService badgeApplicationService,
             Clock clock) {
         this.invitationMapper = invitationMapper;
         this.tokenCodec = tokenCodec;
         this.linkFactory = linkFactory;
+        this.badgeApplicationService = badgeApplicationService;
         this.clock = clock;
     }
 
@@ -157,9 +172,13 @@ public class InvitationIssueServiceImpl implements InvitationIssueService {
     /**
      * 새 초대를 만들고 확정된 Token Hash까지 같은 Transaction에서 기록합니다.
      *
-     * <p>Token 원문은 저장된 초대 ID에서 파생하므로 INSERT로 ID를 먼저 확보합니다.</p>
+     * <p>Token 원문은 저장된 초대 ID에서 파생하므로 INSERT로 ID를 먼저 확보합니다. 발급하는
+     * OWNER의 배지도 이 시점에 같은 Transaction에서 재계산해 둡니다 — 초대 조회 쪽은 이 값을
+     * 읽기만 하므로, 여기서 한 번 최신화해 두지 않으면 초대에 계속 낡은 배지가 붙습니다.</p>
      */
     private InvitationIssueResponse createInvitation(InvitationWorkCaseLockRow workCase) {
+        badgeApplicationService.recalculate(workCase.getEmployerId());
+
         InvitationInsertParam param = InvitationInsertParam.builder()
                 .workCaseId(workCase.getWorkCaseId())
                 // 조건 Version과 만료는 잠근 근무에서 복사합니다. 호출자는 지정할 수 없습니다.

@@ -3,6 +3,7 @@ package com.gighub.badge.service;
 import java.time.LocalDateTime;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.gighub.badge.domain.TrustBadgeCriteria;
@@ -37,6 +38,16 @@ public class BadgeEvidenceCodec {
             return objectMapper.writeValueAsString(node);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("배지 evidence를 직렬화하지 못했습니다.", exception);
+        }
+    }
+
+    /** 저장된 evidence에서 level만 꺼냅니다. 재계산 없이 마지막 값을 보여줄 때 씁니다. */
+    public int readLevel(String evidenceJson) {
+        try {
+            JsonNode node = objectMapper.readTree(evidenceJson);
+            return node.path("level").asInt();
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("배지 evidence를 읽지 못했습니다.", exception);
         }
     }
 }

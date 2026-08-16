@@ -14,4 +14,12 @@
                                  awarded_at = VALUES(awarded_at)
     </insert>
 
+    <!-- 잠금·재계산 없이 마지막으로 저장된 evidence만 읽는다. 없으면 null. -->
+    <select id="findEvidenceByUserIdAndType" resultType="string">
+        SELECT evidence
+        FROM user_badges
+        WHERE user_id = #{userId}
+          AND badge_type = #{badgeType}
+    </select>
+
 </mapper>

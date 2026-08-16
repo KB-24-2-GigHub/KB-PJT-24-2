@@ -3,6 +3,7 @@ package com.gighub.badge.service;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Optional;
 
 import com.gighub.badge.domain.TrustBadgeCriteria;
 import com.gighub.badge.domain.TrustBadgeResult;
@@ -12,6 +13,7 @@ import com.gighub.badge.mapper.UserBadgeMapper;
 import com.gighub.badge.mapper.param.UserBadgeUpsertParam;
 import com.gighub.badge.mapper.result.BadgeEvidenceCountsRow;
 import com.gighub.badge.service.result.BadgeCalculationResult;
+import com.gighub.badge.service.result.BadgeSnapshot;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
@@ -97,6 +99,25 @@ public class BadgeApplicationServiceImpl implements BadgeApplicationService {
                 result.getRemainingToNextLevel(),
                 result.getNextThresholdPercent(),
                 result.getNextThresholdCount());
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public Optional<BadgeSnapshot> currentBadge(long userId) {
+        User user = userMapper.findById(userId);
+        if (user == null) {
+            return Optional.empty();
+        }
+        TrustBadgeType badgeType = toBadgeType(user.getRole());
+        String evidence = userBadgeMapper.findEvidenceByUserIdAndType(userId, badgeType.name());
+        if (evidence == null) {
+            return Optional.empty();
+        }
+        int level = badgeEvidenceCodec.readLevel(evidence);
+        if (level <= 0) {
+            return Optional.empty();
+        }
+        return Optional.of(BadgeSnapshot.of(badgeType.name(), level));
     }
 
     private TrustBadgeType toBadgeType(UserRole role) {
