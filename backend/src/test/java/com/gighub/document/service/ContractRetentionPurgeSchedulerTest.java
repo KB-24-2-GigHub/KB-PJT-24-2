@@ -78,6 +78,7 @@ class ContractRetentionPurgeSchedulerTest {
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
                 .thenReturn(List.of());
+        when(documentMapper.markContractDeleted(DOCUMENT_ID)).thenReturn(1);
         when(documentMapper.findVersionKeysByDocumentId(DOCUMENT_ID)).thenReturn(List.of(
                 ContractRetentionVersionKeyRow.builder()
                         .versionId(1L).workCaseId(WORK_CASE_ID).versionNo(1)
@@ -106,6 +107,7 @@ class ContractRetentionPurgeSchedulerTest {
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
                 .thenReturn(List.of());
+        when(documentMapper.markContractDeleted(DOCUMENT_ID)).thenReturn(1);
         when(documentMapper.findVersionKeysByDocumentId(DOCUMENT_ID)).thenReturn(List.of(
                 ContractRetentionVersionKeyRow.builder()
                         .versionId(1L).workCaseId(WORK_CASE_ID).versionNo(1)
@@ -123,6 +125,30 @@ class ContractRetentionPurgeSchedulerTest {
         verify(storageAdapter).deleteFinal("contracts/7/42/v2.pdf");
         verify(storageAdapter).deletePending(ContractStorageKeys.pendingKey(WORK_CASE_ID, DOCUMENT_ID, 1));
         verify(storageAdapter).deletePending(ContractStorageKeys.pendingKey(WORK_CASE_ID, DOCUMENT_ID, 2));
+    }
+
+    /**
+     * markContractDeleted가 재검증한 만료 조건이 후보 조회 이후 더 이상 성립하지 않으면
+     * (예: 취소되거나 ends_at이 바뀜) 영향 행이 0이다 — 이 문서가 지금 확실히 DELETED라고
+     * 볼 수 없으므로 Version 조회와 Storage 삭제로 진행하면 안 된다.
+     */
+    @Test
+    void aZeroRowUpdateStopsBeforeVersionAndStorageDeletion() {
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
+                ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
+        when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
+                .thenReturn(List.of());
+        when(documentMapper.markContractDeleted(DOCUMENT_ID)).thenReturn(0);
+        ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
+                documentMapper, storageAdapter, purgeEnabledProperties());
+
+        scheduler.runOnce();
+
+        verify(documentMapper).markContractDeleted(DOCUMENT_ID);
+        verify(documentMapper, never()).findVersionKeysByDocumentId(anyLong());
+        verify(storageAdapter, never()).deleteFinal(anyString());
+        verify(storageAdapter, never()).deletePending(anyString());
     }
 
     @Test
@@ -153,6 +179,8 @@ class ContractRetentionPurgeSchedulerTest {
                 ContractRetentionCandidateRow.builder().documentId(otherDocumentId).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(otherDocumentId, BATCH_SIZE))
                 .thenReturn(List.of());
+        when(documentMapper.markContractDeleted(DOCUMENT_ID)).thenReturn(1);
+        when(documentMapper.markContractDeleted(otherDocumentId)).thenReturn(1);
         when(documentMapper.findVersionKeysByDocumentId(DOCUMENT_ID))
                 .thenThrow(new RuntimeException("storage lookup failed"));
         when(documentMapper.findVersionKeysByDocumentId(otherDocumentId)).thenReturn(List.of(
@@ -217,6 +245,7 @@ class ContractRetentionPurgeSchedulerTest {
                         .documentId(secondPageDocumentId).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(secondPageDocumentId, BATCH_SIZE))
                 .thenReturn(List.of());
+        when(documentMapper.markContractDeleted(secondPageDocumentId)).thenReturn(1);
         ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
                 documentMapper, storageAdapter, purgeEnabledProperties());
 

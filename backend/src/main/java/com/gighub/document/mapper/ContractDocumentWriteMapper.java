@@ -112,10 +112,16 @@ public interface ContractDocumentWriteMapper {
      * 문서 행을 잠근다. 만료 대상이면 {@code documents.status=DELETED}로 바꾸고 Commit").
      *
      * <p>이 단일 {@code UPDATE}가 행 잠금·만료 재검증·조건부 전이를 한 문장 안에서 원자적으로
-     * 수행한다 — 연결된 {@code work_cases.ends_at}이 지금도 보존 만료 조건을 만족할 때만
-     * 전이하므로, 후보 조회(별도 Transaction)와 이 전이 사이에 조건이 바뀌었더라도 잘못된
-     * 대상을 파기하지 않는다. 이미 {@code DELETED}거나 더 이상 만료 대상이 아니면 0을
-     * 돌려준다(멱등).</p>
+     * 수행한다 — {@code status != 'CANCELED'}와 연결된 {@code work_cases.ends_at}이 지금도
+     * 보존 만료 조건을 만족하는지를 {@link #findContractRetentionCandidates}와 같은 조건으로
+     * 다시 검증하므로, 후보 조회(별도 Transaction)와 이 전이 사이에 취소되거나 조건이
+     * 바뀌었더라도 잘못된 대상을 파기하지 않는다.</p>
+     *
+     * <p><b>반환값은 무시하면 안 된다.</b> 1이면 이번 호출로 실제 전이가 일어났다는 뜻이고,
+     * 0은 이미 {@code DELETED}이거나, 취소됐거나, 더 이상 만료 대상이 아니라는 뜻이다. 두
+     * 경우 모두 문서가 지금 확실히 {@code DELETED}라고 보장할 수 없으므로, 호출자는 0을
+     * 받으면 이번 실행에서 이 문서의 Version·Storage 삭제를 진행하면 안 되고 다음 실행의
+     * 후보 재조회에 맡겨야 한다.</p>
      */
     int markContractDeleted(@Param("documentId") long documentId);
 

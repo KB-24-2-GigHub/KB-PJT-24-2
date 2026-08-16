@@ -146,12 +146,16 @@ class ContractDocumentWriteMapperTest {
             long notYetEligibleWorkCaseId = insertWorkCaseWithEndsAt(
                     jdbc, ownerId, workerId, workplaceId,
                     today.minusYears(3).plusDays(1).atStartOfDay());
+            long canceledEligibleWorkCaseId = insertWorkCaseWithEndsAt(
+                    jdbc, ownerId, workerId, workplaceId, today.minusYears(3).atStartOfDay());
 
             long eligibleDocumentId = insertContractDocument(
                     jdbc, ownerId, eligibleWorkCaseId, "ACTIVE");
             long notYetEligibleDocumentId = insertContractDocument(
                     jdbc, ownerId, notYetEligibleWorkCaseId, "ACTIVE");
             long orphanDocumentId = insertContractDocument(jdbc, ownerId, null, "ACTIVE");
+            long canceledDocumentId = insertContractDocument(
+                    jdbc, ownerId, canceledEligibleWorkCaseId, "CANCELED");
             insertContractVersion(
                     jdbc, eligibleDocumentId, 1,
                     "contracts/%d/%d/v1.pdf".formatted(eligibleWorkCaseId, eligibleDocumentId));
@@ -164,6 +168,7 @@ class ContractDocumentWriteMapperTest {
                 assertTrue(candidateIds.contains(eligibleDocumentId));
                 assertTrue(candidateIds.stream().noneMatch(id -> id.equals(notYetEligibleDocumentId)));
                 assertTrue(candidateIds.stream().noneMatch(id -> id.equals(orphanDocumentId)));
+                assertTrue(candidateIds.stream().noneMatch(id -> id.equals(canceledDocumentId)));
 
                 List<Long> orphanIds = mapper.findOrphanedContractDocumentIds(0L, 100);
                 assertTrue(orphanIds.contains(orphanDocumentId));
@@ -189,6 +194,12 @@ class ContractDocumentWriteMapperTest {
                         "ACTIVE",
                         mapper.lockOwnDocument(notYetEligibleDocumentId, ownerId).getStatus());
 
+                // 만료 조건을 만족해도 CANCELED로 취소된 문서는 전이하지 않는다.
+                assertEquals(0, mapper.markContractDeleted(canceledDocumentId));
+                assertEquals(
+                        "CANCELED",
+                        mapper.lockOwnDocument(canceledDocumentId, ownerId).getStatus());
+
                 assertEquals(1, mapper.markContractDeleted(eligibleDocumentId));
                 assertEquals(
                         "DELETED", mapper.lockOwnDocument(eligibleDocumentId, ownerId).getStatus());
@@ -197,11 +208,12 @@ class ContractDocumentWriteMapperTest {
             } finally {
                 jdbc.update("DELETE FROM document_versions WHERE document_id = ?", eligibleDocumentId);
                 jdbc.update(
-                        "DELETE FROM documents WHERE id IN (?, ?, ?)",
-                        eligibleDocumentId, notYetEligibleDocumentId, orphanDocumentId);
+                        "DELETE FROM documents WHERE id IN (?, ?, ?, ?)",
+                        eligibleDocumentId, notYetEligibleDocumentId, orphanDocumentId,
+                        canceledDocumentId);
                 jdbc.update(
-                        "DELETE FROM work_cases WHERE id IN (?, ?)",
-                        eligibleWorkCaseId, notYetEligibleWorkCaseId);
+                        "DELETE FROM work_cases WHERE id IN (?, ?, ?)",
+                        eligibleWorkCaseId, notYetEligibleWorkCaseId, canceledEligibleWorkCaseId);
                 jdbc.update("DELETE FROM workplaces WHERE id = ?", workplaceId);
                 jdbc.update("DELETE FROM users WHERE id IN (?, ?)", workerId, ownerId);
             }

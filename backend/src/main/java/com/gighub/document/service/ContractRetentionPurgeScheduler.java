@@ -31,8 +31,10 @@ import java.util.List;
  * <p>{@link ContractRetentionProperties#isPurgeEnabled()}가 {@code false}(기본)면 후보 수·
  * 대상 ID·예상 Storage 회수량만 로그로 남기는 Dry-run이다. 실제 파기는 명시적으로 켜야 한다.
  * 운영 로그는 {@code executionId}, {@code policyVersion}, {@code documentId}, {@code versionId},
- * 단계({@code stage})와 성공·실패 Enum({@code result})만 남기고 저장 Key·Checksum·당사자
- * 정보는 남기지 않는다(SPEC-178-05).</p>
+ * 단계({@code stage}), 결과 Enum({@code result})과 실패일 때만 예외 Class 이름
+ * ({@code failureType})을 남기고, 저장 Key·Checksum·당사자 정보나 원본 {@link Throwable}은
+ * 남기지 않는다 — 파일 I/O 예외의 메시지·cause 체인에는 실제 경로가 섞여 나올 수 있다
+ * (SPEC-178-05).</p>
  */
 @Component
 @RequiredArgsConstructor
@@ -46,6 +48,7 @@ public class ContractRetentionPurgeScheduler {
     private static final String STAGE_STORAGE_DELETE = "STORAGE_DELETE";
     private static final String RESULT_SUCCESS = "SUCCESS";
     private static final String RESULT_FAILED = "FAILED";
+    private static final String RESULT_SKIPPED = "SKIPPED";
 
     private static final Logger log = LoggerFactory.getLogger(ContractRetentionPurgeScheduler.class);
 
@@ -190,6 +193,9 @@ public class ContractRetentionPurgeScheduler {
         long documentId = candidate.getDocumentId();
         if (!"DELETED".equals(candidate.getStatus())
                 && !transitionToDeleted(executionId, documentId)) {
+            // 영향 행 0(취소됨·조건 재검증 실패·경합 등)은 이 문서가 지금 확실히 DELETED임을
+            // 보장하지 않는다. Version/Storage 삭제로 진행하지 않고 다음 실행의 후보
+            // 재조회에 맡긴다.
             return false;
         }
 
@@ -199,7 +205,7 @@ public class ContractRetentionPurgeScheduler {
         } catch (RuntimeException failure) {
             // Version 조회 실패도 이 문서 하나만 실패로 남긴다 — 다음 실행이 같은 조건으로
             // 다시 후보로 잡아 재시도한다.
-            logStage(executionId, documentId, null, STAGE_VERSION_LOOKUP, RESULT_FAILED, failure);
+            logStageFailure(executionId, documentId, null, STAGE_VERSION_LOOKUP, failure);
             return false;
         }
 
@@ -212,11 +218,24 @@ public class ContractRetentionPurgeScheduler {
         return allVersionsSucceeded;
     }
 
+    /**
+     * 영향 행 수를 반드시 확인한다. 1이면 이번 호출로 실제 전이가 일어난 것이고, 0이면
+     * 이미 {@code DELETED}·취소됨·더 이상 만료 대상 아님 중 하나라 문서가 지금 확실히
+     * {@code DELETED}라고 볼 수 없다({@link ContractDocumentWriteMapper#markContractDeleted}).
+     * 두 경우를 구분해 예외 없이 0이 나온 것을 성공으로 잘못 기록하지 않는다.
+     */
     private boolean transitionToDeleted(String executionId, long documentId) {
+        int updatedRows;
         try {
-            documentMapper.markContractDeleted(documentId);
+            updatedRows = documentMapper.markContractDeleted(documentId);
         } catch (RuntimeException failure) {
-            logStage(executionId, documentId, null, STAGE_DB_STATUS_TRANSITION, RESULT_FAILED, failure);
+            logStageFailure(executionId, documentId, null, STAGE_DB_STATUS_TRANSITION, failure);
+            return false;
+        }
+        if (updatedRows == 0) {
+            logStage(
+                    executionId, documentId, null,
+                    STAGE_DB_STATUS_TRANSITION, RESULT_SKIPPED, null);
             return false;
         }
         logStage(executionId, documentId, null, STAGE_DB_STATUS_TRANSITION, RESULT_SUCCESS, null);
@@ -231,9 +250,8 @@ public class ContractRetentionPurgeScheduler {
                     ContractStorageKeys.pendingKey(
                             version.getWorkCaseId(), documentId, version.getVersionNo()));
         } catch (RuntimeException failure) {
-            logStage(
-                    executionId, documentId, version.getVersionId(),
-                    STAGE_STORAGE_DELETE, RESULT_FAILED, failure);
+            logStageFailure(
+                    executionId, documentId, version.getVersionId(), STAGE_STORAGE_DELETE, failure);
             return false;
         }
         logStage(
@@ -242,18 +260,29 @@ public class ContractRetentionPurgeScheduler {
         return true;
     }
 
+    /**
+     * 실패 원인 {@link Throwable}은 그대로 로그에 넘기지 않는다 — 파일 I/O 예외의 메시지나
+     * cause 체인에 실제 경로(Storage Key)가 섞여 나올 수 있어 "저장 Key를 로그에 남기지
+     * 않는다"는 계약(SPEC-178-05)을 깨뜨린다. 예외 Class 이름만 안전한 실패 분류로 남긴다.
+     */
+    private void logStageFailure(
+            String executionId, long documentId, Long versionId, String stage, RuntimeException failure) {
+        logStage(executionId, documentId, versionId, stage, RESULT_FAILED,
+                failure.getClass().getSimpleName());
+    }
+
     private void logStage(
             String executionId,
             long documentId,
             Long versionId,
             String stage,
             String result,
-            RuntimeException failure) {
+            String failureType) {
         if (RESULT_FAILED.equals(result)) {
             log.warn(
                     "근로계약서 보존 만료 파기 단계가 실패했습니다. executionId={}, policyVersion={}, "
-                            + "documentId={}, versionId={}, stage={}, result={}",
-                    executionId, POLICY_VERSION, documentId, versionId, stage, result, failure);
+                            + "documentId={}, versionId={}, stage={}, result={}, failureType={}",
+                    executionId, POLICY_VERSION, documentId, versionId, stage, result, failureType);
         } else {
             log.info(
                     "근로계약서 보존 만료 파기 단계를 완료했습니다. executionId={}, policyVersion={}, "
