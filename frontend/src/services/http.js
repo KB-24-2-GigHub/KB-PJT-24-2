@@ -85,6 +85,15 @@ http.interceptors.response.use(
   }
 )
 
+/**
+ * 표준 오류 Envelope 의 사용자 메시지.
+ * 서버가 사유별로 구분해 내려준 문구를 그대로 쓰고, 없을 때만 화면 기본 문구로 떨어진다.
+ */
+export function errorMessage(error, fallback) {
+  const message = error?.response?.data?.message
+  return typeof message === 'string' && message.trim() ? message : fallback
+}
+
 /** 폼 오류 매핑 헬퍼: fieldErrors[{field, reason}] → { field: reason }(입력 필드 매핑용). */
 export function fieldErrorMap(error) {
   const list = error?.fieldErrors ?? error?.response?.data?.fieldErrors ?? []
