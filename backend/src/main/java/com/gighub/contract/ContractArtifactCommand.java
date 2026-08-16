@@ -19,6 +19,9 @@ public final class ContractArtifactCommand {
     private final long contractId;
     private final LocalDateTime acceptedAt;
     private final ContractTermsSnapshot terms;
+    private final LocalDateTime workCaseCreatedAt;
+    private final String employerPhone;
+    private final String workerPhone;
 
     private ContractArtifactCommand(AcceptedContract contract) {
         Objects.requireNonNull(contract, "contract");
@@ -26,6 +29,9 @@ public final class ContractArtifactCommand {
         this.contractId = contract.getContractId();
         this.acceptedAt = contract.getAcceptedAt();
         this.terms = contract.getTerms();
+        this.workCaseCreatedAt = contract.getWorkCaseCreatedAt();
+        this.employerPhone = contract.getEmployerPhone();
+        this.workerPhone = contract.getWorkerPhone();
     }
 
     public static ContractArtifactCommand from(AcceptedContract contract) {
@@ -47,5 +53,20 @@ public final class ContractArtifactCommand {
 
     public ContractTermsSnapshot getTerms() {
         return terms;
+    }
+
+    /** 계약서 사업주란에 표시하는 근무 등록 일시입니다. 계약 조건 자체가 아니라 표시 전용입니다. */
+    public LocalDateTime getWorkCaseCreatedAt() {
+        return workCaseCreatedAt;
+    }
+
+    /** 계약서 표시 전용 사업주 연락처입니다. {@code users.phone}이 선택 입력이라 비어 있을 수 있습니다. */
+    public String getEmployerPhone() {
+        return employerPhone;
+    }
+
+    /** 계약서 표시 전용 근로자 연락처입니다. {@code users.phone}이 선택 입력이라 비어 있을 수 있습니다. */
+    public String getWorkerPhone() {
+        return workerPhone;
     }
 }

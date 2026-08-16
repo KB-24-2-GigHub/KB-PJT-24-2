@@ -42,4 +42,5 @@ public class AcceptWorkCaseLockRow {
     private BigDecimal workplaceLatitude;
     private BigDecimal workplaceLongitude;
     private BigDecimal allowedRadiusMeters;
+    private LocalDateTime createdAt;
 }

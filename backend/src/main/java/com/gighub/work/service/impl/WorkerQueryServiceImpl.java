@@ -13,10 +13,13 @@ import com.gighub.member.domain.UserRole;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.domain.AttendanceStateIntegrity;
 import com.gighub.work.domain.AttendanceStateViolation;
+import com.gighub.work.dto.ShareableWorkplaceListItemResponse;
 import com.gighub.work.dto.WorkerHomeResponse;
 import com.gighub.work.dto.WorkerWorkCaseListItemResponse;
 import com.gighub.work.mapper.WorkerMapper;
+import com.gighub.work.mapper.param.ShareableWorkplaceListQuery;
 import com.gighub.work.mapper.param.WorkerWorkCaseListQuery;
+import com.gighub.work.mapper.result.ShareableWorkplaceRow;
 import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 import com.gighub.work.mapper.result.WorkerWorkCaseRow;
 import com.gighub.work.service.WorkerQueryService;
@@ -83,6 +86,28 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
         return PageResponse.of(content, page, size, totalElements);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<ShareableWorkplaceListItemResponse> shareableWorkplaces(
+            AuthPrincipal principal, int page, int size) {
+        requireWorker(principal);
+        PageRequests.validate(page, size);
+
+        ShareableWorkplaceListQuery query = ShareableWorkplaceListQuery.builder()
+                .workerId(principal.getUserId())
+                .size(size)
+                .offset(PageRequests.offset(page, size))
+                .build();
+
+        long totalElements = workerMapper.countShareableWorkplaces(query);
+        List<ShareableWorkplaceListItemResponse> content =
+                workerMapper.findShareableWorkplacePage(query).stream()
+                        .map(this::toShareableWorkplaceResponse)
+                        .toList();
+
+        return PageResponse.of(content, page, size, totalElements);
+    }
+
     /** 조회 Row의 DB 시각과 nullable snapshot을 공개 응답으로 옮기는 경계를 한곳에 둡니다. */
     private WorkerHomeResponse toHomeResponse(WorkerHomeCandidateRow row) {
         return WorkerHomeResponse.of(
@@ -122,6 +147,15 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
                 row.getSettlementDueAt());
     }
 
+    private ShareableWorkplaceListItemResponse toShareableWorkplaceResponse(ShareableWorkplaceRow row) {
+        return ShareableWorkplaceListItemResponse.of(
+                row.getWorkplaceId(),
+                row.getWorkplaceName(),
+                row.getOwnerName(),
+                row.getStartsAt(),
+                row.getEndsAt());
+    }
+
     /**
      * 상태와 성공 근태가 어긋나면 서버 로그에 남깁니다.
      *
@@ -149,7 +183,7 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
      */
     private void requireWorker(AuthPrincipal principal) {
         if (principal.getRole() != UserRole.WORKER) {
-            throw new RoleMismatchException("WORKER 홈과 근무 이력은 WORKER만 조회할 수 있습니다.");
+            throw new RoleMismatchException("WORKER 본인 조회는 WORKER만 사용할 수 있습니다.");
         }
     }
 }

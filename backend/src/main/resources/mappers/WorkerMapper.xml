@@ -155,4 +155,63 @@
         <include refid="workerWorkCaseScope"/>
     </select>
 
+    <resultMap id="shareableWorkplaceResult"
+               type="com.gighub.work.mapper.result.ShareableWorkplaceRow">
+        <constructor>
+            <idArg column="workplaceId" javaType="java.lang.Long"/>
+            <arg column="workplaceName" javaType="java.lang.String"/>
+            <arg column="ownerName" javaType="java.lang.String"/>
+            <arg column="startsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="endsAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <!--
+        보건증 신규 공유 후보만 봅니다. 상태는 ACCEPTED·READY 둘뿐이고 IN_PROGRESS는 넣지
+        않습니다. 접근 유효성 판정은 IN_PROGRESS까지 허용하지만 그것은 이미 만들어진 공유가
+        근무 중에도 살아 있게 하려는 조건이고, 새 공유를 만들 수 있는 구간은 근무 시작
+        전까지입니다. 두 목록을 같게 맞추면 계약이 깨집니다.
+
+        wp.status = 'ACTIVE'로 사업장을 거릅니다. work_cases.workplace_name은 등록 시점
+        Snapshot이라 여기서는 쓰지 않고 workplaces를 조인해 현재 이름을 읽습니다. 공유
+        화면은 지금 존재하는 사업장을 고르는 자리이므로 과거 이름을 보여주면 안 됩니다.
+
+        사업장 단위로 합치지 않습니다. 같은 사업장에 후보가 둘 이상이면 그대로 여러 행이
+        나오고, 실제 공유 요청이 후보 복수를 409로 거부합니다. 여기서 미리 하나로 접으면
+        화면은 공유할 수 있다고 보여주고 요청은 실패하는 상태가 됩니다.
+
+        같은 상태 조건(wc.status IN ('ACCEPTED','READY') AND wp.status='ACTIVE')을
+        DocumentQueryMapper.xml의 findShareCandidates가 실제 공유 생성 검증에서 다시 쓴다.
+        두 Mapper Namespace를 넘나드는 <include> 재사용 선례가 이 Codebase에 없어 각자
+        자기 완결적으로 두지만, 후보 상태 목록을 바꿀 때는 반드시 그 쪽도 함께 확인한다.
+    -->
+    <sql id="shareableWorkplaceCondition">
+        wc.worker_id = #{workerId}
+        AND wc.status IN ('ACCEPTED', 'READY')
+        AND wp.status = 'ACTIVE'
+    </sql>
+
+    <sql id="shareableWorkplaceScope">
+        FROM work_cases wc
+        JOIN workplaces wp ON wp.id = wc.workplace_id
+        JOIN users owner ON owner.id = wp.owner_user_id
+        WHERE <include refid="shareableWorkplaceCondition"/>
+    </sql>
+
+    <select id="findShareableWorkplacePage" resultMap="shareableWorkplaceResult">
+        SELECT wp.id       AS workplaceId,
+               wp.name     AS workplaceName,
+               owner.name  AS ownerName,
+               wc.starts_at AS startsAt,
+               wc.ends_at   AS endsAt
+        <include refid="shareableWorkplaceScope"/>
+        ORDER BY wc.starts_at ASC, wp.id ASC, wc.id ASC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countShareableWorkplaces" resultType="long">
+        SELECT COUNT(*)
+        <include refid="shareableWorkplaceScope"/>
+    </select>
+
 </mapper>

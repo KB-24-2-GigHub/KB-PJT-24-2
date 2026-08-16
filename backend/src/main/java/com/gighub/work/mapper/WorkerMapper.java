@@ -3,7 +3,9 @@ package com.gighub.work.mapper;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import com.gighub.work.mapper.param.ShareableWorkplaceListQuery;
 import com.gighub.work.mapper.param.WorkerWorkCaseListQuery;
+import com.gighub.work.mapper.result.ShareableWorkplaceRow;
 import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 import com.gighub.work.mapper.result.WorkerWorkCaseRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -58,4 +60,27 @@ public interface WorkerMapper {
      * {@code content}가 어긋나지 않습니다.</p>
      */
     long countByWorker(WorkerWorkCaseListQuery query);
+
+    /**
+     * 인증 WORKER의 보건증 신규 공유 후보 근무 관계 한 Page를 조회합니다.
+     *
+     * <p>후보는 ACTIVE 사업장과 본인의 {@code ACCEPTED}·{@code READY} Work Case뿐입니다.
+     * 접근 유효성 판정이 쓰는 {@code IN_PROGRESS}는 후보가 아닙니다. 이미 시작된 근무에 새
+     * 공유를 만들 수는 없지만 그 전에 만든 공유는 근무 중에도 유효하기 때문에, 두 목록이
+     * 서로 다른 것이 계약입니다(DEC-DOCUMENT-SHARE-UNIT).</p>
+     *
+     * <p>이 Query는 {@code documentId}를 받지 않으므로 특정 보건증의 만료나 중복 공유는
+     * 판정하지 않습니다. 그 검증은 공유 생성 요청이 다시 수행합니다.</p>
+     *
+     * <p>정렬은 {@code starts_at ASC, workplace_id ASC}로 고정됩니다.</p>
+     */
+    List<ShareableWorkplaceRow> findShareableWorkplacePage(ShareableWorkplaceListQuery query);
+
+    /**
+     * 같은 조건으로 전체 건수를 셉니다. Page Metadata의 {@code totalElements}에 씁니다.
+     *
+     * <p>{@link #findShareableWorkplacePage}와 같은 조건 조각을 공유해야
+     * {@code totalElements}와 실제 반환된 {@code content}가 어긋나지 않습니다.</p>
+     */
+    long countShareableWorkplaces(ShareableWorkplaceListQuery query);
 }

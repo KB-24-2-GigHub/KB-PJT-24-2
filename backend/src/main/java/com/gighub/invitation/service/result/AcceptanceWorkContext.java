@@ -29,4 +29,5 @@ public class AcceptanceWorkContext {
     private final BigDecimal workplaceLatitude;
     private final BigDecimal workplaceLongitude;
     private final BigDecimal allowedRadiusMeters;
+    private final LocalDateTime workCaseCreatedAt;
 }

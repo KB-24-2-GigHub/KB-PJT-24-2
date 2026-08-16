@@ -22,6 +22,6 @@ public class MemberIdentityQueryServiceImpl implements MemberIdentityQueryServic
         if (user == null || user.getId() == null || user.getName() == null) {
             return null;
         }
-        return new MemberIdentitySnapshot(user.getId(), user.getName());
+        return new MemberIdentitySnapshot(user.getId(), user.getName(), user.getPhone());
     }
 }

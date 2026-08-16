@@ -1,0 +1,173 @@
+<!--
+  근로계약서 PDF Template (DEC-CONTRACT-AUTO-GENERATION, DEC-DOCUMENT-STORAGE).
+
+  ContractPdfRenderer가 ${...} 자리표시자를 ContractSnapshot 값으로 치환한 뒤
+  이 XHTML을 그대로 PDF로 렌더링한다. XML로 파싱되므로 모든 태그를 닫아야 하고
+  주석 안에 붙임표를 두 번 연달아 쓰면 파싱이 실패한다.
+
+  ORIGINAL과 SIGNED는 같은 Template을 쓰고, 근로자 서명란 내용만 다르다.
+-->
+<html xmlns="http://www.w3.org/1999/xhtml" lang="ko">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+  <title>근로계약서</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 16mm 18mm;
+    }
+
+    body {
+      font-family: "Pretendard", sans-serif;
+      font-size: 10pt;
+      line-height: 1.55;
+      color: #111111;
+      /* 공백 없는 긴 값(주소, URL 등)이 페이지 폭을 넘으면 글자 단위로 강제 줄바꿈한다.
+         한글은 단어 단위 언어가 아니라 기본 줄바꿈만으로는 넘치는 줄을 잡지 못한다. */
+      word-wrap: break-word;
+    }
+
+    h1 {
+      margin: 0 0 6mm 0;
+      font-size: 18pt;
+      font-weight: bold;
+      text-align: center;
+    }
+
+    h2 {
+      margin: 4mm 0 1.5mm 0;
+      font-size: 11pt;
+      font-weight: bold;
+    }
+
+    /* 두문. 조사는 괄호 안 고정 문구("사업주", "근로자")의 끝 음절을 따르므로
+       당사자 이름의 받침 유무와 관계없이 항상 맞는다. */
+    .preamble {
+      margin: 0 0 5mm 0;
+      text-align: justify;
+    }
+
+    .line {
+      margin: 0 0 0.8mm 0;
+    }
+
+    .value-sub {
+      display: block;
+      margin: 0.3mm 0 0 3.5mm;
+      font-size: 9pt;
+      color: #555555;
+    }
+
+    .notice {
+      margin: 5mm 0 0 0;
+      padding: 2.5mm 3mm;
+      background-color: #f2f4f6;
+      font-size: 8.5pt;
+      color: #444444;
+      text-align: justify;
+    }
+
+    .closing {
+      margin: 5mm 0 3mm 0;
+      text-align: center;
+    }
+
+    .closing-date {
+      margin: 0 0 4mm 0;
+      text-align: center;
+    }
+
+    table.signatures {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    table.signatures td {
+      width: 50%;
+      border: 0.5pt solid #b8b8b8;
+      padding: 2.5mm 3mm;
+      vertical-align: top;
+    }
+
+    .sign-role {
+      font-weight: bold;
+    }
+
+    .sign-name {
+      display: block;
+      margin-top: 2mm;
+      font-size: 12pt;
+      font-weight: bold;
+    }
+
+    .sign-meta {
+      display: block;
+      margin-top: 1.5mm;
+      font-size: 8.5pt;
+      color: #555555;
+    }
+
+    .footnote {
+      margin-top: 4mm;
+      font-size: 8pt;
+      color: #777777;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+<h1>단시간·일용 근로계약서</h1>
+
+<p class="preamble">
+  ${workplaceName}(대표 ${employerName}, 이하 "사업주")와 ${workerName}(이하 "근로자")는
+  다음과 같이 단시간·일용 근로계약을 체결한다.
+</p>
+
+<h2>1. 계약 당사자</h2>
+<p class="line">- 사업주: ${workplaceName} / 대표자 ${employerName}${employerContactLine}</p>
+<p class="line">- 근로자: ${workerName}${workerContactLine}</p>
+
+<h2>2. 근로계약 기간 및 장소</h2>
+<p class="line">- 근로일자: ${workDate} (1일간)</p>
+<p class="line">- 근무장소: ${workplaceName}<span class="value-sub">${workplaceAddress}</span></p>
+<p class="line">- 담당업무: ${title}</p>
+
+<h2>3. 근로시간 및 휴게시간</h2>
+<p class="line">- 근로시간: ${startsAt} ~ ${endsAt} (휴게 제외 총 ${workDuration})</p>
+<p class="line">- 휴게시간: ${breakMinutes}분 (${breakPaidLabel})</p>
+
+<h2>4. 임금</h2>
+<p class="line">- 임금액: 일급 ${agreedWage}</p>
+<p class="line">- 지급방법: 근무 확정 후 서비스가 예치한 임금을 근로자 지갑으로 지급한다.</p>
+
+<p class="notice">
+  본 계약은 1일 단시간 근로계약으로 연차유급휴가 및 주휴수당 대상에 해당하지 않습니다.
+  임금은 최저임금법 등 관계 법령을 준수하며, 산재·고용보험이 적용됩니다. 국민연금·건강보험은
+  1개월 미만 근로에 대해 적용이 제외될 수 있습니다. 사업주는 근로기준법 제17조에 따라 본
+  계약서를 전자문서로 교부합니다.
+</p>
+
+<p class="closing">
+  본 계약을 증명하기 위하여 계약서 2부(전자문서)를 작성하여 양 당사자가 서명 후 각 1부씩
+  보관한다.
+</p>
+<p class="closing-date">${acceptedAt}</p>
+
+<table class="signatures">
+  <tr>
+    <td>
+      <span class="sign-role">사업주</span>
+      <span class="sign-name">${employerName}</span>
+      <span class="sign-meta">근무등록 일시: ${employerActionAt}</span>
+    </td>
+    <td>
+      <span class="sign-role">근로자</span>
+      <span class="sign-name">${workerSignatureName}</span>
+      <span class="sign-meta">서명 일시: ${workerSignatureDate}</span>
+    </td>
+  </tr>
+</table>
+
+<p class="footnote">Work Case ${workCaseId} · 이용약관 v${sourceTermsVersion} · 수락 일시 ${acceptedAt}</p>
+</body>
+</html>
