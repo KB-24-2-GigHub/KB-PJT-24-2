@@ -41,6 +41,7 @@ Member/Auth 모듈이다.
 | `settlement`         | `settlement`                                    | Settlement 예약·지급·환불 정책과 Deferred Dispute          | Settlement Command/Query                      |
 | `document`           | `document`                                      | 문서 Metadata, Version, Signature, Share, 파일 접근 감사   | Document/Artifact Command와 허용된 파일 Query |
 | `idempotency-common` | `idempotency`, `common`, `config`, `health`     | 멱등 Claim과 공유 기술 정책·설정·진단                      | Claim Service와 기술 공통 타입                |
+| `notification`       | `notification`                                  | 인앱 알림 적재와 수신자별 목록·읽음 상태                   | Notification Command와 수신자 Query           |
 
 `support`는 `@Profile("local")`로만 활성화되는 Member/Auth 지원 adapter이며 독립 업무 모듈이
 아니다. 모든 Controller가 `AuthPrincipal`을 받는 것은 인증 Web 경계 사용이며, 이를 Domain
@@ -162,6 +163,7 @@ sequenceDiagram
 | `document_shares`        | Document           | `document.mapper.ContractDocumentWriteMapper` | 당사자 Share 생성·폐기                    | 문서함 Projection          | Document           | Document + PM/Admin           | 단일 writer                                     |
 | `document_access_logs`   | Document           | `document.mapper.DocumentAccessMapper`        | 접근 결과 감사 기록                       | 감사 Query                 | Document           | Document + PM/Admin           | 단일 writer                                     |
 | `idempotency_requests`   | Idempotency/Common | `idempotency.mapper.IdempotencyClaimMapper`   | claim·complete·abandon·expiry cleanup     | exact replay Snapshot      | Idempotency/Common | Idempotency/Common + PM/Admin | 단일 writer                                     |
+| `notifications`          | Notification       | `notification.mapper.NotificationMapper`      | 이벤트별 알림 적재·읽음 처리              | 수신자 목록·안읽음 개수    | Notification       | Notification + PM/Admin       | 단일 writer, Mapper는 #384에서 만든다           |
 
 ### 쓰기 소유권 해석
 
@@ -356,7 +358,7 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
 - **Date:** 2026-08-10
 - **Context:** 패키지별 기능 구현이 `work_cases`, Wallet, Document 쓰기를 여러 caller에
   분산시켰고, 수시간 Work 생명주기와 수락 순간의 짧은 원자 명령이 혼동될 위험이 있었다.
-- **Decision:** 9개 굵은 논리 모듈, 25개 테이블의 단일 write owner, 공개 Application 경계,
+- **Decision:** 10개 굵은 논리 모듈, 26개 테이블의 단일 write owner, 공개 Application 경계,
   read-only JOIN 예외, use-case Orchestrator가 소유하는 outer Transaction을 채택한다.
 - **Consequences:** `work`/`invitation`/`contract`와 `auth`/`member`/`badge`의 물리 package는
   유지할 수 있다. #287에서 직접 Mapper 호출을 owner Service로 옮겼고, #288에서 수락 조정을

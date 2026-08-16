@@ -60,6 +60,11 @@
       "id": "idempotency-common",
       "packageRoots": ["idempotency", "common", "config", "health"],
       "ownedTables": ["idempotency_requests"]
+    },
+    {
+      "id": "notification",
+      "packageRoots": ["notification"],
+      "ownedTables": ["notifications"]
     }
   ],
   "tableOwnership": [
@@ -237,6 +242,13 @@
       "allowedWriterPackage": "com.gighub.idempotency.mapper",
       "allowedWriterType": "com.gighub.idempotency.mapper.IdempotencyClaimMapper",
       "currentWriteState": "owned"
+    },
+    {
+      "table": "notifications",
+      "owner": "notification",
+      "allowedWriterPackage": "com.gighub.notification.mapper",
+      "allowedWriterType": "com.gighub.notification.mapper.NotificationMapper",
+      "currentWriteState": "missing"
     }
   ],
   "allowedProviderCalls": [

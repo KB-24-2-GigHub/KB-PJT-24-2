@@ -40,10 +40,11 @@ targets:
 - `RESOLVED`와 `REJECTED`가 마지막 열린 분쟁을 닫으면 정상 정산은 기존 `due_at`의
   `SCHEDULED`로 돌아가고 NO_SHOW 환불은 다시 승인할 수 있다. `UNDER_REVIEW`는 보류를
   유지한다.
-- Worker Lease 만료, Timeout, 전송 오류, 429와 5xx는 기존 실행을 `FAILED`로 감사한 뒤 새
-  요청 키로 정해진 최대 횟수만큼 다시 시도한다. 거부, 형식·값 검증 실패와 재시도 소진은
-  분쟁을 `UNDER_REVIEW`로 남기며 자동으로 보류를 풀지 않는다. 늦거나 중복된 결과는 실행
-  상태, 현재 분쟁 상태와 입력 Snapshot Hash가 모두 일치할 때 한 번만 반영한다.
+- Worker Lease 만료, 늦은 응답, Timeout, 호출 중단, 전송 오류, 429·5xx·기타 HTTP 오류,
+  미완료·거부 응답, 형식·값 검증 실패와 예상 밖 Provider 오류는 기존 실행을 `FAILED`로 감사한
+  뒤 새 요청 키로 정해진 최대 횟수만큼 다시 시도한다. 재시도 소진과 선점 전 입력 불일치는
+  분쟁을 `UNDER_REVIEW`로 남기며 자동으로 보류를 풀지 않는다. 늦거나 중복된 결과는 실행 상태,
+  현재 분쟁 상태와 입력 Snapshot Hash가 모두 일치할 때 한 번만 반영한다.
 - AI 검토 이력은 `SIMULATED_LLM` 출처, Provider·Model·Prompt Version, 입력 Hash,
   요청·응답 식별자, 결과 또는 실패 사유와 처리 시각을 보존한다. API Key와 원문 개인정보는
   저장하지 않는다.
