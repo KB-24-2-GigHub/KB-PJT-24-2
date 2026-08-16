@@ -12,6 +12,7 @@ import java.util.List;
 @AllArgsConstructor
 public class DisputeDemoReviewResponse {
     private final String source;
+    private final String status;
     private final String decision;
     private final List<String> reasonCodes;
     private final String summary;

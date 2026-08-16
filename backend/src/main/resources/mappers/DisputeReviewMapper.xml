@@ -86,6 +86,12 @@
         FOR UPDATE
     </select>
 
+    <select id="countByDisputeId" resultType="long">
+        SELECT COUNT(*)
+        FROM dispute_ai_reviews
+        WHERE dispute_id = #{disputeId}
+    </select>
+
     <update id="claimPending">
         UPDATE dispute_ai_reviews
         SET status = 'PROCESSING',

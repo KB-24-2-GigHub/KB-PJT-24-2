@@ -691,6 +691,7 @@ describe('OwnerWorkCaseDetailView', () => {
           resolvedAt: '2026-08-15T01:00:02Z',
           demoReview: {
             source: 'SIMULATED_LLM',
+            status: 'COMPLETED',
             decision: 'RESOLVE',
             reasonCodes: ['AGREED_WAGE_UNPAID'],
             summary: '약정 일급의 지급 여부를 확인했습니다.',

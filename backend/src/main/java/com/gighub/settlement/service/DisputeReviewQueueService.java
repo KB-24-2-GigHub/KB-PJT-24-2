@@ -1,5 +1,6 @@
 package com.gighub.settlement.service;
 
+import com.gighub.settlement.config.DisputeReviewProperties;
 import com.gighub.settlement.domain.DisputeStatus;
 import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.SettlementSnapshot;
@@ -23,7 +24,6 @@ import com.gighub.settlement.review.DisputeReviewProviderResult;
 import com.gighub.settlement.review.DisputeReviewResult;
 import com.gighub.settlement.review.DisputeReviewResults;
 import com.gighub.settlement.service.command.DisputeReviewEnqueueCommand;
-import com.gighub.settlement.config.DisputeReviewProperties;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.service.WorkSettlementService;
 import lombok.RequiredArgsConstructor;
@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -43,6 +44,14 @@ public class DisputeReviewQueueService {
 
     private static final String SOURCE = "SIMULATED_LLM";
     private static final Pattern FAILURE_CODE = Pattern.compile("[A-Z0-9_]{1,50}");
+    private static final Set<String> RETRYABLE_FAILURE_CODES = Set.of(
+            "WORKER_LEASE_EXPIRED",
+            "PROVIDER_TIMEOUT",
+            "PROVIDER_INTERRUPTED",
+            "PROVIDER_TRANSPORT_ERROR",
+            "PROVIDER_RATE_LIMIT",
+            "PROVIDER_5XX"
+    );
 
     private final WorkSettlementService workSettlementService;
     private final SettlementMapper settlementMapper;
@@ -67,18 +76,7 @@ public class DisputeReviewQueueService {
                 workCase.getAgreedWage(),
                 workCase.getSuccessfulCheckInCount()
         ));
-        DisputeReviewProvider provider = providerFactory.requireProvider();
-        DisputeReviewInsert insert = DisputeReviewInsert.builder()
-                .disputeId(command.getDisputeId())
-                .requestKey(UUID.randomUUID().toString())
-                .provider(provider.providerName())
-                .model(provider.modelName())
-                .promptVersion(provider.promptVersion())
-                .inputHash(DisputeReviewInputs.sha256(input))
-                .build();
-        if (reviewMapper.insertPending(insert) != 1 || insert.getReviewId() == null) {
-            throw new IllegalStateException("분쟁 검토 작업을 예약하지 못했습니다.");
-        }
+        insertPending(command.getDisputeId(), DisputeReviewInputs.sha256(input));
     }
 
     /** Work → Settlement → Dispute → Review 순으로 선점하고 외부 호출용 값만 반환합니다. */
@@ -96,12 +94,14 @@ public class DisputeReviewQueueService {
         if (aggregate.review().getStatus() == DisputeReviewExecutionStatus.PROCESSING) {
             if (isLeaseExpired(aggregate.review(), now)) {
                 failLocked(aggregate, "WORKER_LEASE_EXPIRED");
+                enqueueRetryIfAllowed(aggregate, "WORKER_LEASE_EXPIRED");
             }
             return null;
         }
 
         DisputeReviewInput input = inputOf(aggregate);
-        if (!isCurrentAndApplicable(aggregate, input)) {
+        String inputHash = DisputeReviewInputs.sha256(input);
+        if (!isCurrentAndApplicable(aggregate, inputHash)) {
             failLocked(aggregate, "STALE_REVIEW_INPUT");
             return null;
         }
@@ -135,9 +135,10 @@ public class DisputeReviewQueueService {
         }
         LocalDateTime now = reviewMapper.currentDatabaseTime();
         DisputeReviewInput currentInput = inputOf(aggregate);
+        String currentInputHash = DisputeReviewInputs.sha256(currentInput);
         if (isLeaseExpired(aggregate.review(), now)
-                || !execution.getInputHash().equals(DisputeReviewInputs.sha256(currentInput))
-                || !isCurrentAndApplicable(aggregate, currentInput)) {
+                || !execution.getInputHash().equals(currentInputHash)
+                || !isCurrentAndApplicable(aggregate, currentInputHash)) {
             failLocked(aggregate, "STALE_REVIEW_RESPONSE");
             return false;
         }
@@ -167,7 +168,9 @@ public class DisputeReviewQueueService {
         if (!matchesProcessingExecution(aggregate, execution)) {
             return false;
         }
-        failLocked(aggregate, normalizeFailureCode(failureCode));
+        String normalizedFailureCode = normalizeFailureCode(failureCode);
+        failLocked(aggregate, normalizedFailureCode);
+        enqueueRetryIfAllowed(aggregate, normalizedFailureCode);
         return true;
     }
 
@@ -192,21 +195,27 @@ public class DisputeReviewQueueService {
 
     private boolean isCurrentAndApplicable(
             LockedAggregate aggregate,
-            DisputeReviewInput currentInput) {
+            String currentInputHash) {
         DisputeReviewProvider provider = providerFactory.requireProvider();
-        return aggregate.dispute().getStatus() == DisputeStatus.OPEN
+        return (aggregate.dispute().getStatus() == DisputeStatus.OPEN
+                || aggregate.dispute().getStatus() == DisputeStatus.UNDER_REVIEW)
                 && SOURCE.equals(aggregate.review().getSource())
                 && provider.providerName().equals(aggregate.review().getProvider())
                 && provider.modelName().equals(aggregate.review().getModel())
                 && provider.promptVersion().equals(aggregate.review().getPromptVersion())
-                && aggregate.review().getInputHash().equals(DisputeReviewInputs.sha256(currentInput));
+                && aggregate.review().getInputHash().equals(currentInputHash);
     }
 
     private void applyDecision(LockedAggregate aggregate, DisputeReviewResult result) {
         if (result.getDecision() == DisputeReviewDecision.NEEDS_MORE_INFO) {
-            if (disputeMapper.transitionOpenToUnderReview(
+            if (aggregate.dispute().getStatus() == DisputeStatus.OPEN
+                    && disputeMapper.transitionOpenToUnderReview(
                     aggregate.dispute().getDisputeId()) != 1) {
                 throw new IllegalStateException("분쟁 추가 검토 상태를 반영하지 못했습니다.");
+            }
+            if (aggregate.dispute().getStatus() != DisputeStatus.OPEN
+                    && aggregate.dispute().getStatus() != DisputeStatus.UNDER_REVIEW) {
+                throw new IllegalStateException("종료된 분쟁에는 추가 검토 결과를 반영할 수 없습니다.");
             }
             return;
         }
@@ -237,6 +246,35 @@ public class DisputeReviewQueueService {
                 aggregate.review().getRequestKey(),
                 normalizeFailureCode(failureCode)) != 1) {
             throw new IllegalStateException("Provider 실패 이력을 저장하지 못했습니다.");
+        }
+    }
+
+    private void enqueueRetryIfAllowed(LockedAggregate aggregate, String failureCode) {
+        if (!RETRYABLE_FAILURE_CODES.contains(failureCode)) {
+            return;
+        }
+        DisputeReviewInput currentInput = inputOf(aggregate);
+        String currentInputHash = DisputeReviewInputs.sha256(currentInput);
+        if (!isCurrentAndApplicable(aggregate, currentInputHash)
+                || reviewMapper.countByDisputeId(
+                aggregate.dispute().getDisputeId()) >= properties.getMaxAttempts()) {
+            return;
+        }
+        insertPending(aggregate.dispute().getDisputeId(), currentInputHash);
+    }
+
+    private void insertPending(Long disputeId, String inputHash) {
+        DisputeReviewProvider provider = providerFactory.requireProvider();
+        DisputeReviewInsert insert = DisputeReviewInsert.builder()
+                .disputeId(disputeId)
+                .requestKey(UUID.randomUUID().toString())
+                .provider(provider.providerName())
+                .model(provider.modelName())
+                .promptVersion(provider.promptVersion())
+                .inputHash(inputHash)
+                .build();
+        if (reviewMapper.insertPending(insert) != 1 || insert.getReviewId() == null) {
+            throw new IllegalStateException("분쟁 검토 작업을 예약하지 못했습니다.");
         }
     }
 

@@ -328,7 +328,7 @@ class DisputeFlowDatabaseIntegrationTest {
 
     @Test
     @Timeout(25)
-    void providerFailureAndLateResponseKeepFundsOnHold() {
+    void transientProviderFailureRetriesAndLateResponseCannotOverrideResult() {
         try (AnnotationConfigApplicationContext context =
                      fakeApplicationContext(DisputeReviewDecision.RESOLVE)) {
             JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
@@ -359,10 +359,15 @@ class DisputeFlowDatabaseIntegrationTest {
                 assertEquals("UNDER_REVIEW", text(jdbc,
                         "SELECT status FROM disputes WHERE work_case_id = ?",
                         fixture.workCaseId()));
-                assertEquals("FAILED", text(jdbc,
-                        "SELECT status FROM dispute_ai_reviews"
+                assertEquals(1L, count(jdbc,
+                        "SELECT COUNT(*) FROM dispute_ai_reviews"
                                 + " WHERE dispute_id = (SELECT id FROM disputes"
-                                + " WHERE work_case_id = ?)",
+                                + " WHERE work_case_id = ?) AND status = 'FAILED'",
+                        fixture.workCaseId()));
+                assertEquals(1L, count(jdbc,
+                        "SELECT COUNT(*) FROM dispute_ai_reviews"
+                                + " WHERE dispute_id = (SELECT id FROM disputes"
+                                + " WHERE work_case_id = ?) AND status = 'PENDING'",
                         fixture.workCaseId()));
                 assertEquals("ON_HOLD", text(jdbc,
                         "SELECT status FROM settlements WHERE work_case_id = ?",
@@ -375,6 +380,21 @@ class DisputeFlowDatabaseIntegrationTest {
                                 .approverRole(UserRole.OWNER)
                                 .idempotencyKey("IT-DISPUTE-LATE-" + UUID.randomUUID())
                                 .build()));
+                assertMoneyUnchanged(jdbc, fixture);
+
+                processPendingReview(context, fixture.workCaseId());
+
+                assertEquals("RESOLVED", text(jdbc,
+                        "SELECT status FROM disputes WHERE work_case_id = ?",
+                        fixture.workCaseId()));
+                assertEquals("SCHEDULED", text(jdbc,
+                        "SELECT status FROM settlements WHERE work_case_id = ?",
+                        fixture.workCaseId()));
+                assertEquals(1L, count(jdbc,
+                        "SELECT COUNT(*) FROM dispute_ai_reviews"
+                                + " WHERE dispute_id = (SELECT id FROM disputes"
+                                + " WHERE work_case_id = ?) AND status = 'COMPLETED'",
+                        fixture.workCaseId()));
                 assertMoneyUnchanged(jdbc, fixture);
             } finally {
                 deleteFixture(jdbc, fixture);

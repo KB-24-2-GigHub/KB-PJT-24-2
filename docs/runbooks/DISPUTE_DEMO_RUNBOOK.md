@@ -60,9 +60,11 @@ API Key는 Frontend, Git, 이슈, 로그에 남기지 않습니다. 서버는 Re
 `store=false`와 Strict JSON Schema를 보내고, 요청 UUID는 `X-Client-Request-Id`로 전달합니다.
 이름·전화번호·계좌 형태와 내부 ID는 Provider 입력에서 제외합니다.
 
-Timeout, 429, 5xx, 거부, 잘못된 JSON과 값 검증 실패는 검토 이력을 `FAILED`로 남기고 분쟁을
-`UNDER_REVIEW`로 유지합니다. 이 경우 보류는 자동으로 풀리지 않으며 수동 재시도 Endpoint도
-없습니다.
+Worker Lease 만료, Timeout, 전송 오류, 429와 5xx는 새 요청 키로 최대
+`dispute.review.max-attempts`회(기본 3회)까지 다시 시도합니다. 각 실패 행은 감사 이력으로
+남습니다. 거부, 잘못된 JSON·값 검증 실패와 재시도 소진은 분쟁을 `UNDER_REVIEW`로 유지하고,
+양측 화면에 검토 지연과 보류 유지를 표시합니다. 이 경우 보류는 자동으로 풀리지 않으며 수동
+재시도 Endpoint도 없습니다.
 
 ## 4. 감사 확인
 

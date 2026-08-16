@@ -12,6 +12,7 @@ import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.mapper.command.DisputeInsert;
 import com.gighub.settlement.mapper.result.DisputeListRow;
+import com.gighub.settlement.review.DisputeReviewExecutionStatus;
 import com.gighub.settlement.service.command.DisputeCreateCommand;
 import com.gighub.settlement.service.impl.DisputeServiceImpl;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
@@ -28,6 +29,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -149,6 +151,7 @@ class DisputeServiceTest {
                         null,
                         null,
                         null,
+                        null,
                         null)
         ));
 
@@ -159,6 +162,39 @@ class DisputeServiceTest {
         assertEquals("2026-08-15T01:00:00Z", page.getContent().get(0).getCreatedAt().toString());
         assertNull(page.getContent().get(0).getDemoReview());
         assertEquals(1L, page.getPage().getTotalElements());
+    }
+
+    @Test
+    void partyReadsFailedReviewAsSafeDelayStateWithoutInternalFailureCode() {
+        when(workSettlementService.findEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(disputeMapper.countByWorkCaseId(WORK_CASE_ID)).thenReturn(1L);
+        when(disputeMapper.findPageByWorkCaseId(WORK_CASE_ID, 20, 0L)).thenReturn(List.of(
+                new DisputeListRow(
+                        91L,
+                        "임금 확인",
+                        "약정 일급이 미지급됐습니다.",
+                        DisputeStatus.UNDER_REVIEW,
+                        null,
+                        UserRole.WORKER,
+                        LocalDateTime.of(2026, 8, 15, 10, 0),
+                        null,
+                        "SIMULATED_LLM",
+                        DisputeReviewExecutionStatus.FAILED,
+                        null,
+                        null,
+                        null,
+                        null,
+                        LocalDateTime.of(2026, 8, 15, 10, 1))
+        ));
+
+        DisputeListItemResponse item = disputeService.findPage(
+                WORK_CASE_ID, WORKER_ID, UserRole.WORKER, 0, 20).getContent().get(0);
+
+        assertNotNull(item.getDemoReview());
+        assertEquals("FAILED", item.getDemoReview().getStatus());
+        assertNull(item.getDemoReview().getDecision());
+        assertEquals(List.of(), item.getDemoReview().getReasonCodes());
     }
 
     private static DisputeCreateCommand command(String title, String content) {

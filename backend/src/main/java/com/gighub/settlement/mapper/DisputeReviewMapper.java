@@ -24,6 +24,8 @@ public interface DisputeReviewMapper {
 
     DisputeReviewExecutionRow findByIdForUpdate(@Param("reviewId") Long reviewId);
 
+    long countByDisputeId(@Param("disputeId") Long disputeId);
+
     int claimPending(
             @Param("reviewId") Long reviewId,
             @Param("requestKey") String requestKey,

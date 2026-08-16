@@ -15,6 +15,8 @@
             <arg column="createdAt" javaType="java.time.LocalDateTime"/>
             <arg column="resolvedAt" javaType="java.time.LocalDateTime"/>
             <arg column="reviewSource" javaType="java.lang.String"/>
+            <arg column="reviewStatus"
+                 javaType="com.gighub.settlement.review.DisputeReviewExecutionStatus"/>
             <arg column="reviewDecision"
                  javaType="com.gighub.settlement.review.DisputeReviewDecision"/>
             <arg column="reviewReasonCodesJson" javaType="java.lang.String"/>
@@ -99,6 +101,7 @@
                d.created_at AS createdAt,
                d.resolved_at AS resolvedAt,
                r.source AS reviewSource,
+               r.status AS reviewStatus,
                r.decision AS reviewDecision,
                CAST(r.reason_codes AS CHAR) AS reviewReasonCodesJson,
                r.summary AS reviewSummary,
@@ -110,8 +113,7 @@
             SELECT latest.id
             FROM dispute_ai_reviews latest
             WHERE latest.dispute_id = d.id
-              AND latest.status = 'COMPLETED'
-            ORDER BY latest.completed_at DESC, latest.id DESC
+            ORDER BY latest.created_at DESC, latest.id DESC
             LIMIT 1
         )
         WHERE d.work_case_id = #{workCaseId}

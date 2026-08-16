@@ -111,6 +111,7 @@ class DisputeControllerTest {
                 Instant.parse("2026-08-15T01:01:00Z"),
                 new DisputeDemoReviewResponse(
                         "SIMULATED_LLM",
+                        "COMPLETED",
                         "RESOLVE",
                         List.of("AGREED_WAGE_FLOW_REVIEWED"),
                         "기존 정산 흐름을 재개합니다.",
@@ -127,6 +128,7 @@ class DisputeControllerTest {
                         .value("2026-08-15T01:00:00Z"))
                 .andExpect(jsonPath("$.data.content[0].demoReview.source")
                         .value("SIMULATED_LLM"))
+                .andExpect(jsonPath("$.data.content[0].demoReview.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.content[0].demoReview.decision").value("RESOLVE"))
                 .andExpect(jsonPath("$.data.content[0].demoReview.reasonCodes[0]")
                         .value("AGREED_WAGE_FLOW_REVIEWED"))

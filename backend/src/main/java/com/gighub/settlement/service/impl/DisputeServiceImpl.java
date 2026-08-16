@@ -16,6 +16,7 @@ import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.mapper.command.DisputeInsert;
 import com.gighub.settlement.mapper.result.DisputeListRow;
+import com.gighub.settlement.review.DisputeReviewExecutionStatus;
 import com.gighub.settlement.review.DisputeReviewJsonCodec;
 import com.gighub.settlement.review.DisputeReviewResult;
 import com.gighub.settlement.review.DisputeReviewResults;
@@ -146,6 +147,21 @@ public class DisputeServiceImpl implements DisputeService {
         if (row.getReviewSource() == null) {
             return null;
         }
+        DisputeReviewExecutionStatus status = row.getReviewStatus();
+        if (status == null) {
+            throw new IllegalStateException("저장된 분쟁 검토 상태가 없습니다.");
+        }
+        if (status != DisputeReviewExecutionStatus.COMPLETED) {
+            return new DisputeDemoReviewResponse(
+                    row.getReviewSource(),
+                    status.name(),
+                    null,
+                    List.of(),
+                    null,
+                    null,
+                    ApiTimes.toInstant(row.getReviewedAt())
+            );
+        }
         DisputeReviewResult result = DisputeReviewResults.validate(new DisputeReviewResult(
                 row.getReviewDecision(),
                 DisputeReviewJsonCodec.readReasonCodes(row.getReviewReasonCodesJson()),
@@ -154,6 +170,7 @@ public class DisputeServiceImpl implements DisputeService {
         ));
         return new DisputeDemoReviewResponse(
                 row.getReviewSource(),
+                status.name(),
                 result.getDecision().name(),
                 result.getReasonCodes(),
                 result.getSummary(),

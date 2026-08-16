@@ -20,6 +20,11 @@ const statusMeta = {
 }
 
 function label(report) {
+  if (report.demoReview?.status === 'FAILED') return '검토 지연 · 보류 유지'
+  if (report.demoReview?.status === 'PROCESSING') return 'AI 검토 중 · 보류 유지'
+  if (report.demoReview?.status === 'PENDING' && report.status === 'UNDER_REVIEW') {
+    return 'AI 재검토 대기 · 보류 유지'
+  }
   if (report.demoReview?.decision === 'NEEDS_MORE_INFO') return '추가 자료 필요 · 보류 유지'
   return statusMeta[report.status]?.label ?? report.status
 }
@@ -29,6 +34,9 @@ function tone(report) {
 }
 
 function summary(report) {
+  if (report.demoReview?.status === 'FAILED') {
+    return '외부 DEMO 검토가 지연되어 예치금 보류를 유지하고 있습니다.'
+  }
   return report.demoReview?.summary || report.resolution || ''
 }
 

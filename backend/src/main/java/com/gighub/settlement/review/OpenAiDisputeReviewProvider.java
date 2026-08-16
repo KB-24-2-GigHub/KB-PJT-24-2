@@ -142,11 +142,15 @@ public class OpenAiDisputeReviewProvider implements DisputeReviewProvider {
                     resultNode.path("decision").asText());
             List<String> reasonCodes = new ArrayList<>();
             resultNode.path("reasonCodes").forEach(node -> reasonCodes.add(node.asText()));
+            JsonNode confidence = resultNode.get("confidence");
+            if (confidence == null || !confidence.isNumber()) {
+                throw invalidOutput();
+            }
             DisputeReviewResult result = new DisputeReviewResult(
                     decision,
                     reasonCodes,
                     resultNode.path("summary").asText(),
-                    resultNode.path("confidence").decimalValue()
+                    confidence.decimalValue()
             );
             return new DisputeReviewProviderResult(
                     responseId,
@@ -167,6 +171,7 @@ public class OpenAiDisputeReviewProvider implements DisputeReviewProvider {
         if (!output.isArray()) {
             throw invalidOutput();
         }
+        String outputText = null;
         for (JsonNode item : output) {
             if (!"message".equals(item.path("type").asText())) {
                 continue;
@@ -177,11 +182,14 @@ public class OpenAiDisputeReviewProvider implements DisputeReviewProvider {
                 }
                 if ("output_text".equals(content.path("type").asText())) {
                     String text = content.path("text").asText("");
-                    if (!text.isBlank()) {
-                        return text;
+                    if (!text.isBlank() && outputText == null) {
+                        outputText = text;
                     }
                 }
             }
+        }
+        if (outputText != null) {
+            return outputText;
         }
         throw invalidOutput();
     }

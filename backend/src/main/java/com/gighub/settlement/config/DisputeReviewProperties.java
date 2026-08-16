@@ -21,12 +21,14 @@ public class DisputeReviewProperties {
     public static final String PROMPT_VERSION_KEY = "dispute.review.prompt-version";
     public static final String TIMEOUT_MS_KEY = "dispute.review.timeout-ms";
     public static final String LEASE_MS_KEY = "dispute.review.lease-ms";
+    public static final String MAX_ATTEMPTS_KEY = "dispute.review.max-attempts";
     public static final String BATCH_SIZE_KEY = "dispute.review.batch-size";
     public static final String FIXED_DELAY_MS_KEY = "dispute.review.fixed-delay-ms";
     public static final String INITIAL_DELAY_MS_KEY = "dispute.review.initial-delay-ms";
 
     public static final long DEFAULT_TIMEOUT_MS = 10_000L;
     public static final long DEFAULT_LEASE_MS = 30_000L;
+    public static final int DEFAULT_MAX_ATTEMPTS = 3;
     public static final int DEFAULT_BATCH_SIZE = 20;
     public static final long DEFAULT_FIXED_DELAY_MS = 1_000L;
     public static final long DEFAULT_INITIAL_DELAY_MS = 1_000L;
@@ -38,6 +40,7 @@ public class DisputeReviewProperties {
     private final String promptVersion;
     private final Duration timeout;
     private final Duration lease;
+    private final int maxAttempts;
     private final int batchSize;
     private final Duration fixedDelay;
     private final Duration initialDelay;
@@ -57,7 +60,8 @@ public class DisputeReviewProperties {
                 environment.getProperty(LEASE_MS_KEY, Long.class, DEFAULT_LEASE_MS),
                 environment.getProperty(BATCH_SIZE_KEY, Integer.class, DEFAULT_BATCH_SIZE),
                 environment.getProperty(FIXED_DELAY_MS_KEY, Long.class, DEFAULT_FIXED_DELAY_MS),
-                environment.getProperty(INITIAL_DELAY_MS_KEY, Long.class, DEFAULT_INITIAL_DELAY_MS)
+                environment.getProperty(INITIAL_DELAY_MS_KEY, Long.class, DEFAULT_INITIAL_DELAY_MS),
+                environment.getProperty(MAX_ATTEMPTS_KEY, Integer.class, DEFAULT_MAX_ATTEMPTS)
         );
     }
 
@@ -72,7 +76,8 @@ public class DisputeReviewProperties {
             long leaseMs,
             int batchSize,
             long fixedDelayMs,
-            long initialDelayMs) {
+            long initialDelayMs,
+            int maxAttempts) {
         this.mode = requireMode(mode, demoConfirmed);
         this.fakeDecision = requireNonNull(fakeDecision, FAKE_DECISION_KEY);
         this.apiKey = trimToNull(apiKey);
@@ -80,6 +85,7 @@ public class DisputeReviewProperties {
         this.promptVersion = requireText(promptVersion, PROMPT_VERSION_KEY);
         this.timeout = Duration.ofMillis(requirePositive(TIMEOUT_MS_KEY, timeoutMs));
         this.lease = Duration.ofMillis(requireLease(leaseMs, timeoutMs));
+        this.maxAttempts = requireMaxAttempts(maxAttempts);
         this.batchSize = requireBatchSize(batchSize);
         this.fixedDelay = Duration.ofMillis(requirePositive(FIXED_DELAY_MS_KEY, fixedDelayMs));
         this.initialDelay = Duration.ofMillis(requirePositive(INITIAL_DELAY_MS_KEY, initialDelayMs));
@@ -121,6 +127,10 @@ public class DisputeReviewProperties {
         return lease;
     }
 
+    public int getMaxAttempts() {
+        return maxAttempts;
+    }
+
     public int getBatchSize() {
         return batchSize;
     }
@@ -155,6 +165,13 @@ public class DisputeReviewProperties {
     private static int requireBatchSize(int value) {
         if (value < 1 || value > 100) {
             throw new IllegalStateException(BATCH_SIZE_KEY + "는 1~100 범위여야 합니다.");
+        }
+        return value;
+    }
+
+    private static int requireMaxAttempts(int value) {
+        if (value < 1 || value > 10) {
+            throw new IllegalStateException(MAX_ATTEMPTS_KEY + "는 1~10 범위여야 합니다.");
         }
         return value;
     }

@@ -88,6 +88,7 @@ describe('WorkerReportView', () => {
           createdAt: '2026-08-15T01:00:00Z',
           demoReview: {
             source: 'SIMULATED_LLM',
+            status: 'COMPLETED',
             decision: 'NEEDS_MORE_INFO',
             reasonCodes: ['ATTENDANCE_EVIDENCE_NEEDED'],
             summary: '근태 기록을 추가로 확인해야 합니다.',
@@ -104,6 +105,35 @@ describe('WorkerReportView', () => {
     expect(wrapper.text()).toContain('근태 기록을 추가로 확인해야 합니다.')
     expect(wrapper.text()).toContain('ATTENDANCE_EVIDENCE_NEEDED')
     expect(wrapper.find('button.submit').attributes('disabled')).toBeDefined()
+  })
+
+  it('재시도 소진으로 검토가 실패하면 양측이 이해할 수 있는 보류 상태를 표시한다', async () => {
+    listReports.mockResolvedValueOnce({
+      ...EMPTY_PAGE,
+      content: [
+        {
+          reportId: 3,
+          title: '임금 확인',
+          content: '지급 여부를 확인해주세요.',
+          status: 'UNDER_REVIEW',
+          createdAt: '2026-08-15T01:00:00Z',
+          demoReview: {
+            source: 'SIMULATED_LLM',
+            status: 'FAILED',
+            decision: null,
+            reasonCodes: [],
+            summary: null,
+            confidence: null,
+            reviewedAt: '2026-08-15T01:00:02Z'
+          }
+        }
+      ]
+    })
+    const wrapper = mount(WorkerReportView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('검토 지연 · 보류 유지')
+    expect(wrapper.text()).toContain('외부 DEMO 검토가 지연되어 예치금 보류를 유지하고 있습니다.')
   })
 
   it('중복 신고는 처리 중 상태를 확인하라고 안내한다', async () => {

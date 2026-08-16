@@ -8,6 +8,7 @@ import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.DisputeReviewMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.mapper.command.DisputeReviewCompletion;
+import com.gighub.settlement.mapper.command.DisputeReviewInsert;
 import com.gighub.settlement.mapper.result.DisputeReviewCandidate;
 import com.gighub.settlement.mapper.result.DisputeReviewExecutionRow;
 import com.gighub.settlement.mapper.result.DisputeSnapshot;
@@ -35,7 +36,9 @@ import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -162,7 +165,26 @@ class DisputeReviewQueueServiceTest {
     }
 
     @Test
-    void providerFailureMovesDisputeToUnderReviewWithoutReleasingHold() {
+    void permanentProviderFailureMovesDisputeToUnderReviewWithoutRetryingOrReleasingHold() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.plusMinutes(1)
+        );
+        when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "INVALID_PROVIDER_OUTPUT"))
+                .thenReturn(1);
+
+        assertTrue(queueService.fail(execution(inputHash), "INVALID_PROVIDER_OUTPUT"));
+
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+        verify(reviewMapper, never()).insertPending(any());
+    }
+
+    @Test
+    void transientProviderFailureCreatesFreshPendingRetryAndKeepsHold() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
                 DisputeReviewExecutionStatus.PROCESSING,
@@ -173,14 +195,24 @@ class DisputeReviewQueueServiceTest {
         when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
         when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "PROVIDER_5XX"))
                 .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
 
         assertTrue(queueService.fail(execution(inputHash), "PROVIDER_5XX"));
 
+        ArgumentCaptor<DisputeReviewInsert> retry =
+                ArgumentCaptor.forClass(DisputeReviewInsert.class);
+        verify(reviewMapper).insertPending(retry.capture());
+        assertNotEquals(REQUEST_KEY, retry.getValue().getRequestKey());
+        assertEquals(inputHash, retry.getValue().getInputHash());
         verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
     }
 
     @Test
-    void expiredLeaseFailsClosedAndLateWorkerCannotClaimAgain() {
+    void expiredLeaseFailsOldExecutionAndCreatesFreshPendingRetry() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
                 DisputeReviewExecutionStatus.PROCESSING,
@@ -192,10 +224,58 @@ class DisputeReviewQueueServiceTest {
         when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
         when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "WORKER_LEASE_EXPIRED"))
                 .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
 
         assertNull(queueService.claim(candidate()));
 
         verify(reviewMapper, never()).claimPending(any(), any(), any());
+        verify(reviewMapper).insertPending(any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
+    void transientFailureStopsRetryingAtConfiguredAttemptLimit() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.UNDER_REVIEW,
+                inputHash,
+                NOW.plusMinutes(1)
+        );
+        when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "PROVIDER_TIMEOUT"))
+                .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(3L);
+
+        assertTrue(queueService.fail(execution(inputHash), "PROVIDER_TIMEOUT"));
+
+        verify(reviewMapper, never()).insertPending(any());
+        verify(disputeMapper, never()).transitionOpenToUnderReview(any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
+    void retryCanCompleteNeedsMoreInfoWhileDisputeIsAlreadyUnderReview() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.UNDER_REVIEW,
+                inputHash,
+                NOW.plusMinutes(1)
+        );
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(reviewMapper.complete(any())).thenReturn(1);
+
+        assertTrue(queueService.complete(
+                execution(inputHash),
+                providerResponse(
+                        DisputeReviewDecision.NEEDS_MORE_INFO,
+                        "추가 자료가 필요합니다.")));
+
+        verify(disputeMapper, never()).transitionOpenToUnderReview(any());
         verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
     }
 

@@ -19,6 +19,7 @@ class DisputeReviewPropertiesTest {
 
         assertFalse(properties.isEnabled());
         assertEquals(DisputeReviewMode.DISABLED, properties.getMode());
+        assertEquals(3, properties.getMaxAttempts());
     }
 
     @Test
@@ -70,6 +71,17 @@ class DisputeReviewPropertiesTest {
                         10_000,
                         20,
                         1_000,
-                        1_000));
+                        1_000,
+                        3));
+    }
+
+    @Test
+    void retryAttemptsStayWithinSmallDemoBoundary() {
+        MockEnvironment environment = new MockEnvironment()
+                .withProperty(DisputeReviewProperties.MAX_ATTEMPTS_KEY, "11");
+
+        assertThrows(
+                IllegalStateException.class,
+                () -> new DisputeReviewProperties(environment));
     }
 }

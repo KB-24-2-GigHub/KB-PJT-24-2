@@ -13,6 +13,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.ByteBuffer;
 import java.time.Duration;
+import java.util.List;
 import java.util.concurrent.Flow;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -114,6 +115,67 @@ class DisputeReviewProviderTest {
                 DisputeReviewProviderException.class,
                 () -> provider(malformedClient).review(REQUEST_ID, input()));
         assertEquals("INVALID_PROVIDER_OUTPUT", malformed.getFailureCode());
+    }
+
+    @Test
+    void missingOrNonNumericConfidenceIsRejectedInsteadOfBecomingZero() throws Exception {
+        for (String resultJson : List.of(
+                """
+                        {
+                          "decision":"RESOLVE",
+                          "reasonCodes":["AGREED_WAGE_UNPAID"],
+                          "summary":"약정 일급 지급 흐름을 재개합니다."
+                        }
+                        """,
+                """
+                        {
+                          "decision":"RESOLVE",
+                          "reasonCodes":["AGREED_WAGE_UNPAID"],
+                          "summary":"약정 일급 지급 흐름을 재개합니다.",
+                          "confidence":"high"
+                         }
+                         """)) {
+            HttpClient client = mock(HttpClient.class);
+            HttpResponse<String> response = response(
+                    200, completedResponse("resp_invalid_confidence", resultJson));
+            when(client.send(any(), anyStringHandler())).thenReturn(response);
+
+            DisputeReviewProviderException failure = assertThrows(
+                    DisputeReviewProviderException.class,
+                    () -> provider(client).review(REQUEST_ID, input()));
+
+            assertEquals("INVALID_PROVIDER_OUTPUT", failure.getFailureCode());
+        }
+    }
+
+    @Test
+    void refusalIsRejectedEvenWhenOutputTextAppearsFirst() throws Exception {
+        String resultJson = """
+                {
+                  "decision":"RESOLVE",
+                  "reasonCodes":["AGREED_WAGE_UNPAID"],
+                  "summary":"약정 일급 지급 흐름을 재개합니다.",
+                  "confidence":0.91
+                }
+                """;
+        com.fasterxml.jackson.databind.node.ObjectNode root = objectMapper.createObjectNode();
+        root.put("id", "resp_refusal");
+        root.put("status", "completed");
+        com.fasterxml.jackson.databind.node.ArrayNode content = root.putArray("output")
+                .addObject()
+                .put("type", "message")
+                .putArray("content");
+        content.addObject().put("type", "output_text").put("text", resultJson);
+        content.addObject().put("type", "refusal").put("refusal", "cannot comply");
+        HttpClient client = mock(HttpClient.class);
+        HttpResponse<String> response = response(200, objectMapper.writeValueAsString(root));
+        when(client.send(any(), anyStringHandler())).thenReturn(response);
+
+        DisputeReviewProviderException failure = assertThrows(
+                DisputeReviewProviderException.class,
+                () -> provider(client).review(REQUEST_ID, input()));
+
+        assertEquals("PROVIDER_REFUSAL", failure.getFailureCode());
     }
 
     @Test

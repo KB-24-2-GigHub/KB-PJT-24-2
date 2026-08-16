@@ -34,15 +34,17 @@ targets:
 - `RESOLVED`와 `REJECTED`가 마지막 열린 분쟁을 닫으면 정상 정산은 기존 `due_at`의
   `SCHEDULED`로 돌아가고 NO_SHOW 환불은 다시 승인할 수 있다. `UNDER_REVIEW`는 보류를
   유지한다.
-- Timeout, 5xx, 거부, 형식·값 검증 실패는 분쟁을 `UNDER_REVIEW`로 남기며 자동으로 보류를
-  풀지 않는다. 늦거나 중복된 결과는 실행 상태, 현재 분쟁 상태와 입력 Snapshot Hash가 모두
-  일치할 때 한 번만 반영한다.
+- Worker Lease 만료, Timeout, 전송 오류, 429와 5xx는 기존 실행을 `FAILED`로 감사한 뒤 새
+  요청 키로 정해진 최대 횟수만큼 다시 시도한다. 거부, 형식·값 검증 실패와 재시도 소진은
+  분쟁을 `UNDER_REVIEW`로 남기며 자동으로 보류를 풀지 않는다. 늦거나 중복된 결과는 실행
+  상태, 현재 분쟁 상태와 입력 Snapshot Hash가 모두 일치할 때 한 번만 반영한다.
 - AI 검토 이력은 `SIMULATED_LLM` 출처, Provider·Model·Prompt Version, 입력 Hash,
   요청·응답 식별자, 결과 또는 실패 사유와 처리 시각을 보존한다. API Key와 원문 개인정보는
   저장하지 않는다.
-- 분쟁 Page Item의 기존 필드는 유지하고 nullable `demoReview`를 추가한다. 검토 결과가 있으면
-  `source=SIMULATED_LLM`, `decision`, `reasonCodes`, `summary`, `confidence`, `reviewedAt`을
-  제공한다. 검토 전이거나 결과를 신뢰할 수 없는 실패이면 `demoReview`는 `null`이다.
+- 분쟁 Page Item의 기존 필드는 유지하고 nullable `demoReview`를 추가한다. 검토 실행이 있으면
+  `source=SIMULATED_LLM`, `status`를 제공하고, 완료 결과에는 `decision`, `reasonCodes`,
+  `summary`, `confidence`, `reviewedAt`을 함께 제공한다. 실패 상태는 내부 실패 코드를 노출하지
+  않고 양측 화면에서 검토 지연과 보류 유지로 안내한다.
 - DEMO에서는 사용자 철회, 관리자 상태 변경, 강제 지급·환불 API를 제공하지 않는다.
   `CANCELED`은 이번 기능에서 새로 만드는 전이가 아니다.
 
