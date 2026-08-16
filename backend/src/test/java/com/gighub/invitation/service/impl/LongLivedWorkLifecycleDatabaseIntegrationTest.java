@@ -220,7 +220,6 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                         context.getBean(InvitationMapper.class),
                         context.getBean(InvitationTokenCodec.class),
                         context.getBean(InvitationLinkFactory.class),
-                        context.getBean(BadgeApplicationService.class),
                         clock),
                 definition -> definition.setPrimary(true));
         context.registerBean(

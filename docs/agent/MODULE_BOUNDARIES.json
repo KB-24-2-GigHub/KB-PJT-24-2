@@ -251,7 +251,7 @@
     {
       "consumer": "work",
       "provider": "member-auth",
-      "kind": "query-command-participant"
+      "kind": "query"
     },
     {
       "consumer": "work",

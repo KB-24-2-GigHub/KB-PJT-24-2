@@ -55,15 +55,6 @@ class BadgeEvidenceCodecTest {
         assertEquals(0, node.path("thresholdPercent").asInt());
     }
 
-    @Test
-    void readLevelExtractsOnlyTheLevelFieldFromStoredEvidence() {
-        TrustBadgeResult result = TrustBadgeCriteria.calculate(20, 18);
-        String json = codec.writeEvidence(
-                TrustBadgeType.TRUST_OWNER, result, LocalDateTime.of(2026, 8, 15, 0, 0));
-
-        assertEquals(result.getLevel(), codec.readLevel(json));
-    }
-
     private Set<String> fieldNames(JsonNode node) {
         Set<String> names = new LinkedHashSet<>();
         node.fieldNames().forEachRemaining(names::add);

@@ -1,7 +1,7 @@
 package com.gighub.invitation.service.impl;
 
 import com.gighub.badge.service.BadgeApplicationService;
-import com.gighub.badge.service.result.BadgeSnapshot;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
@@ -32,17 +32,14 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -62,10 +59,10 @@ class InvitationQueryServiceImplTest {
     );
     private final String token = codec.deriveToken(INVITATION_ID);
     private final StubInvitationMapper mapper = new StubInvitationMapper();
-    // 스텁하지 않은 employerId는 Optional.empty()로 기본 응답해(Mockito 기본값) 활성 Badge
-    // 없음 경로가 그대로 통과합니다.
-    private final BadgeApplicationService badgeApplicationService =
-            mock(BadgeApplicationService.class);
+    // 스텁하지 않은 employerId는 0단계로 기본 응답해 기존 성공 경로 테스트가 그대로 통과합니다.
+    private final BadgeApplicationService badgeApplicationService = mock(
+            BadgeApplicationService.class,
+            invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80, 10));
 
     @Test
     void returnsApprovedTermsForAuthenticatedWorker() {
@@ -92,8 +89,8 @@ class InvitationQueryServiceImplTest {
     void exposesOwnerBadgeWhenTheInvitingOwnerHasAnActiveLevel() {
         mapper.invitation = pendingInvitation();
         mapper.workCase = draftWorkCase(1);
-        when(badgeApplicationService.currentBadge(3L)).thenReturn(
-                Optional.of(BadgeSnapshot.of("TRUST_OWNER", 2)));
+        when(badgeApplicationService.recalculate(3L)).thenReturn(
+                BadgeCalculationResult.of("TRUST_OWNER", 2, 20, 18, 20, 90, 10, 100, 30));
 
         InvitationDetailResponse response = service(STARTS_AT.minusDays(1L))
                 .findByToken(worker(), token);
@@ -104,17 +101,6 @@ class InvitationQueryServiceImplTest {
     }
 
     @Test
-    void viewingAnInvitationNeverRecalculatesTheBadge() {
-        mapper.invitation = pendingInvitation();
-        mapper.workCase = draftWorkCase(1);
-
-        service(STARTS_AT.minusDays(1L)).findByToken(worker(), token);
-
-        // 초대 열람은 단순 조회입니다. 재계산·잠금·Upsert는 초대 발급 쪽 책임입니다.
-        verify(badgeApplicationService, never()).recalculate(anyLong());
-    }
-
-    @Test
     void looksUpTheBadgeOfTheInvitingOwnerNotTheRequestingWorker() {
         mapper.invitation = pendingInvitation();
         mapper.workCase = draftWorkCase(1);
@@ -122,7 +108,7 @@ class InvitationQueryServiceImplTest {
         service(STARTS_AT.minusDays(1L)).findByToken(worker(), token);
 
         // draftWorkCase()의 employerId(3L)로 조회해야 하고, 요청자 WORKER(11L)로 조회하면 안 됩니다.
-        verify(badgeApplicationService).currentBadge(eq(3L));
+        verify(badgeApplicationService).recalculate(eq(3L));
     }
 
     @Test

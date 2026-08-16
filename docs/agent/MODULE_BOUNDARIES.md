@@ -139,7 +139,7 @@ sequenceDiagram
 | ------------------------ | ------------------ | --------------------------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ----------------------------- | ----------------------------------------------- |
 | `users`                  | Member/Auth        | `member.mapper.UserMapper`                    | 계정 생성·프로필 변경                     | 인증·당사자 최소 Query     | Member/Auth        | Member/Auth + PM/Admin        | 굵은 경계 안 단일 writer                        |
 | `password_reset_tokens`  | Member/Auth        | `auth.mapper.PasswordResetTokenMapper`        | reset token 발급·소비·폐기                | active token 확인          | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 기능 미구현                        |
-| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 재계산 Upsert                       | 단수 badge Projection      | Member/Auth        | Member/Auth + PM/Admin        | 단일 writer; `#182`/`#397` `BadgeApplicationService.recalculate`(자기 조회·초대 발급)가 쓰고 `currentBadge`(초대 조회)는 잠금 없이 읽기만 함 |
+| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 재계산 Upsert                       | 단수 badge Projection      | Member/Auth        | Member/Auth + PM/Admin        | 단일 writer; `#182` `BadgeApplicationService` 경유 |
 | `workplaces`             | Workplace          | `workplace.mapper.WorkplaceMapper`            | 사업장 생성·허용 변경                     | 소유권·좌표·표시 Snapshot  | Workplace          | Workplace + PM/Admin          | 단일 writer; 외부는 공개 Query/lock Service     |
 | `work_cases`             | Work               | `work.mapper.WorkCaseMapper`                  | 생성·조건 변경·배정·의미 상태 전이        | Work 목록·상세 Projection  | Work               | Work + PM/Admin               | 단일 writer; 외부는 Work Command participant    |
 | `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | 단일 writer                                     |
@@ -201,7 +201,7 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`             | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger                          |
 | Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                          | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
 | Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                        | Attendance artifact 검증과 Controller 조회 경계                                     |
-| Member/Badge | `BadgeApplicationService`                                                           | Controller와 초대 발급(`InvitationIssueServiceImpl`)이 공유하는 잠금·재계산·Upsert 경계(`recalculate`); 인증된 초대 조회(`InvitationQueryServiceImpl`)는 잠금 없이 마지막 값만 읽는 별도 read-only 경계(`currentBadge`) |
+| Member/Badge | `BadgeApplicationService`                                                           | Controller와 인증된 초대 조회(`InvitationQueryServiceImpl`)가 공유하는 잠금·재계산·Upsert 경계 |
 
 쓰기 participant는 모두 호출자의 outer Transaction에 `MANDATORY`로 참여하고 독립 commit하지
 않는다. Query Service는 persistence Row/Param을 외부 interface에 노출하지 않는다.
@@ -220,7 +220,7 @@ Orchestrator Transaction에 참여한다.
 | Member/Auth Application                | Workplace                                       | Query                       | OWNER onboarding에 필요한 active Workplace 존재 여부     |
 | Signup Orchestrator                    | Wallet                                          | Command participant         | 사용자와 기본 KRW Wallet 원자 생성                       |
 | Workplace create Orchestrator          | Attendance                                      | Command participant         | 사업장 생성과 초기 고정 QR 발급                          |
-| Work Application                       | Member/Auth, Workplace, Member/Badge            | Query + Command participant | 계약 당사자·사업장 불변 Snapshot Query; 초대 발급 시 OWNER 배지 재계산 Command 참여(`recalculate`); 초대 조회는 저장된 배지를 읽기만 하는 Query(`currentBadge`) |
+| Work Application                       | Member/Auth, Workplace                          | Query                       | 계약 당사자·사업장 불변 Snapshot과 초대 발급 OWNER의 배지 재계산 |
 | Attendance Application                 | Work                                            | Command                     | 근태 사실에 따른 의미 상태 전이 요청                     |
 | Attendance Application                 | Workplace, Document                             | Consumer-owned Query Port   | 사업장 권한/좌표와 signed artifact 준비 여부             |
 | Wallet Application                     | Bank Adapter                                    | Adapter command             | Mock 계좌 lock과 debit/credit                            |
