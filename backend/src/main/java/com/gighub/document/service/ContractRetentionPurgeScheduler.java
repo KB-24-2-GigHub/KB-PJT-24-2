@@ -54,19 +54,32 @@ public class ContractRetentionPurgeScheduler {
     }
 
     private void logOrphans(String executionId) {
-        try {
-            List<Long> orphanDocumentIds =
-                    documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE);
+        long afterDocumentId = 0L;
+        while (true) {
+            List<Long> orphanDocumentIds;
+            try {
+                orphanDocumentIds =
+                        documentMapper.findOrphanedContractDocumentIds(afterDocumentId, BATCH_SIZE);
+            } catch (RuntimeException failure) {
+                // 손상 점검 자체가 실패해도 다음 실행에서 다시 시도하면 되므로 예외를 삼킨다.
+                log.warn(
+                        "근로계약서 근무 참조 손상 점검에 실패했습니다. executionId={}, policyVersion={}",
+                        executionId, POLICY_VERSION, failure);
+                return;
+            }
+            if (orphanDocumentIds.isEmpty()) {
+                return;
+            }
             for (Long documentId : orphanDocumentIds) {
                 log.error(
                         "근로계약서의 근무 참조가 없어 보존 만료 판정에서 격리했습니다. "
                                 + "executionId={}, policyVersion={}, documentId={}",
                         executionId, POLICY_VERSION, documentId);
             }
-        } catch (RuntimeException failure) {
-            log.warn(
-                    "근로계약서 근무 참조 손상 점검에 실패했습니다. executionId={}, policyVersion={}",
-                    executionId, POLICY_VERSION, failure);
+            // 후보 조회와 같은 이유로 전체 Page를 순회한다 — 앞선 Page의 고아 문서가 매일
+            // 같은 Page를 다시 차지해 뒤에 있는 고아 문서가 영원히 로그에 잡히지 않는 것을
+            // 막는다.
+            afterDocumentId = orphanDocumentIds.get(orphanDocumentIds.size() - 1);
         }
     }
 

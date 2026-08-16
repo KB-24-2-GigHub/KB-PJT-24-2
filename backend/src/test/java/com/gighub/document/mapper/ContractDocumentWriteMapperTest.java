@@ -164,7 +164,7 @@ class ContractDocumentWriteMapperTest {
                 assertTrue(candidateIds.stream().noneMatch(id -> id.equals(notYetEligibleDocumentId)));
                 assertTrue(candidateIds.stream().noneMatch(id -> id.equals(orphanDocumentId)));
 
-                List<Long> orphanIds = mapper.findOrphanedContractDocumentIds(100);
+                List<Long> orphanIds = mapper.findOrphanedContractDocumentIds(0L, 100);
                 assertTrue(orphanIds.contains(orphanDocumentId));
 
                 List<ContractRetentionVersionKeyRow> versions =

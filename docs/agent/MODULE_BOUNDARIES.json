@@ -375,6 +375,13 @@
       ],
       "purpose": "attendance lifecycle candidate and readiness projection",
       "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-006",
+      "mapper": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "crossModuleTables": ["work_cases"],
+      "purpose": "contract retention purge candidate and orphan-reference audit projection",
+      "crossTableWriteAllowed": false
     }
   ],
   "temporaryViolations": [

@@ -378,6 +378,82 @@ class DocumentAccessMapperTest {
         }
     }
 
+    /**
+     * 보존 만료 파기(DOC-012)의 {@code markContractDeleted}가 진행 중인 계약서 파일 조회와
+     * 경합해도 이미 시작된 읽기가 파기된 내용을 그대로 응답하지 않아야 합니다(#131 테스트
+     * 항목 "동시 Batch와 파일 접근 경쟁"). 여기서는 실제 Scheduler 대신 같은 SQL로 파기의
+     * 상태 전이만 재현해 {@code finalizeAccess}의 재검증 경계를 검증합니다.
+     */
+    @Test
+    void retentionPurgeCommitsWhileContractFileReadIsBlocked() throws Exception {
+        try (AnnotationConfigApplicationContext context =
+                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+            JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
+            PlatformTransactionManager manager = context.getBean(PlatformTransactionManager.class);
+            DocumentFileAccessTransaction accessTransaction =
+                    context.getBean(DocumentFileAccessTransaction.class);
+            Fixture fixture = insertFixture(jdbc);
+            BlockingDocumentStorageAdapter storage = new BlockingDocumentStorageAdapter();
+            DocumentFileAccessService service =
+                    new DocumentFileAccessService(accessTransaction, storage);
+            ExecutorService executor = Executors.newFixedThreadPool(2);
+
+            try {
+                jdbc.update(
+                        "UPDATE document_versions SET size_bytes = ?, checksum = ? WHERE id = ?",
+                        FILE_CONTENT.length,
+                        Sha256.digest(FILE_CONTENT),
+                        fixture.contractVersionId);
+
+                Future<DocumentFileResult> reader = executor.submit(() -> service.loadFile(
+                        fixture.contractDocumentId,
+                        fixture.ownerId,
+                        UserRole.OWNER,
+                        "view"));
+                assertTrue(storage.awaitReadStarted());
+
+                // ContractDocumentWriteMapper.markContractDeleted와 같은 조건의 상태 전이.
+                Future<Integer> purge = executor.submit(() ->
+                        new TransactionTemplate(manager).execute(status -> jdbc.update(
+                                "UPDATE documents SET status = 'DELETED'"
+                                        + " WHERE id = ? AND document_type = 'EMPLOYMENT_CONTRACT'"
+                                        + " AND status != 'DELETED'",
+                                fixture.contractDocumentId)));
+
+                // 저장소 읽기가 멈춘 동안에도 prepare Transaction의 잠금은 이미 풀려 있어야
+                // 파기 Batch가 같은 실행 안에서 이 문서를 뒤이어 처리할 수 있습니다.
+                assertEquals(1, purge.get(5, TimeUnit.SECONDS));
+                storage.releaseRead();
+
+                ExecutionException failure = assertThrows(
+                        ExecutionException.class,
+                        () -> reader.get(5, TimeUnit.SECONDS));
+                assertTrue(failure.getCause() instanceof DocumentNotFoundException);
+                assertEquals(1, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM document_access_logs"
+                                + " WHERE document_id = ? AND actor_user_id = ?"
+                                + " AND action = 'CONTRACT_FILE_VIEW'"
+                                + " AND result = 'DENIED'"
+                                + " AND denial_reason = 'DOCUMENT_UNAVAILABLE'",
+                        Integer.class,
+                        fixture.contractDocumentId,
+                        fixture.ownerId));
+                assertEquals(0, jdbc.queryForObject(
+                        "SELECT COUNT(*) FROM document_access_logs"
+                                + " WHERE document_id = ? AND actor_user_id = ?"
+                                + " AND action = 'CONTRACT_FILE_VIEW'"
+                                + " AND result = 'ALLOWED'",
+                        Integer.class,
+                        fixture.contractDocumentId,
+                        fixture.ownerId));
+            } finally {
+                storage.releaseRead();
+                executor.shutdownNow();
+                deleteFixture(jdbc, fixture);
+            }
+        }
+    }
+
     private Fixture insertFixture(JdbcTemplate jdbc) {
         String token = UUID.randomUUID().toString().replace("-", "").substring(0, 10);
         long ownerId = insertUser(jdbc, "da_owner_" + token, "OWNER", "김사장");

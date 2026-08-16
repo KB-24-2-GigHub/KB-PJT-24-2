@@ -294,6 +294,7 @@ participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데
 | `QX-003` | `document.mapper.DocumentQueryMapper`      | users, work_contracts, work_cases, workplaces                          | 역할별 문서 목록·공유 이력 | #132의 권한/비공개 값 계약 유지 |
 | `QX-004` | `document.mapper.DocumentAccessMapper`     | users, work_contracts, work_cases, workplaces                          | 계약 당사자·보건증 공유 접근 판정 | Document Query Port로 캡슐화    |
 | `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
+| `QX-006` | `document.mapper.ContractDocumentWriteMapper` | work_cases                                                              | 보존 만료 파기 후보·근무 참조 손상 감사 Projection(DOC-012) | Query 역할만 수행; 같은 Mapper의 DML은 documents/document_versions owner 쓰기로 한정 |
 
 `AttendanceLifecycleMapper`는 Scheduler batch와 READY 선행조건을 한 번에 읽는 consumer-owned
 Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전이는
@@ -388,4 +389,4 @@ signature는 허용하지 않는다.
 | Domain Framework/Web/Persistence 금지 import | 0                       | 0 유지                                   |
 | Production hardcoded Mock flag               | 4                       | #293 완료 시 0                           |
 | 현재 writer가 없는 table                     | 4                       | 기능 이슈 상태를 유지하고 거짓 완료 금지 |
-| 명시된 cross-table Query 예외                | 5                       | Manifest allowlist 밖 신규 예외 0        |
+| 명시된 cross-table Query 예외                | 6 (#131 `QX-006` 추가)  | Manifest allowlist 밖 신규 예외 0        |

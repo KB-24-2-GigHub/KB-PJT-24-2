@@ -99,10 +99,13 @@ public interface ContractDocumentWriteMapper {
 
     /**
      * {@code work_case_id}가 비었거나 참조 {@code work_cases} 행이 없는 근로계약서
-     * 식별자를 찾는다. 자동 생성 정책(DEC-CONTRACT-AUTO-GENERATION)상 있을 수 없는
-     * 데이터 손상이며 파기하지 않고 감사만 한다.
+     * 식별자를 {@code documentId} 오름차순으로 {@code afterDocumentId} 초과부터 최대
+     * {@code limit}건 찾는다. 자동 생성 정책(DEC-CONTRACT-AUTO-GENERATION)상 있을 수 없는
+     * 데이터 손상이며 파기하지 않고 감사만 한다. 호출자가 이 Keyset으로 전체 Page를
+     * 순회해야 앞선 Page의 고아 문서 때문에 뒤 대상이 굶지 않는다.
      */
-    List<Long> findOrphanedContractDocumentIds(@Param("limit") int limit);
+    List<Long> findOrphanedContractDocumentIds(
+            @Param("afterDocumentId") long afterDocumentId, @Param("limit") int limit);
 
     /** 근로계약서를 {@code DELETED}로 전이한다. 이미 {@code DELETED}면 0을 돌려준다(멱등). */
     int markContractDeleted(@Param("documentId") long documentId);

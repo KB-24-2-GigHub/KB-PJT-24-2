@@ -135,6 +135,7 @@
           AND d.status != 'CANCELED'
           AND d.status != 'DELETED'
           AND (d.work_case_id IS NULL OR wc.id IS NULL)
+          AND d.id > #{afterDocumentId}
         ORDER BY d.id ASC
         LIMIT #{limit}
     </select>

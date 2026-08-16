@@ -20,7 +20,7 @@
 
 Application 로그에서 `ContractRetentionPurgeScheduler` Logger를 찾는다.
 
-- Dry-run: `[Dry-run] 근로계약서 보존 만료 파기 후보. executionId=..., candidates=N, documentIds=[...]`
+- Dry-run: `[Dry-run] 근로계약서 보존 만료 파기 후보. executionId=..., policyVersion=..., candidates=N`
 - 실행 완료: `근로계약서 보존 만료 파기 실행을 완료했습니다. ... candidates=N, purged=N, failed=N`
 - 데이터 손상(근무 참조 없음): `근로계약서의 근무 참조가 없어 보존 만료 판정에서 격리했습니다. ... documentId=...`
   — 이 로그가 보이면 `document_type='EMPLOYMENT_CONTRACT'`인데 `work_case_id`가 비었거나

@@ -36,7 +36,7 @@ class ContractRetentionPurgeSchedulerTest {
 
     @Test
     void dryRunLeavesTheDatabaseAndStorageUntouched() {
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
@@ -53,7 +53,7 @@ class ContractRetentionPurgeSchedulerTest {
 
     @Test
     void purgesAnExpiredContractsStatusAndAllVersionObjects() {
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build()));
         when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
@@ -77,7 +77,7 @@ class ContractRetentionPurgeSchedulerTest {
 
     @Test
     void alreadyDeletedCandidatesSkipTheStatusTransitionButRetryObjectDeletion() {
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("DELETED").build()));
         when(documentMapper.findContractRetentionCandidates(DOCUMENT_ID, BATCH_SIZE))
@@ -97,7 +97,7 @@ class ContractRetentionPurgeSchedulerTest {
     @Test
     void aFailingCandidateDoesNotStopTheRestOfTheBatch() {
         long otherDocumentId = 99L;
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of(
                 ContractRetentionCandidateRow.builder().documentId(DOCUMENT_ID).status("ACTIVE").build(),
                 ContractRetentionCandidateRow.builder().documentId(otherDocumentId).status("ACTIVE").build()));
@@ -119,7 +119,7 @@ class ContractRetentionPurgeSchedulerTest {
 
     @Test
     void anOrphanedDocumentIsLoggedAndNotTouched() {
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of(DOCUMENT_ID));
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of(DOCUMENT_ID));
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of());
         ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
                 documentMapper, storageAdapter, purgeEnabledProperties());
@@ -131,6 +131,27 @@ class ContractRetentionPurgeSchedulerTest {
     }
 
     @Test
+    void aFullFirstOrphanPageMovesOnToTheNextPageInTheSameRun() {
+        long firstPageLastId = BATCH_SIZE;
+        long secondPageOrphanId = BATCH_SIZE + 1L;
+        List<Long> firstPage = java.util.stream.LongStream.rangeClosed(1, BATCH_SIZE).boxed().toList();
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(firstPage);
+        when(documentMapper.findOrphanedContractDocumentIds(firstPageLastId, BATCH_SIZE))
+                .thenReturn(List.of(secondPageOrphanId));
+        when(documentMapper.findOrphanedContractDocumentIds(secondPageOrphanId, BATCH_SIZE))
+                .thenReturn(List.of());
+        when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(List.of());
+        ContractRetentionPurgeScheduler scheduler = new ContractRetentionPurgeScheduler(
+                documentMapper, storageAdapter, purgeEnabledProperties());
+
+        scheduler.runOnce();
+
+        // 첫 Page가 BATCH_SIZE로 꽉 차도 같은 실행이 이어서 두 번째 Page의 고아 문서까지 조회한다.
+        verify(documentMapper, times(3))
+                .findOrphanedContractDocumentIds(anyLong(), org.mockito.ArgumentMatchers.eq(BATCH_SIZE));
+    }
+
+    @Test
     void aFullFirstPageMovesOnToTheNextPageInTheSameRun() {
         long firstPageLastId = BATCH_SIZE;
         long secondPageDocumentId = BATCH_SIZE + 1L;
@@ -139,7 +160,7 @@ class ContractRetentionPurgeSchedulerTest {
                 .mapToObj(id -> ContractRetentionCandidateRow.builder()
                         .documentId(id).status("DELETED").build())
                 .toList();
-        when(documentMapper.findOrphanedContractDocumentIds(BATCH_SIZE)).thenReturn(List.of());
+        when(documentMapper.findOrphanedContractDocumentIds(0L, BATCH_SIZE)).thenReturn(List.of());
         when(documentMapper.findContractRetentionCandidates(0L, BATCH_SIZE)).thenReturn(firstPage);
         when(documentMapper.findContractRetentionCandidates(firstPageLastId, BATCH_SIZE)).thenReturn(List.of(
                 ContractRetentionCandidateRow.builder()
