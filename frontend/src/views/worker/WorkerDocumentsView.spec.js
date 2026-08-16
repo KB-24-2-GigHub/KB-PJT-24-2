@@ -20,7 +20,7 @@ vi.mock('@/services/documents', () => ({
   updateDocumentIssuedDate: vi.fn(),
   uploadDocument: vi.fn()
 }))
-vi.mock('@/services/worker', () => ({ listWorkerWorkplaces: vi.fn() }))
+vi.mock('@/services/worker', () => ({ listAllWorkerWorkplaces: vi.fn() }))
 
 import {
   deleteDocument,
@@ -30,7 +30,7 @@ import {
   shareDocument,
   uploadDocument
 } from '@/services/documents'
-import { listWorkerWorkplaces } from '@/services/worker'
+import { listAllWorkerWorkplaces } from '@/services/worker'
 import WorkerDocumentsView from '@/views/worker/WorkerDocumentsView.vue'
 
 const PAGE = { number: 0, size: 20, totalElements: 1, totalPages: 1 }
@@ -90,7 +90,7 @@ describe('WorkerDocumentsView 역할별 조작 권한', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     getDocumentShares.mockResolvedValue(pageOf([]))
-    listWorkerWorkplaces.mockResolvedValue(pageOf([]))
+    listAllWorkerWorkplaces.mockResolvedValue([])
   })
 
   it('근로계약서 카드에는 어떤 조작 버튼도 붙지 않는다', async () => {
@@ -143,20 +143,20 @@ describe('WorkerDocumentsView 목록 조회', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     getDocumentShares.mockResolvedValue(pageOf([]))
-    listWorkerWorkplaces.mockResolvedValue(pageOf([]))
+    listAllWorkerWorkplaces.mockResolvedValue([])
     listDocuments.mockResolvedValue(pageOf([]))
   })
 
   it('유형 탭은 서버 docType Query 로 거른다', async () => {
     const wrapper = mountView()
     await flushPromises()
-    expect(listDocuments).toHaveBeenLastCalledWith({ docType: undefined })
+    expect(listDocuments).toHaveBeenLastCalledWith({ docType: undefined, page: 0 })
 
     // 화면에서 거르면 Page 밖(기본 20건 이후)의 문서가 조용히 사라진다.
     await wrapper.findAll('.tab')[2].trigger('click')
     await flushPromises()
 
-    expect(listDocuments).toHaveBeenLastCalledWith({ docType: 'HEALTH_CERTIFICATE' })
+    expect(listDocuments).toHaveBeenLastCalledWith({ docType: 'HEALTH_CERTIFICATE', page: 0 })
   })
 })
 
@@ -165,7 +165,7 @@ describe('WorkerDocumentsView 보건증 등록', () => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
     getDocumentShares.mockResolvedValue(pageOf([]))
-    listWorkerWorkplaces.mockResolvedValue(pageOf([]))
+    listAllWorkerWorkplaces.mockResolvedValue([])
     listDocuments.mockResolvedValue(pageOf([]))
     uploadDocument.mockResolvedValue({ documentId: 9 })
   })
@@ -222,7 +222,7 @@ describe('WorkerDocumentsView 보건증 삭제', () => {
     vi.clearAllMocks()
     listDocuments.mockResolvedValue(pageOf([OWN_HEALTH_CERTIFICATE]))
     getDocumentShares.mockResolvedValue(pageOf([]))
-    listWorkerWorkplaces.mockResolvedValue(pageOf([]))
+    listAllWorkerWorkplaces.mockResolvedValue([])
     deleteDocument.mockResolvedValue(undefined)
   })
 
@@ -280,24 +280,22 @@ describe('WorkerDocumentsView 공유 관리', () => {
     vi.clearAllMocks()
     listDocuments.mockResolvedValue(pageOf([OWN_HEALTH_CERTIFICATE]))
     getDocumentShares.mockResolvedValue(pageOf(SHARES))
-    listWorkerWorkplaces.mockResolvedValue(
-      pageOf([
-        {
-          workplaceId: 1,
-          workplaceName: '강남점',
-          ownerName: '김사장',
-          startsAt: '2026-08-20T01:00:00Z',
-          endsAt: '2026-08-20T09:00:00Z'
-        },
-        {
-          workplaceId: 4,
-          workplaceName: '신촌점',
-          ownerName: '박사장',
-          startsAt: '2026-08-25T01:00:00Z',
-          endsAt: '2026-08-25T09:00:00Z'
-        }
-      ])
-    )
+    listAllWorkerWorkplaces.mockResolvedValue([
+      {
+        workplaceId: 1,
+        workplaceName: '강남점',
+        ownerName: '김사장',
+        startsAt: '2026-08-20T01:00:00Z',
+        endsAt: '2026-08-20T09:00:00Z'
+      },
+      {
+        workplaceId: 4,
+        workplaceName: '신촌점',
+        ownerName: '박사장',
+        startsAt: '2026-08-25T01:00:00Z',
+        endsAt: '2026-08-25T09:00:00Z'
+      }
+    ])
   })
 
   it('철회·만료된 공유를 공유중으로 표시하지 않는다', async () => {

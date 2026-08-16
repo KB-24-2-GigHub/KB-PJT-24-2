@@ -84,6 +84,50 @@ describe('OwnerDocumentViewerView', () => {
     expect(fetchDocumentFile).toHaveBeenCalledWith(5, 'download')
   })
 
+  it('미리보기만 실패하면 문서 Metadata 와 미리보기 자리 안내를 그대로 보여준다', async () => {
+    // 파일 Stream 일시 오류로 문서 전체를 접근 불가로 그리면, 권한도 있고 실재하는 문서를
+    // "볼 수 없음"으로 잘못 알리게 된다.
+    fetchDocumentFile.mockRejectedValue({ response: { status: 500 } })
+
+    const wrapper = mount(OwnerDocumentViewerView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('보건증_20260601_김알바.jpg')
+    expect(wrapper.find('.viewer-placeholder').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('공유가 취소되었거나 근무 관계가 끝났을 수 있어요')
+    expect(wrapper.find('[aria-label="다운로드"]').exists()).toBe(true)
+  })
+
+  it('canDownload 가 false 면 다운로드 버튼을 그리지 않는다', async () => {
+    getDocument.mockResolvedValue({
+      ...SHARED_HEALTH_CERTIFICATE,
+      capabilities: { ...SHARED_HEALTH_CERTIFICATE.capabilities, canDownload: false }
+    })
+
+    const wrapper = mount(OwnerDocumentViewerView)
+    await flushPromises()
+
+    expect(wrapper.find('[aria-label="다운로드"]').exists()).toBe(false)
+  })
+
+  it('공유 철회 안내는 공유받은 보건증에만 붙인다', async () => {
+    // 근로계약서는 알바생이 공유를 취소해도 사라지지 않는다.
+    getDocument.mockResolvedValue({
+      ...SHARED_HEALTH_CERTIFICATE,
+      documentId: 1,
+      docType: 'EMPLOYMENT_CONTRACT',
+      source: 'OWN',
+      sharedByName: null,
+      expiresDate: null
+    })
+
+    const wrapper = mount(OwnerDocumentViewerView)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('알바생이 공유를 취소하거나')
+    expect(wrapper.text()).toContain('시스템이 생성한 최종본')
+  })
+
   it('접근이 사라진 문서(404)는 존재를 구분하지 않는 안내로 끝낸다', async () => {
     getDocument.mockRejectedValue({ response: { status: 404 } })
 

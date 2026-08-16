@@ -37,9 +37,9 @@ import {
   uploadDocument
 } from '@/services/documents'
 import { errorMessage, fieldErrorMap } from '@/services/http'
-import { listWorkerWorkplaces } from '@/services/worker'
+import { listAllWorkerWorkplaces } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
-import { DOC_IMAGE_MIME_TYPES, DOC_TYPE } from '@/utils/constants'
+import { docTypeLabel, hasNextPage, isImageDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
@@ -49,7 +49,10 @@ const ALLOWED_EXT = ['jpg', 'jpeg', 'png', 'pdf']
 
 const docs = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
 const loadError = ref(null)
+const nextPage = ref(0)
+const hasMore = ref(false)
 
 const TABS = [
   { value: 'ALL', label: '전체' },
@@ -77,31 +80,46 @@ async function loadActiveShares(doc) {
   }
 }
 
+function query(page) {
+  return { docType: activeTab.value === 'ALL' ? undefined : activeTab.value, page }
+}
+
 async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const { content } = await listDocuments({
-      docType: activeTab.value === 'ALL' ? undefined : activeTab.value
-    })
+    const { content, page } = await listDocuments(query(0))
     const list = content ?? []
     await Promise.all(list.filter(ownsHealthCertificate).map(loadActiveShares))
     docs.value = list
+    nextPage.value = 1
+    hasMore.value = hasNextPage(page)
   } catch (error) {
     loadError.value = error
     docs.value = []
+    hasMore.value = false
     ui.toast('문서를 불러오지 못했어요.', { type: 'danger' })
   } finally {
     loading.value = false
   }
 }
 
-function docTypeLabel(doc) {
-  return DOC_TYPE[doc.docType]?.label ?? '문서'
-}
-
-function isImage(doc) {
-  return DOC_IMAGE_MIME_TYPES.includes(doc.mimeType)
+/** 다음 Page 를 이어 붙인다. 없으면 남은 문서가 표시도 오류도 없이 사라진다. */
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const { content, page } = await listDocuments(query(nextPage.value))
+    const list = content ?? []
+    await Promise.all(list.filter(ownsHealthCertificate).map(loadActiveShares))
+    docs.value = [...docs.value, ...list]
+    nextPage.value += 1
+    hasMore.value = hasNextPage(page)
+  } catch {
+    ui.toast('문서를 더 불러오지 못했어요.', { type: 'danger' })
+  } finally {
+    loadingMore.value = false
+  }
 }
 
 function goViewer(doc) {
@@ -270,8 +288,9 @@ async function openShare(doc) {
   shareOpen.value = true
   shareLoading.value = true
   try {
-    const [workplaces] = await Promise.all([listWorkerWorkplaces(), loadActiveShares(doc)])
-    shareTargets.value = workplaces.content ?? []
+    // 후보를 한 Page 만 읽으면 남은 사업장이 표시도 오류도 없이 사라진다.
+    const [workplaces] = await Promise.all([listAllWorkerWorkplaces(), loadActiveShares(doc)])
+    shareTargets.value = workplaces
   } catch (error) {
     shareTargets.value = []
     ui.toast(errorMessage(error, '공유 정보를 불러오지 못했어요.'), { type: 'warning' })
@@ -346,7 +365,7 @@ async function doRevoke(share) {
         >
           <button type="button" class="doc-main" @click="goViewer(doc)">
             <span class="thumb">
-              <ImageIcon v-if="isImage(doc)" :size="20" />
+              <ImageIcon v-if="isImageDocument(doc)" :size="20" />
               <FileText v-else :size="20" />
             </span>
 
@@ -391,6 +410,16 @@ async function doRevoke(share) {
           </div>
         </li>
       </ul>
+
+      <button
+        v-if="hasMore"
+        type="button"
+        class="more-btn"
+        :disabled="loadingMore"
+        @click="loadMore"
+      >
+        {{ loadingMore ? '불러오는 중…' : '더 보기' }}
+      </button>
     </template>
 
     <p class="notice">
@@ -633,6 +662,17 @@ async function doRevoke(share) {
 }
 .act-btn--danger {
   color: var(--color-danger);
+}
+
+.more-btn {
+  width: 100%;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-sub);
 }
 
 .notice {

@@ -51,7 +51,7 @@ describe('unimplemented public facade operations', () => {
     http.get.mockResolvedValueOnce({ data: page })
 
     await expect(listWorkerWorkplaces()).resolves.toEqual(page)
-    expect(http.get).toHaveBeenCalledWith('/worker/workplaces')
+    expect(http.get).toHaveBeenCalledWith('/worker/workplaces', { params: {} })
   })
 
   it('allows an explicitly selected Development/Test mock for one operation', async () => {

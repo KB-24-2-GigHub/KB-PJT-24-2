@@ -17,45 +17,58 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { getDocument } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
-import { DOC_PDF_MIME_TYPE, DOC_TYPE } from '@/utils/constants'
+import { docTypeLabel, documentAccessErrorMessage, isPdfDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 
 const route = useRoute()
 const ui = useUiStore()
+
+// 삭제·비소유·비가시 문서는 서버가 모두 404 로 통일해 존재를 숨긴다.
+const NOT_FOUND_MESSAGE = '문서를 볼 수 없어요.'
 
 const documentId = Number(route.params.documentId)
 const doc = ref(null)
 const loading = ref(true)
 const loadError = ref(null)
 
-const docTypeLabel = computed(() => DOC_TYPE[doc.value?.docType]?.label ?? '문서')
-const isPdf = computed(() => doc.value?.mimeType === DOC_PDF_MIME_TYPE)
+const typeLabel = computed(() => docTypeLabel(doc.value))
+const isPdf = computed(() => isPdfDocument(doc.value))
 const isExpired = computed(() => doc.value?.status === 'EXPIRED')
+const canDownload = computed(() => doc.value?.capabilities?.canDownload === true)
 
 const { previewUrl: fileUrl, downloading, loadPreview, downloadDocument } = useDocumentPreview()
 
+/**
+ * 문서 조회와 미리보기는 실패 의미가 다르다. 파일 Stream 만 실패했을 때 문서 전체를
+ * 접근 불가로 그리면, 실재하고 권한도 있는 문서를 "볼 수 없음"으로 잘못 알리게 된다.
+ */
 onMounted(async () => {
   try {
     doc.value = await getDocument(documentId)
-    await loadPreview(documentId)
   } catch (error) {
     loadError.value = error
-    ui.toast(documentErrorMessage(error), { type: 'danger' })
+    ui.toast(errorMessage(error), { type: 'danger' })
+    return
   } finally {
     loading.value = false
   }
+
+  try {
+    await loadPreview(documentId)
+  } catch (error) {
+    ui.toast(errorMessage(error), { type: 'warning' })
+  }
 })
 
-// 삭제·비소유·비가시 문서는 서버가 모두 404 로 통일해 존재를 숨긴다.
-function documentErrorMessage(error) {
-  return error?.response?.status === 404 ? '문서를 볼 수 없어요.' : '문서를 불러오지 못했어요.'
+function errorMessage(error) {
+  return documentAccessErrorMessage(error, NOT_FOUND_MESSAGE)
 }
 
 async function onDownload() {
   try {
     await downloadDocument(documentId, doc.value?.fileName)
   } catch (error) {
-    ui.toast(documentErrorMessage(error), { type: 'danger' })
+    ui.toast(errorMessage(error), { type: 'danger' })
   }
 }
 </script>
@@ -66,14 +79,14 @@ async function onDownload() {
     <main class="screen-body">
       <p v-if="loading" class="loading">불러오는 중…</p>
 
-      <EmptyState v-else-if="loadError" :message="documentErrorMessage(loadError)" />
+      <EmptyState v-else-if="loadError" :message="errorMessage(loadError)" />
 
       <EmptyState v-else-if="!doc" message="문서를 찾을 수 없습니다." />
 
       <template v-else>
         <section class="meta-card">
           <div class="meta-head">
-            <span class="doc-type">{{ docTypeLabel }}</span>
+            <span class="doc-type">{{ typeLabel }}</span>
             <h1 class="doc-name">{{ doc.fileName }}</h1>
           </div>
           <dl class="meta-list">
@@ -106,7 +119,13 @@ async function onDownload() {
           </div>
         </div>
 
-        <button type="button" class="download-btn" :disabled="downloading" @click="onDownload">
+        <button
+          v-if="canDownload"
+          type="button"
+          class="download-btn"
+          :disabled="downloading"
+          @click="onDownload"
+        >
           <Download :size="18" />
           {{ downloading ? '내려받는 중…' : '다운로드' }}
         </button>

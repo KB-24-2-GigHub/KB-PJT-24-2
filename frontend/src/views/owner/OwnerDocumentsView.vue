@@ -17,7 +17,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { listDocuments } from '@/services/documents'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { useUiStore } from '@/stores/ui'
-import { DOC_IMAGE_MIME_TYPES, DOC_TYPE } from '@/utils/constants'
+import { docTypeLabel, hasNextPage, isImageDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 
 const router = useRouter()
@@ -33,39 +33,71 @@ const TABS = [
 
 const documents = ref([])
 const loading = ref(false)
+const loadingMore = ref(false)
 const loadError = ref(null)
 const activeTab = ref('ALL')
+const nextPage = ref(0)
+const hasMore = ref(false)
 
-// 목록은 Page 단위(기본 20건)로 내려오므로 유형 필터를 화면에서 걸면 뒤 Page 의 문서가
-// 조용히 사라진다. 승인 Query 인 docType 으로 서버에서 거른다.
+function query(page) {
+  return {
+    workplaceId: selectedId.value,
+    docType: activeTab.value === 'ALL' ? undefined : activeTab.value,
+    page
+  }
+}
+
+/**
+ * 선택 지점의 문서 첫 Page.
+ *
+ * 유형 필터는 화면이 아니라 승인 Query 인 docType 으로 서버에서 건다 — Page 단위(기본
+ * 20건)로 내려오므로 화면에서 거르면 뒤 Page 의 문서가 조용히 사라진다.
+ *
+ * 지점이 정해지기 전에는 요청하지 않는다. workplaceId 없는 목록 요청은 이 사장이 접근
+ * 가능한 모든 지점의 문서를 돌려주므로, 사업장 Store 가 늦게 도착하면 다른 지점 문서가
+ * 섞인 화면이 잠깐 그려진다.
+ */
 async function load() {
+  if (selectedId.value == null) {
+    documents.value = []
+    hasMore.value = false
+    return
+  }
   loading.value = true
   loadError.value = null
   try {
-    const { content } = await listDocuments({
-      workplaceId: selectedId.value,
-      docType: activeTab.value === 'ALL' ? undefined : activeTab.value
-    })
+    const { content, page } = await listDocuments(query(0))
     documents.value = content ?? []
+    nextPage.value = 1
+    hasMore.value = hasNextPage(page)
   } catch (error) {
     loadError.value = error
     documents.value = []
+    hasMore.value = false
     ui.toast('문서를 불러오지 못했어요.', { type: 'danger' })
   } finally {
     loading.value = false
   }
 }
 
-onMounted(load)
-watch([selectedId, activeTab], load)
-
-function docTypeLabel(doc) {
-  return DOC_TYPE[doc.docType]?.label ?? '문서'
+/** 다음 Page 를 이어 붙인다. 없으면 남은 문서가 표시도 오류도 없이 사라진다. */
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const { content, page } = await listDocuments(query(nextPage.value))
+    documents.value = [...documents.value, ...(content ?? [])]
+    nextPage.value += 1
+    hasMore.value = hasNextPage(page)
+  } catch {
+    ui.toast('문서를 더 불러오지 못했어요.', { type: 'danger' })
+  } finally {
+    loadingMore.value = false
+  }
 }
 
-function isImage(doc) {
-  return DOC_IMAGE_MIME_TYPES.includes(doc.mimeType)
-}
+onMounted(() => workplaceStore.load())
+watch([selectedId, activeTab], load, { immediate: true })
 
 /**
  * 공유받은 보건증 상세는 목록이 준 workCaseId 를 반드시 함께 보내야 한다. 서버는 관계를
@@ -97,7 +129,14 @@ function openViewer(doc) {
       </div>
     </div>
 
-    <p v-if="loading" class="loading">불러오는 중…</p>
+    <EmptyState
+      v-if="workplaceStore.loaded && !workplaceStore.hasActiveWorkplace"
+      message="등록된 사업장이 없습니다."
+    >
+      사업장을 먼저 등록하면 계약서와 공유받은 보건증을 볼 수 있어요.
+    </EmptyState>
+
+    <p v-else-if="loading" class="loading">불러오는 중…</p>
 
     <template v-else>
       <EmptyState v-if="loadError" message="문서를 불러오지 못했어요." />
@@ -106,29 +145,41 @@ function openViewer(doc) {
         근무가 시작되면 근로계약서가 자동 저장되고, 알바생이 공유한 보건증이 여기에 보여요.
       </EmptyState>
 
-      <ul v-else class="doc-list">
-        <li v-for="doc in documents" :key="`${doc.documentId}-${doc.workCaseId ?? 'own'}`">
-          <button type="button" class="doc-card" @click="openViewer(doc)">
-            <span class="thumb">
-              <ImageIcon v-if="isImage(doc)" :size="20" />
-              <FileText v-else :size="20" />
-            </span>
-
-            <span class="doc-info">
-              <span class="doc-name">{{ doc.fileName }}</span>
-              <span class="doc-meta">
-                {{ formatDate(doc.issuedDate) }} · {{ docTypeLabel(doc) }}
-                <template v-if="doc.sharedByName"> · {{ doc.sharedByName }}</template>
+      <template v-else>
+        <ul class="doc-list">
+          <li v-for="doc in documents" :key="`${doc.documentId}-${doc.workCaseId ?? 'own'}`">
+            <button type="button" class="doc-card" @click="openViewer(doc)">
+              <span class="thumb">
+                <ImageIcon v-if="isImageDocument(doc)" :size="20" />
+                <FileText v-else :size="20" />
               </span>
-              <span v-if="doc.expiresDate" class="doc-expiry">
-                만료 예정 {{ formatDate(doc.expiresDate) }}
-              </span>
-            </span>
 
-            <span v-if="doc.status === 'EXPIRED'" class="badge badge--expired">만료</span>
-          </button>
-        </li>
-      </ul>
+              <span class="doc-info">
+                <span class="doc-name">{{ doc.fileName }}</span>
+                <span class="doc-meta">
+                  {{ formatDate(doc.issuedDate) }} · {{ docTypeLabel(doc) }}
+                  <template v-if="doc.sharedByName"> · {{ doc.sharedByName }}</template>
+                </span>
+                <span v-if="doc.expiresDate" class="doc-expiry">
+                  만료 예정 {{ formatDate(doc.expiresDate) }}
+                </span>
+              </span>
+
+              <span v-if="doc.status === 'EXPIRED'" class="badge badge--expired">만료</span>
+            </button>
+          </li>
+        </ul>
+
+        <button
+          v-if="hasMore"
+          type="button"
+          class="more-btn"
+          :disabled="loadingMore"
+          @click="loadMore"
+        >
+          {{ loadingMore ? '불러오는 중…' : '더 보기' }}
+        </button>
+      </template>
     </template>
 
     <p class="notice">
@@ -241,6 +292,17 @@ function openViewer(doc) {
 .badge--expired {
   color: var(--color-danger);
   background: var(--color-danger-bg);
+}
+
+.more-btn {
+  width: 100%;
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-sub);
 }
 
 .notice {

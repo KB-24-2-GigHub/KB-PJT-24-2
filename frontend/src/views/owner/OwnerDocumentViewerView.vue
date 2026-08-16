@@ -17,11 +17,13 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { getDocument } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
-import { DOC_IMAGE_MIME_TYPES, DOC_TYPE } from '@/utils/constants'
+import { docTypeLabel, documentAccessErrorMessage, isImageDocument } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 
 const route = useRoute()
 const ui = useUiStore()
+
+const NOT_FOUND_MESSAGE = '문서를 볼 수 없어요. 공유가 취소되었거나 근무 관계가 끝났을 수 있어요.'
 
 const documentId = Number(route.params.documentId)
 const workCaseId = route.query.workCaseId ? Number(route.query.workCaseId) : undefined
@@ -32,33 +34,45 @@ const loadError = ref(null)
 
 const { previewUrl: viewUrl, downloading, loadPreview, downloadDocument } = useDocumentPreview()
 
-const docTypeLabel = computed(() => DOC_TYPE[doc.value?.docType]?.label ?? '문서')
-const isImage = computed(() => DOC_IMAGE_MIME_TYPES.includes(doc.value?.mimeType))
+const typeLabel = computed(() => docTypeLabel(doc.value))
+const isImage = computed(() => isImageDocument(doc.value))
+const canDownload = computed(() => doc.value?.capabilities?.canDownload === true)
+const isSharedHealthCertificate = computed(
+  () => doc.value?.docType === 'HEALTH_CERTIFICATE' && doc.value?.source === 'SHARED'
+)
 
+/**
+ * 문서 조회와 미리보기는 실패 의미가 다르다. 파일 Stream 만 실패했을 때 문서 전체를
+ * 접근 불가로 그리면, 권한도 있고 실재하는 문서를 "볼 수 없음"으로 잘못 알리게 된다.
+ * 그 경우는 Metadata 를 그대로 두고 미리보기 자리만 비운다.
+ */
 onMounted(async () => {
   try {
     doc.value = await getDocument(documentId, { workCaseId })
-    await loadPreview(documentId)
   } catch (error) {
     loadError.value = error
-    ui.toast(documentErrorMessage(error), { type: 'danger' })
+    ui.toast(errorMessage(error), { type: 'danger' })
+    return
   } finally {
     loading.value = false
   }
+
+  try {
+    await loadPreview(documentId)
+  } catch (error) {
+    ui.toast(errorMessage(error), { type: 'warning' })
+  }
 })
 
-// 서버는 비가시 문서·비당사자·철회·만료를 모두 404 로 통일해 존재를 숨긴다.
-function documentErrorMessage(error) {
-  return error?.response?.status === 404
-    ? '문서를 볼 수 없어요. 공유가 취소되었거나 근무 관계가 끝났을 수 있어요.'
-    : '문서를 불러오지 못했어요.'
+function errorMessage(error) {
+  return documentAccessErrorMessage(error, NOT_FOUND_MESSAGE)
 }
 
 async function onDownload() {
   try {
     await downloadDocument(documentId, doc.value?.fileName)
   } catch (error) {
-    ui.toast(documentErrorMessage(error), { type: 'danger' })
+    ui.toast(errorMessage(error), { type: 'danger' })
   }
 }
 </script>
@@ -66,7 +80,7 @@ async function onDownload() {
 <template>
   <div class="sub-page">
     <AppBackHeader :title="doc?.fileName || '문서 보기'">
-      <template v-if="doc" #action>
+      <template v-if="canDownload" #action>
         <button
           type="button"
           class="download-btn"
@@ -82,13 +96,13 @@ async function onDownload() {
     <main class="screen-body">
       <p v-if="loading" class="loading">불러오는 중…</p>
 
-      <EmptyState v-else-if="loadError" :message="documentErrorMessage(loadError)" />
+      <EmptyState v-else-if="loadError" :message="errorMessage(loadError)" />
 
       <EmptyState v-else-if="!doc" message="문서를 찾을 수 없어요." />
 
       <template v-else>
         <p class="meta-line">
-          {{ docTypeLabel }} · 발급 {{ formatDate(doc.issuedDate) }}
+          {{ typeLabel }} · 발급 {{ formatDate(doc.issuedDate) }}
           <template v-if="doc.sharedByName"> · 공유자 {{ doc.sharedByName }}</template>
           <template v-if="doc.expiresDate"> · 만료 예정 {{ formatDate(doc.expiresDate) }}</template>
         </p>
@@ -103,8 +117,11 @@ async function onDownload() {
           </div>
         </div>
 
-        <p class="access-note">
+        <p v-if="isSharedHealthCertificate" class="access-note">
           공유받은 보건증은 알바생이 공유를 취소하거나 근무가 끝나면 더 이상 열람할 수 없어요.
+        </p>
+        <p v-else class="access-note">
+          근로계약서는 시스템이 생성한 최종본이라 수정하거나 삭제할 수 없어요.
         </p>
       </template>
     </main>

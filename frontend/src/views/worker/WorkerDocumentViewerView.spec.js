@@ -85,6 +85,30 @@ describe('WorkerDocumentViewerView', () => {
     expect(wrapper.find('.expired').exists()).toBe(false)
   })
 
+  it('미리보기만 실패하면 문서 Metadata 와 미리보기 자리 안내를 그대로 보여준다', async () => {
+    fetchDocumentFile.mockRejectedValue({ response: { status: 500 } })
+
+    const wrapper = mount(WorkerDocumentViewerView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('보건증_20260601_김알바.jpg')
+    expect(wrapper.find('.preview-empty').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('문서를 볼 수 없어요')
+    expect(wrapper.find('.download-btn').exists()).toBe(true)
+  })
+
+  it('canDownload 가 false 면 다운로드 버튼을 그리지 않는다', async () => {
+    getDocument.mockResolvedValue({
+      ...OWN_HEALTH_CERTIFICATE,
+      capabilities: { ...OWN_HEALTH_CERTIFICATE.capabilities, canDownload: false }
+    })
+
+    const wrapper = mount(WorkerDocumentViewerView)
+    await flushPromises()
+
+    expect(wrapper.find('.download-btn').exists()).toBe(false)
+  })
+
   it('다운로드는 인증된 Blob Stream 으로 받는다', async () => {
     const wrapper = mount(WorkerDocumentViewerView)
     await flushPromises()
