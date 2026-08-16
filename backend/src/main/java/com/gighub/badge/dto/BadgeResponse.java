@@ -46,23 +46,22 @@ public final class BadgeResponse {
     }
 
     /**
-     * 등급별 안내 문장을 조립합니다.
+     * 누적·정상 건수와 다음 등급의 건수·비율 조건을 함께 설명합니다(API_SPEC.md '최신 뱃지').
      *
-     * <ul>
-     *   <li>3단계: 최고 등급 안내</li>
-     *   <li>건수 미충족(remaining&gt;0): 다음 등급까지 남은 건수 안내</li>
-     *   <li>건수는 채웠지만 비율 부족(remaining=0, level&lt;3): 부족한 비율 안내</li>
-     * </ul>
+     * <p>3단계는 다음 등급이 없으므로 누적·정상 건수만 안내합니다.</p>
      */
     private static String buildCriterionDesc(BadgeCalculationResult result) {
         if (result.getLevel() >= 3) {
-            return "누적 %d건과 정상 비율을 기준으로 최고 등급입니다.".formatted(result.getTotalCount());
+            return "누적 %d건 중 정상 %d건으로 최고 등급입니다."
+                    .formatted(result.getTotalCount(), result.getNormalCount());
         }
-        if (result.getRemainingToNextLevel() > 0) {
-            return "누적 %d건과 정상 비율을 기준으로 산정했습니다. 다음 등급까지 %d건이 남았습니다."
-                    .formatted(result.getTotalCount(), result.getRemainingToNextLevel());
-        }
-        return "누적 %d건은 채웠지만 정상 비율이 다음 등급 기준(%d%%)에 못 미칩니다."
-                .formatted(result.getTotalCount(), result.getNextThresholdPercent());
+        return ("누적 %d건 중 정상 %d건입니다. 다음 등급은 누적 %d건 이상과 정상 비율 %d%% 이상이 "
+                + "필요하고, 건수는 %d건 남았습니다.")
+                .formatted(
+                        result.getTotalCount(),
+                        result.getNormalCount(),
+                        result.getNextThresholdCount(),
+                        result.getNextThresholdPercent(),
+                        result.getRemainingToNextLevel());
     }
 }

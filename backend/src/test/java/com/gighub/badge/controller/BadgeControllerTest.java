@@ -42,7 +42,7 @@ class BadgeControllerTest {
     @Test
     void returnsApprovedShapeForAuthenticatedOwner() throws Exception {
         when(badgeApplicationService.recalculate(3L)).thenReturn(BadgeCalculationResult.of(
-                "TRUST_OWNER", 1, 12, 10, 10, 80, 8, 90));
+                "TRUST_OWNER", 1, 12, 10, 10, 80, 8, 90, 20));
 
         mockMvc.perform(get("/api/users/me/badge").principal(ownerAuthentication()))
                 .andExpect(status().isOk())

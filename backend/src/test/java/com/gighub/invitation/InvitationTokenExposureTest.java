@@ -244,7 +244,7 @@ class InvitationTokenExposureTest {
     private static BadgeApplicationService noOwnerBadge() {
         return mock(
                 BadgeApplicationService.class,
-                invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80));
+                invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80, 10));
     }
 
     /** 예상하지 못한 실패 경로까지 확인해야 해서 Mock 대신 직접 만든 Stub을 씁니다. */

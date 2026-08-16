@@ -62,7 +62,7 @@ class InvitationQueryServiceImplTest {
     // 스텁하지 않은 employerId는 0단계로 기본 응답해 기존 성공 경로 테스트가 그대로 통과합니다.
     private final BadgeApplicationService badgeApplicationService = mock(
             BadgeApplicationService.class,
-            invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80));
+            invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80, 10));
 
     @Test
     void returnsApprovedTermsForAuthenticatedWorker() {
@@ -90,7 +90,7 @@ class InvitationQueryServiceImplTest {
         mapper.invitation = pendingInvitation();
         mapper.workCase = draftWorkCase(1);
         when(badgeApplicationService.recalculate(3L)).thenReturn(
-                BadgeCalculationResult.of("TRUST_OWNER", 2, 20, 18, 20, 90, 10, 100));
+                BadgeCalculationResult.of("TRUST_OWNER", 2, 20, 18, 20, 90, 10, 100, 30));
 
         InvitationDetailResponse response = service(STARTS_AT.minusDays(1L))
                 .findByToken(worker(), token);
