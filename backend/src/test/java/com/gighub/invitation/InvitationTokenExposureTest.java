@@ -1,5 +1,7 @@
 package com.gighub.invitation;
 
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
@@ -35,6 +37,7 @@ import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
 /**
@@ -122,7 +125,8 @@ class InvitationTokenExposureTest {
     void failuresRaisedByTheInvitationFlowCarryNoTokenInTheirMessage() {
         StubInvitationMapper mapper = new StubInvitationMapper();
         mapper.workCase = draftWorkCase();
-        InvitationQueryService service = new InvitationQueryServiceImpl(mapper, codec);
+        InvitationQueryService service =
+                new InvitationQueryServiceImpl(mapper, codec, noOwnerBadge());
 
         List<RuntimeException> failures = new ArrayList<>();
         mapper.invitation = null;
@@ -178,7 +182,8 @@ class InvitationTokenExposureTest {
     }
 
     private MockMvc mockMvc(InvitationMapper mapper) {
-        InvitationQueryService service = new InvitationQueryServiceImpl(mapper, codec);
+        InvitationQueryService service =
+                new InvitationQueryServiceImpl(mapper, codec, noOwnerBadge());
         return MockMvcBuilders
                 .standaloneSetup(new InvitationController(
                         service, null))
@@ -233,6 +238,13 @@ class InvitationTokenExposureTest {
     private static Authentication owner() {
         return new UsernamePasswordAuthenticationToken(
                 new AuthPrincipal(3L, UserRole.OWNER, "김사장"), "N/A", List.of());
+    }
+
+    /** 이 테스트는 Token 노출 여부만 확인하므로 배지 등급은 항상 0단계(null)로 고정합니다. */
+    private static BadgeApplicationService noOwnerBadge() {
+        return mock(
+                BadgeApplicationService.class,
+                invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80));
     }
 
     /** 예상하지 못한 실패 경로까지 확인해야 해서 Mock 대신 직접 만든 Stub을 씁니다. */

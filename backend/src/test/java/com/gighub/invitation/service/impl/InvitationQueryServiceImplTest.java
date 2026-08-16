@@ -1,5 +1,7 @@
 package com.gighub.invitation.service.impl;
 
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.invitation.domain.InvitationStatus;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.auth.security.AuthPrincipal;
@@ -8,6 +10,7 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.invitation.config.InvitationProperties;
 import com.gighub.invitation.dto.InvitationDetailResponse;
+import com.gighub.invitation.dto.OwnerBadgeResponse;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.exception.InvitationNotFoundException;
@@ -35,6 +38,10 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 /**
  * 초대 조회의 상태 판정과 검증 순서를 확인합니다.
@@ -52,6 +59,10 @@ class InvitationQueryServiceImplTest {
     );
     private final String token = codec.deriveToken(INVITATION_ID);
     private final StubInvitationMapper mapper = new StubInvitationMapper();
+    // 스텁하지 않은 employerId는 0단계로 기본 응답해 기존 성공 경로 테스트가 그대로 통과합니다.
+    private final BadgeApplicationService badgeApplicationService = mock(
+            BadgeApplicationService.class,
+            invocation -> BadgeCalculationResult.of("TRUST_OWNER", 0, 0, 0, 0, 0, 10, 80));
 
     @Test
     void returnsApprovedTermsForAuthenticatedWorker() {
@@ -70,8 +81,34 @@ class InvitationQueryServiceImplTest {
         assertEquals(120_000L, response.getDailyWage());
         assertEquals(1, response.getTermsVersion());
         assertEquals(STARTS_AT.atZone(SEOUL).toInstant(), response.getExpiresAt());
-        // 배지 등급 산정 전까지는 활성 Badge 없음과 같은 null입니다.
+        // 0단계는 활성 Badge 없음과 같은 null입니다.
         assertNull(response.getOwnerBadge());
+    }
+
+    @Test
+    void exposesOwnerBadgeWhenTheInvitingOwnerHasAnActiveLevel() {
+        mapper.invitation = pendingInvitation();
+        mapper.workCase = draftWorkCase(1);
+        when(badgeApplicationService.recalculate(3L)).thenReturn(
+                BadgeCalculationResult.of("TRUST_OWNER", 2, 20, 18, 20, 90, 10, 100));
+
+        InvitationDetailResponse response = service(STARTS_AT.minusDays(1L))
+                .findByToken(worker(), token);
+
+        OwnerBadgeResponse ownerBadge = response.getOwnerBadge();
+        assertEquals("TRUST_OWNER", ownerBadge.getBadgeType());
+        assertEquals(2, ownerBadge.getLevel());
+    }
+
+    @Test
+    void looksUpTheBadgeOfTheInvitingOwnerNotTheRequestingWorker() {
+        mapper.invitation = pendingInvitation();
+        mapper.workCase = draftWorkCase(1);
+
+        service(STARTS_AT.minusDays(1L)).findByToken(worker(), token);
+
+        // draftWorkCase()의 employerId(3L)로 조회해야 하고, 요청자 WORKER(11L)로 조회하면 안 됩니다.
+        verify(badgeApplicationService).recalculate(eq(3L));
     }
 
     @Test
@@ -259,7 +296,7 @@ class InvitationQueryServiceImplTest {
     }
 
     private InvitationQueryServiceImpl service(LocalDateTime now) {
-        return new InvitationQueryServiceImpl(mapper, codec, fixedClock(now));
+        return new InvitationQueryServiceImpl(mapper, codec, badgeApplicationService, fixedClock(now));
     }
 
     private static Clock fixedClock(LocalDateTime now) {

@@ -1,6 +1,7 @@
 package com.gighub.invitation.service.impl;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
 import com.gighub.config.RootConfig;
 import com.gighub.contract.ContractArtifactPort;
 import com.gighub.document.storage.DocumentStorageProperties;
@@ -227,6 +228,7 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                 () -> new InvitationQueryServiceImpl(
                         context.getBean(InvitationMapper.class),
                         context.getBean(InvitationTokenCodec.class),
+                        context.getBean(BadgeApplicationService.class),
                         clock),
                 definition -> definition.setPrimary(true));
         context.registerBean(
@@ -343,6 +345,11 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                 jdbc.update(
                         "DELETE FROM idempotency_requests WHERE user_id = ?",
                         fixture.workerUserId);
+            }
+            // 초대 조회가 실제로 OWNER 배지를 재계산·Upsert하므로 users보다 먼저 지운다.
+            jdbc.update("DELETE FROM user_badges WHERE user_id = ?", fixture.ownerUserId);
+            if (fixture.workerUserId != null) {
+                jdbc.update("DELETE FROM user_badges WHERE user_id = ?", fixture.workerUserId);
             }
             jdbc.update("DELETE FROM wallets WHERE user_id = ?", fixture.ownerUserId);
             if (fixture.workplaceId != null) {

@@ -201,7 +201,7 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`             | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger                          |
 | Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                          | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
 | Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                        | Attendance artifact 검증과 Controller 조회 경계                                     |
-| Member/Badge | `BadgeApplicationService`                                                           | Controller의 잠금·재계산·Upsert 경계; 초대 조회는 `#182` 후속 단계에서 연동          |
+| Member/Badge | `BadgeApplicationService`                                                           | Controller와 인증된 초대 조회(`InvitationQueryServiceImpl`)가 공유하는 잠금·재계산·Upsert 경계 |
 
 쓰기 participant는 모두 호출자의 outer Transaction에 `MANDATORY`로 참여하고 독립 commit하지
 않는다. Query Service는 persistence Row/Param을 외부 interface에 노출하지 않는다.
@@ -220,7 +220,7 @@ Orchestrator Transaction에 참여한다.
 | Member/Auth Application                | Workplace                                       | Query                       | OWNER onboarding에 필요한 active Workplace 존재 여부     |
 | Signup Orchestrator                    | Wallet                                          | Command participant         | 사용자와 기본 KRW Wallet 원자 생성                       |
 | Workplace create Orchestrator          | Attendance                                      | Command participant         | 사업장 생성과 초기 고정 QR 발급                          |
-| Work Application                       | Member/Auth, Workplace                          | Query                       | 계약 당사자와 사업장 불변 Snapshot                       |
+| Work Application                       | Member/Auth, Workplace                          | Query                       | 계약 당사자·사업장 불변 Snapshot과 초대 발급 OWNER의 배지 재계산 |
 | Attendance Application                 | Work                                            | Command                     | 근태 사실에 따른 의미 상태 전이 요청                     |
 | Attendance Application                 | Workplace, Document                             | Consumer-owned Query Port   | 사업장 권한/좌표와 signed artifact 준비 여부             |
 | Wallet Application                     | Bank Adapter                                    | Adapter command             | Mock 계좌 lock과 debit/credit                            |
