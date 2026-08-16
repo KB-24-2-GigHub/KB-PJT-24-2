@@ -8,8 +8,13 @@ public final class DisputeReviewRedactor {
     private static final Pattern PHONE = Pattern.compile(
             "(?<!\\d)(?:\\+?82[- ]?1[016789]|01[016789])[- ]?\\d{3,4}[- ]?\\d{4}(?!\\d)"
     );
-    private static final Pattern LONG_FINANCIAL_NUMBER = Pattern.compile(
-            "(?<!\\d)(?:\\d[- ]?){8,16}(?!\\d)"
+    private static final Pattern FORMATTED_FINANCIAL_NUMBER = Pattern.compile(
+            "(?<!\\d)(?!20\\d{2}[- ]\\d{2}[- ]\\d{2}(?:[ T]\\d{2})?(?!\\d))"
+                    + "(?=(?:\\d[- ]?){10,16}(?!\\d))"
+                    + "\\d{2,6}(?:[- ]\\d{2,6}){2,3}(?!\\d)"
+    );
+    private static final Pattern CONTINUOUS_FINANCIAL_NUMBER = Pattern.compile(
+            "(?<!\\d)(?!20\\d{8}(?!\\d))\\d{10,16}(?!\\d)"
     );
 
     private DisputeReviewRedactor() {
@@ -20,7 +25,9 @@ public final class DisputeReviewRedactor {
             return "";
         }
         String withoutPhones = PHONE.matcher(value).replaceAll("[REDACTED_PHONE]");
-        return LONG_FINANCIAL_NUMBER.matcher(withoutPhones)
+        String withoutFormattedAccounts = FORMATTED_FINANCIAL_NUMBER.matcher(withoutPhones)
+                .replaceAll("[REDACTED_FINANCIAL_NUMBER]");
+        return CONTINUOUS_FINANCIAL_NUMBER.matcher(withoutFormattedAccounts)
                 .replaceAll("[REDACTED_FINANCIAL_NUMBER]");
     }
 }

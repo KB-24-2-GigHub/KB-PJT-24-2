@@ -6,6 +6,8 @@ import { formatSeoulDateTime } from '@/utils/format'
 const props = defineProps({
   reports: { type: Array, default: () => [] },
   loading: { type: Boolean, default: false },
+  error: { type: Boolean, default: false },
+  errorMessage: { type: String, default: '' },
   refreshable: { type: Boolean, default: true }
 })
 
@@ -26,6 +28,12 @@ function label(report) {
     return 'AI 재검토 대기 · 보류 유지'
   }
   if (report.demoReview?.decision === 'NEEDS_MORE_INFO') return '추가 자료 필요 · 보류 유지'
+  if (report.demoReview?.decision === 'RELEASE_TO_WORKER') {
+    return '종료 · 근로자 지급 흐름 재개'
+  }
+  if (report.demoReview?.decision === 'REFUND_TO_OWNER') {
+    return '종료 · 사장님 환불 승인 가능'
+  }
   return statusMeta[report.status]?.label ?? report.status
 }
 
@@ -65,7 +73,10 @@ const hasReports = computed(() => props.reports.length > 0)
       </button>
     </header>
 
-    <p v-if="loading && !hasReports" class="empty">분쟁 상태를 확인하고 있어요.</p>
+    <p v-if="error && !hasReports" class="empty empty--error">
+      {{ errorMessage || '분쟁 상태를 확인하지 못했어요. 새로고침으로 다시 확인해주세요.' }}
+    </p>
+    <p v-else-if="loading && !hasReports" class="empty">분쟁 상태를 확인하고 있어요.</p>
     <p v-else-if="!hasReports" class="empty">접수된 분쟁이 없습니다.</p>
 
     <article v-for="report in reports" v-else :key="report.reportId" class="report">
@@ -125,6 +136,9 @@ const hasReports = computed(() => props.reports.length > 0)
 }
 .refresh:disabled {
   color: var(--color-text-sub);
+}
+.empty--error {
+  color: var(--color-danger, #d64545);
 }
 .report {
   margin-top: var(--space-md);

@@ -165,7 +165,36 @@ class DisputeReviewQueueServiceTest {
     }
 
     @Test
-    void permanentProviderFailureMovesDisputeToUnderReviewWithoutRetryingOrReleasingHold() {
+    void ownerRefundDecisionCannotReverseACompletedWorkPayoutFlow() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.plusMinutes(1)
+        );
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.complete(any())).thenReturn(1);
+
+        assertTrue(queueService.complete(
+                execution(inputHash),
+                providerResponse(
+                        DisputeReviewDecision.REJECT,
+                        "사장님 환불 방향입니다.")));
+
+        ArgumentCaptor<DisputeReviewCompletion> completion =
+                ArgumentCaptor.forClass(DisputeReviewCompletion.class);
+        verify(reviewMapper).complete(completion.capture());
+        assertEquals(
+                DisputeReviewDecision.NEEDS_MORE_INFO,
+                completion.getValue().getDecision());
+        verify(disputeMapper, never()).transitionToClosed(any(), any(), any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
+    void invalidProviderOutputAlsoRetriesWithinConfiguredLimitAndKeepsHold() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
                 DisputeReviewExecutionStatus.PROCESSING,
@@ -174,13 +203,19 @@ class DisputeReviewQueueServiceTest {
                 NOW.plusMinutes(1)
         );
         when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
         when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "INVALID_PROVIDER_OUTPUT"))
                 .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
 
         assertTrue(queueService.fail(execution(inputHash), "INVALID_PROVIDER_OUTPUT"));
 
         verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
-        verify(reviewMapper, never()).insertPending(any());
+        verify(reviewMapper).insertPending(any());
     }
 
     @Test
@@ -193,6 +228,7 @@ class DisputeReviewQueueServiceTest {
                 NOW.plusMinutes(1)
         );
         when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
         when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "PROVIDER_5XX"))
                 .thenReturn(1);
         when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
@@ -268,6 +304,71 @@ class DisputeReviewQueueServiceTest {
     }
 
     @Test
+    void failureReportedAfterLeaseExpiryUsesLeaseFailureAndCreatesFreshRetry() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.minusNanos(1)
+        );
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "WORKER_LEASE_EXPIRED"))
+                .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
+
+        assertFalse(queueService.fail(execution(inputHash), "PROVIDER_5XX"));
+
+        verify(reviewMapper).markFailed(REVIEW_ID, REQUEST_KEY, "WORKER_LEASE_EXPIRED");
+        verify(reviewMapper).insertPending(any());
+        verify(reviewMapper, never()).complete(any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
+    void settlementStateChangeAfterClaimCreatesFreshRetryInsteadOfPermanentHold() {
+        String inputHash = DisputeReviewInputs.sha256(input());
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.plusMinutes(1)
+        );
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(disputeMapper.transitionOpenToUnderReview(DISPUTE_ID)).thenReturn(1);
+        when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "STALE_REVIEW_RESPONSE"))
+                .thenReturn(1);
+        when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(1L);
+        when(reviewMapper.insertPending(any())).thenAnswer(invocation -> {
+            ((DisputeReviewInsert) invocation.getArgument(0)).setReviewId(42L);
+            return 1;
+        });
+        DisputeReviewInput claimedInput = new DisputeReviewInput(
+                input().getTitle(),
+                input().getContent(),
+                WorkCaseStatus.IN_PROGRESS,
+                SettlementStatus.WAITING,
+                input().getAgreedWage(),
+                input().getSuccessfulCheckInCount()
+        );
+
+        assertFalse(queueService.complete(
+                execution(inputHash, claimedInput),
+                providerResponse(DisputeReviewDecision.RESOLVE, "이전 상태를 기준으로 한 결과입니다.")));
+
+        verify(reviewMapper).markFailed(REVIEW_ID, REQUEST_KEY, "STALE_REVIEW_RESPONSE");
+        verify(reviewMapper).insertPending(any());
+        verify(reviewMapper, never()).complete(any());
+        verify(disputeMapper, never()).transitionToClosed(any(), any(), any());
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
     void transientFailureStopsRetryingAtConfiguredAttemptLimit() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
@@ -278,6 +379,7 @@ class DisputeReviewQueueServiceTest {
         );
         when(reviewMapper.markFailed(REVIEW_ID, REQUEST_KEY, "PROVIDER_TIMEOUT"))
                 .thenReturn(1);
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
         when(reviewMapper.countByDisputeId(DISPUTE_ID)).thenReturn(3L);
 
         assertTrue(queueService.fail(execution(inputHash), "PROVIDER_TIMEOUT"));
@@ -351,8 +453,20 @@ class DisputeReviewQueueServiceTest {
     }
 
     private static DisputeReviewExecution execution(String inputHash) {
+        return execution(inputHash, input());
+    }
+
+    private static DisputeReviewExecution execution(
+            String inputHash,
+            DisputeReviewInput claimedInput) {
         return new DisputeReviewExecution(
-                REVIEW_ID, DISPUTE_ID, WORK_CASE_ID, REQUEST_KEY, inputHash, input());
+                REVIEW_ID,
+                DISPUTE_ID,
+                WORK_CASE_ID,
+                REQUEST_KEY,
+                inputHash,
+                DisputeReviewInputs.snapshotSha256(claimedInput),
+                claimedInput);
     }
 
     private static DisputeReviewProviderResult providerResponse(

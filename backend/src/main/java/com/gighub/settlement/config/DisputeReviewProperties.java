@@ -215,7 +215,7 @@ public class DisputeReviewProperties {
 
     private static DisputeReviewDecision parseDecision(String value) {
         try {
-            return DisputeReviewDecision.valueOf(value.trim().toUpperCase(Locale.ROOT));
+            return DisputeReviewDecision.fromExternalValue(value);
         } catch (RuntimeException invalid) {
             throw new IllegalStateException(
                     FAKE_DECISION_KEY + " 설정이 올바르지 않습니다.", invalid);

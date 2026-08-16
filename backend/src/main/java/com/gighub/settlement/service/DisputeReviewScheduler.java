@@ -12,7 +12,9 @@ import org.springframework.stereotype.Component;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ThreadFactory;
@@ -33,6 +35,7 @@ public class DisputeReviewScheduler implements DisposableBean {
     private final DisputeReviewProviderFactory providerFactory;
     private final DisputeReviewProperties properties;
     private final ExecutorService executor;
+    private final Set<Long> inFlightReviewIds = ConcurrentHashMap.newKeySet();
 
     @Autowired
     public DisputeReviewScheduler(
@@ -69,9 +72,19 @@ public class DisputeReviewScheduler implements DisposableBean {
             return;
         }
         for (DisputeReviewCandidate candidate : candidates) {
+            if (!inFlightReviewIds.add(candidate.getReviewId())) {
+                continue;
+            }
             try {
-                executor.execute(() -> processOne(candidate));
+                executor.execute(() -> {
+                    try {
+                        processOne(candidate);
+                    } finally {
+                        inFlightReviewIds.remove(candidate.getReviewId());
+                    }
+                });
             } catch (RejectedExecutionException saturated) {
+                inFlightReviewIds.remove(candidate.getReviewId());
                 // 후보는 DB에 남아 다음 주기에 다시 조회되므로 Scheduler Thread를 막지 않습니다.
                 log.warn("분쟁 검토 Worker Queue가 가득 차 후보를 다음 주기로 미룹니다.");
                 return;
@@ -90,6 +103,7 @@ public class DisputeReviewScheduler implements DisposableBean {
 
     @Override
     public void destroy() {
+        inFlightReviewIds.clear();
         executor.shutdownNow();
     }
 

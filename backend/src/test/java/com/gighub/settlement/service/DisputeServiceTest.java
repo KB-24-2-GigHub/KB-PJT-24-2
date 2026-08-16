@@ -1,6 +1,7 @@
 package com.gighub.settlement.service;
 
 import com.gighub.common.api.PageResponse;
+import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.domain.DisputeStatus;
@@ -13,6 +14,7 @@ import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.mapper.command.DisputeInsert;
 import com.gighub.settlement.mapper.result.DisputeListRow;
 import com.gighub.settlement.review.DisputeReviewExecutionStatus;
+import com.gighub.settlement.review.DisputeReviewDecision;
 import com.gighub.settlement.service.command.DisputeCreateCommand;
 import com.gighub.settlement.service.impl.DisputeServiceImpl;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
@@ -34,6 +36,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -165,6 +168,22 @@ class DisputeServiceTest {
     }
 
     @Test
+    void disabledReviewModeRejectsCreateBeforeDisputeOrHoldIsWritten() {
+        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
+                .thenReturn(settlement(SettlementStatus.SCHEDULED));
+        doThrow(new ConflictException("분쟁 검토 DEMO가 비활성화되어 있습니다."))
+                .when(reviewQueueService).requireEnabled();
+
+        assertThrows(ConflictException.class, () -> disputeService.create(command(
+                "임금 확인", "약정 일급이 미지급됐습니다.")));
+
+        verify(disputeMapper, never()).insertOpen(any());
+        verify(settlementMapper, never()).transitionScheduledToOnHold(any());
+    }
+
+    @Test
     void partyReadsFailedReviewAsSafeDelayStateWithoutInternalFailureCode() {
         when(workSettlementService.findEscrowContext(WORK_CASE_ID))
                 .thenReturn(workCase(WorkCaseStatus.COMPLETED));
@@ -195,6 +214,37 @@ class DisputeServiceTest {
         assertEquals("FAILED", item.getDemoReview().getStatus());
         assertNull(item.getDemoReview().getDecision());
         assertEquals(List.of(), item.getDemoReview().getReasonCodes());
+    }
+
+    @Test
+    void corruptedCompletedReviewIsReducedToSafeDelayInsteadOfFailingWholePage() {
+        when(workSettlementService.findEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(disputeMapper.countByWorkCaseId(WORK_CASE_ID)).thenReturn(1L);
+        when(disputeMapper.findPageByWorkCaseId(WORK_CASE_ID, 20, 0L)).thenReturn(List.of(
+                new DisputeListRow(
+                        91L,
+                        "임금 확인",
+                        "약정 일급이 미지급됐습니다.",
+                        DisputeStatus.RESOLVED,
+                        "검토 완료",
+                        UserRole.WORKER,
+                        LocalDateTime.of(2026, 8, 15, 10, 0),
+                        LocalDateTime.of(2026, 8, 15, 10, 1),
+                        "SIMULATED_LLM",
+                        DisputeReviewExecutionStatus.COMPLETED,
+                        DisputeReviewDecision.RESOLVE,
+                        "not-json",
+                        "검토 완료",
+                        java.math.BigDecimal.ONE,
+                        LocalDateTime.of(2026, 8, 15, 10, 1))
+        ));
+
+        DisputeListItemResponse item = disputeService.findPage(
+                WORK_CASE_ID, WORKER_ID, UserRole.WORKER, 0, 20).getContent().get(0);
+
+        assertEquals("FAILED", item.getDemoReview().getStatus());
+        assertNull(item.getDemoReview().getDecision());
     }
 
     private static DisputeCreateCommand command(String title, String content) {

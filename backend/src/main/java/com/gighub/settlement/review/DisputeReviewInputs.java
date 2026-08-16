@@ -2,6 +2,7 @@ package com.gighub.settlement.review;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.gighub.config.ApiJsonMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -30,18 +31,36 @@ public final class DisputeReviewInputs {
         );
     }
 
+    /** 상태 변화와 무관한 신고 제목·경위만 감사 행의 입력 식별자로 사용합니다. */
     public static String sha256(DisputeReviewInput input) {
-        byte[] canonical = writeCanonicalJson(sanitize(input)).getBytes(StandardCharsets.UTF_8);
+        DisputeReviewInput sanitized = sanitize(input);
+        ObjectNode userInput = OBJECT_MAPPER.createObjectNode();
+        userInput.put("content", sanitized.getContent());
+        userInput.put("title", sanitized.getTitle());
+        return sha256(writeJson(userInput));
+    }
+
+    /** Provider가 실제로 본 근무·정산 상태까지 포함해 지연 응답 적용 여부를 판정합니다. */
+    public static String snapshotSha256(DisputeReviewInput input) {
+        return sha256(writeCanonicalJson(sanitize(input)));
+    }
+
+    private static String sha256(String canonical) {
+        byte[] bytes = canonical.getBytes(StandardCharsets.UTF_8);
         try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(canonical));
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (NoSuchAlgorithmException impossible) {
             throw new IllegalStateException("JDK가 SHA-256을 제공하지 않습니다.", impossible);
         }
     }
 
     static String writeCanonicalJson(DisputeReviewInput input) {
+        return writeJson(input);
+    }
+
+    private static String writeJson(Object value) {
         try {
-            return OBJECT_MAPPER.writeValueAsString(input);
+            return OBJECT_MAPPER.writeValueAsString(value);
         } catch (JsonProcessingException impossible) {
             throw new IllegalStateException("분쟁 검토 입력 Snapshot을 만들 수 없습니다.", impossible);
         }

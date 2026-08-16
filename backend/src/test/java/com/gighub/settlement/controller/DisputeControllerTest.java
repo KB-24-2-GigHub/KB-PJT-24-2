@@ -112,9 +112,9 @@ class DisputeControllerTest {
                 new DisputeDemoReviewResponse(
                         "SIMULATED_LLM",
                         "COMPLETED",
-                        "RESOLVE",
-                        List.of("AGREED_WAGE_FLOW_REVIEWED"),
-                        "기존 정산 흐름을 재개합니다.",
+                        "RELEASE_TO_WORKER",
+                        List.of("RELEASE_TO_WORKER"),
+                        "근로자 지급 흐름을 재개합니다.",
                         new BigDecimal("0.990"),
                         Instant.parse("2026-08-15T01:01:00Z")));
         when(disputeService.findPage(WORK_CASE_ID, WORKER_ID, UserRole.WORKER, 0, 20))
@@ -129,9 +129,10 @@ class DisputeControllerTest {
                 .andExpect(jsonPath("$.data.content[0].demoReview.source")
                         .value("SIMULATED_LLM"))
                 .andExpect(jsonPath("$.data.content[0].demoReview.status").value("COMPLETED"))
-                .andExpect(jsonPath("$.data.content[0].demoReview.decision").value("RESOLVE"))
+                .andExpect(jsonPath("$.data.content[0].demoReview.decision")
+                        .value("RELEASE_TO_WORKER"))
                 .andExpect(jsonPath("$.data.content[0].demoReview.reasonCodes[0]")
-                        .value("AGREED_WAGE_FLOW_REVIEWED"))
+                        .value("RELEASE_TO_WORKER"))
                 .andExpect(jsonPath("$.data.content[0].requesterId").doesNotExist())
                 .andExpect(jsonPath("$.data.content[0].resolvedByUserId").doesNotExist())
                 .andExpect(jsonPath("$.data.page.totalElements").value(1));

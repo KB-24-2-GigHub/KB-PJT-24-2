@@ -49,15 +49,40 @@
         SELECT NOW(6)
     </select>
 
-    <!-- 후보 조회는 잠그지 않고, 실제 선점은 Work부터 다시 잠근 짧은 Transaction에서 한다. -->
+    <!--
+        후보 조회는 잠그지 않고, 실제 선점은 Work부터 다시 잠근 짧은 Transaction에서 한다.
+        재시도 행은 시도 순서에 따라 2초→10초→30초→60초→5분→10분으로 늦춰 Provider
+        장애 중 1초 Poll 주기로 남은 횟수를 한꺼번에 소진하지 않게 한다.
+    -->
     <select id="findCandidates" resultMap="candidate">
         SELECT r.id AS reviewId,
                r.dispute_id AS disputeId,
                d.work_case_id AS workCaseId
         FROM dispute_ai_reviews r
+        JOIN (
+            SELECT id,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY dispute_id ORDER BY created_at ASC, id ASC
+                   ) AS attemptNo
+            FROM dispute_ai_reviews
+        ) attempt ON attempt.id = r.id
         JOIN disputes d ON d.id = r.dispute_id
-        WHERE r.status = 'PENDING'
-           OR (r.status = 'PROCESSING' AND r.lease_until &lt;= #{eligibilityTime})
+        WHERE (
+            r.status = 'PENDING'
+            AND r.created_at &lt;= TIMESTAMPADD(
+                SECOND,
+                CASE attempt.attemptNo
+                    WHEN 1 THEN 0
+                    WHEN 2 THEN -2
+                    WHEN 3 THEN -10
+                    WHEN 4 THEN -30
+                    WHEN 5 THEN -60
+                    WHEN 6 THEN -300
+                    ELSE -600
+                END,
+                #{eligibilityTime}
+            )
+        ) OR (r.status = 'PROCESSING' AND r.lease_until &lt;= #{eligibilityTime})
         ORDER BY r.created_at ASC, r.id ASC
         LIMIT #{limit}
     </select>

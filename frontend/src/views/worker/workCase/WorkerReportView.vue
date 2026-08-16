@@ -20,6 +20,8 @@ const title = ref('')
 const content = ref('')
 const reports = ref([])
 const loadingReports = ref(false)
+const reportsLoadError = ref(false)
+const disputeUnavailable = ref(false)
 const submitting = ref(false)
 
 const titleLength = computed(() => title.value.trim().length)
@@ -34,6 +36,7 @@ const canSubmit = computed(
     contentLength.value >= 1 &&
     contentLength.value <= CONTENT_MAX_LENGTH &&
     !hasOpenReport.value &&
+    !disputeUnavailable.value &&
     !submitting.value
 )
 
@@ -42,7 +45,11 @@ async function loadReports({ notify = false } = {}) {
   try {
     const page = await listReports(workCaseId)
     reports.value = page.content ?? []
-  } catch {
+    reportsLoadError.value = false
+    disputeUnavailable.value = false
+  } catch (error) {
+    reportsLoadError.value = true
+    disputeUnavailable.value = error?.code === 'CONFLICT'
     if (notify) ui.toast('분쟁 상태를 불러오지 못했습니다.', { type: 'warning' })
   } finally {
     loadingReports.value = false
@@ -67,11 +74,18 @@ async function onSubmit() {
     await loadReports()
   } catch (error) {
     const duplicate = error?.code === 'DISPUTE_ALREADY_OPEN'
+    const unavailable = error?.code === 'CONFLICT'
+    if (unavailable) {
+      disputeUnavailable.value = true
+      reportsLoadError.value = true
+    }
     ui.toast(
       duplicate
         ? '이미 처리 중인 분쟁이 있습니다. 아래 상태를 확인해주세요.'
-        : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
-      { type: duplicate ? 'warning' : 'danger' }
+        : unavailable
+          ? '현재 근무 상태에서는 분쟁을 접수할 수 없습니다.'
+          : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
+      { type: duplicate || unavailable ? 'warning' : 'danger' }
     )
     if (duplicate) await loadReports()
   } finally {
@@ -94,6 +108,10 @@ onMounted(loadReports)
       <DisputeTimeline
         :reports="reports"
         :loading="loadingReports"
+        :error="reportsLoadError"
+        :error-message="
+          disputeUnavailable ? '현재 근무 상태에서는 분쟁을 신고하거나 조회할 수 없어요.' : ''
+        "
         @refresh="loadReports({ notify: true })"
       />
 
@@ -101,6 +119,9 @@ onMounted(loadReports)
         <h2>새 분쟁 접수</h2>
         <p v-if="hasOpenReport" class="open-guide">
           처리 중인 분쟁이 있어 새 신고는 접수할 수 없습니다.
+        </p>
+        <p v-else-if="disputeUnavailable" class="open-guide">
+          현재 근무 상태에서는 새 분쟁을 접수할 수 없습니다.
         </p>
 
         <label class="field">

@@ -12,5 +12,6 @@ public class DisputeReviewExecution {
     private final Long workCaseId;
     private final String requestKey;
     private final String inputHash;
+    private final String snapshotHash;
     private final DisputeReviewInput input;
 }

@@ -53,14 +53,14 @@ public class FakeDisputeReviewProvider implements DisputeReviewProvider {
         DisputeReviewResult result = switch (decision) {
             case RESOLVE -> new DisputeReviewResult(
                     decision,
-                    List.of("AGREED_WAGE_FLOW_REVIEWED"),
-                    "약정 일급의 기존 정산 흐름을 재개합니다.",
+                    List.of("RELEASE_TO_WORKER"),
+                    "정상 완료 근무의 보류를 풀고 근로자 지급 흐름을 재개합니다.",
                     new BigDecimal("0.990")
             );
             case REJECT -> new DisputeReviewResult(
                     decision,
-                    List.of("CLAIM_NOT_SUPPORTED_IN_DEMO"),
-                    "제공된 정보만으로 신고 사유를 인정하기 어렵습니다.",
+                    List.of("REFUND_TO_OWNER"),
+                    "노쇼 근무의 보류를 풀고 사장님 환불 승인 흐름을 재개합니다.",
                     new BigDecimal("0.990")
             );
             case NEEDS_MORE_INFO -> new DisputeReviewResult(

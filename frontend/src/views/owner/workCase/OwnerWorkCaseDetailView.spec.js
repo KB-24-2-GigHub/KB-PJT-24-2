@@ -692,7 +692,7 @@ describe('OwnerWorkCaseDetailView', () => {
           demoReview: {
             source: 'SIMULATED_LLM',
             status: 'COMPLETED',
-            decision: 'RESOLVE',
+            decision: 'RELEASE_TO_WORKER',
             reasonCodes: ['AGREED_WAGE_UNPAID'],
             summary: '약정 일급의 지급 여부를 확인했습니다.',
             confidence: 0.91,
@@ -710,5 +710,16 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('AI DEMO')
     expect(wrapper.text()).toContain('약정 일급의 지급 여부를 확인했습니다.')
     expect(wrapper.text()).toContain('AGREED_WAGE_UNPAID')
+  })
+
+  it('분쟁 조회 실패를 접수 이력 없음으로 표시하지 않는다', async () => {
+    getWorkCase.mockResolvedValueOnce(PAYOUT_READY_DETAIL)
+    listReports.mockRejectedValueOnce(new Error('network'))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('분쟁 상태를 확인하지 못했어요')
+    expect(wrapper.text()).not.toContain('접수된 분쟁이 없습니다')
   })
 })

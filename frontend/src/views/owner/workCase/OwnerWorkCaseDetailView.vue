@@ -82,6 +82,7 @@ const settlementIntent = ref(null)
 const pendingSettlementConvergenceAction = ref(null)
 const disputeReports = ref([])
 const disputeLoading = ref(false)
+const disputeLoadError = ref(false)
 
 const DISPUTE_ELIGIBLE_STATUSES = new Set([
   'ACCEPTED',
@@ -216,13 +217,16 @@ async function load() {
 async function loadDisputes({ notify = false } = {}) {
   if (!canViewDisputes.value) {
     disputeReports.value = []
+    disputeLoadError.value = false
     return
   }
   disputeLoading.value = true
   try {
     const page = await listReports(route.params.workCaseId)
     disputeReports.value = page.content ?? []
+    disputeLoadError.value = false
   } catch {
+    disputeLoadError.value = true
     if (notify) ui.toast('분쟁 상태를 불러오지 못했어요.', { type: 'warning' })
   } finally {
     disputeLoading.value = false
@@ -687,6 +691,7 @@ async function onApproveSettlement() {
             class="disputes"
             :reports="disputeReports"
             :loading="disputeLoading"
+            :error="disputeLoadError"
             @refresh="loadDisputes({ notify: true })"
           />
 

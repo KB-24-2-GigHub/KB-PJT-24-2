@@ -34,7 +34,7 @@ class DisputeReviewProviderTest {
         HttpClient client = mock(HttpClient.class);
         String resultJson = """
                 {
-                  "decision":"RESOLVE",
+                  "decision":"RELEASE_TO_WORKER",
                   "reasonCodes":["AGREED_WAGE_UNPAID"],
                   "summary":"약정 일급 지급 흐름을 재개합니다.",
                   "confidence":0.91
@@ -88,6 +88,8 @@ class DisputeReviewProviderTest {
                 requestCaptor.getValue().headers().firstValue("X-Client-Request-Id").orElseThrow());
         assertTrue(body.contains("\"store\":false"));
         assertTrue(body.contains("\"type\":\"json_schema\""));
+        assertTrue(body.contains("RELEASE_TO_WORKER"));
+        assertFalse(body.contains("minItems"));
         assertTrue(body.contains("REDACTED_PHONE"));
         assertTrue(body.contains("REDACTED_FINANCIAL_NUMBER"));
         assertFalse(body.contains("010-1234-5678"));
@@ -122,14 +124,14 @@ class DisputeReviewProviderTest {
         for (String resultJson : List.of(
                 """
                         {
-                          "decision":"RESOLVE",
+                          "decision":"RELEASE_TO_WORKER",
                           "reasonCodes":["AGREED_WAGE_UNPAID"],
                           "summary":"약정 일급 지급 흐름을 재개합니다."
                         }
                         """,
                 """
                         {
-                          "decision":"RESOLVE",
+                          "decision":"RELEASE_TO_WORKER",
                           "reasonCodes":["AGREED_WAGE_UNPAID"],
                           "summary":"약정 일급 지급 흐름을 재개합니다.",
                           "confidence":"high"
@@ -152,7 +154,7 @@ class DisputeReviewProviderTest {
     void refusalIsRejectedEvenWhenOutputTextAppearsFirst() throws Exception {
         String resultJson = """
                 {
-                  "decision":"RESOLVE",
+                  "decision":"RELEASE_TO_WORKER",
                   "reasonCodes":["AGREED_WAGE_UNPAID"],
                   "summary":"약정 일급 지급 흐름을 재개합니다.",
                   "confidence":0.91

@@ -151,4 +151,24 @@ describe('WorkerReportView', () => {
       type: 'warning'
     })
   })
+
+  it('최초 조회 실패를 분쟁 없음으로 표시하지 않는다', async () => {
+    listReports.mockRejectedValueOnce(new Error('network'))
+
+    const wrapper = mount(WorkerReportView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('분쟁 상태를 확인하지 못했어요')
+    expect(wrapper.text()).not.toContain('접수된 분쟁이 없습니다')
+  })
+
+  it('신고할 수 없는 근무 상태는 재시도 안내 대신 폼을 비활성화한다', async () => {
+    listReports.mockRejectedValueOnce({ code: 'CONFLICT' })
+
+    const wrapper = mount(WorkerReportView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('현재 근무 상태에서는 새 분쟁을 접수할 수 없습니다')
+    expect(wrapper.find('button.submit').attributes('disabled')).toBeDefined()
+  })
 })

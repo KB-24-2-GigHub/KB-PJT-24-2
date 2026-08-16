@@ -35,13 +35,42 @@ class DisputeReviewInputsTest {
     }
 
     @Test
-    void anyFactChangeProducesAnotherSnapshotHash() {
+    void stateChangeKeepsUserInputHashButChangesProviderSnapshotHash() {
         DisputeReviewInput first = input("약정 일급 지급 여부를 확인해주세요.");
-        DisputeReviewInput second = input("근태 자료를 추가로 확인해주세요.");
+        DisputeReviewInput second = new DisputeReviewInput(
+                first.getTitle(),
+                first.getContent(),
+                WorkCaseStatus.NO_SHOW,
+                SettlementStatus.WAITING,
+                first.getAgreedWage(),
+                0L
+        );
 
-        assertNotEquals(
+        assertEquals(
                 DisputeReviewInputs.sha256(first),
                 DisputeReviewInputs.sha256(second));
+        assertNotEquals(
+                DisputeReviewInputs.snapshotSha256(first),
+                DisputeReviewInputs.snapshotSha256(second));
+    }
+
+    @Test
+    void datesAndTimesRemainWhilePhoneAndAccountShapesAreRedacted() {
+        String source = "2026-08-15 09시부터 18시까지, 계좌 123-456-789012, 010-1234-5678";
+
+        String redacted = DisputeReviewRedactor.redact(source);
+
+        assertTrue(redacted.contains("2026-08-15 09시"));
+        assertTrue(redacted.contains("[REDACTED_FINANCIAL_NUMBER]"));
+        assertTrue(redacted.contains("[REDACTED_PHONE]"));
+    }
+
+    @Test
+    void canonicalJsonUsesStableAlphabeticPropertyOrder() {
+        String canonical = DisputeReviewInputs.writeCanonicalJson(input("경위"));
+
+        assertTrue(canonical.indexOf("agreedWage") < canonical.indexOf("content"));
+        assertTrue(canonical.indexOf("content") < canonical.indexOf("settlementStatus"));
     }
 
     private static DisputeReviewInput input(String content) {

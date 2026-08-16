@@ -28,6 +28,8 @@ import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkSettlementService;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -40,6 +42,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DisputeServiceImpl implements DisputeService {
 
+    private static final Logger log = LoggerFactory.getLogger(DisputeServiceImpl.class);
     private static final int TITLE_MAX_LENGTH = 100;
     private static final int CONTENT_MAX_LENGTH = 2_000;
     private static final EnumSet<WorkCaseStatus> ELIGIBLE_STATUSES = EnumSet.of(
@@ -71,6 +74,7 @@ public class DisputeServiceImpl implements DisputeService {
         if (settlement == null) {
             throw new IllegalStateException("분쟁 대상 근무의 정산 행이 없습니다.");
         }
+        reviewQueueService.requireEnabled();
 
         if (!disputeMapper.findOpenIdsForUpdate(command.getWorkCaseId()).isEmpty()) {
             throw new DisputeAlreadyOpenException();
@@ -149,7 +153,8 @@ public class DisputeServiceImpl implements DisputeService {
         }
         DisputeReviewExecutionStatus status = row.getReviewStatus();
         if (status == null) {
-            throw new IllegalStateException("저장된 분쟁 검토 상태가 없습니다.");
+            log.warn("분쟁 검토 조회값에 실행 상태가 없습니다. reportId={}", row.getReportId());
+            return unreadableReview(row);
         }
         if (status != DisputeReviewExecutionStatus.COMPLETED) {
             return new DisputeDemoReviewResponse(
@@ -162,19 +167,38 @@ public class DisputeServiceImpl implements DisputeService {
                     ApiTimes.toInstant(row.getReviewedAt())
             );
         }
-        DisputeReviewResult result = DisputeReviewResults.validate(new DisputeReviewResult(
-                row.getReviewDecision(),
-                DisputeReviewJsonCodec.readReasonCodes(row.getReviewReasonCodesJson()),
-                row.getReviewSummary(),
-                row.getReviewConfidence()
-        ));
+        try {
+            DisputeReviewResult result = DisputeReviewResults.validate(new DisputeReviewResult(
+                    row.getReviewDecision(),
+                    DisputeReviewJsonCodec.readReasonCodes(row.getReviewReasonCodesJson()),
+                    row.getReviewSummary(),
+                    row.getReviewConfidence()
+            ));
+            return new DisputeDemoReviewResponse(
+                    row.getReviewSource(),
+                    status.name(),
+                    result.getDecision().externalValue(),
+                    result.getReasonCodes(),
+                    result.getSummary(),
+                    result.getConfidence(),
+                    ApiTimes.toInstant(row.getReviewedAt())
+            );
+        } catch (RuntimeException corruptedReview) {
+            // 쓰기 시점 검증과 DB CHECK를 통과하지 못한 Legacy/손상 행 하나가 Page 전체를 막지 않습니다.
+            log.warn("분쟁 검토 조회값을 안전하게 축소합니다. reportId={}",
+                    row.getReportId(), corruptedReview);
+            return unreadableReview(row);
+        }
+    }
+
+    private static DisputeDemoReviewResponse unreadableReview(DisputeListRow row) {
         return new DisputeDemoReviewResponse(
                 row.getReviewSource(),
-                status.name(),
-                result.getDecision().name(),
-                result.getReasonCodes(),
-                result.getSummary(),
-                result.getConfidence(),
+                DisputeReviewExecutionStatus.FAILED.name(),
+                null,
+                List.of(),
+                null,
+                null,
                 ApiTimes.toInstant(row.getReviewedAt())
         );
     }

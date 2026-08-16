@@ -215,7 +215,8 @@ class DisputeFlowDatabaseIntegrationTest {
                 assertEquals(dueAt, dateTime(jdbc,
                         "SELECT due_at FROM settlements WHERE work_case_id = ?",
                         fixture.workCaseId()));
-                assertSameDemoResultForBothParties(disputeService, fixture, "RESOLVE");
+                assertSameDemoResultForBothParties(
+                        disputeService, fixture, "RELEASE_TO_WORKER");
                 assertMoneyUnchanged(jdbc, fixture);
 
                 SettlementResult payout = settlementService.approve(
@@ -275,6 +276,9 @@ class DisputeFlowDatabaseIntegrationTest {
                 assertEquals("WAITING", text(jdbc,
                         "SELECT status FROM settlements WHERE work_case_id = ?",
                         fixture.workCaseId()));
+                assertEquals("REFUND_TO_OWNER", disputeService.findPage(
+                        fixture.workCaseId(), fixture.ownerId(), UserRole.OWNER, 0, 20)
+                        .getContent().get(0).getDemoReview().getDecision());
 
                 SettlementResult refund = settlementService.approveNoShowRefund(refundCommand);
 
@@ -382,6 +386,12 @@ class DisputeFlowDatabaseIntegrationTest {
                                 .build()));
                 assertMoneyUnchanged(jdbc, fixture);
 
+                jdbc.update(
+                        "UPDATE dispute_ai_reviews"
+                                + " SET created_at = DATE_SUB(NOW(6), INTERVAL 3 SECOND)"
+                                + " WHERE dispute_id = (SELECT id FROM disputes"
+                                + " WHERE work_case_id = ?) AND status = 'PENDING'",
+                        fixture.workCaseId());
                 processPendingReview(context, fixture.workCaseId());
 
                 assertEquals("RESOLVED", text(jdbc,

@@ -29,8 +29,14 @@ targets:
 - Provider 입력은 신고 제목·경위, 근태 상태, 약정 일급과 정산 상태처럼 판단에 필요한 최소
   사실만 포함한다. 이름, 전화번호, 계좌번호, 사용자·근무·정산의 내부 ID는 포함하지 않는다.
 - Provider 출력은 `decision`, `reasonCodes`, `summary`, `confidence`의 고정 JSON이다.
-  `RESOLVE`는 `RESOLVED`, `REJECT`는 `REJECTED`, `NEEDS_MORE_INFO`는
-  `UNDER_REVIEW`로 반영한다. LLM은 지급액·환불액을 만들거나 기존 금액을 다시 계산하지 않는다.
+  외부 결정은 `RELEASE_TO_WORKER`, `REFUND_TO_OWNER`, `NEEDS_MORE_INFO`로 자금 방향을
+  명시한다. 기존 감사 저장값과 분쟁 상태는 각각 `RESOLVE/RESOLVED`, `REJECT/REJECTED`,
+  `NEEDS_MORE_INFO/UNDER_REVIEW`로 호환 매핑한다. LLM은 지급액·환불액을 만들거나 기존 금액을
+  다시 계산하지 않는다.
+- `RELEASE_TO_WORKER`는 `COMPLETED`와 `SCHEDULED/ON_HOLD`인 정상 근무에서만 보류를 풀어
+  기존 근로자 지급을 재개한다. `REFUND_TO_OWNER`는 `NO_SHOW`와 `WAITING`인 근무에서만
+  분쟁을 닫아 기존 OWNER 환불 승인을 다시 허용한다. 반대 상태의 판정은 금융 생명주기를
+  뒤집지 않고 `NEEDS_MORE_INFO`로 축소해 보류한다.
 - `RESOLVED`와 `REJECTED`가 마지막 열린 분쟁을 닫으면 정상 정산은 기존 `due_at`의
   `SCHEDULED`로 돌아가고 NO_SHOW 환불은 다시 승인할 수 있다. `UNDER_REVIEW`는 보류를
   유지한다.
@@ -47,6 +53,18 @@ targets:
   않고 양측 화면에서 검토 지연과 보류 유지로 안내한다.
 - DEMO에서는 사용자 철회, 관리자 상태 변경, 강제 지급·환불 API를 제공하지 않는다.
   `CANCELED`은 이번 기능에서 새로 만드는 전이가 아니다.
+
+## Migration scope
+
+- 승인 근거: 이 작업 대화에서 Repository Administrator가 `migration scope를 승인할게`라고
+  명시했다.
+- 대상: 신규 이력 Table `dispute_ai_reviews`와 immutable Flyway
+  `V202608152345__create_dispute_ai_review_history.sql` 한 건이다.
+- 불변식: 분쟁 FK, 실행 중 한 행, 실행 상태별 nullable 필드 조합, 입력 Hash·요청 Key 형식,
+  `SIMULATED_LLM` 출처와 결과 범위를 CHECK/UNIQUE로 제한한다. 기존 Migration·기존 Table과
+  데이터는 수정하거나 Backfill하지 않는다.
+- 검증 경계: 빈 MySQL Schema의 Flyway 전체 적용, CHECK·UNIQUE·FK 실패 사례, 분쟁 생성부터
+  재시도·결과 감사까지의 실제 MySQL 통합 테스트와 전체 프로젝트 회귀 검사를 통과해야 한다.
 
 ## 완료 조건
 

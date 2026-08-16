@@ -37,7 +37,9 @@ class DisputeReviewPropertiesTest {
         MockEnvironment environment = new MockEnvironment()
                 .withProperty(DisputeReviewProperties.MODE_KEY, "FAKE")
                 .withProperty(DisputeReviewProperties.DEMO_CONFIRMED_KEY, "true")
-                .withProperty(DisputeReviewProperties.FAKE_DECISION_KEY, "resolve");
+                .withProperty(
+                        DisputeReviewProperties.FAKE_DECISION_KEY,
+                        "release_to_worker");
 
         DisputeReviewProperties properties = new DisputeReviewProperties(environment);
 

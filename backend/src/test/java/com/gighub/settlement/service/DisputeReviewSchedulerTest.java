@@ -60,6 +60,22 @@ class DisputeReviewSchedulerTest {
         verify(executor, never()).execute(any());
     }
 
+    @Test
+    void candidateAlreadySubmittedByThisInstanceIsNotQueuedAgain() {
+        LocalDateTime now = LocalDateTime.of(2026, 8, 16, 0, 0);
+        DisputeReviewCandidate candidate = new DisputeReviewCandidate(41L, 91L, 11L);
+        when(providerFactory.isEnabled()).thenReturn(true);
+        when(properties.getBatchSize()).thenReturn(20);
+        when(reviewMapper.currentDatabaseTime()).thenReturn(now);
+        when(reviewMapper.findCandidates(now, 20)).thenReturn(List.of(candidate));
+        DisputeReviewScheduler scheduler = scheduler();
+
+        scheduler.runOnce();
+        scheduler.runOnce();
+
+        verify(executor, times(1)).execute(any(Runnable.class));
+    }
+
     private DisputeReviewScheduler scheduler() {
         return new DisputeReviewScheduler(
                 reviewMapper, processor, providerFactory, properties, executor);

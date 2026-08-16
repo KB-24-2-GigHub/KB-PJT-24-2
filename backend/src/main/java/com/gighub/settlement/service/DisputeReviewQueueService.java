@@ -46,11 +46,17 @@ public class DisputeReviewQueueService {
     private static final Pattern FAILURE_CODE = Pattern.compile("[A-Z0-9_]{1,50}");
     private static final Set<String> RETRYABLE_FAILURE_CODES = Set.of(
             "WORKER_LEASE_EXPIRED",
+            "STALE_REVIEW_RESPONSE",
             "PROVIDER_TIMEOUT",
             "PROVIDER_INTERRUPTED",
             "PROVIDER_TRANSPORT_ERROR",
             "PROVIDER_RATE_LIMIT",
-            "PROVIDER_5XX"
+            "PROVIDER_5XX",
+            "PROVIDER_HTTP_ERROR",
+            "PROVIDER_INCOMPLETE",
+            "PROVIDER_REFUSAL",
+            "INVALID_PROVIDER_OUTPUT",
+            "UNEXPECTED_PROVIDER_ERROR"
     );
 
     private final WorkSettlementService workSettlementService;
@@ -59,6 +65,14 @@ public class DisputeReviewQueueService {
     private final DisputeReviewMapper reviewMapper;
     private final DisputeReviewProviderFactory providerFactory;
     private final DisputeReviewProperties properties;
+
+    /** 닫는 주체가 없는 DISABLED 모드에서는 분쟁 자체를 만들지 않게 호출부가 먼저 확인합니다. */
+    public void requireEnabled() {
+        if (!providerFactory.isEnabled()) {
+            throw new com.gighub.common.exception.ConflictException(
+                    "분쟁 검토 DEMO가 비활성화되어 있습니다.");
+        }
+    }
 
     /** 분쟁과 같은 Transaction에 PENDING 행을 넣어 Commit 뒤 Worker가 찾을 수 있게 합니다. */
     @Transactional(propagation = Propagation.MANDATORY)
@@ -118,6 +132,7 @@ public class DisputeReviewQueueService {
                 aggregate.workCase().getWorkCaseId(),
                 aggregate.review().getRequestKey(),
                 aggregate.review().getInputHash(),
+                DisputeReviewInputs.snapshotSha256(input),
                 input
         );
     }
@@ -136,19 +151,20 @@ public class DisputeReviewQueueService {
         LocalDateTime now = reviewMapper.currentDatabaseTime();
         DisputeReviewInput currentInput = inputOf(aggregate);
         String currentInputHash = DisputeReviewInputs.sha256(currentInput);
-        if (isLeaseExpired(aggregate.review(), now)) {
-            // 응답이 Lease 경계를 넘긴 경우 결과는 버리되, 분쟁이 영구 보류되지 않도록 새 검토를 예약합니다.
-            failLocked(aggregate, "WORKER_LEASE_EXPIRED");
-            enqueueRetryIfAllowed(aggregate, "WORKER_LEASE_EXPIRED");
+        if (expireAndRetryIfNeeded(aggregate, now)) {
             return false;
         }
         if (!execution.getInputHash().equals(currentInputHash)
+                || !execution.getSnapshotHash().equals(
+                        DisputeReviewInputs.snapshotSha256(currentInput))
                 || !isCurrentAndApplicable(aggregate, currentInputHash)) {
             failLocked(aggregate, "STALE_REVIEW_RESPONSE");
+            enqueueRetryIfAllowed(aggregate, "STALE_REVIEW_RESPONSE");
             return false;
         }
 
-        DisputeReviewResult result = DisputeReviewResults.validate(providerResponse.getResult());
+        DisputeReviewResult result = applicableResult(
+                aggregate, DisputeReviewResults.validate(providerResponse.getResult()));
         applyDecision(aggregate, result);
         DisputeReviewCompletion completion = DisputeReviewCompletion.builder()
                 .reviewId(execution.getReviewId())
@@ -171,6 +187,9 @@ public class DisputeReviewQueueService {
         Objects.requireNonNull(execution, "execution");
         LockedAggregate aggregate = lockAggregate(candidateOf(execution));
         if (!matchesProcessingExecution(aggregate, execution)) {
+            return false;
+        }
+        if (expireAndRetryIfNeeded(aggregate, reviewMapper.currentDatabaseTime())) {
             return false;
         }
         String normalizedFailureCode = normalizeFailureCode(failureCode);
@@ -218,10 +237,6 @@ public class DisputeReviewQueueService {
                     aggregate.dispute().getDisputeId()) != 1) {
                 throw new IllegalStateException("분쟁 추가 검토 상태를 반영하지 못했습니다.");
             }
-            if (aggregate.dispute().getStatus() != DisputeStatus.OPEN
-                    && aggregate.dispute().getStatus() != DisputeStatus.UNDER_REVIEW) {
-                throw new IllegalStateException("종료된 분쟁에는 추가 검토 결과를 반영할 수 없습니다.");
-            }
             return;
         }
 
@@ -252,6 +267,44 @@ public class DisputeReviewQueueService {
                 normalizeFailureCode(failureCode)) != 1) {
             throw new IllegalStateException("Provider 실패 이력을 저장하지 못했습니다.");
         }
+    }
+
+    /** 외부 판정이 현재 금융 생명주기를 뒤집으면 보류 결과로 축소합니다. */
+    private DisputeReviewResult applicableResult(
+            LockedAggregate aggregate,
+            DisputeReviewResult result) {
+        boolean workerRelease = result.getDecision() == DisputeReviewDecision.RESOLVE
+                && aggregate.workCase().getStatus()
+                == com.gighub.work.domain.WorkCaseStatus.COMPLETED
+                && (aggregate.settlement().getStatus() == SettlementStatus.ON_HOLD
+                || aggregate.settlement().getStatus() == SettlementStatus.SCHEDULED);
+        boolean ownerRefund = result.getDecision() == DisputeReviewDecision.REJECT
+                && aggregate.workCase().getStatus()
+                == com.gighub.work.domain.WorkCaseStatus.NO_SHOW
+                && aggregate.settlement().getStatus() == SettlementStatus.WAITING;
+        if (result.getDecision() == DisputeReviewDecision.NEEDS_MORE_INFO
+                || workerRelease
+                || ownerRefund) {
+            return result;
+        }
+        return new DisputeReviewResult(
+                DisputeReviewDecision.NEEDS_MORE_INFO,
+                java.util.List.of("DECISION_NOT_APPLICABLE_TO_CURRENT_FLOW"),
+                "현재 근무·정산 상태에 이 자금 방향을 적용할 수 없어 보류를 유지합니다.",
+                result.getConfidence()
+        );
+    }
+
+    private boolean expireAndRetryIfNeeded(
+            LockedAggregate aggregate,
+            LocalDateTime now) {
+        if (!isLeaseExpired(aggregate.review(), now)) {
+            return false;
+        }
+        // 늦은 성공·실패 응답 모두 같은 규칙으로 버리고 새 검토를 예약합니다.
+        failLocked(aggregate, "WORKER_LEASE_EXPIRED");
+        enqueueRetryIfAllowed(aggregate, "WORKER_LEASE_EXPIRED");
+        return true;
     }
 
     private void enqueueRetryIfAllowed(LockedAggregate aggregate, String failureCode) {

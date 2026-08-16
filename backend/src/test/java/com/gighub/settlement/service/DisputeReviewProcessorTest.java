@@ -88,6 +88,7 @@ class DisputeReviewProcessorTest {
                 11L,
                 REQUEST_KEY,
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
                 new DisputeReviewInput(
                         "임금 확인",
                         "지급 여부를 확인해주세요.",
