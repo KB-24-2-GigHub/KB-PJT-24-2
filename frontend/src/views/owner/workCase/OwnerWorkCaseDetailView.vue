@@ -15,6 +15,7 @@ import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
+import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
 import {
@@ -31,6 +32,7 @@ import {
   createInvite,
   deleteWorkCase,
   getWorkCase,
+  listReports,
   reissueInvite,
   updateWorkCase
 } from '@/services/workCases'
@@ -77,6 +79,19 @@ const settlementRefreshing = ref(false)
 const settlementRefreshError = ref(false)
 const settlementIntent = ref(null)
 const pendingSettlementConvergenceAction = ref(null)
+const disputeReports = ref([])
+const disputeLoading = ref(false)
+const disputeLoadError = ref(false)
+
+const DISPUTE_ELIGIBLE_STATUSES = new Set([
+  'ACCEPTED',
+  'READY',
+  'IN_PROGRESS',
+  'CHECK_OUT_MISSING',
+  'COMPLETED',
+  'NO_SHOW'
+])
+const canViewDisputes = computed(() => DISPUTE_ELIGIBLE_STATUSES.has(workCase.value?.status))
 
 /** 수정·삭제는 서버와 같이 DRAFT 만 허용한다. */
 const canModify = computed(() => isDraft(workCase.value?.status))
@@ -190,10 +205,30 @@ async function load() {
   loading.value = true
   try {
     workCase.value = await getWorkCase(route.params.workCaseId)
+    await loadDisputes()
   } catch {
     ui.toast('근무 정보를 불러오지 못했어요.', { type: 'danger' })
   } finally {
     loading.value = false
+  }
+}
+
+async function loadDisputes({ notify = false } = {}) {
+  if (!canViewDisputes.value) {
+    disputeReports.value = []
+    disputeLoadError.value = false
+    return
+  }
+  disputeLoading.value = true
+  try {
+    const page = await listReports(route.params.workCaseId)
+    disputeReports.value = page.content ?? []
+    disputeLoadError.value = false
+  } catch {
+    disputeLoadError.value = true
+    if (notify) ui.toast('분쟁 상태를 불러오지 못했어요.', { type: 'warning' })
+  } finally {
+    disputeLoading.value = false
   }
 }
 
@@ -650,6 +685,15 @@ async function onApproveSettlement() {
             </div>
           </section>
 
+          <DisputeTimeline
+            v-if="canViewDisputes"
+            class="disputes"
+            :reports="disputeReports"
+            :loading="disputeLoading"
+            :error="disputeLoadError"
+            @refresh="loadDisputes({ notify: true })"
+          />
+
           <!--
             TODO(#184 후속): 알바생 신뢰 뱃지 자리다. 연동되면 아래 badge-placeholder 를
             <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="40" /> 로 바꾼다.
@@ -984,6 +1028,9 @@ async function onApproveSettlement() {
   color: var(--color-text);
 }
 .worker {
+  margin-top: var(--space-xl);
+}
+.disputes {
   margin-top: var(--space-xl);
 }
 .worker-card {

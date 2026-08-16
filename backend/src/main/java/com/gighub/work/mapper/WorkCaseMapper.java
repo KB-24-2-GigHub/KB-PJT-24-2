@@ -106,6 +106,9 @@ public interface WorkCaseMapper {
     WorkCaseEscrowSnapshot getEscrowContextForUpdate(
             @Param("workCaseId") Long workCaseId);
 
+    /** 정산 소유 모듈의 당사자 조회가 잠금 없이 사용하는 공개 Snapshot입니다. */
+    WorkCaseEscrowSnapshot findEscrowContext(@Param("workCaseId") Long workCaseId);
+
     /**
      * #172 Scheduler가 {@link #getEscrowContextForUpdate}보다 먼저 부르는 SKIP LOCKED 선점이다.
      *

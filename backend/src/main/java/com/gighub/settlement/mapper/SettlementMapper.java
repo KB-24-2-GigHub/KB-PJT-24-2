@@ -35,6 +35,12 @@ public interface SettlementMapper {
     List<Long> findBlockingDisputeIdsForUpdate(
             @Param("workCaseId") Long workCaseId);
 
+    /** 열린 분쟁을 등록한 정상 정산만 due_at을 보존한 채 보류합니다. */
+    int transitionScheduledToOnHold(@Param("settlementId") Long settlementId);
+
+    /** 마지막 열린 분쟁이 닫힌 정상 정산만 기존 due_at의 예약 상태로 되돌립니다. */
+    int transitionOnHoldToScheduled(@Param("settlementId") Long settlementId);
+
     /**
      * M5 퇴근 완료가 지급을 예약한다.
      *

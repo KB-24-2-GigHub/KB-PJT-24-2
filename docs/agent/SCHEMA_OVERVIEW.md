@@ -11,8 +11,8 @@ This is the compact database context for repository agents. Read it before chang
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
 | Migration head         | `202608162210`                                                                                                 |
-| Versioned migrations   | 20                                                                                                             |
-| Domain tables          | 25, excluding Flyway's `flyway_schema_history`                                                                 |
+| Versioned migrations   | 21                                                                                                             |
+| Domain tables          | 26, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
 | Readable DDL snapshot  | [`schema-snapshot-202608162210.sql`](../database/schema-snapshot-202608162210.sql), owner-maintained reference |
 
@@ -27,7 +27,8 @@ denial-reason detail to document access audit rows without rewriting historical 
 closes the `user_badges.badge_type` value set. Versions `202608121400` through `202608121403` add the
 currently proven funding, withdrawal, escrow, and work-cancellation lifecycle shapes. Each of those
 versions performs a count-only preflight, makes no guessed backfill, and owns one table-level
-`ALTER TABLE`. Version `202608162210` adds the in-app notification store; it separates the event
+`ALTER TABLE`. Version `202608152345` adds the LLM dispute-review execution and audit-history store,
+and version `202608162210` adds the in-app notification store. Notifications separate the event
 identifier (`source_type`, `source_id`) from the navigation target (`work_case_id`) so a second
 legitimate event on the same work case is not rejected as a duplicate. Recovery accepts an already
 present constraint only when its name, type, enforced state,
@@ -70,6 +71,7 @@ not edit or regenerate SQL.
 | `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql`  | Constrain proven `READY` and `COMPLETED` withdrawal result shapes                                     |
 | `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`              | Constrain timestamp shapes for `UNFUNDED`, `HELD`, `RELEASED`, and `REFUNDED` escrow states           |
 | `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`        | Require `canceled_at` exactly for `CANCELED` work cases                                               |
+| `202608152345` | `V202608152345__create_dispute_ai_review_history.sql`        | Add DEMO dispute-review execution history, active-work uniqueness, and lifecycle audit constraints    |
 | `202608162210` | `V202608162210__create_notifications.sql`                    | Add in-app notifications with per-event uniqueness, type pairing, and read-state consistency          |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
@@ -82,7 +84,7 @@ Applied or shared versioned migrations are immutable. A newer `V*.sql` file or a
 | Work and contract                        | `work_cases`, `work_invitations`, `work_contracts`                                                                                                  |
 | Wallet, mock banking, escrow, settlement | `wallets`, `mock_bank_accounts`, `mock_bank_transactions`, `funding_orders`, `withdrawal_requests`, `wallet_transactions`, `escrows`, `settlements` |
 | Cross-domain request control             | `idempotency_requests`                                                                                                                              |
-| Attendance and dispute                   | `qr_tokens`, `attendance_records`, `disputes`                                                                                                       |
+| Attendance and dispute                   | `qr_tokens`, `attendance_records`, `disputes`, `dispute_ai_reviews`                                                                                 |
 | Documents and signatures                 | `documents`, `document_versions`, `document_signatures`, `document_shares`, `document_access_logs`                                                  |
 | Notification                             | `notifications`                                                                                                                                     |
 
@@ -167,6 +169,11 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - Generated open-slot uniqueness permits at most one `OPEN` or `UNDER_REVIEW` dispute per work case.
 - Every new dispute requires a trimmed title of 1 to 100 characters. Existing disputes without an
   approved original title block the migration and require owner-directed manual reconciliation.
+- `dispute_ai_reviews` keeps one active DEMO review per dispute while preserving completed and failed
+  execution history. Its foreign key uses `RESTRICT`, so audit rows cannot be erased by deleting a dispute.
+- Review request hashes, leases, lifecycle checks, provider response IDs, decisions, reason codes, and
+  failure messages are audit evidence. The application performs the external provider call outside a
+  database transaction and only applies a result after re-locking and rechecking the active request.
 
 ### Documents and signatures
 

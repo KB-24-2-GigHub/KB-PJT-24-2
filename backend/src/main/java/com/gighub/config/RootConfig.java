@@ -8,6 +8,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.stereotype.Controller;
 
 import com.gighub.auth.security.SecurityConfig;
+import com.gighub.settlement.config.SettlementTaskSchedulerConfig;
 
 /**
  * 웹 계층을 제외한 애플리케이션 공통 Bean을 관리하는 Root Context 설정입니다.
@@ -19,7 +20,7 @@ import com.gighub.auth.security.SecurityConfig;
  */
 @Configuration
 @EnableScheduling
-@Import({DatabaseConfig.class, SecurityConfig.class})
+@Import({DatabaseConfig.class, SecurityConfig.class, SettlementTaskSchedulerConfig.class})
 @ComponentScan(
         basePackages = "com.gighub",
         excludeFilters = {

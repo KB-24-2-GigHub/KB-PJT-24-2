@@ -181,6 +181,23 @@
         FOR UPDATE
     </select>
 
+    <select id="findEscrowContext" resultMap="workCaseEscrowContextResult">
+        SELECT wc.id           AS workCaseId,
+               wc.employer_id  AS employerId,
+               wc.worker_id    AS workerId,
+               wc.agreed_wage  AS agreedWage,
+               wc.status       AS status,
+               (
+                   SELECT COUNT(*)
+                   FROM attendance_records ar
+                   WHERE ar.work_case_id = wc.id
+                     AND ar.attendance_type = 'CHECK_IN'
+                     AND ar.result = 'SUCCESS'
+               ) AS successfulCheckInCount
+        FROM work_cases wc
+        WHERE wc.id = #{workCaseId}
+    </select>
+
     <select id="lockWorkCaseIdForUpdateSkipLocked" resultType="java.lang.Long">
         SELECT id
         FROM work_cases

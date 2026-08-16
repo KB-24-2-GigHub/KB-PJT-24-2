@@ -43,7 +43,7 @@
     {
       "id": "settlement",
       "packageRoots": ["settlement"],
-      "ownedTables": ["settlements", "disputes"]
+      "ownedTables": ["settlements", "disputes", "dispute_ai_reviews"]
     },
     {
       "id": "document",
@@ -192,7 +192,14 @@
       "owner": "settlement",
       "allowedWriterPackage": "com.gighub.settlement.mapper",
       "allowedWriterType": "com.gighub.settlement.mapper.DisputeMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
+    },
+    {
+      "table": "dispute_ai_reviews",
+      "owner": "settlement",
+      "allowedWriterPackage": "com.gighub.settlement.mapper",
+      "allowedWriterType": "com.gighub.settlement.mapper.DisputeReviewMapper",
+      "currentWriteState": "owned"
     },
     {
       "table": "documents",

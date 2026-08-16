@@ -64,7 +64,7 @@ export async function listReports(workCaseId) {
   return data
 }
 
-export async function createReport(workCaseId, { content }) {
-  const { data } = await http.post(`/work-cases/${workCaseId}/disputes`, { content })
+export async function createReport(workCaseId, { title, content }) {
+  const { data } = await http.post(`/work-cases/${workCaseId}/disputes`, { title, content })
   return data
 }

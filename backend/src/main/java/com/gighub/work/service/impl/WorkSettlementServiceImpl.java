@@ -22,6 +22,12 @@ public class WorkSettlementServiceImpl implements WorkSettlementService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public WorkCaseEscrowSnapshot findEscrowContext(long workCaseId) {
+        return workCaseMapper.findEscrowContext(workCaseId);
+    }
+
+    @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public boolean tryLockEscrowContext(long workCaseId) {
         return workCaseMapper.lockWorkCaseIdForUpdateSkipLocked(workCaseId) != null;
