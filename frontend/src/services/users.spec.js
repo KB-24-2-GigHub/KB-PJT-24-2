@@ -51,13 +51,16 @@ describe('getBadge', () => {
     expect(badge).toEqual({ badgeType: 'TRUST_WORKER', level: 0 })
   })
 
-  it('사용자 ID 를 받는 복수 Endpoint 를 호출하지 않는다', async () => {
+  /*
+   * 금지 형태를 열거하는 대신 승인된 호출 전체를 단언한다. `not.toContain('badges')` 로는
+   * `/users/1/badge` 처럼 사용자 ID 를 받는 경로가 그대로 통과한다.
+   */
+  it('본인 경로 한 번 외에는 어떤 호출도 하지 않는다', async () => {
     http.get.mockResolvedValue({ data: { badgeType: 'TRUST_OWNER', level: 1 } })
 
     await getBadge()
 
-    expect(http.get).toHaveBeenCalledTimes(1)
-    expect(http.get.mock.calls[0][0]).not.toContain('badges')
+    expect(http.get.mock.calls).toEqual([['/users/me/badge']])
   })
 })
 

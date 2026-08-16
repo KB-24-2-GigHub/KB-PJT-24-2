@@ -34,9 +34,26 @@ describe('공통 UI 키트 스모크', () => {
     expect(w.find('img').exists()).toBe(true)
   })
 
-  it('TrustBadge — level 0 은 이력 쌓는 중', () => {
-    const w = mount(TrustBadge, { props: { role: 'owner', level: 0, showRemaining: true } })
-    expect(w.text()).toContain('이력 쌓는 중')
+  it('TrustBadge — level 0 은 미부여 아이콘', () => {
+    const w = mount(TrustBadge, { props: { role: 'owner', level: 0 } })
+    expect(w.find('img').exists()).toBe(false)
+    expect(w.find('.no-badge').exists()).toBe(true)
+  })
+
+  /*
+   * 프로덕션에서 prop 검증이 제거되는 것을 전제로 한 런타임 가드다.
+   * level 을 빠뜨린 호출이 미부여(0단계)로 위장되면 3단계 사용자가 조용히 오표시된다.
+   */
+  it.each([
+    ['level 누락', { role: 'worker' }],
+    ['범위 밖 level', { role: 'worker', level: 4 }],
+    ['정수가 아닌 level', { role: 'worker', level: 1.5 }],
+    ['알 수 없는 role', { role: 'admin', level: 2 }]
+  ])('TrustBadge — %s 은 미부여로 위장하지 않고 아무것도 그리지 않는다', (_label, props) => {
+    const w = mount(TrustBadge, { props })
+    expect(w.find('.trust-badge').exists()).toBe(false)
+    expect(w.find('.no-badge').exists()).toBe(false)
+    expect(w.find('img').exists()).toBe(false)
   })
 
   it('BaseModal — 닫힘 상태에서 마운트', () => {

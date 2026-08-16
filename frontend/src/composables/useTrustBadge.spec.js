@@ -44,7 +44,7 @@ describe('useTrustBadge', () => {
       )
 
       expect(badge.state.value).toBe(BADGE_STATE.READY)
-      expect(badge.unawarded.value).toBe(true)
+      expect(badge.level.value).toBe(0)
       expect(badge.maxLevel.value).toBe(false)
       expect(badge.progressPercent.value).toBe(0)
       expect(badge.nextLevelLabel.value).toBe('Lv.1')
@@ -87,6 +87,7 @@ describe('useTrustBadge', () => {
       expect(badge.maxLevel.value).toBe(true)
       expect(badge.countMetRatioShort.value).toBe(false)
       expect(badge.progressPercent.value).toBe(100)
+      expect(badge.showProgress.value).toBe(true)
       expect(badge.nextLevelLabel.value).toBe('최고 등급')
     })
 
@@ -103,6 +104,20 @@ describe('useTrustBadge', () => {
       expect(badge.countMetRatioShort.value).toBe(true)
       expect(badge.maxLevel.value).toBe(false)
       expect(badge.nextLevelLabel.value).toBe('Lv.2')
+    })
+
+    /*
+     * 남은 건수가 0이라 진행률은 100 이 되는데 등급은 오르지 않은 상태다. 가득 찬 바를
+     * 그대로 두면 바로 아래 "정상 비율이 더 필요해요" 와 모순되고, 스크린리더는
+     * aria-valuenow="100" 을 "100 퍼센트" 로 읽어 오해가 그대로 전달된다.
+     */
+    it('비율 부족 상태에서는 100% 진행바를 내보내지 않는다', async () => {
+      const badge = await loadWorkerBadge(
+        response({ level: 1, recentCount: 25, remainingToNextLevel: 0 })
+      )
+
+      expect(badge.progressPercent.value).toBe(100)
+      expect(badge.showProgress.value).toBe(false)
     })
   })
 
@@ -140,12 +155,26 @@ describe('useTrustBadge', () => {
       ['등급 범위 초과', response({ level: 4 })],
       ['음수 누적 건수', response({ recentCount: -1 })],
       ['남은 건수 누락', response({ remainingToNextLevel: null })],
-      ['빈 criterionLabel', response({ criterionLabel: '  ' })]
+      ['빈 criterionLabel', response({ criterionLabel: '  ' })],
+      // 객체 리터럴 상속 프로퍼티는 truthy 라, 브래킷 조회로 멤버십을 보면 통과해 버린다.
+      ['Object.prototype 상속 이름', response({ badgeType: 'constructor' })],
+      ['hasOwnProperty', response({ badgeType: 'hasOwnProperty' })]
     ])('%s 은 오류가 아니라 빈 응답으로 구분한다', async (_label, data) => {
       const badge = await loadWorkerBadge(data)
 
       expect(badge.state.value).toBe(BADGE_STATE.EMPTY)
       expect(badge.badge.value).toBeNull()
+    })
+
+    /*
+     * `criterionDesc` 는 표시 의미를 결정하지 않는 자유 문장이다. 이게 비었다고 뱃지 전체를
+     * 숨기면 등급이라는 더 중요한 정보까지 잃는다 — READY 로 두고 표시 쪽에서 흘려보낸다.
+     */
+    it('진행 설명문이 비어도 뱃지 자체는 보여준다', async () => {
+      const badge = await loadWorkerBadge(response({ criterionDesc: '' }))
+
+      expect(badge.state.value).toBe(BADGE_STATE.READY)
+      expect(badge.level.value).toBe(1)
     })
 
     it('403 은 권한 오류로 구분한다', async () => {
@@ -204,6 +233,55 @@ describe('useTrustBadge', () => {
       expect(badge.badge.value).toBeNull()
       expect(badge.level.value).toBe(0)
       expect(badge.maxLevel.value).toBe(false)
+    })
+
+    /*
+     * 두 조회가 겹치면 늦게 도착한 이전 응답이 최신 결과를 덮어쓸 수 있다.
+     * 순차(await) 경로만 검증하면 이 경합이 드러나지 않는다.
+     */
+    it('먼저 보낸 조회가 늦게 도착해도 최신 결과를 덮어쓰지 않는다', async () => {
+      const badge = useTrustBadge('worker')
+      let resolveSlow
+      getBadge.mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveSlow = resolve
+        })
+      )
+      getBadge.mockResolvedValueOnce(response({ level: 3, remainingToNextLevel: 0 }))
+
+      const slow = badge.load() // 느린 A
+      const fast = badge.load() // 빠른 B
+      await fast
+
+      expect(badge.level.value).toBe(3)
+
+      resolveSlow(response({ level: 1, remainingToNextLevel: 8 }))
+      await slow
+
+      expect(badge.level.value).toBe(3)
+      expect(badge.state.value).toBe(BADGE_STATE.READY)
+    })
+
+    it('늦게 도착한 조회의 실패도 최신 결과를 지우지 않는다', async () => {
+      const badge = useTrustBadge('worker')
+      let rejectSlow
+      getBadge.mockReturnValueOnce(
+        new Promise((_resolve, reject) => {
+          rejectSlow = reject
+        })
+      )
+      getBadge.mockResolvedValueOnce(response({ level: 2 }))
+
+      const slow = badge.load()
+      await badge.load()
+
+      expect(badge.level.value).toBe(2)
+
+      rejectSlow({ response: { status: 500 } })
+      await slow
+
+      expect(badge.state.value).toBe(BADGE_STATE.READY)
+      expect(badge.level.value).toBe(2)
     })
 
     it('역할이 바뀐 재조회는 이전 역할의 뱃지를 그대로 두지 않는다', async () => {

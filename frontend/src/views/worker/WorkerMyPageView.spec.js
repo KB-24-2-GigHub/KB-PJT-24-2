@@ -130,7 +130,7 @@ describe('WorkerMyPageView', () => {
       expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('60')
     })
 
-    it('서버 진행 설명문과 FE 정의문을 서로 대체하지 않고 함께 보여준다', async () => {
+    it('WORKER 정의문을 서버 진행 설명문과 함께 보여준다', async () => {
       getBadge.mockResolvedValue({ ...BADGE })
 
       const wrapper = mount(WorkerMyPageView)
@@ -157,52 +157,11 @@ describe('WorkerMyPageView', () => {
       expect(wrapper.find('.level-remaining').text()).toBe('다음 레벨 Lv.1까지 성실근로 10건 남음')
     })
 
-    it('3단계는 남은 건수 문장 대신 최고 등급을 보여준다', async () => {
-      getBadge.mockResolvedValue({
-        ...BADGE,
-        level: 3,
-        recentCount: 30,
-        remainingToNextLevel: 0,
-        criterionDesc: '누적 30건 중 정상 30건으로 최고 등급입니다.'
-      })
-
-      const wrapper = mount(WorkerMyPageView)
-      await flushPromises()
-
-      expect(wrapper.find('.level-remaining').text()).toBe('최고 등급이에요.')
-      expect(wrapper.text()).not.toContain('건 남음')
-    })
-
-    it('건수를 채웠지만 비율이 부족하면 승급 임박으로 읽히지 않게 구분한다', async () => {
-      getBadge.mockResolvedValue({ ...BADGE, level: 1, recentCount: 25, remainingToNextLevel: 0 })
-
-      const wrapper = mount(WorkerMyPageView)
-      await flushPromises()
-
-      const remaining = wrapper.find('.level-remaining').text()
-      expect(remaining).toContain('건수 조건은 채웠어요')
-      expect(remaining).not.toContain('0건 남음')
-      expect(remaining).not.toContain('최고 등급')
-    })
-
-    it('403 은 일반 실패와 다른 문구로 구분한다', async () => {
-      getBadge.mockRejectedValue({ response: { status: 403 } })
-
-      const wrapper = mount(WorkerMyPageView)
-      await flushPromises()
-
-      expect(wrapper.find('.badge-notice').text()).toBe('뱃지를 볼 권한이 없어요.')
-    })
-
-    it('빈 응답은 실패와 다른 문구로 구분한다', async () => {
-      getBadge.mockResolvedValue({})
-
-      const wrapper = mount(WorkerMyPageView)
-      await flushPromises()
-
-      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 표시할 수 없어요.')
-    })
-
+    /*
+     * 로딩·최고 등급·비율 부족·403·빈 응답의 상태 체인은 두 화면이 공유하는
+     * TrustBadgeCard 가 소유하므로 OwnerMyPageView.spec.js 에서 한 번만 고정한다.
+     * 여기서는 이 화면에만 있는 역할 결합과 WORKER 문구를 본다.
+     */
     it('화면을 다시 열 때마다 뱃지를 다시 조회한다', async () => {
       getBadge.mockResolvedValue({ ...BADGE })
 

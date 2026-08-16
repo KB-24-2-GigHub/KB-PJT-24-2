@@ -166,6 +166,60 @@ describe('OwnerMyPageView', () => {
       expect(remaining).toContain('정상 비율이 더 필요해요')
       expect(remaining).not.toContain('0건 남음')
       expect(remaining).not.toContain('최고 등급')
+      // 가득 찬 바가 이 문구와 모순되고 스크린리더에는 "100 퍼센트"로 읽힌다.
+      expect(wrapper.find('.bar').exists()).toBe(false)
+    })
+
+    /*
+     * LOADING 분기는 flushPromises 뒤에는 절대 렌더되지 않는다. 해소되지 않은 promise 로
+     * 잡아 두지 않으면 이 블록을 통째로 지워도 테스트가 전부 통과하고, 지우면 v-else 가
+     * LOADING 을 받아 매 로드마다 오류 문구가 깜빡인다.
+     */
+    it('응답 전에는 오류가 아니라 로딩 안내를 보여준다', async () => {
+      let resolveBadge
+      getBadge.mockReturnValue(
+        new Promise((resolve) => {
+          resolveBadge = resolve
+        })
+      )
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').text()).toBe('뱃지 정보를 불러오는 중이에요…')
+      expect(wrapper.find('.badge-slot').exists()).toBe(false)
+
+      resolveBadge({ ...BADGE })
+      await flushPromises()
+
+      expect(wrapper.find('.badge-notice').exists()).toBe(false)
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+    })
+
+    it('진행 설명문이 비면 빈 문단을 남기지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE, criterionDesc: '' })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      expect(wrapper.find('.badge-slot').exists()).toBe(true)
+      expect(wrapper.find('.badge-desc').exists()).toBe(false)
+    })
+
+    /*
+     * 이 통계는 승인 Endpoint 가 없어 ref(0) 자리표시자였다. 뱃지가 실데이터가 된 뒤로는
+     * 같은 카드 안의 "정상 정산 0%" 가 자리표시자가 아니라 진짜 실적으로 읽힌다.
+     */
+    it('승인 Endpoint 가 없는 통계를 0으로 지어내 보여주지 않는다', async () => {
+      getBadge.mockResolvedValue({ ...BADGE })
+
+      const wrapper = mount(OwnerMyPageView)
+      await flushPromises()
+
+      // 문자열이 아니라 요소로 단언한다 — '정상 정산'·'신고' 는 뱃지 정의문
+      // ('*안심거래란? 임금분쟁 신고 없이 정상 정산 완료')에도 정당하게 들어 있다.
+      expect(wrapper.find('.stats-row').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('최근 구인')
     })
 
     it('403 은 일반 실패와 다른 문구로 구분한다', async () => {
