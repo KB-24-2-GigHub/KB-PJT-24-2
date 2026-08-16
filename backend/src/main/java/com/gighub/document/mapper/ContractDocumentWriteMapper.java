@@ -4,6 +4,8 @@ import com.gighub.document.mapper.param.DocumentInsertParam;
 import com.gighub.document.mapper.param.DocumentShareInsertParam;
 import com.gighub.document.mapper.param.DocumentSignatureInsertParam;
 import com.gighub.document.mapper.param.DocumentVersionInsertParam;
+import com.gighub.document.mapper.result.ContractRetentionCandidateRow;
+import com.gighub.document.mapper.result.ContractRetentionVersionKeyRow;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.mapper.result.DocumentOwnershipRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -83,4 +85,31 @@ public interface ContractDocumentWriteMapper {
      */
     List<ContractVersionPromotionRow> findPromotionRowsByWorkCaseId(
             @Param("workCaseId") long workCaseId);
+
+    /**
+     * {@code work_cases.ends_at}의 서울 종료 날짜에 3년을 더한 자정이 지난 근로계약서를
+     * {@code documentId} 오름차순으로 최대 {@code limit}건 찾는다(DOC-012,
+     * {@code DEC-CONTRACT-RETENTION}). 이미 {@code DELETED}인 문서도 저장소 Object 삭제
+     * 재시도 대상이라 함께 돌려준다. {@code CANCELED} 문서는 제외한다.
+     */
+    List<ContractRetentionCandidateRow> findContractRetentionCandidates(
+            @Param("limit") int limit);
+
+    /**
+     * {@code work_case_id}가 비었거나 참조 {@code work_cases} 행이 없는 근로계약서
+     * 식별자를 찾는다. 자동 생성 정책(DEC-CONTRACT-AUTO-GENERATION)상 있을 수 없는
+     * 데이터 손상이며 파기하지 않고 감사만 한다.
+     */
+    List<Long> findOrphanedContractDocumentIds(@Param("limit") int limit);
+
+    /** 근로계약서를 {@code DELETED}로 전이한다. 이미 {@code DELETED}면 0을 돌려준다(멱등). */
+    int markContractDeleted(@Param("documentId") long documentId);
+
+    /**
+     * 한 문서의 모든 Version에 대해 근무 식별자·Version 번호·최종 Storage Key를 돌려준다.
+     * 파기는 최종 Key뿐 아니라 {@link com.gighub.document.storage.ContractStorageKeys}로
+     * 유도할 수 있는 대응 임시 Key도 함께 정리해야 하므로 재구성에 필요한 값을 모두 담는다.
+     */
+    List<ContractRetentionVersionKeyRow> findVersionKeysByDocumentId(
+            @Param("documentId") long documentId);
 }

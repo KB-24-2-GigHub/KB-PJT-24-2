@@ -108,4 +108,52 @@
           AND d.document_type = 'EMPLOYMENT_CONTRACT'
     </select>
 
+    <!--
+        work_cases.ends_at는 이미 서울 벽시계 DATETIME(6)이므로(ARCHITECTURE_OVERVIEW.md)
+        추가 Timezone 변환 없이 DATE()로 서울 날짜를 얻는다. CURDATE()도 같은 DB 세션
+        기준이라 같은 지역으로 비교된다.
+    -->
+    <select id="findContractRetentionCandidates"
+            resultType="com.gighub.document.mapper.result.ContractRetentionCandidateRow">
+        SELECT d.id     AS documentId,
+               d.status AS status
+        FROM documents d
+                 JOIN work_cases wc ON wc.id = d.work_case_id
+        WHERE d.document_type = 'EMPLOYMENT_CONTRACT'
+          AND d.status != 'CANCELED'
+          AND CURDATE() >= DATE_ADD(DATE(wc.ends_at), INTERVAL 3 YEAR)
+        ORDER BY d.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findOrphanedContractDocumentIds" resultType="java.lang.Long">
+        SELECT d.id
+        FROM documents d
+                 LEFT JOIN work_cases wc ON wc.id = d.work_case_id
+        WHERE d.document_type = 'EMPLOYMENT_CONTRACT'
+          AND d.status != 'CANCELED'
+          AND d.status != 'DELETED'
+          AND (d.work_case_id IS NULL OR wc.id IS NULL)
+        ORDER BY d.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <update id="markContractDeleted">
+        UPDATE documents
+        SET status = 'DELETED'
+        WHERE id = #{documentId}
+          AND document_type = 'EMPLOYMENT_CONTRACT'
+          AND status != 'DELETED'
+    </update>
+
+    <select id="findVersionKeysByDocumentId"
+            resultType="com.gighub.document.mapper.result.ContractRetentionVersionKeyRow">
+        SELECT d.work_case_id AS workCaseId,
+               dv.version_no  AS versionNo,
+               dv.storage_key AS storageKey
+        FROM document_versions dv
+                 JOIN documents d ON d.id = dv.document_id
+        WHERE dv.document_id = #{documentId}
+    </select>
+
 </mapper>
