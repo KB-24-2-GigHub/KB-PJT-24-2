@@ -587,6 +587,11 @@ class DocumentAccessMapperTest {
             throw new UnsupportedOperationException("읽기 경합 테스트에서는 삭제하지 않습니다.");
         }
 
+        @Override
+        public void deleteFinal(String finalKey) {
+            throw new UnsupportedOperationException("읽기 경합 테스트에서는 삭제하지 않습니다.");
+        }
+
         boolean awaitReadStarted() throws InterruptedException {
             return readStarted.await(5, TimeUnit.SECONDS);
         }

@@ -31,6 +31,12 @@ public interface DocumentStorageAdapter {
     void deletePending(String pendingKey);
 
     /**
+     * 보존 만료 파기(DOC-012)에서 승격된 최종 Key를 지운다. 이미 없으면 아무 일도 하지
+     * 않는다 — 재실행이 안전해야 한다.
+     */
+    void deleteFinal(String finalKey);
+
+    /**
      * Rollback된 근무의 문서 하위에 남은 임시 Object를 최선 노력으로 정리한다.
      *
      * @param retainedDocumentIds 이미 Commit된 문서라 임시 Fallback을 보존해야 하는 식별자
