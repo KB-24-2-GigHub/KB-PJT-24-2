@@ -254,6 +254,11 @@ class InvitationLifecycleDatabaseIntegrationTest {
                 "DELETE FROM work_invitations WHERE work_case_id = ?", fixture.workCaseId);
         jdbcTemplate.update("DELETE FROM work_cases WHERE id = ?", fixture.workCaseId);
         jdbcTemplate.update("DELETE FROM workplaces WHERE id = ?", fixture.workplaceId);
+        // 초대 조회가 실제로 OWNER 배지를 재계산·Upsert하므로 users보다 먼저 지운다.
+        jdbcTemplate.update(
+                "DELETE FROM user_badges WHERE user_id IN (?, ?)",
+                fixture.ownerUserId,
+                fixture.workerUserId);
         jdbcTemplate.update(
                 "DELETE FROM users WHERE id IN (?, ?)",
                 fixture.ownerUserId,

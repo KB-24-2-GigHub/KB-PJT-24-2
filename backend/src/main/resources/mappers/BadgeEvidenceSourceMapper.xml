@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.badge.mapper.BadgeEvidenceSourceMapper">
+
+    <resultMap id="badgeEvidenceCountsResult"
+               type="com.gighub.badge.mapper.result.BadgeEvidenceCountsRow">
+        <constructor>
+            <arg column="total_count" javaType="_long"/>
+            <arg column="normal_count" javaType="_long"/>
+        </constructor>
+    </resultMap>
+
+    <!-- QX-006: OWNER 안심거래 판정 원천.
+         settlements(Settlement 소유), work_cases(Work 소유)를 읽기 전용으로 JOIN한다.
+         지급자는 work_cases.employer_id다. -->
+    <select id="countOwnerEvidence" resultMap="badgeEvidenceCountsResult">
+        SELECT
+            COUNT(*) AS total_count,
+            COALESCE(SUM(
+                             CASE WHEN NOT EXISTS (
+                                 SELECT 1 FROM disputes d
+                                 WHERE d.work_case_id = s.work_case_id
+                                   AND d.status NOT IN ('CANCELED', 'REJECTED')
+                             ) THEN 1 ELSE 0 END
+                     ), 0) AS normal_count
+        FROM settlements s
+                 JOIN work_cases wc ON wc.id = s.work_case_id
+        WHERE wc.employer_id = #{ownerId}
+          AND s.status = 'COMPLETED'
+    </select>
+
+    <!-- QX-006: WORKER 성실근로 판정 원천.
+         work_cases(Work 소유), attendance_records(Attendance 소유)를 읽기 전용으로 JOIN한다.
+         지각 여부는 성공 CHECK_IN의 attempted_at과 starts_at을 매 조회 시 다시 비교하며
+         별도 Flag를 저장하지 않는다. -->
+    <select id="countWorkerEvidence" resultMap="badgeEvidenceCountsResult">
+        SELECT
+        COUNT(*) AS total_count,
+        COALESCE(SUM(
+        CASE WHEN wc.status = 'COMPLETED' AND EXISTS (
+        SELECT 1 FROM attendance_records ar
+        WHERE ar.work_case_id = wc.id
+        AND ar.worker_id = wc.worker_id
+        AND ar.attendance_type = 'CHECK_IN'
+        AND ar.result = 'SUCCESS'
+        AND ar.attempted_at &lt;= wc.starts_at
+        ) THEN 1 ELSE 0 END
+        ), 0) AS normal_count
+        FROM work_cases wc
+        WHERE wc.worker_id = #{workerId}
+        AND wc.status IN ('COMPLETED', 'NO_SHOW', 'CHECK_OUT_MISSING')
+    </select>
+
+</mapper>
