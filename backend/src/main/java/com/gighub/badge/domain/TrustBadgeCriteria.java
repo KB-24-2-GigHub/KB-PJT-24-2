@@ -33,11 +33,14 @@ public final class TrustBadgeCriteria {
                         thresholdPercent,
                         totalCount,
                         normalCount,
-                        remainingToNextLevel(level, totalCount));
+                        remainingToNextLevel(level, totalCount),
+                        nextThresholdPercent(level));
             }
         }
         // 0단계: thresholdCount/thresholdPercent는 SPEC-178-06대로 0을 저장한다.
-        return TrustBadgeResult.of(0, 0, 0, totalCount, normalCount, remainingToNextLevel(0, totalCount));
+        return TrustBadgeResult.of(
+                0, 0, 0, totalCount, normalCount,
+                remainingToNextLevel(0, totalCount), nextThresholdPercent(0));
     }
 
     private static void validate(long totalCount, long normalCount) {
@@ -60,5 +63,16 @@ public final class TrustBadgeCriteria {
         }
         int nextThresholdCount = LEVEL_THRESHOLD_COUNT[2 - level];
         return Math.max(0, nextThresholdCount - totalCount);
+    }
+
+    /**
+     * 다음 등급에 필요한 정상 비율 문턱입니다. 건수는 채웠는데 비율이 부족해 등급이 오르지
+     * 못한 경우, API 응답의 {@code criterionDesc}가 이 값으로 부족한 조건을 안내합니다.
+     */
+    private static int nextThresholdPercent(int level) {
+        if (level >= 3) {
+            return 0;
+        }
+        return LEVEL_THRESHOLD_PERCENT[2 - level];
     }
 }

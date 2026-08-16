@@ -139,7 +139,7 @@ sequenceDiagram
 | ------------------------ | ------------------ | --------------------------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ----------------------------- | ----------------------------------------------- |
 | `users`                  | Member/Auth        | `member.mapper.UserMapper`                    | 계정 생성·프로필 변경                     | 인증·당사자 최소 Query     | Member/Auth        | Member/Auth + PM/Admin        | 굵은 경계 안 단일 writer                        |
 | `password_reset_tokens`  | Member/Auth        | `auth.mapper.PasswordResetTokenMapper`        | reset token 발급·소비·폐기                | active token 확인          | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 기능 미구현                        |
-| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 부여·회수                           | badge 목록 Projection      | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 조회만 존재                        |
+| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 재계산 Upsert                       | 단수 badge Projection      | Member/Auth        | Member/Auth + PM/Admin        | 단일 writer; `#182` `BadgeApplicationService` 경유 |
 | `workplaces`             | Workplace          | `workplace.mapper.WorkplaceMapper`            | 사업장 생성·허용 변경                     | 소유권·좌표·표시 Snapshot  | Workplace          | Workplace + PM/Admin          | 단일 writer; 외부는 공개 Query/lock Service     |
 | `work_cases`             | Work               | `work.mapper.WorkCaseMapper`                  | 생성·조건 변경·배정·의미 상태 전이        | Work 목록·상세 Projection  | Work               | Work + PM/Admin               | 단일 writer; 외부는 Work Command participant    |
 | `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | 단일 writer                                     |
@@ -201,7 +201,7 @@ Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내�
 | Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`             | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger                          |
 | Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                          | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
 | Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                        | Attendance artifact 검증과 Controller 조회 경계                                     |
-| Member/Badge | `BadgeQueryService`                                                                 | Controller의 badge Projection 조회 경계                                             |
+| Member/Badge | `BadgeApplicationService`                                                           | Controller의 잠금·재계산·Upsert 경계; 초대 조회는 `#182` 후속 단계에서 연동          |
 
 쓰기 participant는 모두 호출자의 outer Transaction에 `MANDATORY`로 참여하고 독립 commit하지
 않는다. Query Service는 persistence Row/Param을 외부 interface에 노출하지 않는다.
@@ -316,8 +316,10 @@ Service가 `user_badges` Upsert에만 사용한다. QX-006에 DML을 추가하�
 | -------- | -------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------ |
 | `TV-010` | 새로고침·재로그인 뒤 client replay key | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 
-`disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의 리팩터링 위반을
-고치기 위한 신규 기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다.
+`disputes`, `password_reset_tokens`의 writer 부재는 이 표의 리팩터링 위반을 고치기 위한 신규
+기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다. `user_badges`는 `#182`에서
+`BadgeApplicationService`가 유일한 writer(`badge.mapper.UserBadgeMapper`)로 붙어 이 목록에서
+제외됐다.
 
 ## Domain과 타입 경계
 

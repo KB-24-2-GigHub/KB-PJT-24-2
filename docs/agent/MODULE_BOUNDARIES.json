@@ -82,7 +82,7 @@
       "owner": "member-auth",
       "allowedWriterPackage": "com.gighub.badge.mapper",
       "allowedWriterType": "com.gighub.badge.mapper.UserBadgeMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
     },
     {
       "table": "workplaces",

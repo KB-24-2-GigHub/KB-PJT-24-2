@@ -17,6 +17,7 @@ public final class TrustBadgeResult {
     private final long totalCount;
     private final long normalCount;
     private final long remainingToNextLevel;
+    private final int nextThresholdPercent;
 
     private TrustBadgeResult(
             int level,
@@ -24,13 +25,15 @@ public final class TrustBadgeResult {
             int thresholdPercent,
             long totalCount,
             long normalCount,
-            long remainingToNextLevel) {
+            long remainingToNextLevel,
+            int nextThresholdPercent) {
         this.level = level;
         this.thresholdCount = thresholdCount;
         this.thresholdPercent = thresholdPercent;
         this.totalCount = totalCount;
         this.normalCount = normalCount;
         this.remainingToNextLevel = remainingToNextLevel;
+        this.nextThresholdPercent = nextThresholdPercent;
     }
 
     static TrustBadgeResult of(
@@ -39,8 +42,10 @@ public final class TrustBadgeResult {
             int thresholdPercent,
             long totalCount,
             long normalCount,
-            long remainingToNextLevel) {
+            long remainingToNextLevel,
+            int nextThresholdPercent) {
         return new TrustBadgeResult(
-                level, thresholdCount, thresholdPercent, totalCount, normalCount, remainingToNextLevel);
+                level, thresholdCount, thresholdPercent, totalCount, normalCount, remainingToNextLevel,
+                nextThresholdPercent);
     }
 }

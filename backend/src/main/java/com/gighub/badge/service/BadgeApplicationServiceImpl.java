@@ -94,7 +94,8 @@ public class BadgeApplicationServiceImpl implements BadgeApplicationService {
                 result.getNormalCount(),
                 result.getThresholdCount(),
                 result.getThresholdPercent(),
-                result.getRemainingToNextLevel());
+                result.getRemainingToNextLevel(),
+                result.getNextThresholdPercent());
     }
 
     private TrustBadgeType toBadgeType(UserRole role) {

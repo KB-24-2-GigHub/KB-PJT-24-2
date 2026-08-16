@@ -18,6 +18,7 @@ public final class BadgeCalculationResult {
     private final int thresholdCount;
     private final int thresholdPercent;
     private final long remainingToNextLevel;
+    private final int nextThresholdPercent;
 
     private BadgeCalculationResult(
             String badgeType,
@@ -26,7 +27,8 @@ public final class BadgeCalculationResult {
             long normalCount,
             int thresholdCount,
             int thresholdPercent,
-            long remainingToNextLevel) {
+            long remainingToNextLevel,
+            int nextThresholdPercent) {
         this.badgeType = badgeType;
         this.level = level;
         this.totalCount = totalCount;
@@ -34,6 +36,7 @@ public final class BadgeCalculationResult {
         this.thresholdCount = thresholdCount;
         this.thresholdPercent = thresholdPercent;
         this.remainingToNextLevel = remainingToNextLevel;
+        this.nextThresholdPercent = nextThresholdPercent;
     }
 
     public static BadgeCalculationResult of(
@@ -43,9 +46,10 @@ public final class BadgeCalculationResult {
             long normalCount,
             int thresholdCount,
             int thresholdPercent,
-            long remainingToNextLevel) {
+            long remainingToNextLevel,
+            int nextThresholdPercent) {
         return new BadgeCalculationResult(
                 badgeType, level, totalCount, normalCount, thresholdCount, thresholdPercent,
-                remainingToNextLevel);
+                remainingToNextLevel, nextThresholdPercent);
     }
 }
