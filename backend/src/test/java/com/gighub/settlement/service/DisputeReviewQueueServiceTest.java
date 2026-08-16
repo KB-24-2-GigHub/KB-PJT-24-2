@@ -1,9 +1,11 @@
 package com.gighub.settlement.service;
 
+import com.gighub.common.api.ApiErrorCode;
 import com.gighub.settlement.config.DisputeReviewProperties;
 import com.gighub.settlement.domain.DisputeStatus;
 import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.SettlementSnapshot;
+import com.gighub.settlement.exception.DisputeReviewUnavailableException;
 import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.DisputeReviewMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
@@ -41,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.inOrder;
@@ -83,6 +86,27 @@ class DisputeReviewQueueServiceTest {
                 new DisputeReviewProviderFactory(properties),
                 properties
         );
+    }
+
+    @Test
+    void disabledModeUsesDedicatedUnavailableCode() {
+        DisputeReviewProperties disabledProperties = new DisputeReviewProperties(
+                new MockEnvironment().withProperty(DisputeReviewProperties.MODE_KEY, "DISABLED"));
+        DisputeReviewQueueService disabledService = new DisputeReviewQueueService(
+                workSettlementService,
+                settlementMapper,
+                disputeMapper,
+                reviewMapper,
+                new DisputeReviewProviderFactory(disabledProperties),
+                disabledProperties
+        );
+
+        DisputeReviewUnavailableException failure = assertThrows(
+                DisputeReviewUnavailableException.class,
+                disabledService::requireEnabled
+        );
+
+        assertEquals(ApiErrorCode.DISPUTE_REVIEW_UNAVAILABLE, failure.getCode());
     }
 
     @Test

@@ -9,6 +9,7 @@ import com.gighub.settlement.domain.DisputeStatus;
 import com.gighub.settlement.dto.DisputeDemoReviewResponse;
 import com.gighub.settlement.dto.DisputeListItemResponse;
 import com.gighub.settlement.exception.DisputeAlreadyOpenException;
+import com.gighub.settlement.exception.DisputeReviewUnavailableException;
 import com.gighub.settlement.service.DisputeService;
 import com.gighub.settlement.service.command.DisputeCreateCommand;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +97,18 @@ class DisputeControllerTest {
                         .content("{\"title\":\"임금 확인\",\"content\":\"약정 일급 미지급\"}"))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("DISPUTE_ALREADY_OPEN"));
+    }
+
+    @Test
+    void disabledReviewModeUsesDedicatedConflictCode() throws Exception {
+        when(disputeService.create(any())).thenThrow(new DisputeReviewUnavailableException());
+
+        mockMvc.perform(post(PATH, WORK_CASE_ID)
+                        .principal(workerAuthentication())
+                        .contentType(APPLICATION_JSON)
+                        .content("{\"title\":\"임금 확인\",\"content\":\"약정 일급 미지급\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("DISPUTE_REVIEW_UNAVAILABLE"));
     }
 
     @Test

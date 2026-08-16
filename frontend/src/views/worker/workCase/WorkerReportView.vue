@@ -22,6 +22,7 @@ const reports = ref([])
 const loadingReports = ref(false)
 const reportsLoadError = ref(false)
 const disputeUnavailable = ref(false)
+const reviewUnavailable = ref(false)
 const submitting = ref(false)
 
 const titleLength = computed(() => title.value.trim().length)
@@ -37,6 +38,7 @@ const canSubmit = computed(
     contentLength.value <= CONTENT_MAX_LENGTH &&
     !hasOpenReport.value &&
     !disputeUnavailable.value &&
+    !reviewUnavailable.value &&
     !submitting.value
 )
 
@@ -75,17 +77,21 @@ async function onSubmit() {
   } catch (error) {
     const duplicate = error?.code === 'DISPUTE_ALREADY_OPEN'
     const unavailable = error?.code === 'CONFLICT'
+    const reviewUnavailableError = error?.code === 'DISPUTE_REVIEW_UNAVAILABLE'
     if (unavailable) {
       disputeUnavailable.value = true
       reportsLoadError.value = true
     }
+    if (reviewUnavailableError) reviewUnavailable.value = true
     ui.toast(
       duplicate
         ? '이미 처리 중인 분쟁이 있습니다. 아래 상태를 확인해주세요.'
         : unavailable
           ? '현재 근무 상태에서는 분쟁을 접수할 수 없습니다.'
-          : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
-      { type: duplicate || unavailable ? 'warning' : 'danger' }
+          : reviewUnavailableError
+            ? '분쟁 검토 DEMO가 비활성화되어 있습니다.'
+            : '신고 접수에 실패했습니다. 잠시 후 다시 시도해주세요.',
+      { type: duplicate || unavailable || reviewUnavailableError ? 'warning' : 'danger' }
     )
     if (duplicate) await loadReports()
   } finally {
@@ -119,6 +125,9 @@ onMounted(loadReports)
         <h2>새 분쟁 접수</h2>
         <p v-if="hasOpenReport" class="open-guide">
           처리 중인 분쟁이 있어 새 신고는 접수할 수 없습니다.
+        </p>
+        <p v-else-if="reviewUnavailable" class="open-guide">
+          분쟁 검토 DEMO가 비활성화되어 새 분쟁을 접수할 수 없습니다.
         </p>
         <p v-else-if="disputeUnavailable" class="open-guide">
           현재 근무 상태에서는 새 분쟁을 접수할 수 없습니다.

@@ -238,6 +238,8 @@ public class OpenAiDisputeReviewProvider implements DisputeReviewProvider {
                 .add("RELEASE_TO_WORKER").add("REFUND_TO_OWNER").add("NEEDS_MORE_INFO");
         ObjectNode reasonCodes = properties.putObject("reasonCodes");
         reasonCodes.put("type", "array");
+        reasonCodes.put("minItems", DisputeReviewResults.MIN_REASON_CODES);
+        reasonCodes.put("maxItems", DisputeReviewResults.MAX_REASON_CODES);
         reasonCodes.putObject("items")
                 .put("type", "string");
         properties.putObject("summary")

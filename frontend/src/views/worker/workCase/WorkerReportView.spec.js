@@ -152,6 +152,25 @@ describe('WorkerReportView', () => {
     })
   })
 
+  it('분쟁 검토 DEMO 비활성은 근무 상태 오류와 구분해 안내한다', async () => {
+    createReport.mockRejectedValueOnce({ code: 'DISPUTE_REVIEW_UNAVAILABLE' })
+    const wrapper = mount(WorkerReportView)
+    await flushPromises()
+
+    await wrapper.find('input').setValue('임금 확인')
+    await wrapper.find('textarea').setValue('약정 일급 지급 여부를 확인해주세요.')
+    await wrapper.find('button.submit').trigger('click')
+    await flushPromises()
+
+    expect(useUiStore().toasts.at(-1)).toMatchObject({
+      message: '분쟁 검토 DEMO가 비활성화되어 있습니다.',
+      type: 'warning'
+    })
+    expect(wrapper.text()).toContain('분쟁 검토 DEMO가 비활성화되어 새 분쟁을 접수할 수 없습니다')
+    expect(wrapper.text()).not.toContain('현재 근무 상태에서는 새 분쟁을 접수할 수 없습니다')
+    expect(wrapper.find('button.submit').attributes('disabled')).toBeDefined()
+  })
+
   it('최초 조회 실패를 분쟁 없음으로 표시하지 않는다', async () => {
     listReports.mockRejectedValueOnce(new Error('network'))
 

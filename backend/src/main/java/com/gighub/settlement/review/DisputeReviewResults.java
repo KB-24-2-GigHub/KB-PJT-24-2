@@ -8,7 +8,8 @@ import java.util.regex.Pattern;
 public final class DisputeReviewResults {
 
     private static final Pattern REASON_CODE = Pattern.compile("[A-Z0-9_]{1,50}");
-    private static final int MAX_REASON_CODES = 5;
+    static final int MIN_REASON_CODES = 1;
+    static final int MAX_REASON_CODES = 5;
     private static final int MAX_SUMMARY_LENGTH = 500;
 
     private DisputeReviewResults() {
@@ -20,7 +21,7 @@ public final class DisputeReviewResults {
         }
         List<String> reasonCodes = result.getReasonCodes();
         if (reasonCodes == null
-                || reasonCodes.isEmpty()
+                || reasonCodes.size() < MIN_REASON_CODES
                 || reasonCodes.size() > MAX_REASON_CODES
                 || reasonCodes.stream().anyMatch(code -> code == null
                 || !REASON_CODE.matcher(code).matches())) {

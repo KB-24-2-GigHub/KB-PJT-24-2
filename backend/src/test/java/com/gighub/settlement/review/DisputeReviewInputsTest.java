@@ -66,6 +66,15 @@ class DisputeReviewInputsTest {
     }
 
     @Test
+    void emailAddressesAreRedactedBeforeProviderTransmission() {
+        String source = "답변은 worker.demo+gighub@example.co.kr로 보내주세요.";
+
+        String redacted = DisputeReviewRedactor.redact(source);
+
+        assertEquals("답변은 [REDACTED_EMAIL]로 보내주세요.", redacted);
+    }
+
+    @Test
     void canonicalJsonUsesStableAlphabeticPropertyOrder() {
         String canonical = DisputeReviewInputs.writeCanonicalJson(input("경위"));
 

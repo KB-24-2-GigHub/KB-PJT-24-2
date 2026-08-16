@@ -4,6 +4,7 @@ import com.gighub.settlement.config.DisputeReviewProperties;
 import com.gighub.settlement.domain.DisputeStatus;
 import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.SettlementSnapshot;
+import com.gighub.settlement.exception.DisputeReviewUnavailableException;
 import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.DisputeReviewMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
@@ -25,6 +26,7 @@ import com.gighub.settlement.review.DisputeReviewResult;
 import com.gighub.settlement.review.DisputeReviewResults;
 import com.gighub.settlement.service.command.DisputeReviewEnqueueCommand;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkSettlementService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -69,8 +71,7 @@ public class DisputeReviewQueueService {
     /** 닫는 주체가 없는 DISABLED 모드에서는 분쟁 자체를 만들지 않게 호출부가 먼저 확인합니다. */
     public void requireEnabled() {
         if (!providerFactory.isEnabled()) {
-            throw new com.gighub.common.exception.ConflictException(
-                    "분쟁 검토 DEMO가 비활성화되어 있습니다.");
+            throw new DisputeReviewUnavailableException();
         }
     }
 
@@ -275,12 +276,12 @@ public class DisputeReviewQueueService {
             DisputeReviewResult result) {
         boolean workerRelease = result.getDecision() == DisputeReviewDecision.RESOLVE
                 && aggregate.workCase().getStatus()
-                == com.gighub.work.domain.WorkCaseStatus.COMPLETED
+                == WorkCaseStatus.COMPLETED
                 && (aggregate.settlement().getStatus() == SettlementStatus.ON_HOLD
                 || aggregate.settlement().getStatus() == SettlementStatus.SCHEDULED);
         boolean ownerRefund = result.getDecision() == DisputeReviewDecision.REJECT
                 && aggregate.workCase().getStatus()
-                == com.gighub.work.domain.WorkCaseStatus.NO_SHOW
+                == WorkCaseStatus.NO_SHOW
                 && aggregate.settlement().getStatus() == SettlementStatus.WAITING;
         if (result.getDecision() == DisputeReviewDecision.NEEDS_MORE_INFO
                 || workerRelease

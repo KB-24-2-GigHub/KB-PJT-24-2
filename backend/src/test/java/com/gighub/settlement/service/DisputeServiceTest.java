@@ -1,7 +1,6 @@
 package com.gighub.settlement.service;
 
 import com.gighub.common.api.PageResponse;
-import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.domain.DisputeStatus;
@@ -9,6 +8,7 @@ import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.DisputeListItemResponse;
 import com.gighub.settlement.dto.SettlementSnapshot;
 import com.gighub.settlement.exception.DisputeAlreadyOpenException;
+import com.gighub.settlement.exception.DisputeReviewUnavailableException;
 import com.gighub.settlement.mapper.DisputeMapper;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.mapper.command.DisputeInsert;
@@ -173,10 +173,10 @@ class DisputeServiceTest {
                 .thenReturn(workCase(WorkCaseStatus.COMPLETED));
         when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
                 .thenReturn(settlement(SettlementStatus.SCHEDULED));
-        doThrow(new ConflictException("분쟁 검토 DEMO가 비활성화되어 있습니다."))
+        doThrow(new DisputeReviewUnavailableException())
                 .when(reviewQueueService).requireEnabled();
 
-        assertThrows(ConflictException.class, () -> disputeService.create(command(
+        assertThrows(DisputeReviewUnavailableException.class, () -> disputeService.create(command(
                 "임금 확인", "약정 일급이 미지급됐습니다.")));
 
         verify(disputeMapper, never()).insertOpen(any());

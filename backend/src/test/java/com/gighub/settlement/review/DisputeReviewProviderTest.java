@@ -58,7 +58,7 @@ class DisputeReviewProviderTest {
     }
 
     @Test
-    void requestUsesJsonSchemaAndDoesNotSendPhoneOrAccountShapes() throws Exception {
+    void requestUsesBoundedJsonSchemaAndDoesNotSendSensitiveContactShapes() throws Exception {
         HttpClient client = mock(HttpClient.class);
         String resultJson = """
                 {
@@ -74,7 +74,7 @@ class DisputeReviewProviderTest {
         when(client.send(requestCaptor.capture(), anyStringHandler())).thenReturn(response);
 
         provider(client).review(REQUEST_ID, new DisputeReviewInput(
-                "010-1234-5678 연락 요청",
+                "010-1234-5678 또는 worker@example.com 연락 요청",
                 "계좌 123-456-789012 지급 여부",
                 WorkCaseStatus.COMPLETED,
                 SettlementStatus.ON_HOLD,
@@ -89,9 +89,12 @@ class DisputeReviewProviderTest {
         assertTrue(body.contains("\"store\":false"));
         assertTrue(body.contains("\"type\":\"json_schema\""));
         assertTrue(body.contains("RELEASE_TO_WORKER"));
-        assertFalse(body.contains("minItems"));
+        assertTrue(body.contains("\"minItems\":1"));
+        assertTrue(body.contains("\"maxItems\":5"));
+        assertTrue(body.contains("REDACTED_EMAIL"));
         assertTrue(body.contains("REDACTED_PHONE"));
         assertTrue(body.contains("REDACTED_FINANCIAL_NUMBER"));
+        assertFalse(body.contains("worker@example.com"));
         assertFalse(body.contains("010-1234-5678"));
         assertFalse(body.contains("123-456-789012"));
     }
