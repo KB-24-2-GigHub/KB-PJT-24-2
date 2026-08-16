@@ -157,7 +157,7 @@ class ContractDocumentWriteMapperTest {
 
             try {
                 List<ContractRetentionCandidateRow> candidates =
-                        mapper.findContractRetentionCandidates(100);
+                        mapper.findContractRetentionCandidates(0L, 100);
                 List<Long> candidateIds = candidates.stream()
                         .map(ContractRetentionCandidateRow::getDocumentId).toList();
                 assertTrue(candidateIds.contains(eligibleDocumentId));

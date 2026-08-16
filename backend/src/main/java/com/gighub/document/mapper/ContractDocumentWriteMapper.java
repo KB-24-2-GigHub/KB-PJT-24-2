@@ -88,12 +88,14 @@ public interface ContractDocumentWriteMapper {
 
     /**
      * {@code work_cases.ends_at}의 서울 종료 날짜에 3년을 더한 자정이 지난 근로계약서를
-     * {@code documentId} 오름차순으로 최대 {@code limit}건 찾는다(DOC-012,
-     * {@code DEC-CONTRACT-RETENTION}). 이미 {@code DELETED}인 문서도 저장소 Object 삭제
-     * 재시도 대상이라 함께 돌려준다. {@code CANCELED} 문서는 제외한다.
+     * {@code documentId} 오름차순으로 {@code afterDocumentId} 초과부터 최대 {@code limit}건
+     * 찾는다(DOC-012, {@code DEC-CONTRACT-RETENTION}). 이미 {@code DELETED}인 문서도 저장소
+     * Object 삭제 재시도 대상이라 함께 돌려준다. {@code CANCELED} 문서는 제외한다. 호출자가
+     * 이 Keyset으로 전체 Page를 순회해야 앞선 Page의 문서 때문에 뒤 대상이 굶지 않는다
+     * (SPEC-178-05).
      */
     List<ContractRetentionCandidateRow> findContractRetentionCandidates(
-            @Param("limit") int limit);
+            @Param("afterDocumentId") long afterDocumentId, @Param("limit") int limit);
 
     /**
      * {@code work_case_id}가 비었거나 참조 {@code work_cases} 행이 없는 근로계약서

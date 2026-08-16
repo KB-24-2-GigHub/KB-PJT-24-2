@@ -121,6 +121,7 @@
                  JOIN work_cases wc ON wc.id = d.work_case_id
         WHERE d.document_type = 'EMPLOYMENT_CONTRACT'
           AND d.status != 'CANCELED'
+          AND d.id > #{afterDocumentId}
           AND CURDATE() >= DATE_ADD(DATE(wc.ends_at), INTERVAL 3 YEAR)
         ORDER BY d.id ASC
         LIMIT #{limit}
