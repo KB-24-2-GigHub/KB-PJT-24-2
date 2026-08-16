@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.badge.mapper.UserBadgeMapper">
+
+    <!-- uk_user_badges_user_type(user_id, badge_type)을 이용한 멱등 Upsert.
+         같은 사용자·타입으로 재계산해도 새 행이 쌓이지 않고 최신 값으로 덮어쓴다. -->
+    <insert id="upsert" parameterType="com.gighub.badge.mapper.param.UserBadgeUpsertParam">
+        INSERT INTO user_badges (user_id, badge_type, evidence, awarded_at)
+        VALUES (#{userId}, #{badgeType}, #{evidence}, #{awardedAt})
+            ON DUPLICATE KEY UPDATE
+                                 evidence = VALUES(evidence),
+                                 awarded_at = VALUES(awarded_at)
+    </insert>
+
+</mapper>

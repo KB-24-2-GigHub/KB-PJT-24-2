@@ -82,7 +82,7 @@
       "owner": "member-auth",
       "allowedWriterPackage": "com.gighub.badge.mapper",
       "allowedWriterType": "com.gighub.badge.mapper.UserBadgeMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
     },
     {
       "table": "workplaces",
@@ -347,14 +347,24 @@
     {
       "id": "QX-003",
       "mapper": "com.gighub.document.mapper.DocumentQueryMapper",
-      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "crossModuleTables": [
+        "users",
+        "work_contracts",
+        "work_cases",
+        "workplaces"
+      ],
       "purpose": "role-scoped document list and share history projection",
       "crossTableWriteAllowed": false
     },
     {
       "id": "QX-004",
       "mapper": "com.gighub.document.mapper.DocumentAccessMapper",
-      "crossModuleTables": ["users", "work_contracts", "work_cases", "workplaces"],
+      "crossModuleTables": [
+        "users",
+        "work_contracts",
+        "work_cases",
+        "workplaces"
+      ],
       "purpose": "contract-party and health-share access authorization projection",
       "crossTableWriteAllowed": false
     },
@@ -375,8 +385,16 @@
       ],
       "purpose": "attendance lifecycle candidate and readiness projection",
       "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-006",
+      "mapper": "com.gighub.badge.mapper.BadgeEvidenceSourceMapper",
+      "crossModuleTables": ["settlements", "disputes", "work_cases", "attendance_records"],
+      "purpose": "trust badge OWNER/WORKER evidence aggregation for recalculation",
+      "crossTableWriteAllowed": false
     }
   ],
+
   "temporaryViolations": [
     {
       "id": "TV-010",

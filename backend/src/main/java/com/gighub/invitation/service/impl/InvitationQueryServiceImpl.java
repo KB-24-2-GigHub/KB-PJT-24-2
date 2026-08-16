@@ -1,12 +1,15 @@
 package com.gighub.invitation.service.impl;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.invitation.domain.InvitationDecision;
 import com.gighub.invitation.domain.InvitationPolicy;
 import com.gighub.invitation.dto.InvitationDetailResponse;
+import com.gighub.invitation.dto.OwnerBadgeResponse;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.exception.InvitationNotFoundException;
@@ -46,22 +49,26 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
 
     private final InvitationMapper invitationMapper;
     private final InvitationTokenCodec tokenCodec;
+    private final BadgeApplicationService badgeApplicationService;
     private final Clock clock;
 
     @Autowired
     public InvitationQueryServiceImpl(
             InvitationMapper invitationMapper,
-            InvitationTokenCodec tokenCodec) {
-        this(invitationMapper, tokenCodec, Clock.system(DATABASE_ZONE));
+            InvitationTokenCodec tokenCodec,
+            BadgeApplicationService badgeApplicationService) {
+        this(invitationMapper, tokenCodec, badgeApplicationService, Clock.system(DATABASE_ZONE));
     }
 
     /** 만료 경계를 검증할 때만 고정 Clock을 주입합니다. */
     InvitationQueryServiceImpl(
             InvitationMapper invitationMapper,
             InvitationTokenCodec tokenCodec,
+            BadgeApplicationService badgeApplicationService,
             Clock clock) {
         this.invitationMapper = invitationMapper;
         this.tokenCodec = tokenCodec;
+        this.badgeApplicationService = badgeApplicationService;
         this.clock = clock;
     }
 
@@ -111,11 +118,23 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
                 workCase.getDailyWage(),
                 workCase.getTermsVersion(),
                 ApiTimes.toInstant(invitation.getExpiresAt()),
-                // TODO(#155): 배지 등급 산정(BADGE-001)이 없어 level을 채울 근거가 없습니다.
-                // user_badges에는 badge_type과 evidence만 있고 level Column이 없으므로,
-                // 추측한 등급을 노출하는 대신 활성 Badge 없음과 같은 null을 반환합니다.
-                null
+                ownerBadge(workCase.getEmployerId())
         );
+    }
+
+    /**
+     * 초대를 발급한 OWNER의 같은 산정 결과를 재사용합니다.
+     *
+     * <p>Badge Application 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준
+     * 결과이며, 0단계는 활성 Badge 없음과 같은 {@code null}로 응답한다는 기존 계약을
+     * 유지합니다.</p>
+     */
+    private OwnerBadgeResponse ownerBadge(Long employerId) {
+        BadgeCalculationResult result = badgeApplicationService.recalculate(employerId);
+        if (result.getLevel() <= 0) {
+            return null;
+        }
+        return OwnerBadgeResponse.of(result.getBadgeType(), result.getLevel());
     }
 
     /**

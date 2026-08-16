@@ -139,7 +139,7 @@ sequenceDiagram
 | ------------------------ | ------------------ | --------------------------------------------- | ----------------------------------------- | -------------------------- | ------------------ | ----------------------------- | ----------------------------------------------- |
 | `users`                  | Member/Auth        | `member.mapper.UserMapper`                    | 계정 생성·프로필 변경                     | 인증·당사자 최소 Query     | Member/Auth        | Member/Auth + PM/Admin        | 굵은 경계 안 단일 writer                        |
 | `password_reset_tokens`  | Member/Auth        | `auth.mapper.PasswordResetTokenMapper`        | reset token 발급·소비·폐기                | active token 확인          | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 기능 미구현                        |
-| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 부여·회수                           | badge 목록 Projection      | Member/Auth        | Member/Auth + PM/Admin        | writer 없음; 조회만 존재                        |
+| `user_badges`            | Member/Auth        | `badge.mapper.UserBadgeMapper`                | badge 재계산 Upsert                       | 단수 badge Projection      | Member/Auth        | Member/Auth + PM/Admin        | 단일 writer; `#182` `BadgeApplicationService` 경유 |
 | `workplaces`             | Workplace          | `workplace.mapper.WorkplaceMapper`            | 사업장 생성·허용 변경                     | 소유권·좌표·표시 Snapshot  | Workplace          | Workplace + PM/Admin          | 단일 writer; 외부는 공개 Query/lock Service     |
 | `work_cases`             | Work               | `work.mapper.WorkCaseMapper`                  | 생성·조건 변경·배정·의미 상태 전이        | Work 목록·상세 Projection  | Work               | Work + PM/Admin               | 단일 writer; 외부는 Work Command participant    |
 | `work_invitations`       | Work               | `invitation.mapper.InvitationMapper`          | 발급·수락·만료·폐기                       | 초대 표시/검증 Snapshot    | Work               | Work + PM/Admin               | 단일 writer                                     |
@@ -179,29 +179,29 @@ sequenceDiagram
 Application Command/Result여야 하며 Controller DTO, MyBatis Row/Param, 내부 Domain 객체를
 노출하면 안 된다.
 
-| Provider           | 공개 역할과 최소 입출력                                                                                | 의미 실패                                         | Transaction·Lock 계약                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------ | ------------------------------------------------- | --------------------------------------------------------------------------- |
-| Member/Auth        | 계정 생성, 인증, 당사자 이름/역할 Query → user ID·최소 identity                                        | 중복, 인증 실패, 비활성, 역할 불일치              | 단일 계정 명령은 owner; signup의 Wallet 생성은 participant 호출             |
-| Workplace          | 사업장 생성·허용 변경, 소유권/좌표 Snapshot → workplace ID·검증 값                                     | 없음, 비소유, 비활성, 좌표 미확정                 | 단일 명령 owner; Work/Attendance에는 Query만 제공                           |
-| Work               | Work 생성·조건 변경, Invitation 발급/수락 part, Contract Snapshot, 의미 상태 전이 → IDs·version·status | 만료, 폐기, version 충돌, 잘못된 상태, 이미 배정  | 단일 명령 owner; acceptance에서는 participant, Work Case를 먼저 lock        |
-| Attendance         | QR 발급/재발급, scan fact 기록, 근태 Query → attendance fact/status                                    | QR 무효, 위치 실패, 중복 성공, 적용 근무 불명확   | Attendance 명령 owner; Work 상태는 Work Command participant에 요청          |
+| Provider           | 공개 역할과 최소 입출력                                                                                | 의미 실패                                          | Transaction·Lock 계약                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------ | -------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Member/Auth        | 계정 생성, 인증, 당사자 이름/역할 Query → user ID·최소 identity                                        | 중복, 인증 실패, 비활성, 역할 불일치               | 단일 계정 명령은 owner; signup의 Wallet 생성은 participant 호출                                                      |
+| Workplace          | 사업장 생성·허용 변경, 소유권/좌표 Snapshot → workplace ID·검증 값                                     | 없음, 비소유, 비활성, 좌표 미확정                  | 단일 명령 owner; Work/Attendance에는 Query만 제공                                                                    |
+| Work               | Work 생성·조건 변경, Invitation 발급/수락 part, Contract Snapshot, 의미 상태 전이 → IDs·version·status | 만료, 폐기, version 충돌, 잘못된 상태, 이미 배정   | 단일 명령 owner; acceptance에서는 participant, Work Case를 먼저 lock                                                 |
+| Attendance         | QR 발급/재발급, scan fact 기록, 근태 Query → attendance fact/status                                    | QR 무효, 위치 실패, 중복 성공, 적용 근무 불명확    | Attendance 명령 owner; Work 상태는 Work Command participant에 요청                                                   |
 | Wallet             | 지갑 생성, funding/withdrawal, Escrow hold/release/refund와 ledger → wallet/escrow ID·금액 Snapshot    | 잔액 부족, currency/actor 불일치, ledger integrity | 금융 명령 owner 또는 Orchestrator participant; `(userId, KRW)`를 wallet ID로 한 번 해석한 뒤 wallet ID 오름차순 lock |
-| Bank Adapter       | 계좌 resolve/lock, debit/credit → adapter result/reference                                             | 계좌 없음, PIN 실패, 잔액 부족, adapter 실패      | Wallet Transaction에 참여하는 Adapter; 내부 table만 write                   |
-| Settlement         | 예약, payout 선점·완료, 상태 Query → settlement ID·status·amount                                       | 지급 불가 상태, 이미 처리, replay·원장 불일치     | 예약은 acceptance participant; 수동 승인 또는 Scheduler 건별 Tx가 payout outer owner |
-| Document           | Contract artifact prepare, metadata/version/share/signature, access audit → document/version handle    | 접근 거부, checksum/storage 실패                  | acceptance participant; commit 전 pending, commit 후 promotion              |
-| Idempotency/Common | claim, complete, abandon, replay → claim ID 또는 저장 응답                                             | key/fingerprint 충돌, 처리 중, 만료               | claim/abandon은 별도 짧은 Tx; complete는 업무 outer Tx의 마지막 participant |
+| Bank Adapter       | 계좌 resolve/lock, debit/credit → adapter result/reference                                             | 계좌 없음, PIN 실패, 잔액 부족, adapter 실패       | Wallet Transaction에 참여하는 Adapter; 내부 table만 write                                                            |
+| Settlement         | 예약, payout 선점·완료, 상태 Query → settlement ID·status·amount                                       | 지급 불가 상태, 이미 처리, replay·원장 불일치      | 예약은 acceptance participant; 수동 승인 또는 Scheduler 건별 Tx가 payout outer owner                                 |
+| Document           | Contract artifact prepare, metadata/version/share/signature, access audit → document/version handle    | 접근 거부, checksum/storage 실패                   | acceptance participant; commit 전 pending, commit 후 promotion                                                       |
+| Idempotency/Common | claim, complete, abandon, replay → claim ID 또는 저장 응답                                             | key/fingerprint 충돌, 처리 중, 만료                | claim/abandon은 별도 짧은 Tx; complete는 업무 outer Tx의 마지막 participant                                          |
 
 ### RF-06 실제 공개 경계
 
-| Provider     | 공개 interface                                                                                         | 적용된 호출자와 책임 |
-| ------------ | ------------------------------------------------------------------------------------------------------ | -------------------- |
-| Member/Auth  | `MemberIdentityQueryService`                                                                           | Work 계약 Snapshot에 필요한 최소 `userId/name` Query |
-| Workplace    | `WorkplaceOwnershipService`의 active/owner Query와 owner lock                                          | Auth onboarding, Attendance QR 검증·재발급 |
-| Work         | `AcceptanceWorkParticipant`, `WorkLifecycleCommandService`, `WorkSettlementService`                    | 수락 확정, Attendance 상태 전이, Settlement의 COMPLETED Work 조회·lock |
-| Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`                                 | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger |
-| Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                                             | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
-| Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                                           | Attendance artifact 검증과 Controller 조회 경계 |
-| Member/Badge | `BadgeQueryService`                                                                                     | Controller의 badge Projection 조회 경계 |
+| Provider     | 공개 interface                                                                      | 적용된 호출자와 책임                                                                |
+| ------------ | ----------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Member/Auth  | `MemberIdentityQueryService`                                                        | Work 계약 Snapshot에 필요한 최소 `userId/name` Query                                |
+| Workplace    | `WorkplaceOwnershipService`의 active/owner Query와 owner lock                       | Auth onboarding, Attendance QR 검증·재발급                                          |
+| Work         | `AcceptanceWorkParticipant`, `WorkLifecycleCommandService`, `WorkSettlementService` | 수락 확정, Attendance 상태 전이, Settlement의 COMPLETED Work 조회·lock              |
+| Wallet       | `WalletProvisionService`, `AcceptEscrowHold`, `SettlementWalletService`             | 가입 지갑 생성, 수락 Escrow hold, 정산 release·양측 ledger                          |
+| Settlement   | `SettlementReservationService`, `SettlementPayoutExecutor`                          | 수락 Transaction 안의 WAITING 예약, 수동·자동 호출자가 공유하는 MANDATORY 원자 지급 |
+| Document     | `SignedContractArtifactQueryService`, `DocumentQueryService`                        | Attendance artifact 검증과 Controller 조회 경계                                     |
+| Member/Badge | `BadgeApplicationService`                                                           | Controller와 인증된 초대 조회(`InvitationQueryServiceImpl`)가 공유하는 잠금·재계산·Upsert 경계 |
 
 쓰기 participant는 모두 호출자의 outer Transaction에 `MANDATORY`로 참여하고 독립 commit하지
 않는다. Query Service는 persistence Row/Param을 외부 interface에 노출하지 않는다.
@@ -215,18 +215,18 @@ DuplicateKey, storage key, 내부 status string은 공개 결과가 아니다.
 최소 Snapshot 또는 consumer-owned Projection만 반환하고, `Command participant`는 명시된
 Orchestrator Transaction에 참여한다.
 
-| Caller / Orchestrator              | Provider boundary                               | Kind                        | 허용 목적                                            |
-| ---------------------------------- | ----------------------------------------------- | --------------------------- | ---------------------------------------------------- |
-| Member/Auth Application            | Workplace                                       | Query                       | OWNER onboarding에 필요한 active Workplace 존재 여부 |
-| Signup Orchestrator                | Wallet                                          | Command participant         | 사용자와 기본 KRW Wallet 원자 생성                   |
-| Workplace create Orchestrator      | Attendance                                      | Command participant         | 사업장 생성과 초기 고정 QR 발급                      |
-| Work Application                   | Member/Auth, Workplace                          | Query                       | 계약 당사자와 사업장 불변 Snapshot                   |
-| Attendance Application             | Work                                            | Command                     | 근태 사실에 따른 의미 상태 전이 요청                 |
-| Attendance Application             | Workplace, Document                             | Consumer-owned Query Port   | 사업장 권한/좌표와 signed artifact 준비 여부         |
-| Wallet Application                 | Bank Adapter                                    | Adapter command             | Mock 계좌 lock과 debit/credit                        |
-| Invitation Acceptance Orchestrator | Idempotency, Work, Wallet, Document, Settlement | Command participant         | 수락 순간의 원자 확정                                |
-| Settlement approval / scheduled payout | Idempotency, Work, Settlement, Wallet       | Query + Command participant | 완료 상태 소비와 원자 지급; 외부 오류 변환은 호출자 소유 |
-| Document Application               | Work                                            | Consumer-owned Query Port   | 계약 당사자 파일 접근 판정                           |
+| Caller / Orchestrator                  | Provider boundary                               | Kind                        | 허용 목적                                                |
+| -------------------------------------- | ----------------------------------------------- | --------------------------- | -------------------------------------------------------- |
+| Member/Auth Application                | Workplace                                       | Query                       | OWNER onboarding에 필요한 active Workplace 존재 여부     |
+| Signup Orchestrator                    | Wallet                                          | Command participant         | 사용자와 기본 KRW Wallet 원자 생성                       |
+| Workplace create Orchestrator          | Attendance                                      | Command participant         | 사업장 생성과 초기 고정 QR 발급                          |
+| Work Application                       | Member/Auth, Workplace                          | Query                       | 계약 당사자·사업장 불변 Snapshot과 초대 발급 OWNER의 배지 재계산 |
+| Attendance Application                 | Work                                            | Command                     | 근태 사실에 따른 의미 상태 전이 요청                     |
+| Attendance Application                 | Workplace, Document                             | Consumer-owned Query Port   | 사업장 권한/좌표와 signed artifact 준비 여부             |
+| Wallet Application                     | Bank Adapter                                    | Adapter command             | Mock 계좌 lock과 debit/credit                            |
+| Invitation Acceptance Orchestrator     | Idempotency, Work, Wallet, Document, Settlement | Command participant         | 수락 순간의 원자 확정                                    |
+| Settlement approval / scheduled payout | Idempotency, Work, Settlement, Wallet           | Query + Command participant | 완료 상태 소비와 원자 지급; 외부 오류 변환은 호출자 소유 |
+| Document Application                   | Work                                            | Consumer-owned Query Port   | 계약 당사자 파일 접근 판정                               |
 
 Workplace→Attendance와 Attendance→Workplace처럼 데이터 흐름이 양방향이어도 구현 package의
 서로 참조는 허용하지 않는다. consumer package에 Port를 두고 provider adapter가 이를 구현해
@@ -249,11 +249,11 @@ read projection으로 끝나는 요청에 Orchestrator를 만들지 않는다.
 
 ### 승인된 조정 경계
 
-| Use case              | Outer owner                    | 순서와 잠금                                                                                                        | Commit 경계                                                                      |
-| --------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| Signup                | Member/Auth Application        | Member uniqueness/insert → Wallet provision participant                                                            | 사용자와 기본 Wallet을 한 짧은 Tx로 commit                                       |
-| Workplace creation    | Workplace Application          | Workplace 검증·insert → Attendance initial QR participant                                                          | 사업장과 최초 고정 QR을 한 짧은 Tx로 commit                                      |
-| Invitation acceptance | `InvitationAcceptanceOrchestrator` | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → KRW wallet ID 해석·lock → owner writes → Claim complete | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 `REQUIRES_NEW` Tx |
+| Use case              | Outer owner                                            | 순서와 잠금                                                                                                                            | Commit 경계                                                                                                                                     |
+| --------------------- | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| Signup                | Member/Auth Application                                | Member uniqueness/insert → Wallet provision participant                                                                                | 사용자와 기본 Wallet을 한 짧은 Tx로 commit                                                                                                      |
+| Workplace creation    | Workplace Application                                  | Workplace 검증·insert → Attendance initial QR participant                                                                              | 사업장과 최초 고정 QR을 한 짧은 Tx로 commit                                                                                                     |
+| Invitation acceptance | `InvitationAcceptanceOrchestrator`                     | 별도 Claim Tx 종료 → `work_cases` → `work_invitations` → KRW wallet ID 해석·lock → owner writes → Claim complete                       | Work·Invitation·Contract·Escrow·Ledger·Document metadata·Settlement 예약이 한 `REQUIRES_NEW` Tx                                                 |
 | Settlement payout     | 수동 `SettlementApprovalTransaction` 또는 #172 건별 Tx | `work_cases` → `settlements` → `disputes` → `escrows` → KRW wallet ID 해석 → wallet ID 오름차순 lock → expected-state·자금·양측 ledger | `SettlementPayoutExecutor`는 `MANDATORY`; 수동 Claim complete는 같은 `REQUIRES_NEW` Tx의 마지막 단계이며 Scheduler는 `approved_by_user_id=null` |
 
 participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데이터를 `REQUIRES_NEW`로
@@ -287,18 +287,24 @@ participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데
 5. N회 원격 Service 호출 모양으로 억지 분해하는 것보다 하나의 명시적 read projection을
    사용한다.
 
-| ID       | Consumer mapper                            | 허용 cross-table SELECT                                                | 목적                     | 후속 정리                       |
-| -------- | ------------------------------------------ | ---------------------------------------------------------------------- | ------------------------ | ------------------------------- |
-| `QX-001` | `work.mapper.WorkCaseMapper`               | users, workplaces, attendance_records, escrows, settlements, documents | Work 목록·상세           | query 역할 분리는 #287/#291     |
-| `QX-002` | `wallet.mapper.WalletQueryMapper`          | work_cases, workplaces                                                 | Wallet 거래내역 표시     | 유지 가능한 Read Model          |
-| `QX-003` | `document.mapper.DocumentQueryMapper`      | users, work_contracts, work_cases, workplaces                          | 역할별 문서 목록·공유 이력 | #132의 권한/비공개 값 계약 유지 |
-| `QX-004` | `document.mapper.DocumentAccessMapper`     | users, work_contracts, work_cases, workplaces                          | 계약 당사자·보건증 공유 접근 판정 | Document Query Port로 캡슐화    |
-| `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
+| ID       | Consumer mapper                               | 허용 cross-table SELECT                                                | 목적                                  | 후속 정리                                          |
+| -------- | --------------------------------------------- | ---------------------------------------------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| `QX-001` | `work.mapper.WorkCaseMapper`                  | users, workplaces, attendance_records, escrows, settlements, documents | Work 목록·상세                        | query 역할 분리는 #287/#291                        |
+| `QX-002` | `wallet.mapper.WalletQueryMapper`             | work_cases, workplaces                                                 | Wallet 거래내역 표시                  | 유지 가능한 Read Model                             |
+| `QX-003` | `document.mapper.DocumentQueryMapper`         | users, work_contracts, work_cases, workplaces                          | 역할별 문서 목록·공유 이력            | #132의 권한/비공개 값 계약 유지                    |
+| `QX-004` | `document.mapper.DocumentAccessMapper`        | users, work_contracts, work_cases, workplaces                          | 계약 당사자·보건증 공유 접근 판정     | Document Query Port로 캡슐화                       |
+| `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection        | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
+| `QX-006` | `badge.mapper.BadgeEvidenceSourceMapper`      | settlements, disputes, work_cases, attendance_records                  | 신뢰 배지 OWNER·WORKER 원천 이력 집계 | `#182` 구현. DML 금지, 원천 재계산 전용            |
 
 `AttendanceLifecycleMapper`는 Scheduler batch와 READY 선행조건을 한 번에 읽는 consumer-owned
 Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전이는
 `WorkLifecycleCommandService`만 수행한다. `WorkContractMapper`의 `users` JOIN은 제거하고
 `MemberIdentityQueryService`로 이동했다. QX-005에 DML을 다시 추가하면 즉시 위반이다.
+
+`BadgeEvidenceSourceMapper`는 `#182`가 도입한 Member/Badge 소유 Query 예외다. `user_badges`를
+쓰지 않고 OWNER 정산·분쟁, WORKER 근무·출퇴근 원천만 읽어 누적·정상 건수를 집계한다. Work·
+Attendance·Settlement 모듈은 이 Mapper를 참조하지 않으며, 계산 결과는 Badge Application
+Service가 `user_badges` Upsert에만 사용한다. QX-006에 DML을 추가하면 즉시 위반이다.
 
 ## 남은 위반과 단일 후속 소유자
 
@@ -306,12 +312,14 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 #286에서 TV-009의 분산된 Work/Invitation 상태 정책을 제거했다. 아래 남은 항목은 기능 공백을
 임의 구현하지 않고 명시된 검증 이력이 추적한다.
 
-| ID       | 현재 근거                                                                             | 위반                                               | Primary 후속 이슈         |
-| -------- | ------------------------------------------------------------------------------------- | -------------------------------------------------- | ------------------------- |
-| `TV-010` | 새로고침·재로그인 뒤 client replay key                                               | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
+| ID       | 현재 근거                              | 위반                                                                             | Primary 후속 이슈              |
+| -------- | -------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------ |
+| `TV-010` | 새로고침·재로그인 뒤 client replay key | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 
-`disputes`, `password_reset_tokens`, `user_badges`의 writer 부재는 이 표의 리팩터링 위반을
-고치기 위한 신규 기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다.
+`disputes`, `password_reset_tokens`의 writer 부재는 이 표의 리팩터링 위반을 고치기 위한 신규
+기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다. `user_badges`는 `#182`에서
+`BadgeApplicationService`가 유일한 writer(`badge.mapper.UserBadgeMapper`)로 붙어 이 목록에서
+제외됐다.
 
 ## Domain과 타입 경계
 
