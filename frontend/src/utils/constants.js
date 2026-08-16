@@ -78,13 +78,25 @@ export const TX_SORT = [
 ]
 
 /* ---- 문서 유형·출처 ---- */
+// 승인 계약(API_SPEC '문서')이 고정한 Enum. CONTRACT·HEALTH_CERT 별칭은 사용하지 않는다.
 export const DOC_TYPE = {
-  CONTRACT: { label: '근로계약서' },
-  HEALTH_CERT: { label: '보건증' }
+  EMPLOYMENT_CONTRACT: { label: '근로계약서' },
+  HEALTH_CERTIFICATE: { label: '보건증' }
 }
 export const DOC_SOURCE = {
   OWN: { label: '내 문서' },
   SHARED: { label: '공유받음' }
+}
+// 서버가 허용하는 문서 MIME 은 이 세 가지뿐이다(API_SPEC '파일 응답·접근 감사').
+// 목록·상세는 fileExt 를 주지 않으므로 미리보기 형태는 mimeType 으로만 판정한다.
+export const DOC_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png']
+export const DOC_PDF_MIME_TYPE = 'application/pdf'
+
+/* ---- 보건증 공유 상태(서버 계산값) ---- */
+export const DOC_SHARE_STATUS = {
+  ACTIVE: { label: '공유중' },
+  EXPIRED: { label: '기간 만료' },
+  REVOKED: { label: '공유 취소됨' }
 }
 
 /* ---- 신뢰 뱃지(GET /api/users/me/badge) ---- */

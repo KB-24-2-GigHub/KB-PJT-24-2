@@ -44,12 +44,14 @@ const BOOTSTRAP_CSS = resolve(SRC, '../node_modules/bootstrap/dist/css/bootstrap
  * - `btn` 계열       BaseButton 이 Bootstrap 버튼 명명을 의도적으로 따른다. 새어 드는
  *                    `border:1px solid transparent`·`line-height:1.5` 는 무해하다.
  *                    이름을 바꾸려면 전 화면을 건드려야 해 별도 리팩터링으로 다룬다.
- * - `visually-hidden` Bootstrap 의 접근성 유틸리티를 **의도적으로** 그대로 쓴다.
+ *
+ * `visually-hidden` 은 유일한 사용처였던 OWNER 계약서 업로드 input 이 #183 에서 사라지며
+ * 목록에서 빠졌다. 다시 쓰게 되면 의도적 사용으로 되돌리면 된다.
  *
  * `.active` 는 목록에 없다 — Bootstrap 에 단독 `.active` 규칙이 자체가 없어서
  * (`.nav-link.active`, `.carousel-indicators .active` 처럼 늘 조합을 요구한다) 충돌이 아니다.
  */
-const ACCEPTED = ['badge', 'btn', 'btn-primary', 'btn-secondary', 'visually-hidden']
+const ACCEPTED = ['badge', 'btn', 'btn-primary', 'btn-secondary']
 
 /**
  * Bootstrap 이 그 클래스 **하나만으로** 요소 자신을 스타일하는 클래스명.
