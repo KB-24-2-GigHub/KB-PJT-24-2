@@ -44,7 +44,8 @@ const selectedName = computed(() => workplace.selected?.name ?? '')
 
 onMounted(() => {
   if (isOwner.value) workplace.load()
-  notifications.load()
+  // 배지만 필요하다. 목록은 모달을 열 때 조회한다(SPEC-382-01 이 개수를 분리했다).
+  notifications.loadUnreadCount()
 })
 
 function goMyPage() {
