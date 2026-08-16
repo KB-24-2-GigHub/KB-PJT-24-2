@@ -108,7 +108,10 @@ describe('OwnerMyPageView', () => {
 
       expect(wrapper.text()).not.toContain('최근 15건')
       // 진행률 분모는 서버가 준 recentCount + remainingToNextLevel = 30 이다.
-      expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('73')
+      const bar = wrapper.find('.bar')
+      expect(bar.attributes('aria-valuenow')).toBe('73')
+      // 이름이 없으면 스크린리더가 맥락 없는 숫자만 읽는다.
+      expect(bar.attributes('aria-label')).toBe('다음 등급까지 진행률')
     })
 
     it('서버 진행 설명문과 FE 정의문을 서로 대체하지 않고 함께 보여준다', async () => {
@@ -241,6 +244,8 @@ describe('OwnerMyPageView', () => {
     })
 
     it('TRUST_WORKER 응답이 오면 사장 뱃지로 그리지 않는다', async () => {
+      // 역할 불일치는 개발 중 원인을 남긴다 — 여기서는 출력만 가로챈다.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       getBadge.mockResolvedValue({
         ...BADGE,
         badgeType: 'TRUST_WORKER',
@@ -249,6 +254,7 @@ describe('OwnerMyPageView', () => {
 
       const wrapper = mount(OwnerMyPageView)
       await flushPromises()
+      warn.mockRestore()
 
       expect(wrapper.find('.badge-slot').exists()).toBe(false)
       expect(wrapper.text()).not.toContain('성실근로')

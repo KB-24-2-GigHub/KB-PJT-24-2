@@ -104,6 +104,8 @@ describe('WorkerMyPageView', () => {
      * 하드코딩해 그 등급을 성실근로 뱃지로 그렸다. 응답 badgeType 을 보게 만든 이유다.
      */
     it('TRUST_OWNER 응답이 오면 성실근로 뱃지로 그리지 않는다', async () => {
+      // 역할 불일치는 개발 중 원인을 남긴다 — 여기서는 출력만 가로챈다.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       getBadge.mockResolvedValue({
         ...BADGE,
         badgeType: 'TRUST_OWNER',
@@ -113,6 +115,7 @@ describe('WorkerMyPageView', () => {
 
       const wrapper = mount(WorkerMyPageView)
       await flushPromises()
+      warn.mockRestore()
 
       expect(wrapper.find('.badge-slot').exists()).toBe(false)
       expect(wrapper.text()).not.toContain('안심거래')

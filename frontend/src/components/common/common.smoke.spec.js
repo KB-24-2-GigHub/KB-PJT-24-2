@@ -1,5 +1,5 @@
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
@@ -50,7 +50,12 @@ describe('공통 UI 키트 스모크', () => {
     ['정수가 아닌 level', { role: 'worker', level: 1.5 }],
     ['알 수 없는 role', { role: 'admin', level: 2 }]
   ])('TrustBadge — %s 은 미부여로 위장하지 않고 아무것도 그리지 않는다', (_label, props) => {
+    // prop 경고는 개발 중 신호로 의도된 것이다(프로덕션에서는 사라진다). 여기서는
+    // 그 경고가 아니라 "그래도 잘못 그리지는 않는다"는 런타임 가드를 확인한다.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
     const w = mount(TrustBadge, { props })
+    warn.mockRestore()
+
     expect(w.find('.trust-badge').exists()).toBe(false)
     expect(w.find('.no-badge').exists()).toBe(false)
     expect(w.find('img').exists()).toBe(false)

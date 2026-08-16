@@ -116,6 +116,13 @@ export function useTrustBadge(expectedRole) {
         return
       }
       if (BADGE_TYPE[data.badgeType].role !== expectedRole) {
+        // 사용자 상황이 아니라 서버/화면 결함 신호다 — 화면 문구는 EMPTY 와 같아도
+        // 개발 중에는 원인을 남긴다(프로덕션 번들에서는 상수 접힘으로 사라진다).
+        if (import.meta.env.DEV) {
+          console.warn(
+            `[useTrustBadge] ${expectedRole} 화면이 ${data.badgeType} 응답을 받았습니다.`
+          )
+        }
         state.value = BADGE_STATE.MISMATCH
         return
       }

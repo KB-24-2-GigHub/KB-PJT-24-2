@@ -15,8 +15,30 @@ import { computed } from 'vue'
 import { BADGE_STATE } from '@/composables/useTrustBadge'
 
 const props = defineProps({
-  /** `useTrustBadge()` 가 돌려준 객체 그대로. 뷰와 카드가 같은 인스턴스를 공유한다. */
-  model: { type: Object, required: true }
+  /**
+   * `useTrustBadge()` 가 돌려준 객체를 **그대로** 넘긴다. 뷰와 카드가 같은 인스턴스를 공유해야
+   * 그림과 본문이 서로 다른 상태를 그리지 않는다.
+   *
+   * `reactive()` 로 감싸 넘기면 ref 가 언래핑돼 `.value` 가 undefined 가 되고 조용히 깨진다.
+   * validator 는 Vue 의 `validateProps` 안에서만 돌아 프로덕션 번들에서는 사라지지만, 이건
+   * 사용자 데이터가 아니라 호출자 실수를 잡는 장치라 개발 중 경고로 충분하다.
+   */
+  model: {
+    type: Object,
+    required: true,
+    // defineProps 는 setup 밖으로 끌어올려져 지역 변수를 참조할 수 없어 목록을 그대로 적는다.
+    validator: (value) =>
+      [
+        'badge',
+        'state',
+        'maxLevel',
+        'countMetRatioShort',
+        'nextLevelLabel',
+        'progressPercent',
+        'showProgress',
+        'definition'
+      ].every((key) => value?.[key] != null && 'value' in value[key])
+  }
 })
 
 const state = computed(() => props.model.state.value)
@@ -38,10 +60,16 @@ const definition = computed(() => props.model.definition.value)
       가득 찬 바가 바로 아래 문구와 정면으로 모순된다(스크린리더도 "100 퍼센트"를 읽는다).
       그 상태에서는 바를 내보내지 않고 문구가 상황을 설명한다.
     -->
+    <!--
+      분모는 다음 등급의 누적 문턱이라 "직전 등급 대비"가 아니라 "누적 목표 대비" 진행이다.
+      2단계에 갓 오르면 20/30 이라 바가 67% 에서 시작한다 — 라벨이 없으면 스크린리더가
+      맥락 없는 숫자만 읽으므로 무엇에 대한 진행률인지 이름을 붙인다.
+    -->
     <div
       v-if="showProgress"
       class="bar"
       role="progressbar"
+      aria-label="다음 등급까지 진행률"
       :aria-valuenow="progressPercent"
       aria-valuemin="0"
       aria-valuemax="100"

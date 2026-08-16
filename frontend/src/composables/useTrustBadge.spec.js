@@ -5,7 +5,7 @@
  * 문턱 자체(누적 10/20/30, 정상 비율 80/90/100%)는 Backend `TrustBadgeCriteriaTest` 가 지킨다.
  * 경계 입력은 그 문턱에서 서버가 실제로 내려보내는 조합을 그대로 쓴다.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/services/users', () => ({ getBadge: vi.fn() }))
 
@@ -122,6 +122,23 @@ describe('useTrustBadge', () => {
   })
 
   describe('역할 정합성', () => {
+    let warn
+
+    beforeEach(() => {
+      // MISMATCH 는 개발 중 원인을 남긴다 — 테스트 출력이 지저분해지지 않게 가로챈다.
+      warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+      warn.mockRestore()
+    })
+
+    it('역할 불일치는 개발 중 원인을 남긴다', async () => {
+      await loadWorkerBadge(response({ badgeType: 'TRUST_OWNER' }))
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('TRUST_OWNER'))
+    })
+
     it('응답 badgeType 에서 역할을 파생한다', async () => {
       const badge = await loadWorkerBadge(response({ badgeType: 'TRUST_WORKER' }))
 
@@ -285,6 +302,8 @@ describe('useTrustBadge', () => {
     })
 
     it('역할이 바뀐 재조회는 이전 역할의 뱃지를 그대로 두지 않는다', async () => {
+      // 역할 불일치는 개발 중 원인을 남긴다 — 여기서는 출력만 가로챈다.
+      const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
       const badge = useTrustBadge('worker')
       getBadge.mockResolvedValue(response({ badgeType: 'TRUST_WORKER', level: 2 }))
       await badge.load()
@@ -295,6 +314,7 @@ describe('useTrustBadge', () => {
 
       expect(badge.state.value).toBe(BADGE_STATE.MISMATCH)
       expect(badge.badge.value).toBeNull()
+      warn.mockRestore()
     })
   })
 })
