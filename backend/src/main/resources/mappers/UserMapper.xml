@@ -56,6 +56,15 @@
           AND role IN ('OWNER', 'WORKER')
     </select>
 
+
+    <select id="lockById" resultType="com.gighub.member.domain.User">
+        SELECT id, role
+        FROM users
+        WHERE id = #{userId}
+          AND role IN ('OWNER', 'WORKER')
+            FOR UPDATE
+    </select>
+
     <update id="updatePhone">
         UPDATE users
         SET phone = #{phone}
