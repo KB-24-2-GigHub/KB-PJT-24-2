@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `8.0.0`         |
-| 승인일      | 2026-08-12      |
+| 명세 릴리스 | `8.1.0`         |
+| 승인일      | 2026-08-17      |
 | 소유자      | PM/Admin Master |
 
 이 표는 요구사항을 승인 REST Operation과 도메인에 연결합니다. 아래 MVP P0 감사만 PM의
@@ -267,8 +267,8 @@ Blocked/Partial을 유지합니다.
 
 | 요구사항   | REST Operation                | 도메인·데이터                     | 연결 결정                                                                                               |
 | ---------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| ALERT-001  | 결정 후 정의                  | 사용자 알림, 읽음 시각            | DEC-OPEN-NOTIFICATION-CONTRACT                                                                          |
-| ALERT-002  | 결정 후 정의                  | 도메인 이벤트, 중복 식별자        | DEC-OPEN-NOTIFICATION-CONTRACT                                                                          |
+| ALERT-001  | `GET /api/notifications`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/{notificationId}/read` | `notifications`, 수신자별 최신순·안읽음 개수, `read_at` | DEC-NOTIFICATION-CONTRACT, DEC-API-ENVELOPE, DEC-PAGE                                                   |
+| ALERT-002  | HTTP 없음 — 도메인 이벤트 적재, `GET /api/notifications/stream` | 6종 유형·수신자, `(수신자, notiType, sourceType, sourceId)` 유일성, 이동 대상 `work_case_id` | DEC-NOTIFICATION-CONTRACT                                                                               |
 | COMMON-001 | 모든 Operation                | 성공·목록·오류 Envelope           | DEC-API-ENVELOPE, DEC-AUTH-ERRORS, DEC-COMMON-5XX, DEC-ATTENDANCE-ERROR-CATALOG, DEC-SETTLEMENT-ERROR-CATALOG, DEC-DOCUMENT-ERROR-CATALOG |
 | COMMON-002 | 모든 보호·상태 변경 Operation | 역할, 소유권, 당사자 불변식       | DEC-AUTH-SESSION                                                                                        |
 | COMMON-003 | HTTP 없음 — 보존 정책         | 금융·계약·근태·문서·감사 이력     | DEC-CONTRACT-RETENTION                                                                                  |
