@@ -10,6 +10,7 @@
  */
 import { QrCode, ScanLine } from 'lucide-vue-next'
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -20,6 +21,7 @@ import { SCAN_TYPE } from '@/utils/constants'
 import { formatDateTime } from '@/utils/format'
 
 const ui = useUiStore()
+const router = useRouter()
 
 // phase: idle | starting | scanning | processing | confirmation | result
 // starting은 위치·카메라를 여는 동안의 잠금 상태다. 이 구간에서 스캔 시작 버튼을 비활성화해
@@ -394,6 +396,18 @@ function reset() {
   phase.value = 'idle'
 }
 
+/**
+ * 기록을 마친 뒤의 '확인' — 상태를 비우고 홈으로 보낸다.
+ *
+ * reset() 과 분리해 둔다. 조기 퇴근 확인 취소도 reset() 을 쓰는데, 그쪽은 아무것도
+ * 기록하지 않은 상태라 홈으로 보내면 기록이 끝난 것처럼 읽힌다. 두 경로가 같은 함수를
+ * 쓰면 한쪽을 고칠 때 다른 쪽이 조용히 따라 바뀐다.
+ */
+function finishToHome() {
+  reset()
+  router.push('/worker/home')
+}
+
 const resultLabel = () => SCAN_TYPE[result.value?.scanType]?.label ?? '기록 완료'
 
 const startButtonLabel = () => {
@@ -466,7 +480,7 @@ onBeforeUnmount(() => {
         </p>
       </div>
       <template #footer>
-        <BaseButton variant="worker" size="lg" block @click="reset">확인</BaseButton>
+        <BaseButton variant="worker" size="lg" block @click="finishToHome">확인</BaseButton>
       </template>
     </BaseModal>
 
