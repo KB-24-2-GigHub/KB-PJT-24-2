@@ -81,6 +81,98 @@ describe('OwnerAttendanceView 요약 카드', () => {
   })
 })
 
+/**
+ * 요약 7종을 '진행중'·'지나간 기록' 두 단으로 나눈 배치 계약(#412).
+ *
+ * 나누면서 잃기 쉬운 것이 두 가지다 — ① 어느 카운트가 조용히 사라지는 것,
+ * ② 한쪽 단의 카드가 토글 기능을 잃는 것. 아래 세 테스트가 그 둘을 각각 막는다.
+ * 단 소속은 '금지 목록'이 아니라 **정확한 집합**으로 고정한다. 금지 목록만 두면 새 상태가
+ * 잘못된 단에 추가돼도 통과한다.
+ */
+describe('OwnerAttendanceView 요약 두 단 분리', () => {
+  // [카드 라벨, 토글이 걸어야 하는 status]
+  const TOGGLE_CASES = [
+    ['수락 전', 'DRAFT'],
+    ['계약완료', 'ACCEPTED'],
+    ['근무예정', 'READY'],
+    ['근무중', 'IN_PROGRESS'],
+    ['퇴근 확인 필요', 'CHECK_OUT_MISSING'],
+    ['완료', 'COMPLETED'],
+    ['노쇼', 'NO_SHOW']
+  ]
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    listWorkplaces.mockReset().mockResolvedValue({
+      content: [{ workplaceId: 1, name: '강남점', status: 'ACTIVE' }],
+      page: { number: 0, size: 100, totalElements: 1, totalPages: 1 }
+    })
+    getWorkCaseSummary.mockReset().mockResolvedValue({ ...SUMMARY })
+    listWorkCases.mockReset().mockResolvedValue({
+      content: [],
+      page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
+    })
+  })
+
+  const labelsIn = (wrapper, group) =>
+    wrapper.findAll(`${group} .stat`).map((card) => card.find('.stat-label').text())
+
+  it('행동이 필요한 5종과 지나간 2종을 각각의 단에 담는다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    // CHECK_OUT_MISSING 은 사장이 확인해야 해소되므로 지나간 기록이 아니라 진행중이다.
+    expect(labelsIn(wrapper, '.summary--ongoing')).toEqual([
+      '수락 전',
+      '계약완료',
+      '근무예정',
+      '근무중',
+      '퇴근 확인 필요'
+    ])
+    expect(labelsIn(wrapper, '.summary--past')).toEqual(['완료', '노쇼'])
+  })
+
+  it('두 단으로 나눠도 7개 카운트가 모두 값과 함께 남는다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const byLabel = Object.fromEntries(
+      wrapper
+        .findAll('.stat')
+        .map((card) => [card.find('.stat-label').text(), card.find('.stat-value').text().trim()])
+    )
+
+    expect(byLabel).toEqual({
+      '수락 전': '1',
+      계약완료: '2',
+      근무예정: '3',
+      근무중: '4',
+      '퇴근 확인 필요': '5',
+      완료: '6',
+      노쇼: '7'
+    })
+  })
+
+  it.each(TOGGLE_CASES)('%s 카드는 눌러 %s 로 거르고 다시 눌러 해제한다', async (label, status) => {
+    const wrapper = mountView()
+    await flushPromises()
+    const card = wrapper.findAll('.stat').find((c) => c.find('.stat-label').text() === label)
+
+    listWorkCases.mockClear()
+    await card.trigger('click')
+    await flushPromises()
+    expect(listWorkCases).toHaveBeenLastCalledWith(1, expect.objectContaining({ status }))
+    expect(card.attributes('aria-pressed')).toBe('true')
+
+    listWorkCases.mockClear()
+    await card.trigger('click')
+    await flushPromises()
+    // 해제는 status 를 다른 값으로 바꾸는 게 아니라 키 자체를 지우는 것이다(= 전체 보기).
+    expect(listWorkCases.mock.calls.at(-1)[1]).not.toHaveProperty('status')
+    expect(card.attributes('aria-pressed')).toBe('false')
+  })
+})
+
 describe('OwnerAttendanceView 목록 Page 2+', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

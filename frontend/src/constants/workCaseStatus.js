@@ -95,22 +95,50 @@ export function isInvitationUsable(invitation, now = new Date()) {
 }
 
 /**
- * 근태관리 요약 카운트(7종). `key` = 서버 요약 응답 필드, `status` = 매핑 enum.
- * CANCELED는 운영 현황 요약에 집계하지 않는다.
+ * 근태관리 요약 카운트(7종)를 두 단으로 나눈 그룹. `key` = 서버 요약 응답 필드,
+ * `status` = 매핑 enum. CANCELED는 운영 현황 요약에 집계하지 않는다.
  *
  * CHECK_OUT_MISSING은 NO_SHOW·COMPLETED와 상호 배타적인 별도 상태라(위 문서 참고)
  * 두 버킷 중 하나로 합산하지 않고 독립 카드로 노출한다(WorkCaseSummaryResponse에도
  * 별도 필드로 내려온다).
+ *
+ * 그룹 기준은 **사장이 지금 손을 대야 하는가**다. 요약은 기간 제한 없는 전체 누적이라
+ * 시간이 갈수록 COMPLETED·NO_SHOW 만 커지고, 7장을 같은 무게로 나열하면 조치가 필요한
+ * 상태가 그 숫자에 눌린다(#412).
+ *   - `ongoing`: DRAFT·ACCEPTED·READY·IN_PROGRESS·CHECK_OUT_MISSING
+ *     CHECK_OUT_MISSING은 사장이 확인해야 해소되므로 지나간 기록이 아니라 여기에 둔다.
+ *   - `past`: COMPLETED·NO_SHOW — 끝난 근무라 지금 할 일이 없다.
+ *
+ * 값을 기간으로 좁히려면 요약 API에 from/to 가 필요해 계약 변경 대상이다. 여기서는
+ * 값을 그대로 두고 배치만 나눈다 — 7개 카운트는 모두 계속 노출된다.
  */
-export const WORK_CASE_SUMMARY = [
-  { key: 'draft', status: 'DRAFT' },
-  { key: 'accepted', status: 'ACCEPTED' },
-  { key: 'ready', status: 'READY' },
-  { key: 'inProgress', status: 'IN_PROGRESS' },
-  { key: 'checkOutMissing', status: 'CHECK_OUT_MISSING' },
-  { key: 'completed', status: 'COMPLETED' },
-  { key: 'noShow', status: 'NO_SHOW' }
+export const WORK_CASE_SUMMARY_GROUPS = [
+  {
+    key: 'ongoing',
+    label: '진행중',
+    buckets: [
+      { key: 'draft', status: 'DRAFT' },
+      { key: 'accepted', status: 'ACCEPTED' },
+      { key: 'ready', status: 'READY' },
+      { key: 'inProgress', status: 'IN_PROGRESS' },
+      { key: 'checkOutMissing', status: 'CHECK_OUT_MISSING' }
+    ]
+  },
+  {
+    key: 'past',
+    label: '지나간 기록',
+    buckets: [
+      { key: 'completed', status: 'COMPLETED' },
+      { key: 'noShow', status: 'NO_SHOW' }
+    ]
+  }
 ]
+
+/**
+ * 요약 버킷 7종의 평면 목록. 그룹에서 파생시켜 두 곳에 같은 버킷을 적지 않는다
+ * (배치가 바뀌어도 집계 대상 자체는 하나의 원본에서만 정해진다).
+ */
+export const WORK_CASE_SUMMARY = WORK_CASE_SUMMARY_GROUPS.flatMap((group) => group.buckets)
 
 /** 요약 카운트 초기값(모든 버킷 0). */
 export function emptyWorkCaseSummary() {

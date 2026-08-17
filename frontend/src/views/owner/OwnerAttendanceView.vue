@@ -28,7 +28,7 @@ import AttendanceFilterSheet, {
 import AttendanceViewToggle from '@/components/owner/AttendanceViewToggle.vue'
 import AttendanceWorkCaseList from '@/components/owner/AttendanceWorkCaseList.vue'
 import {
-  WORK_CASE_SUMMARY,
+  WORK_CASE_SUMMARY_GROUPS,
   emptyWorkCaseSummary,
   workCaseStatusColor,
   workCaseStatusLabel
@@ -258,23 +258,38 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
       캘린더)만 스크롤한다. AppTopBar 바로 밑에 멈추도록 sticky 로 잡는다.
     -->
     <div class="sticky-head">
-      <!-- 상태별 요약 7종 — 카드를 누르면 해당 상태만, 다시 누르면 전체를 본다 -->
-      <section class="summary">
-        <button
-          v-for="bucket in WORK_CASE_SUMMARY"
-          :key="bucket.key"
-          type="button"
-          class="stat"
-          :class="{ active: appliedFilter.status === bucket.status }"
-          :aria-pressed="appliedFilter.status === bucket.status"
-          @click="toggleStatus(bucket.status)"
+      <!--
+        상태별 요약 7종 — 카드를 누르면 해당 상태만, 다시 누르면 전체를 본다.
+        '진행중'(조치 필요 5종)과 '지나간 기록'(완료·노쇼)을 두 단으로 나눈다. 토글 동작은
+        두 단이 완전히 같다 — 나눈 것은 배치와 무게뿐이고 어느 카드도 기능을 잃지 않는다.
+      -->
+      <div class="summary-groups">
+        <section
+          v-for="group in WORK_CASE_SUMMARY_GROUPS"
+          :key="group.key"
+          class="summary"
+          :class="`summary--${group.key}`"
+          :aria-label="`${group.label} 요약`"
         >
-          <span class="stat-label">{{ statusLabel(bucket.status) }}</span>
-          <strong class="stat-value" :style="{ color: statusColor(bucket.status) }">
-            {{ summary[bucket.key] ?? 0 }}
-          </strong>
-        </button>
-      </section>
+          <h3 class="summary-title">{{ group.label }}</h3>
+          <div class="summary-grid">
+            <button
+              v-for="bucket in group.buckets"
+              :key="bucket.key"
+              type="button"
+              class="stat"
+              :class="{ active: appliedFilter.status === bucket.status }"
+              :aria-pressed="appliedFilter.status === bucket.status"
+              @click="toggleStatus(bucket.status)"
+            >
+              <span class="stat-label">{{ statusLabel(bucket.status) }}</span>
+              <strong class="stat-value" :style="{ color: statusColor(bucket.status) }">
+                {{ summary[bucket.key] ?? 0 }}
+              </strong>
+            </button>
+          </div>
+        </section>
+      </div>
 
       <!-- 보기 방식 전환 — 필터는 그대로 두고 표시 방법만 바꾼다 -->
       <AttendanceViewToggle v-model="viewMode" />
@@ -429,29 +444,32 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   background: var(--color-surface);
 }
 
-/* ---- 근태 현황 요약(7종 그리드) ---- */
-/* 3열이면 7장이 4장(꽉 참) + 1장(빈 칸 둘 남음)으로 어색하게 끝난다. 12칸 기준으로 첫 줄은
-   4장씩 3칸(4×3=12), 둘째 줄은 3장씩 4칸(3×4=12)을 차지해 두 줄 다 꽉 채운다 — 둘째 줄
-   카드가 더 넓어져 "퇴근 확인 필요"도 덜 좁게 줄바꿈된다. */
-.summary {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: var(--space-sm);
-}
-.stat {
+/* ---- 근태 현황 요약(진행중 5종 + 지나간 기록 2종) ----
+   요약은 기간 제한 없는 전체 누적이라 완료·노쇼가 계속 커진다. 7장을 같은 크기로 늘어놓으면
+   그 두 숫자가 조치가 필요한 상태를 시각적으로 눌러버린다. 그래서 '진행중'만 카드로 세우고
+   '지나간 기록'은 한 줄짜리 보조 스트립으로 낮춘다 — 값은 둘 다 그대로 보인다. */
+.summary-groups {
   display: flex;
   flex-direction: column;
-  align-items: center;
+  /* 두 단은 한 덩어리로 읽혀야 한다 — .sticky-head 의 gap(16px)보다 좁게 둬서
+     "요약 블록 하나 안의 두 단"으로 보이게 한다. */
+  gap: var(--space-sm);
+}
+.summary-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-sub);
+}
+
+/* 두 단이 공유하는 카드 골격 — 둘 다 같은 토글 버튼이라 눌리는 모양과 선택 표시가 같다.
+   모양의 차이(세로/가로, 크기)는 아래 그룹 규칙이 이 위에 얹는다. */
+.stat {
+  display: flex;
   gap: var(--space-xs);
-  padding: var(--space-md);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  grid-column: span 3;
-}
-/* 다섯 번째 카드(퇴근 확인 필요)부터 둘째 줄 — 3장이 12칸을 나눠 각 4칸씩 차지한다. */
-.stat:nth-child(n + 5) {
-  grid-column: span 4;
 }
 /* 선택된 상태 카드 — 지금 어떤 목록을 보고 있는지 표시 */
 .stat.active {
@@ -468,8 +486,62 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 }
 /* 값 색은 상태색(상수)으로 인라인 바인딩한다 */
 .stat-value {
-  font-size: var(--text-xl);
   font-weight: var(--weight-bold);
+}
+
+/* ① 진행중 — 6칸 기준으로 첫 줄 3장(각 2칸), 둘째 줄 2장(각 3칸)이라 두 줄 다 꽉 찬다.
+   둘째 줄 카드가 절반 폭이라 "퇴근 확인 필요"가 좁게 줄바꿈되지 않는다. */
+.summary--ongoing {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.summary--ongoing .summary-grid {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: var(--space-sm);
+}
+.summary--ongoing .stat {
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-md);
+  grid-column: span 2;
+}
+/* 네 번째 카드(근무중)부터 둘째 줄 — 2장이 6칸을 절반씩 나눈다. */
+.summary--ongoing .stat:nth-child(n + 4) {
+  grid-column: span 3;
+}
+.summary--ongoing .stat-value {
+  font-size: var(--text-xl);
+}
+
+/* ② 지나간 기록 — 제목과 두 칩을 한 줄에 둬 높이를 한 줄로 끝낸다.
+   테두리 없는 연회색 바닥이라 위 카드보다 뒤로 물러나 보인다. */
+.summary--past {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+}
+.summary--past .summary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+  /* 제목이 왼쪽 폭을 가져가고 남은 자리를 두 칩이 균등하게 나눈다. */
+  flex: 1;
+  min-width: 0;
+}
+.summary--past .stat {
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--space-xs);
+  padding: var(--space-xs) var(--space-sm);
+}
+.summary--past .stat-value {
+  font-size: var(--text-lg);
 }
 
 /* ---- 근무 리스트 ---- */
