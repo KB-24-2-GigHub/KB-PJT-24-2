@@ -154,6 +154,46 @@ export function bankAccountRule(value) {
     : fail('계좌번호는 공백·하이픈을 제외한 숫자 10~14자리여야 합니다.')
 }
 
+/**
+ * 근무 한 건의 최대 길이(분). 서버 WorkCaseTimes.MAX_WORK_DURATION 과 같은 값이다.
+ * 두 곳이 어긋나면 프론트를 통과한 입력이 서버에서 거절된다.
+ */
+export const WORK_DURATION_MAX_MINUTES = 16 * 60
+
+/** "HH:mm" → 자정 기준 분. 형식이 아니면 null. */
+function toMinutes(time) {
+  const match = /^(\d{2}):(\d{2})$/.exec(String(time ?? ''))
+  if (!match) return null
+  return Number(match[1]) * 60 + Number(match[2])
+}
+
+/**
+ * 근무 시간대 검증 — 자정 넘김을 허용하되 길이 상한을 둔다(SPEC-413-01).
+ *
+ * 종료가 시작보다 뒤가 아니면 **다음 날**로 본다. 그래서 `23:00~01:00` 은 2시간이고,
+ * `09:00~09:00` 은 0분이 아니라 24시간이라 상한에서 걸린다 — 0분으로 접으면 그 오타가
+ * 저장 가능한 값이 되어 버린다.
+ *
+ * 시작·종료 순서로는 더 이상 오타를 걸러 낼 수 없으므로 길이 상한이 그 자리를 대신한다.
+ *
+ * @param {string} startTime "HH:mm"
+ * @param {string} endTime "HH:mm"
+ */
+export function workPeriodRule(startTime, endTime) {
+  const required = isRequired(endTime, '종료시간')
+  if (!required.valid) return required
+
+  const start = toMinutes(startTime)
+  const end = toMinutes(endTime)
+  // 시작시간이 아직 비었거나 형식이 아니면 이 규칙이 판단할 게 없다(그 필드가 따로 알린다).
+  if (start === null || end === null) return ok
+
+  const minutes = end > start ? end - start : end - start + 24 * 60
+  return minutes <= WORK_DURATION_MAX_MINUTES
+    ? ok
+    : fail(`근무 시간은 최대 ${WORK_DURATION_MAX_MINUTES / 60}시간까지 등록할 수 있어요.`)
+}
+
 /** 지갑 충전·출금 금액: 1원 이상 1억원 이하의 원 단위 정수. */
 export function isWalletAmount(value) {
   const base = isPositiveAmount(value)

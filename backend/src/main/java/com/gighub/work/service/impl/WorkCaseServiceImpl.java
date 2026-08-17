@@ -59,8 +59,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         requireOwner(principal);
 
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
-        LocalDateTime endsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getEndTime());
-        requireEndsAfterStart(startsAt, endsAt);
+        LocalDateTime endsAt = WorkCaseTimes.combineEnd(
+                command.getWorkDate(), command.getStartTime(), command.getEndTime());
+        requireValidWorkPeriod(startsAt, endsAt);
 
         // 소유권·ACTIVE 확인과 Snapshot 원본 조회를 한 쿼리로 처리합니다. 없으면 사업장이
         // 없거나 다른 OWNER 소유이거나 INACTIVE인 것이며, 세 경우를 구분해 노출하지 않습니다.
@@ -101,8 +102,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         requireDraft(lock);
 
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
-        LocalDateTime endsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getEndTime());
-        requireEndsAfterStart(startsAt, endsAt);
+        LocalDateTime endsAt = WorkCaseTimes.combineEnd(
+                command.getWorkDate(), command.getStartTime(), command.getEndTime());
+        requireValidWorkPeriod(startsAt, endsAt);
 
         WorkCaseTermsUpdateParam param = WorkCaseTermsUpdateParam.builder()
                 .workCaseId(command.getWorkCaseId())
@@ -397,9 +399,22 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
     }
 
-    private void requireEndsAfterStart(LocalDateTime startsAt, LocalDateTime endsAt) {
+    /**
+     * 결합된 근무 구간이 저장 가능한지 확인합니다(SPEC-413-01).
+     *
+     * <p>순서 조건은 {@link WorkCaseTimes#combineEnd} 결과에서는 구조적으로 참이지만,
+     * {@code ck_work_cases_time}의 애플리케이션 쪽 짝이라 그대로 둡니다. 사용자가 실제로
+     * 마주치는 거절은 길이 상한 쪽입니다 — 자정 넘김을 허용하면서 순서 검증이 잡아 주던
+     * 오타를 이 상한이 대신 잡습니다.</p>
+     */
+    private void requireValidWorkPeriod(LocalDateTime startsAt, LocalDateTime endsAt) {
         if (!WorkCaseTimes.endsAfterStart(startsAt, endsAt)) {
-            throw new ValidationException("종료 시각은 시작 시각보다 뒤여야 합니다.");
+            throw new IllegalStateException("결합한 종료 시각이 시작 시각보다 뒤가 아닙니다.");
+        }
+        if (!WorkCaseTimes.withinMaxDuration(startsAt, endsAt)) {
+            throw new ValidationException(String.format(
+                    "근무 시간은 최대 %d시간까지 등록할 수 있습니다.",
+                    WorkCaseTimes.MAX_WORK_DURATION.toHours()));
         }
     }
 }

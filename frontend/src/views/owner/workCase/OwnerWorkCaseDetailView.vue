@@ -59,7 +59,7 @@ import {
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
 } from '@/utils/settlement'
-import { isPositiveAmount, isRequired } from '@/utils/validators'
+import { isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
 
 const route = useRoute()
 const router = useRouter()
@@ -255,10 +255,8 @@ function validate() {
   errors.title = isRequired(form.title, '제목').message
   errors.workDate = isRequired(form.workDate, '근무 날짜').message
   errors.startTime = isRequired(form.startTime, '시작시간').message
-  errors.endTime = isRequired(form.endTime, '종료시간').message
-  if (!errors.endTime && form.startTime && form.endTime <= form.startTime) {
-    errors.endTime = '종료시간은 시작시간보다 늦어야 합니다.'
-  }
+  // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 등록 화면과 같은 규칙을 쓴다.
+  errors.endTime = workPeriodRule(form.startTime, form.endTime).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')

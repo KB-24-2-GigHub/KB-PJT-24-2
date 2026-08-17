@@ -66,7 +66,9 @@ export function calcElapsedPay({ agreedWage, workDate, startTime, endTime, now =
   const end = toMinutes(endTime)
   if (start === null || end === null) return { elapsedPay: 0, progressRatio: 0 }
 
-  // 시작과 종료가 같으면 0분 근무 — 24시간 근무가 아니라 이상 데이터로 본다.
+  // 시작과 종료가 같은 근무는 등록 단계에서 24시간으로 해석돼 길이 상한에 걸린다
+  // (SPEC-413-01). 그래도 여기까지 온 값은 이상 데이터이므로 0으로 접는다 — 24시간으로
+  // 세면 잘못된 데이터에 하루치 적립 진행률이 붙는다.
   if (start === end) return { elapsedPay: 0, progressRatio: 0 }
 
   // 종료가 시작보다 이르면 자정을 넘긴 근무다.

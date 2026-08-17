@@ -99,12 +99,25 @@ export function formatSeoulDateKey(value) {
   return SEOUL_WALL_CLOCK_DATE_KEY.format(d)
 }
 
-/** UTC Instant 시작·종료 → 근무지 기준 "09:00 ~ 18:00" */
+/**
+ * UTC Instant 시작·종료 → 근무지 기준 "09:00 ~ 18:00".
+ *
+ * 자정을 넘기는 근무는 종료 앞에 '익일'을 붙여 "23:00 ~ 익일 01:00" 로 보여준다
+ * (SPEC-413-01). 시각만 보여주면 23:00~01:00 이 22시간 근무인지 2시간 근무인지 구분되지
+ * 않는다. 판정은 서울 날짜 키로 한다 — 브라우저 로컬 TZ 로 비교하면 시차가 있는 곳에서
+ * 같은 날 근무에 '익일'이 붙는다.
+ *
+ * 근무 시간을 보여주는 화면이 모두 이 함수를 거치므로 표기 규칙은 여기 한 곳에만 둔다.
+ */
 export function formatSeoulTimeRange(start, end) {
   const s = formatSeoulTime(start)
   const e = formatSeoulTime(end)
   if (!s && !e) return ''
-  return `${s} ~ ${e}`
+
+  const startKey = formatSeoulDateKey(start)
+  const endKey = formatSeoulDateKey(end)
+  const overnight = Boolean(startKey) && Boolean(endKey) && endKey !== startKey
+  return `${s} ~ ${overnight ? '익일 ' : ''}${e}`
 }
 
 /** UTC Instant → 근무지 기준(Asia/Seoul) "2026.08.01 09:00" */

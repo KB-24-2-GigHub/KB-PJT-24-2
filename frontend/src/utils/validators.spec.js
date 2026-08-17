@@ -21,7 +21,9 @@ import {
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
   passwordRule,
-  WALLET_AMOUNT_MAX
+  WALLET_AMOUNT_MAX,
+  WORK_DURATION_MAX_MINUTES,
+  workPeriodRule
 } from '@/utils/validators'
 
 const repeat = (char, count) => char.repeat(count)
@@ -196,5 +198,51 @@ describe('isPhone', () => {
   it('선택 항목이라 빈 값은 통과하고, required 면 거부한다', () => {
     expect(isPhone('').valid).toBe(true)
     expect(isPhone('', { required: true }).valid).toBe(false)
+  })
+})
+
+/**
+ * 근무 시간대 규칙(SPEC-413-01).
+ *
+ * 자정 넘김을 허용하면 "종료가 시작보다 이르다"는 오타 방어선이 사라진다. 그 자리를 길이
+ * 상한이 대신하므로, 상한의 **경계 양쪽**을 함께 고정하지 않으면 규칙이 있으나 마나다.
+ * 이 값은 서버 WorkCaseTimes.MAX_WORK_DURATION 과 같아야 한다 — 어긋나면 화면을 통과한
+ * 입력이 서버에서 거부된다.
+ */
+describe('workPeriodRule', () => {
+  it('상수가 서버와 같은 16시간을 가리킨다', () => {
+    expect(WORK_DURATION_MAX_MINUTES).toBe(16 * 60)
+  })
+
+  it('같은 날 끝나는 근무는 그대로 통과한다', () => {
+    expect(workPeriodRule('09:00', '18:00').valid).toBe(true)
+  })
+
+  it('자정을 넘기는 근무를 통과시킨다', () => {
+    expect(workPeriodRule('23:00', '01:00').valid).toBe(true)
+    expect(workPeriodRule('22:30', '06:00').valid).toBe(true)
+  })
+
+  it('정확히 16시간은 통과하고 1분만 넘어도 거부한다', () => {
+    expect(workPeriodRule('20:00', '12:00').valid).toBe(true) // 16시간
+    expect(workPeriodRule('20:00', '12:01').valid).toBe(false) // 16시간 1분
+  })
+
+  it('시작과 종료가 같으면 0분이 아니라 24시간이라 거부한다', () => {
+    // 0분으로 접으면 09:00~09:00 오타가 저장 가능한 값이 된다.
+    const result = workPeriodRule('09:00', '09:00')
+    expect(result.valid).toBe(false)
+    expect(result.message).toContain('16시간')
+  })
+
+  it('종료시간이 비면 필수 항목으로 알린다', () => {
+    const result = workPeriodRule('09:00', '')
+    expect(result.valid).toBe(false)
+    expect(result.message).toContain('종료시간')
+  })
+
+  it('시작시간이 아직 비었으면 이 규칙은 판단하지 않는다', () => {
+    // 시작시간의 필수 검증은 그 필드가 따로 한다. 여기서 겹쳐 알리면 오류가 두 번 뜬다.
+    expect(workPeriodRule('', '18:00').valid).toBe(true)
   })
 })

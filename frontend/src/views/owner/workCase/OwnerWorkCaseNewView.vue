@@ -17,7 +17,7 @@ import { createWorkCase } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { formatKRW } from '@/utils/format'
-import { isPositiveAmount, isRequired } from '@/utils/validators'
+import { isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -54,19 +54,12 @@ function validateBreakMinutes(value) {
   return ''
 }
 
-/** 종료시간은 시작시간보다 뒤여야 한다(자정 넘김 근무는 스펙아웃). */
-function validateEndTime(start, end) {
-  const required = isRequired(end, '종료시간')
-  if (!required.valid) return required.message
-  if (start && end <= start) return '종료시간은 시작시간보다 늦어야 합니다.'
-  return ''
-}
-
 function validate() {
   errors.title = isRequired(form.title, '제목').message
   errors.workDate = isRequired(form.workDate, '근무 날짜').message
   errors.startTime = isRequired(form.startTime, '시작시간').message
-  errors.endTime = validateEndTime(form.startTime, form.endTime)
+  // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 순서 대신 길이 상한으로 거른다.
+  errors.endTime = workPeriodRule(form.startTime, form.endTime).message
   errors.breakMinutes = validateBreakMinutes(form.breakMinutes)
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 

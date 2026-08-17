@@ -46,6 +46,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -83,25 +84,62 @@ class WorkCaseServiceImplTest {
         verify(workCaseMapper, never()).insert(any());
     }
 
+    /**
+     * SPEC-413-01 — 자정을 넘기는 야간 근무는 종료를 근무일 <b>다음 날</b>에 저장한다.
+     * workDate 는 근무가 시작하는 날이라는 뜻을 유지한다.
+     */
     @Test
-    void createRejectsEndTimeNotAfterStartTime() {
+    void createStoresOvernightEndOnTheNextDay() {
+        when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
+                .thenReturn(snapshot());
+        doAnswer(invocation -> {
+            invocation.getArgument(0, WorkCaseInsertParam.class).setWorkCaseId(WORK_CASE_ID);
+            return 1;
+        }).when(workCaseMapper).insert(any(WorkCaseInsertParam.class));
+
+        service.create(owner(), createCommandWithTimes(LocalTime.of(23, 0), LocalTime.of(1, 0)));
+
+        ArgumentCaptor<WorkCaseInsertParam> captor = ArgumentCaptor.forClass(WorkCaseInsertParam.class);
+        verify(workCaseMapper).insert(captor.capture());
+
+        assertEquals(LocalDateTime.of(2026, 8, 10, 23, 0), captor.getValue().getStartsAt());
+        assertEquals(LocalDateTime.of(2026, 8, 11, 1, 0), captor.getValue().getEndsAt());
+    }
+
+    /**
+     * 자정 넘김을 허용하면 순서 검증이 잡아 주던 오타를 길이 상한이 대신 잡는다.
+     * {@code 09:00~09:00} 은 0분이 아니라 24시간으로 해석되어 여기서 걸린다.
+     */
+    @Test
+    void createRejectsWorkPeriodLongerThanTheCap() {
         when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
                 .thenReturn(snapshot());
 
-        WorkCaseCreateCommand command = WorkCaseCreateCommand.builder()
-                .workplaceId(WORKPLACE_ID)
-                .title("주말 홀 서빙")
-                .workDate(LocalDate.of(2026, 8, 10))
-                .startTime(LocalTime.of(18, 0))
-                .endTime(LocalTime.of(9, 0))
-                .breakMinutes(60)
-                .breakPaid(false)
-                .dailyWage(120_000L)
-                .build();
-
-        assertThrows(ValidationException.class, () -> service.create(owner(), command));
+        assertThrows(ValidationException.class, () -> service.create(
+                owner(), createCommandWithTimes(LocalTime.of(9, 0), LocalTime.of(9, 0))));
+        // 16시간 1분
+        assertThrows(ValidationException.class, () -> service.create(
+                owner(), createCommandWithTimes(LocalTime.of(20, 0), LocalTime.of(12, 1))));
 
         verify(workCaseMapper, never()).insert(any());
+    }
+
+    /** 경계값 자체는 저장된다 — 상한을 벗어난 입력만 거절해야 한다. */
+    @Test
+    void createAcceptsWorkPeriodExactlyAtTheCap() {
+        when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
+                .thenReturn(snapshot());
+        doAnswer(invocation -> {
+            invocation.getArgument(0, WorkCaseInsertParam.class).setWorkCaseId(WORK_CASE_ID);
+            return 1;
+        }).when(workCaseMapper).insert(any(WorkCaseInsertParam.class));
+
+        // 20:00 ~ 다음 날 12:00 = 정확히 16시간
+        service.create(owner(), createCommandWithTimes(LocalTime.of(20, 0), LocalTime.of(12, 0)));
+
+        ArgumentCaptor<WorkCaseInsertParam> captor = ArgumentCaptor.forClass(WorkCaseInsertParam.class);
+        verify(workCaseMapper).insert(captor.capture());
+        assertEquals(LocalDateTime.of(2026, 8, 11, 12, 0), captor.getValue().getEndsAt());
     }
 
     @Test
@@ -167,6 +205,29 @@ class WorkCaseServiceImplTest {
         verify(invitationMapper).revokePendingByWorkCaseIdNow(WORK_CASE_ID);
 
         assertEquals(WORK_CASE_ID, captor.getValue().getWorkCaseId());
+    }
+
+    /**
+     * SPEC-413-01 — 조건 수정도 등록과 같은 결합·상한 규칙을 쓴다.
+     * 한쪽에만 적용하면 등록으로 막힌 값이 수정으로 들어온다.
+     */
+    @Test
+    void updateAppliesTheSameOvernightAndCapRules() {
+        when(workCaseMapper.lockById(WORK_CASE_ID))
+                .thenReturn(lockRow(OWNER_ID, WorkCaseStatus.DRAFT));
+        when(workCaseMapper.updateDraftTerms(any())).thenReturn(1);
+
+        service.update(owner(), updateCommandWithTimes(LocalTime.of(23, 0), LocalTime.of(1, 0)));
+
+        ArgumentCaptor<WorkCaseTermsUpdateParam> captor =
+                ArgumentCaptor.forClass(WorkCaseTermsUpdateParam.class);
+        verify(workCaseMapper).updateDraftTerms(captor.capture());
+        assertEquals(LocalDateTime.of(2026, 8, 11, 1, 0), captor.getValue().getEndsAt());
+
+        assertThrows(ValidationException.class, () -> service.update(
+                owner(), updateCommandWithTimes(LocalTime.of(9, 0), LocalTime.of(9, 0))));
+        // 거절된 요청은 갱신을 남기지 않는다 — 위 성공 1회가 전부다.
+        verify(workCaseMapper, times(1)).updateDraftTerms(any());
     }
 
     @Test
@@ -556,12 +617,16 @@ class WorkCaseServiceImplTest {
     }
 
     private WorkCaseCreateCommand validCreateCommand() {
+        return createCommandWithTimes(LocalTime.of(9, 0), LocalTime.of(18, 0));
+    }
+
+    private WorkCaseCreateCommand createCommandWithTimes(LocalTime startTime, LocalTime endTime) {
         return WorkCaseCreateCommand.builder()
                 .workplaceId(WORKPLACE_ID)
                 .title("주말 홀 서빙")
                 .workDate(LocalDate.of(2026, 8, 10))
-                .startTime(LocalTime.of(9, 0))
-                .endTime(LocalTime.of(18, 0))
+                .startTime(startTime)
+                .endTime(endTime)
                 .breakMinutes(60)
                 .breakPaid(false)
                 .dailyWage(120_000L)
@@ -569,12 +634,16 @@ class WorkCaseServiceImplTest {
     }
 
     private WorkCaseUpdateCommand validUpdateCommand() {
+        return updateCommandWithTimes(LocalTime.of(10, 0), LocalTime.of(19, 0));
+    }
+
+    private WorkCaseUpdateCommand updateCommandWithTimes(LocalTime startTime, LocalTime endTime) {
         return WorkCaseUpdateCommand.builder()
                 .workCaseId(WORK_CASE_ID)
                 .title("주말 홀 서빙(수정)")
                 .workDate(LocalDate.of(2026, 8, 10))
-                .startTime(LocalTime.of(10, 0))
-                .endTime(LocalTime.of(19, 0))
+                .startTime(startTime)
+                .endTime(endTime)
                 .breakMinutes(30)
                 .breakPaid(true)
                 .dailyWage(130_000L)
