@@ -1,6 +1,6 @@
 -- GigHub 참고용 최종 스키마 스냅샷
 -- NOT A FLYWAY MIGRATION
--- 기준: MySQL 8.4.10 / Flyway head 202608162210 / Migration 20개 / 도메인 테이블 25개 (2026-08-16 확인)
+-- 기준: MySQL 8.4.10 / Flyway head 202608162210 / Migration 21개 / 도메인 테이블 26개 (2026-08-16 확인)
 -- 단일 원본: backend/src/main/resources/db/migration/V*.sql
 -- 대상: 빈 데이터베이스. 기존 DB 업그레이드에는 사용하지 않는다.
 -- 제외: 데이터, flyway_schema_history, DROP 문, 실행 환경의 AUTO_INCREMENT 현재값
@@ -37,6 +37,47 @@ CREATE TABLE `attendance_records` (
   CONSTRAINT `ck_attendance_records_early_checkout_confirmation` CHECK (((`early_checkout_confirmed_at` is null) or ((`attendance_type` = _utf8mb4'CHECK_OUT') and (`result` = _utf8mb4'SUCCESS')))),
   CONSTRAINT `ck_attendance_records_result` CHECK ((`result` in (_utf8mb4'SUCCESS',_utf8mb4'REJECTED'))),
   CONSTRAINT `ck_attendance_records_type` CHECK ((`attendance_type` in (_utf8mb4'CHECK_IN',_utf8mb4'CHECK_OUT')))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE `dispute_ai_reviews` (
+  `id` bigint unsigned NOT NULL AUTO_INCREMENT,
+  `dispute_id` bigint unsigned NOT NULL,
+  `request_key` char(36) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `status` varchar(20) NOT NULL,
+  `source` varchar(30) NOT NULL,
+  `provider` varchar(30) NOT NULL,
+  `model` varchar(100) NOT NULL,
+  `prompt_version` varchar(50) NOT NULL,
+  `input_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `decision` varchar(30) DEFAULT NULL,
+  `reason_codes` json DEFAULT NULL,
+  `summary` varchar(500) DEFAULT NULL,
+  `confidence` decimal(4,3) DEFAULT NULL,
+  `provider_response_id` varchar(100) DEFAULT NULL,
+  `failure_code` varchar(50) DEFAULT NULL,
+  `lease_until` datetime(6) DEFAULT NULL,
+  `started_at` datetime(6) DEFAULT NULL,
+  `completed_at` datetime(6) DEFAULT NULL,
+  `active_slot` tinyint GENERATED ALWAYS AS ((case when (`status` in (_utf8mb4'PENDING',_utf8mb4'PROCESSING')) then 1 else NULL end)) STORED,
+  `created_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `updated_at` datetime(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_dispute_ai_reviews_request_key` (`request_key`),
+  UNIQUE KEY `uk_dispute_ai_reviews_active` (`dispute_id`,`active_slot`),
+  KEY `idx_dispute_ai_reviews_status_lease` (`status`,`lease_until`,`id`),
+  KEY `idx_dispute_ai_reviews_dispute_created` (`dispute_id`,`created_at`,`id`),
+  CONSTRAINT `fk_dispute_ai_reviews_dispute` FOREIGN KEY (`dispute_id`) REFERENCES `disputes` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT,
+  CONSTRAINT `ck_dispute_ai_reviews_confidence` CHECK (((`confidence` is null) or (`confidence` between 0.000 and 1.000))),
+  CONSTRAINT `ck_dispute_ai_reviews_decision` CHECK (((`decision` is null) or (`decision` in (_utf8mb4'RESOLVE',_utf8mb4'REJECT',_utf8mb4'NEEDS_MORE_INFO')))),
+  CONSTRAINT `ck_dispute_ai_reviews_input_hash` CHECK (regexp_like(`input_hash`,_utf8mb4'^[0-9a-f]{64}$')),
+  CONSTRAINT `ck_dispute_ai_reviews_lifecycle` CHECK ((((`status` = _utf8mb4'PENDING') and (`decision` is null) and (`reason_codes` is null) and (`summary` is null) and (`confidence` is null) and (`provider_response_id` is null) and (`failure_code` is null) and (`lease_until` is null) and (`started_at` is null) and (`completed_at` is null)) or ((`status` = _utf8mb4'PROCESSING') and (`decision` is null) and (`reason_codes` is null) and (`summary` is null) and (`confidence` is null) and (`provider_response_id` is null) and (`failure_code` is null) and (`lease_until` is not null) and (`started_at` is not null) and (`completed_at` is null)) or ((`status` = _utf8mb4'COMPLETED') and (`decision` is not null) and (`reason_codes` is not null) and (`summary` = trim(`summary`)) and (char_length(`summary`) between 1 and 500) and (`confidence` is not null) and (`provider_response_id` is not null) and (`failure_code` is null) and (`lease_until` is null) and (`started_at` is not null) and (`completed_at` is not null) and (`completed_at` >= `started_at`)) or ((`status` = _utf8mb4'FAILED') and (`decision` is null) and (`reason_codes` is null) and (`summary` is null) and (`confidence` is null) and (`provider_response_id` is null) and (`failure_code` = trim(`failure_code`)) and (char_length(`failure_code`) between 1 and 50) and (`lease_until` is null) and (`started_at` is not null) and (`completed_at` is not null) and (`completed_at` >= `started_at`)))),
+  CONSTRAINT `ck_dispute_ai_reviews_model` CHECK (((`model` = trim(`model`)) and (char_length(`model`) between 1 and 100))),
+  CONSTRAINT `ck_dispute_ai_reviews_prompt_version` CHECK (((`prompt_version` = trim(`prompt_version`)) and (char_length(`prompt_version`) between 1 and 50))),
+  CONSTRAINT `ck_dispute_ai_reviews_provider` CHECK (((`provider` = trim(`provider`)) and (char_length(`provider`) between 1 and 30))),
+  CONSTRAINT `ck_dispute_ai_reviews_reason_codes` CHECK (((`reason_codes` is null) or ((json_type(`reason_codes`) = _utf8mb4'ARRAY') and (json_length(`reason_codes`) between 1 and 5)))),
+  CONSTRAINT `ck_dispute_ai_reviews_request_key` CHECK (regexp_like(`request_key`,_utf8mb4'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')),
+  CONSTRAINT `ck_dispute_ai_reviews_source` CHECK ((`source` = _utf8mb4'SIMULATED_LLM')),
+  CONSTRAINT `ck_dispute_ai_reviews_status` CHECK ((`status` in (_utf8mb4'PENDING',_utf8mb4'PROCESSING',_utf8mb4'COMPLETED',_utf8mb4'FAILED')))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
 CREATE TABLE `disputes` (

@@ -2,6 +2,7 @@ package com.gighub.settlement.config;
 
 import com.gighub.settlement.service.SettlementScheduledPayoutScheduler;
 import lombok.RequiredArgsConstructor;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.SchedulingConfigurer;
 import org.springframework.scheduling.config.ScheduledTaskRegistrar;
 import org.springframework.scheduling.support.PeriodicTrigger;
@@ -25,9 +26,11 @@ public class SettlementSchedulingConfigurer implements SchedulingConfigurer {
 
     private final SettlementScheduledPayoutScheduler scheduler;
     private final SettlementSchedulerProperties properties;
+    private final TaskScheduler taskScheduler;
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar registrar) {
+        registrar.setTaskScheduler(taskScheduler);
         PeriodicTrigger trigger = new PeriodicTrigger(properties.getFixedDelay().toMillis());
         trigger.setInitialDelay(properties.getInitialDelay().toMillis());
         registrar.addTriggerTask(scheduler::runOnce, trigger);

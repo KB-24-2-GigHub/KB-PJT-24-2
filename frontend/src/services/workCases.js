@@ -70,9 +70,9 @@ export function getOwnerContact(workCaseId) {
 }
 
 export function listReports(workCaseId) {
-  return invokeUnavailable('listReports', [workCaseId], '#174-#177')
+  return invokeLive('listReports', [workCaseId])
 }
 
 export function createReport(workCaseId, payload) {
-  return invokeUnavailable('createReport', [workCaseId, payload], '#174-#177')
+  return invokeLive('createReport', [workCaseId, payload])
 }
