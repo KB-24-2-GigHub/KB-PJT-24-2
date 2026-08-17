@@ -157,13 +157,23 @@ onUnmounted(() => {
 }
 
 /* 헤더 폭(=카드 콘텐츠 폭)에 물려 뜬다 — 어떤 화면 폭에서도 카드를 넘지 않고,
-   아래 내용을 밀어내지 않고 덮는다. */
+   아래 내용을 밀어내지 않고 덮는다.
+
+   아래가 아니라 **위로** 펼친다. 이 카드는 알바생 홈의 마지막 요소라 아래에 남는 공간이
+   하단 탭바 높이뿐이고, 아래로 펼치면 마지막 문단이 탭바에 잘린다. 팝오버는 흐름 밖이라
+   스크롤로 꺼내올 수도 없다. 위쪽에는 잔액 카드와 오늘의 일정 카드가 있어 늘 자리가 남는다.
+
+   z-index 는 탭바(`--z-tabbar`)보다 위에 둔다 — `.head-row` 의 position:relative 는
+   stacking context 를 만들지 않아(z-index:auto) 팝오버가 루트에서 탭바와 직접 겨룬다.
+   max-height 는 문단이 늘어났을 때 위로 넘쳐 잘리는 것을 막는 상한이다. */
 .info-popover {
   position: absolute;
-  z-index: 1;
-  top: calc(100% + var(--space-sm));
+  z-index: calc(var(--z-tabbar) + 1);
+  bottom: calc(100% + var(--space-sm));
   left: 0;
   right: 0;
+  max-height: 60vh;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
