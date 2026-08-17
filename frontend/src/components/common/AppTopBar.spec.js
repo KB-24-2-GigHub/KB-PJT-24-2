@@ -7,9 +7,20 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// 로고 링크의 목적지를 읽으려면 RouterLink 가 필요한데 이 파일은 vue-router 를 통째로
+// 대체한다. 실제 RouterLink 대신 to 를 href 로 내보내는 스텁을 끼워 목적지를 검사한다.
+const { RouterLinkStub } = vi.hoisted(() => ({
+  RouterLinkStub: {
+    name: 'RouterLink',
+    props: ['to'],
+    template: '<a :href="to"><slot /></a>'
+  }
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ path: '/owner/attendance' })
+  useRoute: () => ({ path: '/owner/attendance' }),
+  RouterLink: RouterLinkStub
 }))
 vi.mock('@/services/workplaces', () => ({ listWorkplaces: vi.fn() }))
 vi.mock('@/services/notifications', () => ({
@@ -88,5 +99,52 @@ describe('AppTopBar 지점 select', () => {
     })
 
     expect(wrapper.find('select').exists()).toBe(false)
+  })
+})
+
+/**
+ * 로고 → 역할별 홈 이동 계약(#414).
+ *
+ * 목적지는 role prop 하나로 갈리므로, 두 역할을 모두 고정하지 않으면 한쪽으로 굳어도
+ * 통과한다. 그래서 OWNER·WORKER 를 같은 표로 함께 검사한다.
+ */
+describe('AppTopBar 로고 홈 이동', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function mountBar(role) {
+    useAuthStore().setUser({
+      name: role === 'OWNER' ? '김사장' : '이알바',
+      role,
+      needsWorkplaceSetup: false
+    })
+    // OWNER 는 onMounted 에서 지점 목록을 조회한다. 이 테스트는 지점과 무관하므로
+    // 조회를 건너뛰게 두고, 로고 링크만 남긴다.
+    useWorkplaceStore().loaded = true
+    return mount(AppTopBar, {
+      props: { role },
+      global: { stubs: { LogoSymbol: true } }
+    })
+  }
+
+  it.each([
+    ['OWNER', '/owner/home'],
+    ['WORKER', '/worker/home']
+  ])('%s 상단바 로고는 %s 로 이동한다', (role, path) => {
+    const brand = mountBar(role).findComponent(RouterLinkStub)
+
+    expect(brand.exists()).toBe(true)
+    expect(brand.props('to')).toBe(path)
+  })
+
+  it('로고를 링크로 노출하고 이름을 한 번만 준다', () => {
+    const wrapper = mountBar('OWNER')
+
+    // 이름이 없으면 스크린리더가 "링크"라고만 읽는다.
+    expect(wrapper.get('.brand').attributes('aria-label')).toBe('Gig Hub 홈')
+    // logo-symbol.svg 파일 자체가 role="img" aria-label="GigHub symbol" 을 들고 있다.
+    // 링크 안에서 그대로 노출되면 이름이 두 번 읽히므로 aria-hidden 으로 덮어야 한다.
+    expect(wrapper.get('.brand-logo').attributes('aria-hidden')).toBe('true')
   })
 })

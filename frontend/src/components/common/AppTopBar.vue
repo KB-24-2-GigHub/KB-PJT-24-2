@@ -9,7 +9,7 @@
 import { Bell, ChevronDown, CircleUser } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import LogoSymbol from '@/assets/images/logo/logo-symbol.svg'
 import { useNotificationsStore } from '@/stores/notifications'
@@ -58,18 +58,34 @@ onUnmounted(() => {
 function goMyPage() {
   router.push(isOwner.value ? '/owner/mypage' : '/worker/mypage')
 }
+
+/**
+ * 로고 → 역할별 홈. 마이페이지 이동과 같은 role 분기를 쓴다.
+ *
+ * router.push 가 아니라 RouterLink 로 두는 이유가 두 가지 있다.
+ *   - 실제 `<a href>` 라야 키보드 포커스·Enter 활성화·"링크" 역할이 공짜로 따라온다.
+ *     button 이나 click 핸들러를 단 span 으로는 이 중 하나씩 직접 만들어야 한다.
+ *   - 이미 홈에 있을 때 눌러도 RouterLink 가 중복 내비게이션 실패를 삼킨다.
+ *     router.push 는 rejected Promise 를 남긴다.
+ * AppTopBar 는 탭 레이아웃에서만 렌더되므로 비로그인 화면에는 이 경로가 없다.
+ */
+const homePath = computed(() => (isOwner.value ? '/owner/home' : '/worker/home'))
 </script>
 
 <template>
   <header class="topbar">
-    <span class="brand">
+    <!-- 로고는 홈으로 가는 관례적 경로다. 옆의 알림·마이페이지가 눌리는데 로고만 죽어 있으면
+         눌러본 사용자에게 반응 없는 영역으로 남는다. -->
+    <!-- 링크 이름은 aria-label 하나로 정한다. 로고 svg 에 이름을 남겨두면 "Gig Hub Gig Hub"
+         처럼 두 번 읽힌다(스크린리더는 aria-label 이 있으면 내용을 이름으로 쓰지 않는다). -->
+    <RouterLink :to="homePath" class="brand" aria-label="Gig Hub 홈">
       <LogoSymbol
         class="brand-logo"
         :class="isOwner ? 'is-owner' : 'is-worker'"
-        aria-label="Gig Hub"
+        aria-hidden="true"
       />
       <span class="brand-name">Gig Hub</span>
-    </span>
+    </RouterLink>
 
     <div class="right">
       <span v-if="isOwnerHome" class="branch branch--all">전체지점</span>
