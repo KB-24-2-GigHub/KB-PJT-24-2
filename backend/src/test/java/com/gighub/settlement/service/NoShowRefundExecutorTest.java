@@ -20,6 +20,7 @@ import com.gighub.work.service.WorkSettlementService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import com.gighub.notification.service.NotificationRecorder;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InOrder;
 import org.mockito.Mock;
@@ -34,6 +35,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -64,7 +66,10 @@ class NoShowRefundExecutorTest {
     @BeforeEach
     void setUp() {
         executor = new NoShowRefundExecutorImpl(
-                settlementMapper, workSettlementService, settlementWalletService);
+                settlementMapper,
+                workSettlementService,
+                settlementWalletService,
+                mock(NotificationRecorder.class));
     }
 
     @Test

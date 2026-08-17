@@ -8,6 +8,9 @@ import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.service.AcceptanceWorkParticipant;
 import com.gighub.invitation.service.result.AcceptanceWorkContext;
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.wallet.service.AcceptEscrowHold;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -18,6 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.List;
 
 /**
  * 초대 수락에 참여하는 owner Service를 하나의 짧은 Application Transaction으로 조정합니다.
@@ -38,6 +42,7 @@ public class InvitationAcceptanceOrchestrator {
     private final IdempotencyClaimService claimService;
     private final InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec;
     private final ContractArtifactPort contractArtifactPort;
+    private final NotificationRecorder notificationRecorder;
     private final Clock clock;
 
     @Autowired
@@ -47,7 +52,8 @@ public class InvitationAcceptanceOrchestrator {
             SettlementReservationService settlementReservationService,
             IdempotencyClaimService claimService,
             InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec,
-            ContractArtifactPort contractArtifactPort) {
+            ContractArtifactPort contractArtifactPort,
+            NotificationRecorder notificationRecorder) {
         this(
                 workParticipant,
                 escrowHold,
@@ -55,6 +61,7 @@ public class InvitationAcceptanceOrchestrator {
                 claimService,
                 replaySnapshotCodec,
                 contractArtifactPort,
+                notificationRecorder,
                 Clock.system(DATABASE_ZONE));
     }
 
@@ -66,6 +73,7 @@ public class InvitationAcceptanceOrchestrator {
             IdempotencyClaimService claimService,
             InvitationAcceptanceReplaySnapshotCodec replaySnapshotCodec,
             ContractArtifactPort contractArtifactPort,
+            NotificationRecorder notificationRecorder,
             Clock clock) {
         this.workParticipant = workParticipant;
         this.escrowHold = escrowHold;
@@ -73,6 +81,7 @@ public class InvitationAcceptanceOrchestrator {
         this.claimService = claimService;
         this.replaySnapshotCodec = replaySnapshotCodec;
         this.contractArtifactPort = contractArtifactPort;
+        this.notificationRecorder = notificationRecorder;
         this.clock = clock;
     }
 
@@ -89,12 +98,13 @@ public class InvitationAcceptanceOrchestrator {
                 acceptedAt);
 
         workParticipant.confirm(context, command.getWorkerId(), acceptedAt);
-        escrowHold.hold(
+        long escrowId = escrowHold.hold(
                 context.getEmployerId(),
                 context.getWorkCaseId(),
                 context.getDailyWage(),
                 command.getClaimId(),
                 acceptedAt);
+        recordAcceptanceNotifications(context, command.getWorkerId(), escrowId);
 
         AcceptedContract contract = workParticipant.createContract(
                 context, command.getWorkerId(), acceptedAt);
@@ -108,5 +118,32 @@ public class InvitationAcceptanceOrchestrator {
         claimService.complete(
                 command.getClaimId(), 200, replaySnapshotCodec.writeResponseBody(result));
         return new InvitationAcceptanceOutcome(result, artifact);
+    }
+
+    /**
+     * 근무 확정과 예치 완료를 양측에 알립니다.
+     *
+     * <p>이 Transaction 안에서 부르지만 실제 적재는 Commit 이후입니다. 알림이 실패해도 수락과
+     * 예치는 유지되고, 이 Transaction이 Rollback되면 알림도 남지 않습니다(SPEC-384-01).</p>
+     */
+    private void recordAcceptanceNotifications(
+            AcceptanceWorkContext context,
+            long workerId,
+            long escrowId) {
+        List<Long> parties = List.of(context.getEmployerId(), workerId);
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.WORK_CASE_CONFIRMED)
+                .sourceId(context.getWorkCaseId())
+                .workCaseId(context.getWorkCaseId())
+                .workCaseTitle(context.getTitle())
+                .recipientUserIds(parties)
+                .build());
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.ESCROW_HELD)
+                .sourceId(escrowId)
+                .workCaseId(context.getWorkCaseId())
+                .workCaseTitle(context.getTitle())
+                .recipientUserIds(parties)
+                .build());
     }
 }

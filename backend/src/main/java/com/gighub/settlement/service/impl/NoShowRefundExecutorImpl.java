@@ -1,5 +1,8 @@
 package com.gighub.settlement.service.impl;
 
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.dto.SettlementSnapshot;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.NoShowRefundExecutor;
@@ -23,6 +26,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 import static com.gighub.settlement.service.NoShowRefundResultValidator.validateAndBuild;
 
 /** NO_SHOW 환불을 Work → Settlement → Dispute → Escrow → Wallet 잠금 순서로 실행합니다. */
@@ -33,6 +38,7 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
     private final SettlementMapper settlementMapper;
     private final WorkSettlementService workSettlementService;
     private final SettlementWalletService settlementWalletService;
+    private final NotificationRecorder notificationRecorder;
     private final NoShowRefundPolicy refundPolicy = new NoShowRefundPolicy();
 
     @Override
@@ -78,6 +84,14 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
 
         SettlementSnapshot refunded = settlementMapper.findByWorkCaseIdForUpdate(workCaseId);
         settlementWalletService.verifyCompletedRefund(walletCommand, walletLock);
+        // 적재는 이 Transaction 이 Commit 된 뒤다. 알림 실패가 환불을 되돌리지 않는다.
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.REFUNDED)
+                .sourceId(refunded.getSettlementId())
+                .workCaseId(workCaseId)
+                .workCaseTitle(work.getTitle())
+                .recipientUserIds(List.of(work.getEmployerId(), work.getWorkerId()))
+                .build());
         return validateAndBuild(refundedFacts(refunded), work, ownerUserId, amounts);
     }
 

@@ -3,6 +3,9 @@ package com.gighub.settlement.service;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.member.domain.UserRole;
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.domain.DisputeStatus;
 import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.DisputeListItemResponse;
@@ -56,6 +59,8 @@ class DisputeServiceTest {
     private DisputeMapper disputeMapper;
     @Mock
     private DisputeReviewQueueService reviewQueueService;
+    @Mock
+    private NotificationRecorder notificationRecorder;
     @InjectMocks
     private DisputeServiceImpl disputeService;
 
@@ -247,6 +252,71 @@ class DisputeServiceTest {
         assertNull(item.getDemoReview().getDecision());
     }
 
+    @Test
+    void disputeNotifiesOnlyTheCounterpartyOfTheReporter() {
+        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
+                .thenReturn(settlement(SettlementStatus.SCHEDULED));
+        when(disputeMapper.findOpenIdsForUpdate(WORK_CASE_ID)).thenReturn(List.of());
+        doAnswer(invocation -> {
+            ((DisputeInsert) invocation.getArgument(0)).setReportId(93L);
+            return 1;
+        }).when(disputeMapper).insertOpen(any());
+        when(settlementMapper.transitionScheduledToOnHold(31L)).thenReturn(1);
+
+        disputeService.create(command("임금 확인", "약정 일급이 미지급됐습니다."));
+
+        ArgumentCaptor<NotificationRecordCommand> recorded =
+                ArgumentCaptor.forClass(NotificationRecordCommand.class);
+        verify(notificationRecorder).record(recorded.capture());
+        assertEquals(NotificationType.WAGE_REPORTED, recorded.getValue().getType());
+        assertEquals(93L, recorded.getValue().getSourceId().longValue());
+        assertEquals(WORK_CASE_ID, recorded.getValue().getWorkCaseId().longValue());
+        assertEquals("주말 홀 서빙", recorded.getValue().getWorkCaseTitle());
+        assertEquals(List.of(OWNER_ID), recorded.getValue().getRecipientUserIds());
+    }
+
+    @Test
+    void ownerReportNotifiesWorkerInstead() {
+        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
+                .thenReturn(settlement(SettlementStatus.WAITING));
+        when(disputeMapper.findOpenIdsForUpdate(WORK_CASE_ID)).thenReturn(List.of());
+        doAnswer(invocation -> {
+            ((DisputeInsert) invocation.getArgument(0)).setReportId(94L);
+            return 1;
+        }).when(disputeMapper).insertOpen(any());
+
+        disputeService.create(DisputeCreateCommand.builder()
+                .workCaseId(WORK_CASE_ID)
+                .requesterUserId(OWNER_ID)
+                .requesterRole(UserRole.OWNER)
+                .title("근무 이견")
+                .content("근무 시간에 이견이 있습니다.")
+                .build());
+
+        ArgumentCaptor<NotificationRecordCommand> recorded =
+                ArgumentCaptor.forClass(NotificationRecordCommand.class);
+        verify(notificationRecorder).record(recorded.capture());
+        assertEquals(List.of(WORKER_ID), recorded.getValue().getRecipientUserIds());
+    }
+
+    @Test
+    void rejectedDuplicateDisputeDoesNotNotifyAnyone() {
+        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase(WorkCaseStatus.COMPLETED));
+        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
+                .thenReturn(settlement(SettlementStatus.ON_HOLD));
+        when(disputeMapper.findOpenIdsForUpdate(WORK_CASE_ID)).thenReturn(List.of(90L));
+
+        assertThrows(DisputeAlreadyOpenException.class, () -> disputeService.create(command(
+                "임금 확인", "약정 일급이 미지급됐습니다.")));
+
+        verify(notificationRecorder, never()).record(any());
+    }
+
     private static DisputeCreateCommand command(String title, String content) {
         return DisputeCreateCommand.builder()
                 .workCaseId(WORK_CASE_ID)
@@ -263,6 +333,7 @@ class DisputeServiceTest {
                 .employerId(OWNER_ID)
                 .workerId(WORKER_ID)
                 .agreedWage(120_000L)
+                .title("주말 홀 서빙")
                 .status(status)
                 .successfulCheckInCount(1L)
                 .build();

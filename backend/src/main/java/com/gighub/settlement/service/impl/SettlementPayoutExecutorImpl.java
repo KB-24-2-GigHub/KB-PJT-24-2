@@ -2,6 +2,9 @@ package com.gighub.settlement.service.impl;
 
 import com.gighub.settlement.dto.SettlementSnapshot;
 import com.gighub.settlement.domain.SettlementPayoutTrigger;
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.SettlementPayoutExecutor;
 import com.gighub.settlement.service.SettlementPayoutResultValidator.CompletedSettlementFacts;
@@ -25,6 +28,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+
 import static com.gighub.settlement.service.SettlementPayoutResultValidator.validateAndBuild;
 
 /** 정상 정산의 상태·에스크로·지갑·원장을 호출자의 Transaction 안에서 원자 처리합니다. */
@@ -35,6 +40,7 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
     private final SettlementMapper settlementMapper;
     private final WorkSettlementService workSettlementService;
     private final SettlementWalletService settlementWalletService;
+    private final NotificationRecorder notificationRecorder;
     private final SettlementPayoutPolicy payoutPolicy = new SettlementPayoutPolicy();
 
     /**
@@ -89,6 +95,14 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
         SettlementSnapshot completed =
                 settlementMapper.findByWorkCaseIdForUpdate(work.getWorkCaseId());
         settlementWalletService.verifyCompletedPayout(walletCommand, walletLock);
+        // 적재는 이 Transaction 이 Commit 된 뒤다. 알림 실패가 지급을 되돌리지 않는다.
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.SETTLED)
+                .sourceId(completed.getSettlementId())
+                .workCaseId(work.getWorkCaseId())
+                .workCaseTitle(work.getTitle())
+                .recipientUserIds(List.of(work.getEmployerId(), work.getWorkerId()))
+                .build());
         return validateAndBuild(
                 completedFacts(completed), work, approvedByUserId, amounts);
     }

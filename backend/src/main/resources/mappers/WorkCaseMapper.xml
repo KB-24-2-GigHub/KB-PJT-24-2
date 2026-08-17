@@ -38,6 +38,7 @@
             <arg column="employerId" javaType="java.lang.Long"/>
             <arg column="workerId" javaType="java.lang.Long"/>
             <arg column="agreedWage" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
             <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
             <arg column="successfulCheckInCount" javaType="java.lang.Long"/>
         </constructor>
@@ -168,6 +169,7 @@
                wc.employer_id  AS employerId,
                wc.worker_id    AS workerId,
                wc.agreed_wage  AS agreedWage,
+               wc.title        AS title,
                wc.status       AS status,
                (
                    SELECT COUNT(*)

@@ -34,6 +34,7 @@ import org.springframework.transaction.support.TransactionTemplate;
         "com.gighub.document.mapper",
         "com.gighub.idempotency.mapper",
         "com.gighub.invitation.mapper",
+        "com.gighub.notification.mapper",
         "com.gighub.badge.mapper",
         "com.gighub.bank.mapper",
         "com.gighub.settlement.mapper",

@@ -12,6 +12,7 @@ import com.gighub.contract.mapper.WorkContractMapper;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.invitation.application.InvitationAcceptanceCommand;
 import com.gighub.invitation.application.InvitationAcceptanceOrchestrator;
+import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.invitation.application.InvitationAcceptanceOutcome;
 import com.gighub.invitation.config.InvitationProperties;
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
@@ -118,6 +119,7 @@ class InvitationAcceptanceOrchestratorTest {
                 claimParticipant,
                 new AcceptJson(),
                 documentParticipant,
+                mock(NotificationRecorder.class),
                 Clock.fixed(STARTS_AT.minusDays(1L).atZone(SEOUL).toInstant(), SEOUL))
                 .execute(InvitationAcceptanceCommand.of(
                         WORKER_ID, INVITATION_ID, WORK_CASE_ID, tokenHash, CLAIM_ID));
@@ -257,6 +259,7 @@ class InvitationAcceptanceOrchestratorTest {
                 mock(IdempotencyClaimService.class),
                 new AcceptJson(),
                 new StubArtifactPort(),
+                mock(NotificationRecorder.class),
                 Clock.fixed(now.atZone(SEOUL).toInstant(), SEOUL))
                 .execute(InvitationAcceptanceCommand.of(
                         WORKER_ID, INVITATION_ID, WORK_CASE_ID, tokenHash, CLAIM_ID));

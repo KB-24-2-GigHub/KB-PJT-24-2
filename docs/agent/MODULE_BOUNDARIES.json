@@ -248,7 +248,7 @@
       "owner": "notification",
       "allowedWriterPackage": "com.gighub.notification.mapper",
       "allowedWriterType": "com.gighub.notification.mapper.NotificationMapper",
-      "currentWriteState": "missing"
+      "currentWriteState": "owned"
     }
   ],
   "allowedProviderCalls": [
@@ -311,6 +311,21 @@
       "consumer": "document",
       "provider": "work",
       "kind": "query"
+    },
+    {
+      "consumer": "work",
+      "provider": "notification",
+      "kind": "command"
+    },
+    {
+      "consumer": "settlement",
+      "provider": "notification",
+      "kind": "command"
+    },
+    {
+      "consumer": "document",
+      "provider": "notification",
+      "kind": "command"
     }
   ],
   "orchestrators": [

@@ -7,6 +7,9 @@ import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
+import com.gighub.notification.domain.NotificationType;
+import com.gighub.notification.service.NotificationRecorder;
+import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.domain.SettlementStatus;
 import com.gighub.settlement.dto.DisputeDemoReviewResponse;
 import com.gighub.settlement.dto.DisputeListItemResponse;
@@ -58,6 +61,7 @@ public class DisputeServiceImpl implements DisputeService {
     private final SettlementMapper settlementMapper;
     private final DisputeMapper disputeMapper;
     private final DisputeReviewQueueService reviewQueueService;
+    private final NotificationRecorder notificationRecorder;
 
     @Override
     @Transactional
@@ -107,6 +111,15 @@ public class DisputeServiceImpl implements DisputeService {
                 .content(normalized.content())
                 .workCase(workCase)
                 .settlementStatus(reviewSettlementStatus)
+                .build());
+        // 적재는 이 Transaction 이 Commit 된 뒤다. 알림 실패가 분쟁 생성·정산 보류를 되돌리지 않는다.
+        // 신고자는 자기 신고를 다시 통보받을 이유가 없으므로 상대 당사자 한 명만 수신자다.
+        notificationRecorder.record(NotificationRecordCommand.builder()
+                .type(NotificationType.WAGE_REPORTED)
+                .sourceId(insert.getReportId())
+                .workCaseId(command.getWorkCaseId())
+                .workCaseTitle(workCase.getTitle())
+                .recipientUserIds(List.of(counterpartyUserId(workCase, command.getRequesterRole())))
                 .build());
         return insert.getReportId();
     }
@@ -244,6 +257,16 @@ public class DisputeServiceImpl implements DisputeService {
         if (!ELIGIBLE_STATUSES.contains(workCase.getStatus())) {
             throw new ConflictException("현재 근무 상태에서는 분쟁을 신고하거나 조회할 수 없습니다.");
         }
+    }
+
+    /**
+     * 신고자의 상대 당사자를 고릅니다.
+     *
+     * <p>{@code requirePartyAndEligibleStatus}가 이미 신고자가 두 당사자 중 하나임을 보장하므로
+     * 역할만으로 반대편이 정해집니다.</p>
+     */
+    private static Long counterpartyUserId(WorkCaseEscrowSnapshot workCase, UserRole requesterRole) {
+        return requesterRole == UserRole.OWNER ? workCase.getWorkerId() : workCase.getEmployerId();
     }
 
     private static boolean isParty(

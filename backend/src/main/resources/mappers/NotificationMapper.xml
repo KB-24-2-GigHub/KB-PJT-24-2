@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.notification.mapper.NotificationMapper">
+
+    <resultMap id="notificationRow" type="com.gighub.notification.mapper.result.NotificationRow">
+        <id property="notificationId" column="notification_id"/>
+        <result property="notiType" column="noti_type"/>
+        <result property="title" column="title"/>
+        <result property="content" column="content"/>
+        <result property="sourceType" column="source_type"/>
+        <result property="sourceId" column="source_id"/>
+        <result property="workCaseId" column="work_case_id"/>
+        <result property="isRead" column="is_read"/>
+        <result property="readAt" column="read_at"/>
+        <result property="createdAt" column="created_at"/>
+    </resultMap>
+
+    <!--
+        중복 이벤트는 uk_notifications_event 가 막는다. 선검사 후 INSERT 하면 동시 적재에서
+        두 요청이 모두 통과하므로 여기서 조회하지 않는다.
+    -->
+    <insert id="insert" parameterType="com.gighub.notification.mapper.command.NotificationInsert">
+        INSERT INTO notifications
+            (recipient_user_id, noti_type, source_type, source_id, work_case_id, title, content)
+        VALUES (#{recipientUserId}, #{notiType}, #{sourceType}, #{sourceId}, #{workCaseId},
+                #{title}, #{content})
+    </insert>
+
+    <!--
+        최신순은 created_at 내림차순이고 같은 시각은 id 내림차순으로 끊는다. 두 번째 정렬 키가
+        없으면 같은 Transaction 에서 만든 알림들의 Page 경계가 요청마다 달라진다.
+    -->
+    <select id="findPageByRecipient" resultMap="notificationRow">
+        SELECT id AS notification_id,
+               noti_type,
+               title,
+               content,
+               source_type,
+               source_id,
+               work_case_id,
+               is_read,
+               read_at,
+               created_at
+        FROM notifications
+        WHERE recipient_user_id = #{recipientUserId}
+        ORDER BY created_at DESC, id DESC
+        LIMIT #{size} OFFSET #{offset}
+    </select>
+
+    <select id="countByRecipient" resultType="long">
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE recipient_user_id = #{recipientUserId}
+    </select>
+
+    <!-- 안읽음 개수는 저장된 읽음 상태에서 계산한다. 별도 집계 컬럼을 두지 않는다. -->
+    <select id="countUnreadByRecipient" resultType="long">
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE recipient_user_id = #{recipientUserId}
+          AND is_read = 0
+    </select>
+
+    <!--
+        is_read = 0 조건이 재요청을 무해하게 만든다. 조건이 없으면 이미 읽은 알림의 read_at 이
+        갱신돼 최초 읽은 시각을 잃는다.
+    -->
+    <update id="markRead">
+        UPDATE notifications
+        SET is_read = 1,
+            read_at = NOW(6)
+        WHERE id = #{notificationId}
+          AND recipient_user_id = #{recipientUserId}
+          AND is_read = 0
+    </update>
+
+    <select id="existsForRecipient" resultType="int">
+        SELECT COUNT(*)
+        FROM notifications
+        WHERE id = #{notificationId}
+          AND recipient_user_id = #{recipientUserId}
+    </select>
+
+</mapper>

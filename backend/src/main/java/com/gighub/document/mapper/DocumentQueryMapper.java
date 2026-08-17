@@ -12,6 +12,14 @@ import java.util.List;
 
 @Mapper
 public interface DocumentQueryMapper {
+
+    /**
+     * 공유 알림 문구에 쓸 근무 제목입니다.
+     *
+     * <p>QX-003이 이미 이 Mapper의 {@code work_cases} 읽기를 허용합니다. 알림 문구 하나를
+     * 위해 Work 모듈에 새 공개 Query를 만들지 않습니다.</p>
+     */
+    String findWorkCaseTitle(@Param("workCaseId") Long workCaseId);
     List<DocumentListRow> findDocuments(
             @Param("userId") Long userId,
             @Param("role") String role,

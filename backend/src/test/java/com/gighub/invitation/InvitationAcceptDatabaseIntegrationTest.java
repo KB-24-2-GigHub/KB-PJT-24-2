@@ -23,6 +23,7 @@ import com.gighub.invitation.application.InvitationAcceptanceReplaySnapshotCodec
 import com.gighub.invitation.exception.InvitationAlreadyAcceptedException;
 import com.gighub.invitation.exception.InvitationExpiredException;
 import com.gighub.invitation.service.AcceptanceWorkParticipant;
+import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.invitation.service.InvitationAcceptResult;
 import com.gighub.invitation.service.InvitationAcceptService;
 import com.gighub.invitation.service.InvitationIssueService;
@@ -292,7 +293,8 @@ class InvitationAcceptDatabaseIntegrationTest {
                             context.getBean(SettlementReservationService.class),
                             context.getBean(IdempotencyClaimService.class),
                             context.getBean(InvitationAcceptanceReplaySnapshotCodec.class),
-                            context.getBean(ContractArtifactPort.class)) {
+                            context.getBean(ContractArtifactPort.class),
+                            context.getBean(NotificationRecorder.class)) {
                         @Override
                         @Transactional(
                                 propagation = Propagation.REQUIRES_NEW,

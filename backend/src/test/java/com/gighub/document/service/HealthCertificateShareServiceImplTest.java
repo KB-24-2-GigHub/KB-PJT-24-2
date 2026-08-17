@@ -3,6 +3,8 @@ package com.gighub.document.service;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.exception.ConflictException;
 import com.gighub.document.mapper.ContractDocumentWriteMapper;
+import com.gighub.document.mapper.DocumentQueryMapper;
+import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.document.mapper.param.DocumentShareInsertParam;
 import com.gighub.member.domain.UserRole;
 import org.junit.jupiter.api.Test;
@@ -34,8 +36,12 @@ class HealthCertificateShareServiceImplTest {
     private final ContractDocumentWriteMapper documentMapper =
             mock(ContractDocumentWriteMapper.class);
 
+    private final DocumentQueryMapper documentQueryMapper = mock(DocumentQueryMapper.class);
+    private final NotificationRecorder notificationRecorder = mock(NotificationRecorder.class);
+
     private final HealthCertificateShareServiceImpl service =
-            new HealthCertificateShareServiceImpl(validator, documentMapper);
+            new HealthCertificateShareServiceImpl(
+                    validator, documentMapper, documentQueryMapper, notificationRecorder);
 
     @Test
     void storesTheServerDerivedRelationshipAsAnActiveHealthCertificateShare() {
