@@ -38,6 +38,7 @@ const workCases = [
 ]
 let nextWorkCaseId = 102
 let nextReportId = 1
+const reportsByWorkCase = new Map()
 
 function filtered(workplaceId, params = {}) {
   const keyword = String(params.keyword ?? '')
@@ -156,10 +157,51 @@ export async function getOwnerContact() {
   return { ownerName: '김사장', phone: '01012345678' }
 }
 
-export async function listReports() {
-  return { content: [] }
+export async function listReports(workCaseId) {
+  const content = reportsByWorkCase.get(Number(workCaseId)) ?? []
+  return {
+    content: content.map((report) => ({
+      ...report,
+      demoReview: report.demoReview ? { ...report.demoReview } : null
+    })),
+    page: {
+      number: 0,
+      size: content.length || 20,
+      totalElements: content.length,
+      totalPages: content.length ? 1 : 0
+    }
+  }
 }
 
-export async function createReport() {
-  return { reportId: nextReportId++ }
+export async function createReport(workCaseId, payload) {
+  const normalizedWorkCaseId = Number(workCaseId)
+  const reports = reportsByWorkCase.get(normalizedWorkCaseId) ?? []
+  if (reports.some((report) => ['OPEN', 'UNDER_REVIEW'].includes(report.status))) {
+    const duplicate = new Error('이미 처리 중인 분쟁이 있습니다.')
+    duplicate.code = 'DISPUTE_ALREADY_OPEN'
+    throw duplicate
+  }
+
+  const reportId = nextReportId++
+  reports.unshift({
+    reportId,
+    title: String(payload?.title ?? '').trim(),
+    content: String(payload?.content ?? '').trim(),
+    status: 'OPEN',
+    resolution: null,
+    requesterRole: 'WORKER',
+    createdAt: new Date().toISOString(),
+    resolvedAt: null,
+    demoReview: {
+      source: 'SIMULATED_LLM',
+      status: 'PENDING',
+      decision: null,
+      reasonCodes: [],
+      summary: null,
+      confidence: null,
+      reviewedAt: null
+    }
+  })
+  reportsByWorkCase.set(normalizedWorkCaseId, reports)
+  return { reportId }
 }

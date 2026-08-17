@@ -15,6 +15,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
   const isOpen = ref(false)
   const loading = ref(false)
   const loadError = ref(false)
+  // 처리 중인 notificationId. 같은 항목을 연달아 눌러도 요청과 개수 차감을 한 번만 만든다.
+  const readInFlight = new Set()
 
   async function load() {
     loading.value = true
@@ -46,16 +48,22 @@ export const useNotificationsStore = defineStore('notifications', () => {
    *
    * 먼저 낙관적으로 줄이면 실패했을 때 배지와 서버 상태가 어긋난 채 남는다. 이미 읽은 알림에
    * 다시 요청해도 서버는 성공을 돌려주므로, 화면에서 안읽음일 때만 개수를 줄인다.
+   *
+   * 화면 상태는 응답 뒤에 바뀌므로 `isRead` 검사만으로는 같은 항목을 빠르게 두 번 눌렀을 때
+   * 두 호출이 모두 통과해 개수가 두 번 줄어든다. 처리 중인 식별자를 따로 들고 막는다.
    */
   async function markRead(notificationId) {
     const target = items.value.find((item) => item.notificationId === notificationId)
-    if (!target || target.isRead) return
+    if (!target || target.isRead || readInFlight.has(notificationId)) return
+    readInFlight.add(notificationId)
     try {
       await markNotificationRead(notificationId)
     } catch {
       // 모달 항목 클릭은 대기 없이 호출된다. 실패를 던지면 처리되지 않은 거절만 남으므로
       // 화면 상태를 그대로 두어 다음 클릭에 다시 시도할 수 있게 한다.
       return
+    } finally {
+      readInFlight.delete(notificationId)
     }
     target.isRead = true
     target.readAt = new Date().toISOString()

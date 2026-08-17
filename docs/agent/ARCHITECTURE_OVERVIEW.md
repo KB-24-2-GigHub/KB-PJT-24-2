@@ -8,7 +8,7 @@ Read this short overview after the current issue, its Parent, direct native depe
 - The frontend is currently a JavaScript-based Vue 3 and Vite application. Vue Router owns navigation, Pinia owns client state, and `src/services/` owns HTTP access through Axios. TypeScript adoption is conditional under `docs/DEPENDENCY_SPECIFICATION.md`.
 - The backend is a Java 17 WAR for Tomcat 9 using Spring Framework 5 without Spring Boot. Annotation-based configuration separates the Root Context from the Spring MVC Servlet Context.
 - Backend domain and business flows follow `controller -> service -> mapper`; MyBatis mapper interfaces call SQL in `backend/src/main/resources/mappers/`.
-- Backend 업무 경계는 현재 package 수가 아니라 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)의 9개 논리 모듈과 24개 table write owner로 판단한다. `work`/`invitation`/`contract`는 하나의 Work 모듈이고 `auth`/`member`/`badge`는 하나의 Member/Auth 모듈이다.
+- Backend 업무 경계는 현재 package 수가 아니라 [`MODULE_BOUNDARIES.md`](MODULE_BOUNDARIES.md)의 9개 논리 모듈과 25개 table write owner로 판단한다. `work`/`invitation`/`contract`는 하나의 Work 모듈이고 `auth`/`member`/`badge`는 하나의 Member/Auth 모듈이다.
 - MySQL 8.4 runs through Docker Compose. Flyway SQL under `backend/src/main/resources/db/migration/` is the schema source of truth.
 - Docker Compose provides MySQL and opt-in Flyway or seed tools only; run the Vue application and Tomcat WAR separately.
 

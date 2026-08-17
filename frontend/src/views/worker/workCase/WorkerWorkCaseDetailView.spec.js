@@ -7,8 +7,9 @@ import { useUiStore } from '@/stores/ui'
 import WorkerWorkCaseDetailView from '@/views/worker/workCase/WorkerWorkCaseDetailView.vue'
 
 const route = reactive({ params: { workCaseId: '42' } })
-// AppBackHeader(공통 헤더)가 useRouter를 쓰므로 이 화면이 더 이상 안 써도 함께 목업한다.
-vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push: vi.fn() }) }))
+const push = vi.fn()
+// 상세의 분쟁 이동과 AppBackHeader가 같은 Router mock을 사용한다.
+vi.mock('vue-router', () => ({ useRoute: () => route, useRouter: () => ({ push }) }))
 vi.mock('@/services/workCases', () => ({ getOwnerContact: vi.fn(), getWorkCase: vi.fn() }))
 
 import { getOwnerContact, getWorkCase } from '@/services/workCases'
@@ -46,6 +47,7 @@ describe('WorkerWorkCaseDetailView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     route.params.workCaseId = '42'
+    push.mockClear()
     getOwnerContact.mockReset().mockResolvedValue({ ownerName: '김사장', phone: '01012345678' })
     getWorkCase.mockReset()
   })
@@ -324,13 +326,14 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).not.toContain('환불 완료')
   })
 
-  it('임금분쟁 신고 버튼은 비활성 상태로만 노출한다', async () => {
+  it('임금분쟁 신고·조회 화면으로 이동한다', async () => {
     getWorkCase.mockResolvedValueOnce(baseWorkCase())
     const wrapper = mountView()
     await flushPromises()
 
     const reportButton = wrapper.findAll('button').find((b) => b.text().includes('임금분쟁 신고'))
-    expect(reportButton.text()).toContain('준비 중')
-    expect(reportButton.attributes('disabled')).toBeDefined()
+    expect(reportButton.attributes('disabled')).toBeUndefined()
+    await reportButton.trigger('click')
+    expect(push).toHaveBeenCalledWith('/worker/work/work-cases/42/report')
   })
 })

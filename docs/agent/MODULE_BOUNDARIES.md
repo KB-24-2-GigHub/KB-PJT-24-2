@@ -9,7 +9,7 @@
 | 소유 이슈          | GitHub #283                                        |
 | 적용 브랜치        | `dev2`                                             |
 | 기준 코드          | `7e45ad3e8227de56298b2f5ceafb5a4b5933c060`         |
-| 기준 Schema        | Flyway `202608121403`, 24개 Domain table           |
+| 기준 Schema        | Flyway `202608152345`, 25개 Domain table           |
 | 기계 판독 Manifest | [`MODULE_BOUNDARIES.json`](MODULE_BOUNDARIES.json) |
 
 이 문서는 업무 책임, 테이블 쓰기 소유권, 공개 Application 경계, Transaction 조정 위치의
@@ -155,7 +155,8 @@ sequenceDiagram
 | `mock_bank_accounts`     | Bank Adapter       | `bank.mapper.MockBankMapper`                  | 계좌 lock·입출금 Adapter                  | 계좌 식별·잔액 Snapshot    | Bank Adapter       | Bank Adapter + PM/Admin       | 단일 writer                                     |
 | `mock_bank_transactions` | Bank Adapter       | `bank.mapper.MockBankMapper`                  | transfer 결과 ledger                      | bank transfer 조회         | Bank Adapter       | Bank Adapter + PM/Admin       | 단일 writer                                     |
 | `settlements`            | Settlement         | `settlement.mapper.SettlementMapper`          | 예약·선점·완료·환불 종료                  | Settlement 상태 Projection | Settlement         | Settlement + PM/Admin         | 단일 writer; 수락은 예약 participant 호출       |
-| `disputes`               | Settlement         | `settlement.mapper.DisputeMapper`             | Deferred 분쟁 생성·처리                   | 당사자 분쟁 Projection     | Settlement         | Settlement + PM/Admin         | writer 없음; Deferred 기능 미구현               |
+| `disputes`               | Settlement         | `settlement.mapper.DisputeMapper`             | 분쟁 생성·처리                            | 당사자 분쟁 Projection     | Settlement         | Settlement + PM/Admin         | 단일 writer                                     |
+| `dispute_ai_reviews`     | Settlement         | `settlement.mapper.DisputeReviewMapper`       | DEMO 검토 작업·결과·실패 감사 기록        | 당사자 DEMO 결과 Projection | Settlement       | Settlement + PM/Admin         | 단일 writer; 외부 호출은 Transaction 밖에서 수행 |
 | `documents`              | Document           | `document.mapper.ContractDocumentWriteMapper` | 문서 Metadata 생성·상태 변경              | 문서 목록·접근 Projection  | Document           | Document + PM/Admin           | 단일 writer                                     |
 | `document_versions`      | Document           | `document.mapper.ContractDocumentWriteMapper` | Version 생성·Artifact 연결                | 허용 Version Projection    | Document           | Document + PM/Admin           | 단일 writer                                     |
 | `document_signatures`    | Document           | `document.mapper.ContractDocumentWriteMapper` | 서명 증거 기록                            | 서명 검증 Projection       | Document           | Document + PM/Admin           | 단일 writer                                     |
@@ -172,7 +173,7 @@ sequenceDiagram
 - 외부 모듈이 owner Mapper를 직접 주입하면 SQL 파일이 하나여도 소유권 위반이다.
 - owner Command는 권한, 상태 정책, expected-state DML, 영향 행 수, Lock과 의미 오류를
   캡슐화해야 한다. 단순 1:1 Mapper wrapper를 만들라는 뜻은 아니다.
-- writer가 없는 테이블은 `missing`으로 유지한다. #283 때문에 분쟁, 비밀번호 재설정, Badge
+- writer가 없는 테이블은 `missing`으로 유지한다. #283 때문에 비밀번호 재설정, Badge
   기능을 새로 구현하지 않는다.
 
 ## 공개 Application 경계
@@ -318,10 +319,10 @@ Service가 `user_badges` Upsert에만 사용한다. QX-006에 DML을 추가하�
 | -------- | -------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------ |
 | `TV-010` | 새로고침·재로그인 뒤 client replay key | Backend Claim·pending 복구는 #288에서 고정됐으나 response-loss Key 복원은 미구현 | 검증 #160/#267; 구현 이슈 없음 |
 
-`disputes`, `password_reset_tokens`의 writer 부재는 이 표의 리팩터링 위반을 고치기 위한 신규
-기능 허가가 아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다. `user_badges`는 `#182`에서
-`BadgeApplicationService`가 유일한 writer(`badge.mapper.UserBadgeMapper`)로 붙어 이 목록에서
-제외됐다.
+`password_reset_tokens`의 writer 부재는 이 표의 리팩터링 위반을 고치기 위한 신규 기능 허가가
+아니다. 원래 기능 이슈 또는 Deferred 상태를 유지한다. `disputes`는 `#387`의
+`settlement.mapper.DisputeMapper`, `user_badges`는 `#182`의
+`badge.mapper.UserBadgeMapper`가 각각 유일한 writer로 붙어 이 목록에서 제외됐다.
 
 ## Domain과 타입 경계
 
@@ -357,7 +358,7 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
 - **Date:** 2026-08-10
 - **Context:** 패키지별 기능 구현이 `work_cases`, Wallet, Document 쓰기를 여러 caller에
   분산시켰고, 수시간 Work 생명주기와 수락 순간의 짧은 원자 명령이 혼동될 위험이 있었다.
-- **Decision:** 10개 굵은 논리 모듈, 25개 테이블의 단일 write owner, 공개 Application 경계,
+- **Decision:** 10개 굵은 논리 모듈, 26개 테이블의 단일 write owner, 공개 Application 경계,
   read-only JOIN 예외, use-case Orchestrator가 소유하는 outer Transaction을 채택한다.
 - **Consequences:** `work`/`invitation`/`contract`와 `auth`/`member`/`badge`의 물리 package는
   유지할 수 있다. #287에서 직접 Mapper 호출을 owner Service로 옮겼고, #288에서 수락 조정을
@@ -371,7 +372,7 @@ EscrowHoldResult holdEscrow(EscrowHoldCommand command);
 
 이 문서와 Manifest를 바꿀 때 다음을 함께 검증한다.
 
-1. Manifest의 owner table 집합이 현재 Flyway Head와 통합 DDL의 24개 Domain table과 정확히
+1. Manifest의 owner table 집합이 현재 Flyway Head와 통합 DDL의 25개 Domain table과 정확히
    일치하는지 검사한다.
 2. production Java의 타 논리 모듈 Mapper import와 Controller Mapper import를 재감사한다.
 3. Mapper XML의 DML table을 owner package와 비교하고, Query 예외 SQL에 DML이 없는지

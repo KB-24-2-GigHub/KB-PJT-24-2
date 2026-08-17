@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.gighub.settlement.mapper.DisputeMapper">
+
+    <resultMap id="disputeListRow" type="com.gighub.settlement.mapper.result.DisputeListRow">
+        <constructor>
+            <idArg column="reportId" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.gighub.settlement.domain.DisputeStatus"/>
+            <arg column="resolution" javaType="java.lang.String"/>
+            <arg column="requesterRole" javaType="com.gighub.member.domain.UserRole"/>
+            <arg column="createdAt" javaType="java.time.LocalDateTime"/>
+            <arg column="resolvedAt" javaType="java.time.LocalDateTime"/>
+            <arg column="reviewSource" javaType="java.lang.String"/>
+            <arg column="reviewStatus"
+                 javaType="com.gighub.settlement.review.DisputeReviewExecutionStatus"/>
+            <arg column="reviewDecision"
+                 javaType="com.gighub.settlement.review.DisputeReviewDecision"/>
+            <arg column="reviewReasonCodesJson" javaType="java.lang.String"/>
+            <arg column="reviewSummary" javaType="java.lang.String"/>
+            <arg column="reviewConfidence" javaType="java.math.BigDecimal"/>
+            <arg column="reviewedAt" javaType="java.time.LocalDateTime"/>
+        </constructor>
+    </resultMap>
+
+    <resultMap id="disputeSnapshot" type="com.gighub.settlement.mapper.result.DisputeSnapshot">
+        <constructor>
+            <idArg column="disputeId" javaType="java.lang.Long"/>
+            <arg column="workCaseId" javaType="java.lang.Long"/>
+            <arg column="title" javaType="java.lang.String"/>
+            <arg column="content" javaType="java.lang.String"/>
+            <arg column="status" javaType="com.gighub.settlement.domain.DisputeStatus"/>
+        </constructor>
+    </resultMap>
+
+    <select id="findOpenIdsForUpdate" resultType="java.lang.Long">
+        SELECT id
+        FROM disputes
+        WHERE work_case_id = #{workCaseId}
+          AND status IN ('OPEN', 'UNDER_REVIEW')
+        FOR UPDATE
+    </select>
+
+    <insert id="insertOpen" useGeneratedKeys="true" keyProperty="reportId">
+        INSERT INTO disputes
+        (work_case_id, requester_id, dispute_type, title, content, status)
+        VALUES
+        (#{workCaseId}, #{requesterUserId}, 'WAGE', #{title}, #{content}, 'OPEN')
+    </insert>
+
+    <select id="findByIdForUpdate" resultMap="disputeSnapshot">
+        SELECT id           AS disputeId,
+               work_case_id AS workCaseId,
+               title        AS title,
+               content      AS content,
+               status       AS status
+        FROM disputes
+        WHERE id = #{disputeId}
+        FOR UPDATE
+    </select>
+
+    <update id="transitionOpenToUnderReview">
+        UPDATE disputes
+        SET status = 'UNDER_REVIEW',
+            updated_at = NOW(6)
+        WHERE id = #{disputeId}
+          AND status = 'OPEN'
+    </update>
+
+    <update id="transitionToClosed">
+        UPDATE disputes
+        SET status = #{targetStatus},
+            resolution = #{resolution},
+            resolved_by_user_id = NULL,
+            resolved_at = NOW(6),
+            updated_at = NOW(6)
+        WHERE id = #{disputeId}
+          AND status IN ('OPEN', 'UNDER_REVIEW')
+          AND #{targetStatus} IN ('RESOLVED', 'REJECTED')
+    </update>
+
+    <select id="countByWorkCaseId" resultType="long">
+        SELECT COUNT(*)
+        FROM disputes
+        WHERE work_case_id = #{workCaseId}
+    </select>
+
+    <select id="findPageByWorkCaseId" resultMap="disputeListRow">
+        SELECT d.id AS reportId,
+               d.title AS title,
+               d.content AS content,
+               d.status AS status,
+               d.resolution AS resolution,
+               CASE
+                   WHEN d.requester_id = wc.employer_id THEN 'OWNER'
+                   ELSE 'WORKER'
+               END AS requesterRole,
+               d.created_at AS createdAt,
+               d.resolved_at AS resolvedAt,
+               r.source AS reviewSource,
+               r.status AS reviewStatus,
+               r.decision AS reviewDecision,
+               CAST(r.reason_codes AS CHAR) AS reviewReasonCodesJson,
+               r.summary AS reviewSummary,
+               r.confidence AS reviewConfidence,
+               r.completed_at AS reviewedAt
+        FROM disputes d
+        JOIN work_cases wc ON wc.id = d.work_case_id
+        LEFT JOIN dispute_ai_reviews r ON r.id = (
+            SELECT latest.id
+            FROM dispute_ai_reviews latest
+            WHERE latest.dispute_id = d.id
+            ORDER BY latest.created_at DESC, latest.id DESC
+            LIMIT 1
+        )
+        WHERE d.work_case_id = #{workCaseId}
+        ORDER BY d.created_at DESC, d.id DESC
+        LIMIT #{limit} OFFSET #{offset}
+    </select>
+
+</mapper>

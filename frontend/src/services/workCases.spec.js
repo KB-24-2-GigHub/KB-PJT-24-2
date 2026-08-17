@@ -174,24 +174,35 @@ describe('workCases service', () => {
   })
 })
 
-describe('workCases service — 미구현 연락처·분쟁은 fail-closed', () => {
+describe('workCases service — 미구현 연락처는 fail-closed, 분쟁은 LIVE', () => {
   beforeEach(() => {
     http.get.mockReset()
     http.post.mockReset()
   })
 
   it('Production 기본 선택은 fake success 대신 명시 Unavailable을 반환한다', async () => {
-    const { getOwnerContact, listReports, createReport } = await import('@/services/workCases')
+    const { getOwnerContact } = await import('@/services/workCases')
 
-    for (const action of [
-      () => getOwnerContact(1),
-      () => listReports(1),
-      () => createReport(1, { content: '내용' })
-    ]) {
-      await expect(action()).rejects.toMatchObject({ code: 'FEATURE_UNAVAILABLE' })
-    }
+    await expect(getOwnerContact(1)).rejects.toMatchObject({ code: 'FEATURE_UNAVAILABLE' })
 
     expect(http.get).not.toHaveBeenCalled()
     expect(http.post).not.toHaveBeenCalled()
+  })
+
+  it('분쟁 조회와 생성은 실제 API adapter로 전달한다', async () => {
+    const { listReports, createReport } = await import('@/services/workCases')
+    http.get.mockResolvedValueOnce({ data: { content: [], page: { totalElements: 0 } } })
+    http.post.mockResolvedValueOnce({ data: { reportId: 7 } })
+
+    await expect(listReports(1)).resolves.toMatchObject({ content: [] })
+    await expect(
+      createReport(1, { title: '임금 확인', content: '약정 일급 미지급' })
+    ).resolves.toEqual({ reportId: 7 })
+
+    expect(http.get).toHaveBeenCalledWith('/work-cases/1/disputes')
+    expect(http.post).toHaveBeenCalledWith('/work-cases/1/disputes', {
+      title: '임금 확인',
+      content: '약정 일급 미지급'
+    })
   })
 })

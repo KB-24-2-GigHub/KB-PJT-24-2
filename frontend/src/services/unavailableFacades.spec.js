@@ -11,7 +11,7 @@ vi.mock('@/services/mockOperations', () => ({
 
 import http, { idempotentPost } from '@/services/http'
 import { isMockOperationEnabled } from '@/services/mockOperations'
-import { createReport } from '@/services/workCases'
+import { getOwnerContact } from '@/services/workCases'
 import { getWorkerHome, listWorkerWorkplaces, scan } from '@/services/worker'
 
 describe('unimplemented public facade operations', () => {
@@ -22,8 +22,9 @@ describe('unimplemented public facade operations', () => {
 
   it.each([
     // worker home·work-cases는 #168, attendance scan은 #167,
-    // documents(목록·상세·파일·보건증·공유)는 #183, 알림은 #384에서 LIVE로 전환됐다.
-    ['wage dispute', () => createReport(1, { content: '내용' }), '#174-#177']
+    // documents(목록·상세·파일·보건증·공유)는 #183, 임금분쟁은 #387,
+    // 알림은 #384·#385에서 LIVE로 전환됐다.
+    ['owner contact', () => getOwnerContact(1), '#163-#169']
   ])('fails closed for %s and identifies its owner issue', async (_name, action, ownerIssue) => {
     await expect(action()).rejects.toMatchObject({
       code: 'FEATURE_UNAVAILABLE',

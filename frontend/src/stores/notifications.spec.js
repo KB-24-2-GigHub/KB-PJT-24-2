@@ -109,6 +109,33 @@ describe('notifications store', () => {
     expect(store.unreadCount).toBe(1)
   })
 
+  /*
+   * 화면 상태는 응답 뒤에 바뀐다. 같은 항목을 빠르게 두 번 누르면 isRead 검사만으로는
+   * 두 호출이 모두 통과해 배지가 두 번 줄어든다.
+   */
+  it('같은 알림을 동시에 두 번 눌러도 한 번만 호출하고 개수도 한 번만 줄인다', async () => {
+    listNotifications.mockResolvedValue(page([notification()]))
+    getUnreadCount.mockResolvedValue({ unreadCount: 2 })
+    let resolveRead
+    markNotificationRead.mockReturnValue(
+      new Promise((resolve) => {
+        resolveRead = resolve
+      })
+    )
+    const store = useNotificationsStore()
+    await store.load()
+    await store.loadUnreadCount()
+
+    const first = store.markRead(1)
+    const second = store.markRead(1)
+    resolveRead()
+    await Promise.all([first, second])
+
+    expect(markNotificationRead).toHaveBeenCalledTimes(1)
+    expect(store.items[0].isRead).toBe(true)
+    expect(store.unreadCount).toBe(1)
+  })
+
   it('이미 읽은 알림은 서버를 다시 부르지 않는다', async () => {
     listNotifications.mockResolvedValue(page([notification({ isRead: true })]))
     const store = useNotificationsStore()

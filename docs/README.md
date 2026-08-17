@@ -86,6 +86,7 @@ Flyway Migration이 DB 스키마의 단일 원본입니다. 통합 DDL은 표시
 | Frontend 설치·실행·검증   | [`../frontend/README.md`](../frontend/README.md)                   |
 | Backend WAR·DB 연결·검증  | [`../backend/README.md`](../backend/README.md)                     |
 | 최초 환경 준비            | [`GETTING_STARTED.md`](GETTING_STARTED.md)                         |
+| LLM 분쟁 DEMO 실행·복구   | [`runbooks/DISPUTE_DEMO_RUNBOOK.md`](runbooks/DISPUTE_DEMO_RUNBOOK.md) |
 | Issue·Branch·PR·종료      | [`PROJECT_MANAGEMENT_GUIDE.md`](PROJECT_MANAGEMENT_GUIDE.md)       |
 | Commit 규약               | [`COMMIT_CONVENTION.md`](COMMIT_CONVENTION.md)                     |
 | Git Hook·Guardrail 책임   | [`GIT_HOOKS_HUSKY_GUIDE.md`](GIT_HOOKS_HUSKY_GUIDE.md)             |
