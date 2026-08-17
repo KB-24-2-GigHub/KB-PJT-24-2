@@ -3,6 +3,7 @@ package com.gighub.notification.service;
 import com.gighub.notification.domain.NotificationType;
 import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.notification.service.impl.NotificationRecorderImpl;
+import com.gighub.notification.sse.NotificationEmitterRegistry;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -36,7 +37,9 @@ class NotificationRecorderImplTest {
 
     private final NotificationRecordTransaction recordTransaction =
             mock(NotificationRecordTransaction.class);
-    private final NotificationRecorder recorder = new NotificationRecorderImpl(recordTransaction);
+    private final NotificationEmitterRegistry emitterRegistry = mock(NotificationEmitterRegistry.class);
+    private final NotificationRecorder recorder =
+            new NotificationRecorderImpl(recordTransaction, emitterRegistry);
 
     @AfterEach
     void clearSynchronization() {
@@ -129,6 +132,37 @@ class NotificationRecorderImplTest {
                 () -> recorder.record(command(NotificationType.SETTLED, 501L, List.of())));
 
         verify(recordTransaction, never()).insertOne(any(), any());
+    }
+
+    /**
+     * 실시간 신호는 적재가 확정된 수신자에게만 간다(#386).
+     *
+     * <p>실패한 수신자에게도 보내면 "새 알림이 있다"는 신호 뒤에 목록이 그대로인 화면이 남는다.</p>
+     */
+    @Test
+    void signalsOnlyRecipientsWhoseRowWasWritten() {
+        TransactionSynchronizationManager.initSynchronization();
+        doThrow(new DataIntegrityViolationException("content too long"))
+                .when(recordTransaction).insertOne(any(), eq(OWNER_ID));
+
+        recorder.record(command(NotificationType.SETTLED, 501L, List.of(OWNER_ID, WORKER_ID)));
+        commit();
+
+        verify(emitterRegistry, never()).notifyRecipient(OWNER_ID);
+        verify(emitterRegistry).notifyRecipient(WORKER_ID);
+    }
+
+    /** SSE는 전달 수단이다. 신호가 실패해도 나머지 수신자의 적재가 멈추지 않는다. */
+    @Test
+    void keepsRecordingWhenTheRealtimeSignalFails() {
+        TransactionSynchronizationManager.initSynchronization();
+        doThrow(new IllegalStateException("emitter closed"))
+                .when(emitterRegistry).notifyRecipient(OWNER_ID);
+
+        recorder.record(command(NotificationType.SETTLED, 501L, List.of(OWNER_ID, WORKER_ID)));
+
+        assertDoesNotThrow(this::commit);
+        verify(recordTransaction).insertOne(any(), eq(WORKER_ID));
     }
 
     private void commit() {

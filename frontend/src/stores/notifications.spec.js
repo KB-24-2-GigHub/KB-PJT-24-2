@@ -10,10 +10,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 vi.mock('@/services/notifications', () => ({
   listNotifications: vi.fn(),
   getUnreadCount: vi.fn(),
-  markNotificationRead: vi.fn()
+  markNotificationRead: vi.fn(),
+  openNotificationStream: vi.fn()
 }))
 
-import { getUnreadCount, listNotifications, markNotificationRead } from '@/services/notifications'
+import {
+  getUnreadCount,
+  listNotifications,
+  markNotificationRead,
+  openNotificationStream
+} from '@/services/notifications'
 import { useNotificationsStore } from '@/stores/notifications'
 
 /** 승인 응답 형태 그대로. 목록은 공통 {content,page} Envelope 다. */
@@ -177,5 +183,99 @@ describe('notifications store', () => {
 
     expect(store.isOpen).toBe(true)
     expect(listNotifications).toHaveBeenCalledTimes(1)
+  })
+
+  /*
+   * 실시간 구독(#386).
+   *
+   * 서버가 보내는 것은 "다시 조회하라"는 신호뿐이다. 스트림에서 알림 본문을 읽어 화면에 넣으면
+   * 목록 Endpoint 와 형태가 두 벌이 된다. 그리고 SSE 가 죽어도 목록·읽음 처리는 살아 있어야
+   * 한다 — 이것이 SSE 를 마지막 단계로 둔 이유다.
+   */
+  describe('실시간 구독', () => {
+    /** jsdom 에는 EventSource 가 없다. 구독·해제만 관찰하는 최소 대역을 세운다. */
+    function fakeEventSource() {
+      const listeners = {}
+      const source = {
+        addEventListener: (name, handler) => {
+          listeners[name] = handler
+        },
+        close: vi.fn(),
+        emit: (name) => listeners[name]?.()
+      }
+      openNotificationStream.mockReturnValue(source)
+      globalThis.EventSource = function EventSourceStub() {}
+      return source
+    }
+
+    it('신호를 받으면 배지를 다시 조회한다', async () => {
+      const source = fakeEventSource()
+      getUnreadCount.mockResolvedValue({ unreadCount: 4 })
+      const store = useNotificationsStore()
+
+      store.connect()
+      source.emit('notification')
+      await vi.waitFor(() => expect(store.unreadCount).toBe(4))
+    })
+
+    it('모달이 닫혀 있으면 목록까지 다시 읽지 않는다', async () => {
+      const source = fakeEventSource()
+      getUnreadCount.mockResolvedValue({ unreadCount: 1 })
+      const store = useNotificationsStore()
+
+      store.connect()
+      source.emit('notification')
+
+      expect(listNotifications).not.toHaveBeenCalled()
+    })
+
+    it('모달이 열려 있으면 목록도 함께 갱신한다', async () => {
+      const source = fakeEventSource()
+      getUnreadCount.mockResolvedValue({ unreadCount: 1 })
+      listNotifications.mockResolvedValue(page([]))
+      const store = useNotificationsStore()
+
+      store.open()
+      store.connect()
+      source.emit('notification')
+
+      expect(listNotifications).toHaveBeenCalledTimes(2)
+    })
+
+    it('상단 바가 다시 마운트돼도 연결은 하나만 유지한다', () => {
+      fakeEventSource()
+      const store = useNotificationsStore()
+
+      store.connect()
+      store.connect()
+
+      expect(openNotificationStream).toHaveBeenCalledTimes(1)
+    })
+
+    it('해제하면 연결을 닫는다', () => {
+      const source = fakeEventSource()
+      const store = useNotificationsStore()
+
+      store.connect()
+      store.disconnect()
+
+      expect(source.close).toHaveBeenCalledTimes(1)
+    })
+
+    /* 구독이 실패해도 목록 조회는 그대로 동작해야 한다. */
+    it('구독에 실패해도 던지지 않고 목록 조회는 계속 동작한다', async () => {
+      globalThis.EventSource = function EventSourceStub() {}
+      openNotificationStream.mockImplementation(() => {
+        throw new Error('connection refused')
+      })
+      listNotifications.mockResolvedValue(page([notification()]))
+      const store = useNotificationsStore()
+
+      expect(() => store.connect()).not.toThrow()
+
+      await store.load()
+      expect(store.items).toHaveLength(1)
+      expect(store.loadError).toBe(false)
+    })
   })
 })

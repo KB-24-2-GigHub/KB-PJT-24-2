@@ -1000,6 +1000,88 @@ Actions → **Seed DB** → Run workflow.
 
 seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구 절차가 없다.
 
+## 15. SSE 실시간 알림 — 배포에서만 실패하는 3건
+
+`GET /api/notifications/stream` 은 끝나지 않는 응답(Server-Sent Events)이다. **로컬은 nginx 를
+거치지 않으므로, 아래 3건이 빠져도 로컬에서는 멀쩡하고 배포에서만 실패한다.** 셋 다 애플리케이션
+코드에 이미 반영돼 있다(#386). 이 절은 그것이 무엇을 막고 있는지와, 배포 후 어떻게 확인하는지를
+남긴다.
+
+| 대응                                              | 없으면 생기는 일                                   | 코드 위치 |
+| ------------------------------------------------- | -------------------------------------------------- | --------- |
+| 응답에 `X-Accel-Buffering: no`                    | nginx 가 응답을 버퍼링해 이벤트가 도달하지 않는다  | `NotificationStreamController` |
+| 25초 주기 하트비트(comment 프레임)                | `proxy_read_timeout 60s` 로 60초에 끊긴다          | `NotificationEmitterRegistry` |
+| `new SseEmitter(timeout)` 로 타임아웃 명시        | Tomcat 9 기본 async 타임아웃 30초로 30초마다 끊긴다 | `NotificationEmitterRegistry` |
+
+**nginx 설정 대신 헤더로 푸는 이유**: 서버의 `/etc/nginx/conf.d/api.gighub.store.conf` 는 certbot
+이 443 블록을 써넣어 저장소 사본과 이미 다르다. 저장소 파일을 서버로 복사하면 HTTPS 설정이
+사라진다. nginx 는 업스트림 응답에 `X-Accel-Buffering: no` 가 있으면 **그 응답에 한해** 버퍼링을
+끄므로, 애플리케이션이 헤더로 제어하면 서버를 재구축해도 자동으로 맞는다.
+
+`cors.allowed-origins` 에 프론트 Origin 이 있어야 한다. 브라우저 `EventSource` 는 기본적으로
+쿠키를 보내지 않아 `withCredentials: true` 로 열며, 그러면 CORS 검사 대상이 된다. GET 이므로
+CSRF 는 무관하다.
+
+### 15.1 배포 후 검증 — 끊기는 시각이 원인을 알려준다
+
+```bash
+# JSESSIONID 는 브라우저 로그인 후 개발자도구에서 복사한다.
+curl -N -H "Accept: text/event-stream" \
+  --cookie "JSESSIONID=<로그인해서 얻은 값>" \
+  https://api.gighub.store/api/notifications/stream
+```
+
+`-N` 이 curl 쪽 버퍼링을 끈다. 이것을 빼면 서버가 정상이어도 아무것도 안 보인다.
+
+| 관측                          | 판정                                    |
+| ----------------------------- | --------------------------------------- |
+| `:connected` 가 즉시, 이후 25초마다 `:keep-alive` | 정상                    |
+| 아무것도 안 나오거나 뭉쳐서 나옴 | `X-Accel-Buffering` 누락             |
+| 약 60초에 끊김                | 하트비트 누락                           |
+| 약 30초에 끊김                | `SseEmitter` 타임아웃 미명시            |
+| 즉시 401                      | 쿠키를 안 보냈거나 세션 만료            |
+
+실제 알림 신호까지 보려면 위 `curl` 을 띄워 둔 채로 다른 창에서 그 사용자에게 알림이 생기는
+동작(초대 수락·정산 완료 등)을 하고, `event: notification` 한 줄이 오는지 본다.
+
+### 15.2 그래도 nginx 를 고쳐야 한다면
+
+위 3건으로 해결되지 않을 때만 손댄다. **저장소 파일을 서버로 복사하지 말 것.** 서버 파일을 직접
+편집한다.
+
+```bash
+sudo cp /etc/nginx/conf.d/api.gighub.store.conf{,.bak-$(date +%F)}
+sudo vi /etc/nginx/conf.d/api.gighub.store.conf   # 443 server 블록 안에 location 추가
+sudo nginx -t && sudo systemctl reload nginx      # -t 통과 전에 reload 금지
+```
+
+```nginx
+location /api/notifications/stream {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
+}
+```
+
+접두 location 은 가장 긴 일치가 이기므로 파일 안에서의 순서는 상관없다. 서버에서 고쳤다면
+`deploy/nginx/api.gighub.store.conf` 에도 같은 내용을 반영하는 PR 을 올려야 재구축 시 사라지지
+않는다.
+
+### 15.3 스트림이 죽어도 알림은 죽지 않는다
+
+SSE 는 전달 수단이다. 연결이 실패한 동안에도 알림 모달을 열면 목록이 조회되고 읽음 처리도
+동작한다. 그러므로 **이 절의 실패는 배포를 되돌릴 사유가 아니다.** 영향은 "새 알림을 화면
+새로고침으로만 확인하게 된다"까지다.
+
+연결은 인스턴스 메모리에 유지되므로 앱 컨테이너를 재시작하면 모든 구독이 끊긴다. 브라우저
+`EventSource` 가 자동으로 다시 붙으므로 별도 조치는 필요 없다.
+
 ## 문제 해결
 
 | 증상                          | 확인 순서                                              |
@@ -1022,3 +1104,5 @@ seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간
 | 알람이 `INSUFFICIENT_DATA` 고정 | Alarm B 를 버스터블이 아닌 인스턴스에 만들었다. 13.1절 |
 | 배포할 때마다 알림이 울림     | 임계치가 낮거나 평가 기간이 짧다. 13.2절로 재관측, 3/3 유지 |
 | 알림 시각이 9시간 어긋남      | 옛 코드가 배포돼 있다. 13.5절 코드 배포 후 Deploy 버튼 |
+| 알림 배지가 새로고침해야 갱신됨 | SSE 스트림이 끊겼다. 15.1절 `curl -N` 으로 **끊기는 초 단위**를 먼저 본다 |
+| SSE 가 로컬은 되는데 배포만 안 됨 | 로컬은 nginx 를 거치지 않는다. 15절 3건이 모두 배포된 이미지인지 확인 |
