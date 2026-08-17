@@ -75,6 +75,32 @@ SET @workplace_id = (
     WHERE business_registration_number = @business_registration_number
 );
 
+-- 사업장 고정 QR(#381).
+--
+-- 앱으로 사업장을 등록하면 WorkplaceServiceImpl 이 같은 트랜잭션에서 QR 을 함께 발급한다.
+-- 시드는 workplaces 를 직접 INSERT 하므로 그 경로를 타지 않아, 깨끗한 Database 에서는
+-- OWNER QR 화면이 WORKPLACE_QR_INTEGRITY 로 막히고 WORKER 스캔도 시작할 수 없었다.
+-- 조회가 QR 을 만들지 않는 것은 발급 누락을 드러내려는 의도된 동작이므로(WorkplaceQrServiceImpl),
+-- 앱을 고치는 대신 시드가 앱과 같은 결과를 만든다.
+--
+-- token_nonce 는 공개 식별자이며 QR 서명 비밀이 아니다. Token 문자열은 저장하지 않고
+-- 환경의 HMAC Key 로 (keyId, workplaceId, nonce) 를 매번 다시 서명해 만들므로, 고정 nonce 를
+-- 커밋해도 다른 환경의 QR 을 위조할 수 없다.
+--
+-- 두 유일 제약(uk_qr_tokens_workplace_active, uk_qr_tokens_token_nonce)이 반복 적용 시 같은
+-- 행으로 모이도록 nonce 를 고정한다. 그래서 시드를 몇 번 돌려도 사업장당 ACTIVE 는 한 건이다.
+INSERT INTO qr_tokens (
+    workplace_id, issued_by_user_id, token_nonce, status
+) VALUES (
+    @workplace_id, @owner_id, UNHEX('00000000000000000000000000000267'), 'ACTIVE'
+)
+ON DUPLICATE KEY UPDATE
+    workplace_id = @workplace_id,
+    issued_by_user_id = @owner_id,
+    token_nonce = UNHEX('00000000000000000000000000000267'),
+    status = 'ACTIVE',
+    revoked_at = NULL;
+
 INSERT INTO wallets (user_id, currency, available_balance, locked_balance)
 VALUES (@owner_id, 'KRW', @owner_available_balance, 0)
 ON DUPLICATE KEY UPDATE

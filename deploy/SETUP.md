@@ -985,6 +985,11 @@ Actions → **Seed DB** → Run workflow.
 - **멱등**: 모든 `INSERT` 에 `ON DUPLICATE KEY UPDATE` 를 붙인다. 몇 번을 돌려도 결과가 같아야 한다.
 - **범위 한정**: `DELETE` 는 반드시 자기 fixture 의 owner/workplace 로 좁힌다. 화면에서 손으로
   만들어 둔 다른 데이터를 지우면 안 된다.
+- **사업장을 만들면 고정 QR 도 함께 만든다**: 앱으로 등록하면 사업장 생성 트랜잭션이 QR 을
+  같이 발급하지만, `workplaces` 를 직접 `INSERT` 하는 seed 는 그 경로를 타지 않는다. 빠뜨리면
+  깨끗한 Database 에서 OWNER QR 화면이 막히고 WORKER 스캔도 시작할 수 없다(#381). `token_nonce`
+  는 fixture 마다 고정값을 쓰되 서로 겹치지 않게 식별자 대역으로 나눈다 — 두 유일 제약이 같은
+  행으로 모여야 반복 적용해도 사업장당 ACTIVE 가 한 건으로 유지된다.
 
 이 두 가지는 현재 사람이 지키는 규칙이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
 파일이 실제로 들어오면 정적 검사 도입을 다시 판단한다.
