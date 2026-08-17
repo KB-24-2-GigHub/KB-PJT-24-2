@@ -426,6 +426,13 @@
       "crossModuleTables": ["settlements", "disputes", "work_cases", "attendance_records"],
       "purpose": "trust badge OWNER/WORKER evidence aggregation for recalculation",
       "crossTableWriteAllowed": false
+    },
+    {
+      "id": "QX-007",
+      "mapper": "com.gighub.document.mapper.ContractDocumentWriteMapper",
+      "crossModuleTables": ["work_cases"],
+      "purpose": "contract retention purge candidate and orphan-reference audit projection",
+      "crossTableWriteAllowed": false
     }
   ],
 

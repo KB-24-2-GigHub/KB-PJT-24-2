@@ -108,4 +108,78 @@
           AND d.document_type = 'EMPLOYMENT_CONTRACT'
     </select>
 
+    <!--
+        work_cases.ends_at는 이미 서울 벽시계 DATETIME(6)이므로(ARCHITECTURE_OVERVIEW.md)
+        추가 Timezone 변환 없이 DATE()로 서울 날짜를 얻는다. CURDATE()도 같은 DB 세션
+        기준이라 같은 지역으로 비교된다.
+    -->
+    <select id="findContractRetentionCandidates"
+            resultType="com.gighub.document.mapper.result.ContractRetentionCandidateRow">
+        SELECT d.id     AS documentId,
+               d.status AS status
+        FROM documents d
+                 JOIN work_cases wc ON wc.id = d.work_case_id
+        WHERE d.document_type = 'EMPLOYMENT_CONTRACT'
+          AND d.status != 'CANCELED'
+          AND d.id > #{afterDocumentId}
+          AND CURDATE() >= DATE_ADD(DATE(wc.ends_at), INTERVAL 3 YEAR)
+        ORDER BY d.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <select id="findOrphanedContractDocumentIds" resultType="java.lang.Long">
+        SELECT d.id
+        FROM documents d
+                 LEFT JOIN work_cases wc ON wc.id = d.work_case_id
+        WHERE d.document_type = 'EMPLOYMENT_CONTRACT'
+          AND d.status != 'CANCELED'
+          AND d.status != 'DELETED'
+          AND (d.work_case_id IS NULL OR wc.id IS NULL)
+          AND d.id > #{afterDocumentId}
+        ORDER BY d.id ASC
+        LIMIT #{limit}
+    </select>
+
+    <!--
+        SPEC-178-05 1단계: 행 잠금과 만료 재검증을 한 문장의 조건부 UPDATE로 원자 수행한다.
+        status != 'CANCELED'와 work_case_id의 만료 조건을 findContractRetentionCandidates와
+        동일하게 다시 검증하므로, 후보 조회(별도 짧은 Transaction) 이후 취소되거나 조건이
+        바뀌었어도 이 문장만으로 안전하다. 영향 행 수가 0이면 호출자는 더 이상 만료 대상이
+        아니라고 판단해 Storage 삭제를 진행하면 안 된다.
+        Mapper DML 소유권 Guardrail을 지키기 위해 JOIN 대신 단일 대상 테이블(documents)
+        WHERE 절의 Subquery로 재검증한다(revokeActiveSharesByWorkplace와 같은 관례).
+    -->
+    <update id="markContractDeleted">
+        UPDATE documents
+        SET status = 'DELETED'
+        WHERE id = #{documentId}
+          AND document_type = 'EMPLOYMENT_CONTRACT'
+          AND status != 'DELETED'
+          AND status != 'CANCELED'
+          AND work_case_id IN (
+              SELECT id FROM work_cases
+              WHERE CURDATE() >= DATE_ADD(DATE(ends_at), INTERVAL 3 YEAR)
+          )
+    </update>
+
+    <select id="findVersionKeysByDocumentId"
+            resultType="com.gighub.document.mapper.result.ContractRetentionVersionKeyRow">
+        SELECT dv.id          AS versionId,
+               d.work_case_id AS workCaseId,
+               dv.version_no  AS versionNo,
+               dv.storage_key AS storageKey
+        FROM document_versions dv
+                 JOIN documents d ON d.id = dv.document_id
+        WHERE dv.document_id = #{documentId}
+    </select>
+
+    <select id="sumVersionSizeBytesByDocumentIds" resultType="java.lang.Long">
+        SELECT SUM(dv.size_bytes)
+        FROM document_versions dv
+        WHERE dv.document_id IN
+        <foreach item="documentId" collection="documentIds" open="(" separator="," close=")">
+            #{documentId}
+        </foreach>
+    </select>
+
 </mapper>

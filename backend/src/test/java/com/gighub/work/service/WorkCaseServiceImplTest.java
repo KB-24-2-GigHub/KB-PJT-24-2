@@ -476,6 +476,29 @@ class WorkCaseServiceImplTest {
         assertThrows(IllegalStateException.class, () -> service.detail(owner(), WORK_CASE_ID));
     }
 
+    /**
+     * 보존 만료 파기(DOC-012)로 문서가 DELETED가 된 계약은 손상이 아니라 정상 정책 결과이므로
+     * 500을 던지지 않고, documentId만 감춰 클라이언트가 이미 사라진 파일을 다시 요청하지
+     * 않게 한다.
+     */
+    @Test
+    void detailHidesDocumentIdForARetentionPurgedContract() {
+        when(workCaseMapper.findDetailRow(WORK_CASE_ID)).thenReturn(detailRow(OWNER_ID, null));
+        when(workCaseMapper.findContractDetail(WORK_CASE_ID)).thenReturn(ContractDetailRow.builder()
+                .contractId(31L)
+                .documentId(77L)
+                .documentStatus("DELETED")
+                .sourceTermsVersion(3)
+                .acceptedAt(LocalDateTime.of(2026, 8, 10, 4, 0))
+                .build());
+        when(workCaseMapper.findAttendanceTimestamps(WORK_CASE_ID)).thenReturn(emptyAttendance());
+
+        WorkCaseDetailResponse response = service.detail(owner(), WORK_CASE_ID);
+
+        assertNotNull(response.getContract());
+        assertNull(response.getContract().getDocumentId());
+    }
+
     // ---------- fixtures ----------
 
     private AuthPrincipal owner() {

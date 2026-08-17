@@ -265,7 +265,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                         ? null
                         : WorkCaseDetailResponse.ContractSummary.of(
                                 contract.getContractId(),
-                                contract.getDocumentId(),
+                                visibleDocumentId(contract),
                                 contract.getSourceTermsVersion(),
                                 contract.getAcceptedAt()),
                 WorkCaseDetailResponse.AttendanceSummary.of(
@@ -300,12 +300,19 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
     }
 
+    private static final String DOCUMENT_STATUS_DELETED = "DELETED";
+
     /**
-     * 계약은 있는데 연결 문서가 없는 손상 상태를 API_SPEC 4.0.0 계약대로 500으로 드러냅니다.
+     * 계약은 있는데 연결 문서 행 자체가 없는 손상 상태를 API_SPEC 4.0.0 계약대로 500으로
+     * 드러냅니다.
      *
      * <p>부분 객체나 {@code null}로 감추면 클라이언트가 {@code contract.documentId}로 계약
      * 파일을 정상 조회할 수 있다고 착각합니다. 예외 메시지에 식별자를 담아 공통
      * {@code Exception} Handler가 traceId와 함께 서버 로그에 남기게 합니다.</p>
+     *
+     * <p>문서 행이 있지만 {@code DELETED}(보존 만료 파기, DOC-012)인 경우는 손상이 아니라
+     * 정상 정책 결과이므로 여기서는 통과시키고, {@link #visibleDocumentId(ContractDetailRow)}가
+     * 응답에서 그 documentId를 감춘다.</p>
      */
     private ContractDetailRow requireContractIntegrity(Long workCaseId) {
         ContractDetailRow contract = workCaseMapper.findContractDetail(workCaseId);
@@ -315,6 +322,16 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                             + "에 연결된 계약서 문서가 없습니다.");
         }
         return contract;
+    }
+
+    /**
+     * 파기된(DELETED) 계약서 문서는 이미 조회할 수 없으므로 documentId를 감춰 클라이언트가
+     * 파기된 문서를 정상 조회 가능한 것으로 착각해 죽은 링크를 호출하지 않게 한다.
+     */
+    private static Long visibleDocumentId(ContractDetailRow contract) {
+        return DOCUMENT_STATUS_DELETED.equals(contract.getDocumentStatus())
+                ? null
+                : contract.getDocumentId();
     }
 
     /**

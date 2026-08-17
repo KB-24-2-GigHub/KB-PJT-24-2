@@ -106,6 +106,7 @@ replay_pid*.log
 !/docs/spec-patches/**/*.md
 !/docs/runbooks/
 !/docs/runbooks/DATABASE_RUNBOOK.md
+!/docs/runbooks/CONTRACT_RETENTION_RUNBOOK.md
 
 # Shared documentation archive
 !/docs/archive/

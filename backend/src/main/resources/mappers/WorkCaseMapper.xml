@@ -321,6 +321,7 @@
         <constructor>
             <idArg column="contractId" javaType="java.lang.Long"/>
             <arg column="documentId" javaType="java.lang.Long"/>
+            <arg column="documentStatus" javaType="java.lang.String"/>
             <arg column="sourceTermsVersion" javaType="java.lang.Integer"/>
             <arg column="acceptedAt" javaType="java.time.LocalDateTime"/>
         </constructor>
@@ -392,6 +393,7 @@
     <select id="findContractDetail" resultMap="contractDetailResult">
         SELECT c.id                    AS contractId,
                d.id                    AS documentId,
+               d.status                AS documentStatus,
                c.source_terms_version  AS sourceTermsVersion,
                c.accepted_at           AS acceptedAt
         FROM work_contracts c

@@ -114,6 +114,23 @@ class LocalFileDocumentStorageAdapterTest {
     }
 
     @Test
+    void deleteFinalRemovesAPromotedObject() {
+        adapter.writePending("contracts/1/2/.pending/v1.pdf", CONTENT);
+        adapter.promote("contracts/1/2/.pending/v1.pdf", "contracts/1/2/v1.pdf", CHECKSUM);
+
+        adapter.deleteFinal("contracts/1/2/v1.pdf");
+
+        assertFalse(adapter.exists("contracts/1/2/v1.pdf"));
+    }
+
+    @Test
+    void deleteFinalIsIdempotentWhenNothingExists() {
+        adapter.deleteFinal("contracts/1/2/v1.pdf");
+
+        assertFalse(adapter.exists("contracts/1/2/v1.pdf"));
+    }
+
+    @Test
     void rollbackCleanupDeletesOnlyPendingObjectsUnderTheWorkCase() {
         adapter.writePending("contracts/1/2/.pending/v1.pdf", CONTENT);
         adapter.writePending("contracts/1/3/.pending/v2.pdf", CONTENT);

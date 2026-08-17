@@ -4,6 +4,8 @@ import com.gighub.document.mapper.param.DocumentInsertParam;
 import com.gighub.document.mapper.param.DocumentShareInsertParam;
 import com.gighub.document.mapper.param.DocumentSignatureInsertParam;
 import com.gighub.document.mapper.param.DocumentVersionInsertParam;
+import com.gighub.document.mapper.result.ContractRetentionCandidateRow;
+import com.gighub.document.mapper.result.ContractRetentionVersionKeyRow;
 import com.gighub.document.mapper.result.ContractVersionPromotionRow;
 import com.gighub.document.mapper.result.DocumentOwnershipRow;
 import org.apache.ibatis.annotations.Mapper;
@@ -83,4 +85,60 @@ public interface ContractDocumentWriteMapper {
      */
     List<ContractVersionPromotionRow> findPromotionRowsByWorkCaseId(
             @Param("workCaseId") long workCaseId);
+
+    /**
+     * {@code work_cases.ends_at}의 서울 종료 날짜에 3년을 더한 자정이 지난 근로계약서를
+     * {@code documentId} 오름차순으로 {@code afterDocumentId} 초과부터 최대 {@code limit}건
+     * 찾는다(DOC-012, {@code DEC-CONTRACT-RETENTION}). 이미 {@code DELETED}인 문서도 저장소
+     * Object 삭제 재시도 대상이라 함께 돌려준다. {@code CANCELED} 문서는 제외한다. 호출자가
+     * 이 Keyset으로 전체 Page를 순회해야 앞선 Page의 문서 때문에 뒤 대상이 굶지 않는다
+     * (SPEC-178-05).
+     */
+    List<ContractRetentionCandidateRow> findContractRetentionCandidates(
+            @Param("afterDocumentId") long afterDocumentId, @Param("limit") int limit);
+
+    /**
+     * {@code work_case_id}가 비었거나 참조 {@code work_cases} 행이 없는 근로계약서
+     * 식별자를 {@code documentId} 오름차순으로 {@code afterDocumentId} 초과부터 최대
+     * {@code limit}건 찾는다. 자동 생성 정책(DEC-CONTRACT-AUTO-GENERATION)상 있을 수 없는
+     * 데이터 손상이며 파기하지 않고 감사만 한다. 호출자가 이 Keyset으로 전체 Page를
+     * 순회해야 앞선 Page의 고아 문서 때문에 뒤 대상이 굶지 않는다.
+     */
+    List<Long> findOrphanedContractDocumentIds(
+            @Param("afterDocumentId") long afterDocumentId, @Param("limit") int limit);
+
+    /**
+     * 근로계약서를 {@code DELETED}로 전이한다(SPEC-178-05 1단계: "짧은 DB 트랜잭션에서
+     * 문서 행을 잠근다. 만료 대상이면 {@code documents.status=DELETED}로 바꾸고 Commit").
+     *
+     * <p>이 단일 {@code UPDATE}가 행 잠금·만료 재검증·조건부 전이를 한 문장 안에서 원자적으로
+     * 수행한다 — {@code status != 'CANCELED'}와 연결된 {@code work_cases.ends_at}이 지금도
+     * 보존 만료 조건을 만족하는지를 {@link #findContractRetentionCandidates}와 같은 조건으로
+     * 다시 검증하므로, 후보 조회(별도 Transaction)와 이 전이 사이에 취소되거나 조건이
+     * 바뀌었더라도 잘못된 대상을 파기하지 않는다.</p>
+     *
+     * <p><b>반환값은 무시하면 안 된다.</b> 1이면 이번 호출로 실제 전이가 일어났다는 뜻이고,
+     * 0은 이미 {@code DELETED}이거나, 취소됐거나, 더 이상 만료 대상이 아니라는 뜻이다. 두
+     * 경우 모두 문서가 지금 확실히 {@code DELETED}라고 보장할 수 없으므로, 호출자는 0을
+     * 받으면 이번 실행에서 이 문서의 Version·Storage 삭제를 진행하면 안 되고 다음 실행의
+     * 후보 재조회에 맡겨야 한다.</p>
+     */
+    int markContractDeleted(@Param("documentId") long documentId);
+
+    /**
+     * 한 문서의 모든 Version에 대해 Version 식별자·근무 식별자·Version 번호·최종 Storage
+     * Key를 돌려준다. 파기는 최종 Key뿐 아니라
+     * {@link com.gighub.document.storage.ContractStorageKeys}로 유도할 수 있는 대응 임시
+     * Key도 함께 정리해야 하므로 재구성에 필요한 값을 모두 담고, Version 식별자는 단계별
+     * 파기 감사 로그(SPEC-178-05)의 필수 필드다.
+     */
+    List<ContractRetentionVersionKeyRow> findVersionKeysByDocumentId(
+            @Param("documentId") long documentId);
+
+    /**
+     * 파기 후보 문서 목록의 모든 Version {@code size_bytes} 합을 돌려준다. Dry-run이 실제
+     * 파기 전 예상 Storage 회수량을 보고할 때만 쓰며, 대상 문서가 없거나 Version이 없으면
+     * {@code null}이다.
+     */
+    Long sumVersionSizeBytesByDocumentIds(@Param("documentIds") List<Long> documentIds);
 }

@@ -298,6 +298,7 @@ participant는 기존 outer Transaction 참여를 요구해야 하며 업무 데
 | `QX-004` | `document.mapper.DocumentAccessMapper`        | users, work_contracts, work_cases, workplaces                          | 계약 당사자·보건증 공유 접근 판정     | Document Query Port로 캡슐화                       |
 | `QX-005` | `attendance.mapper.AttendanceLifecycleMapper` | work/invitation/contract, wallet/settlement, workplace/document tables | lifecycle 후보·준비 Projection        | DML/FOR UPDATE 제거; Work lock·전이는 공개 Command |
 | `QX-006` | `badge.mapper.BadgeEvidenceSourceMapper`      | settlements, disputes, work_cases, attendance_records                  | 신뢰 배지 OWNER·WORKER 원천 이력 집계 | `#182` 구현. DML 금지, 원천 재계산 전용            |
+| `QX-007` | `document.mapper.ContractDocumentWriteMapper` | work_cases                                                             | 보존 만료 파기 후보·근무 참조 손상 감사 Projection(DOC-012) | Query 역할만 수행; 같은 Mapper의 DML은 documents/document_versions owner 쓰기로 한정 |
 
 `AttendanceLifecycleMapper`는 Scheduler batch와 READY 선행조건을 한 번에 읽는 consumer-owned
 Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전이는
@@ -308,6 +309,11 @@ Projection이다. #287에서 `work_cases` DML을 제거했고, 실제 상태 전
 쓰지 않고 OWNER 정산·분쟁, WORKER 근무·출퇴근 원천만 읽어 누적·정상 건수를 집계한다. Work·
 Attendance·Settlement 모듈은 이 Mapper를 참조하지 않으며, 계산 결과는 Badge Application
 Service가 `user_badges` Upsert에만 사용한다. QX-006에 DML을 추가하면 즉시 위반이다.
+
+`ContractDocumentWriteMapper`의 `documents`↔`work_cases` JOIN은 `#131`이 도입한 보존 만료
+파기 후보·근무 참조 손상 감사 전용 Query 예외다. 같은 Mapper의 DML은 `documents`·
+`document_versions` owner 쓰기로 한정되며, 이 JOIN은 SELECT만 수행한다. QX-007에 DML을
+추가하면 즉시 위반이다.
 
 ## 남은 위반과 단일 후속 소유자
 
@@ -399,4 +405,4 @@ signature는 허용하지 않는다.
 | Domain Framework/Web/Persistence 금지 import | 0                       | 0 유지                                   |
 | Production hardcoded Mock flag               | 4                       | #293 완료 시 0                           |
 | 현재 writer가 없는 table                     | 4                       | 기능 이슈 상태를 유지하고 거짓 완료 금지 |
-| 명시된 cross-table Query 예외                | 5                       | Manifest allowlist 밖 신규 예외 0        |
+| 명시된 cross-table Query 예외                | 7 (`#182` `QX-006`, `#131` `QX-007` 추가) | Manifest allowlist 밖 신규 예외 0        |

@@ -835,6 +835,11 @@ class InvitationAcceptDatabaseIntegrationTest {
                 long workCaseId, Set<Long> retainedDocumentIds) {
             delegate.deletePendingByWorkCaseId(workCaseId, retainedDocumentIds);
         }
+
+        @Override
+        public void deleteFinal(String finalKey) {
+            delegate.deleteFinal(finalKey);
+        }
     }
 
     private Fixture insertFixture(JdbcTemplate jdbcTemplate, String suffix, long available) {

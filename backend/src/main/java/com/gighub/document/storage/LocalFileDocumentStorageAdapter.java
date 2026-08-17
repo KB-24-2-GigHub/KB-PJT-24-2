@@ -88,6 +88,15 @@ public class LocalFileDocumentStorageAdapter implements DocumentStorageAdapter {
     }
 
     @Override
+    public void deleteFinal(String finalKey) {
+        try {
+            Files.deleteIfExists(resolve(finalKey));
+        } catch (IOException e) {
+            throw new DocumentStorageIntegrityException("최종 계약 파일을 정리하지 못했습니다.", e);
+        }
+    }
+
+    @Override
     public void deletePendingByWorkCaseId(long workCaseId, Set<Long> retainedDocumentIds) {
         Path workCasePath = resolve("contracts/" + workCaseId);
         if (!Files.exists(workCasePath)) {
