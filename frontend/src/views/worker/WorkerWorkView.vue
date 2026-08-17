@@ -20,13 +20,17 @@ import {
   formatSeoulDateTime,
   formatSeoulTimeRange
 } from '@/utils/format'
+import { hasNextPage } from '@/utils/page'
 
 const router = useRouter()
 const ui = useUiStore()
 
 const workCases = ref([])
 const loading = ref(true)
+const loadingMore = ref(false)
 const loadError = ref(null)
+const nextPage = ref(0)
+const hasMore = ref(false)
 
 onMounted(load)
 
@@ -34,10 +38,15 @@ async function load() {
   loading.value = true
   loadError.value = null
   try {
-    const { content } = await listWorkerWorkCases()
+    const { content, page } = await listWorkerWorkCases({ page: 0 })
     workCases.value = content ?? []
+    nextPage.value = 1
+    hasMore.value = hasNextPage(page)
   } catch (error) {
     loadError.value = error
+    // 이전 조회 결과를 남기면 오류 화면 아래에 낡은 목록이 함께 보인다.
+    workCases.value = []
+    hasMore.value = false
     const message =
       error?.code === 'FEATURE_UNAVAILABLE'
         ? '근무 내역은 현재 준비 중인 기능입니다.'
@@ -45,6 +54,29 @@ async function load() {
     ui.toast(message, { type: error?.code === 'FEATURE_UNAVAILABLE' ? 'info' : 'danger' })
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 다음 Page 를 이어 붙인다.
+ *
+ * 목록 API 는 기본 20건 Page 다. 첫 Page 만 읽으면 21번째부터는 표시도 오류도 없이
+ * 사라져 사용자는 그 기록이 없다고 믿게 된다. 갈아끼우지 않고 뒤에 붙여야 한다.
+ * 실패해도 이미 불러온 목록은 지우지 않는다 — 더 보려던 시도가 보고 있던 것까지 없앨
+ * 이유가 없다.
+ */
+async function loadMore() {
+  if (loadingMore.value || !hasMore.value) return
+  loadingMore.value = true
+  try {
+    const { content, page } = await listWorkerWorkCases({ page: nextPage.value })
+    workCases.value = [...workCases.value, ...(content ?? [])]
+    nextPage.value += 1
+    hasMore.value = hasNextPage(page)
+  } catch {
+    ui.toast('근무 내역을 더 불러오지 못했어요.', { type: 'danger' })
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -94,6 +126,10 @@ function goDetail(workCase) {
         </button>
       </li>
     </ul>
+
+    <button v-if="hasMore" type="button" class="more-btn" :disabled="loadingMore" @click="loadMore">
+      {{ loadingMore ? '불러오는 중…' : '더 보기' }}
+    </button>
   </div>
 </template>
 
@@ -163,6 +199,19 @@ function goDetail(workCase) {
 .due-at {
   margin-top: var(--space-xs);
   font-size: var(--text-sm);
+  color: var(--color-text-sub);
+}
+
+/* 문서함(WorkerDocumentsView)의 '더 보기'와 같은 모양 — 두 목록이 같은 방식으로 이어진다. */
+.more-btn {
+  width: 100%;
+  margin-top: var(--space-md);
+  padding: var(--space-sm);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   color: var(--color-text-sub);
 }
 </style>
