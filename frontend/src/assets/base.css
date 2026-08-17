@@ -93,6 +93,9 @@ body {
   font-size: var(--text-md);
   color: var(--color-text);
   background: var(--color-bg);
+  /* 제목(h1~h6)도 이 값을 그대로 물려받는다. 별도 규칙을 두지 않는 것이 의도다 —
+     한글은 1.2 대에서 어센더(ㅎ·ㅊ 윗부분)가 잘려 보인다. 이전에는 Bootstrap Reboot 의
+     `h1~h6 { line-height: 1.2 }` 가 걸려 있어 화면마다 개별로 1.5 를 되돌리고 있었다(#407). */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }
