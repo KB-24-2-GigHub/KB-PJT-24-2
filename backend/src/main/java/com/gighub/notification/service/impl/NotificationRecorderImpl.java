@@ -3,6 +3,7 @@ package com.gighub.notification.service.impl;
 import com.gighub.notification.service.NotificationRecordTransaction;
 import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.notification.service.command.NotificationRecordCommand;
+import com.gighub.notification.sse.NotificationEmitterRegistry;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,6 +34,7 @@ public class NotificationRecorderImpl implements NotificationRecorder {
     private static final Logger log = LoggerFactory.getLogger(NotificationRecorderImpl.class);
 
     private final NotificationRecordTransaction recordTransaction;
+    private final NotificationEmitterRegistry emitterRegistry;
 
     @Override
     public void record(NotificationRecordCommand command) {
@@ -63,6 +65,9 @@ public class NotificationRecorderImpl implements NotificationRecorder {
         for (Long recipientUserId : command.getRecipientUserIds()) {
             try {
                 recordTransaction.insertOne(command, recipientUserId);
+                // 적재가 확정된 뒤에만 신호를 보낸다. 먼저 보내면 아직 조회되지 않는 알림을
+                // 가리키게 되고, 사용자는 배지만 늘고 목록은 그대로인 화면을 본다.
+                notifyRecipient(recipientUserId);
             } catch (DuplicateKeyException alreadyRecorded) {
                 // 같은 이벤트의 재처리다. 수신자가 둘인 유형에서 한쪽만 있어도 나머지는 계속 만든다.
                 log.debug(
@@ -82,6 +87,21 @@ public class NotificationRecorderImpl implements NotificationRecorder {
                         recipientUserId,
                         failure);
             }
+        }
+    }
+
+    /**
+     * 실시간 신호 실패는 적재 결과를 바꾸지 않습니다.
+     *
+     * <p>{@code NotificationEmitterRegistry}는 스스로 예외를 삼키지만, 여기서 한 번 더 막습니다.
+     * 이 Method는 수신자 Loop 안에 있어 한 명의 연결 문제가 다음 수신자의 적재까지 건너뛰게
+     * 만들면 안 됩니다. 신호를 놓쳐도 사용자는 화면을 다시 열면 알림을 봅니다.</p>
+     */
+    private void notifyRecipient(Long recipientUserId) {
+        try {
+            emitterRegistry.notifyRecipient(recipientUserId);
+        } catch (RuntimeException failure) {
+            log.debug("알림 실시간 신호 전달에 실패했습니다. recipientUserId={}", recipientUserId, failure);
         }
     }
 

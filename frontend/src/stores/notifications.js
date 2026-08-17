@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
-import { getUnreadCount, listNotifications, markNotificationRead } from '@/services/notifications'
+import {
+  getUnreadCount,
+  listNotifications,
+  markNotificationRead,
+  openNotificationStream
+} from '@/services/notifications'
 
 /**
  * 알림 상태 — 공통. 헤더 종 아이콘(안읽음 배지 + 모달 열기)과 NotificationModal 이 공유한다.
@@ -17,6 +22,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
   const loadError = ref(false)
   // 처리 중인 notificationId. 같은 항목을 연달아 눌러도 요청과 개수 차감을 한 번만 만든다.
   const readInFlight = new Set()
+  // 실시간 구독 연결. 상단 바가 여러 번 마운트돼도 하나만 유지한다.
+  let stream = null
 
   async function load() {
     loading.value = true
@@ -70,6 +77,37 @@ export const useNotificationsStore = defineStore('notifications', () => {
     unreadCount.value = Math.max(0, unreadCount.value - 1)
   }
 
+  /**
+   * 실시간 알림 구독 (#386).
+   *
+   * 서버가 보내는 것은 "다시 조회하라"는 신호뿐이고 알림 본문은 오지 않는다. 계약은
+   * 목록·개수 Endpoint 가 이미 소유하고 있어서, 스트림으로 두 번째 형태를 만들면 같은 알림을
+   * 두 벌로 관리하게 된다.
+   *
+   * 연결이 실패해도 화면은 그대로 동작해야 한다. onerror 에서 아무것도 하지 않는 이유는
+   * EventSource 가 스스로 재연결하기 때문이고, 그 사이에도 모달을 열면 목록은 조회된다.
+   */
+  function connect() {
+    if (stream || typeof EventSource === 'undefined') return
+    try {
+      stream = openNotificationStream()
+    } catch {
+      // 구독 실패는 배지가 늦게 갱신될 뿐이다. 상단 바를 깨뜨리지 않는다.
+      stream = null
+      return
+    }
+    stream.addEventListener('notification', () => {
+      loadUnreadCount()
+      // 모달이 열려 있을 때만 목록을 다시 읽는다. 닫혀 있으면 열 때 어차피 조회한다.
+      if (isOpen.value) load()
+    })
+  }
+
+  function disconnect() {
+    stream?.close()
+    stream = null
+  }
+
   function open() {
     isOpen.value = true
     load()
@@ -87,6 +125,8 @@ export const useNotificationsStore = defineStore('notifications', () => {
     load,
     loadUnreadCount,
     markRead,
+    connect,
+    disconnect,
     open,
     close
   }

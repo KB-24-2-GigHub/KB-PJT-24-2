@@ -27,3 +27,11 @@ export function getUnreadCount() {
 export function markNotificationRead(notificationId) {
   return invokeLive('markNotificationRead', [notificationId])
 }
+
+/**
+ * 실시간 스트림 구독 (#386).
+ *
+ * `invokeOperation` 을 거치지 않는다. 그 어댑터는 Promise 를 돌려주는 Operation 의 Mock·LIVE
+ * 전환 경계인데, 이것은 즉시 EventSource 를 돌려주는 연결이고 Mock 대상도 아니다.
+ */
+export { openNotificationStream } from '@/services/api/notificationsApi'

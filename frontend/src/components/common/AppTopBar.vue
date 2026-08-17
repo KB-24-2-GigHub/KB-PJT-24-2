@@ -8,7 +8,7 @@
  */
 import { Bell, ChevronDown, CircleUser } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import LogoSymbol from '@/assets/images/logo/logo-symbol.svg'
@@ -46,6 +46,13 @@ onMounted(() => {
   if (isOwner.value) workplace.load()
   // 배지만 필요하다. 목록은 모달을 열 때 조회한다(SPEC-382-01 이 개수를 분리했다).
   notifications.loadUnreadCount()
+  // 새 알림이 생기면 새로고침 없이 배지를 갱신한다(#386). 실패해도 위 조회는 그대로 동작한다.
+  notifications.connect()
+})
+
+// 로그아웃·언마운트에서 끊지 않으면 서버 Emitter 가 타임아웃까지 남는다.
+onUnmounted(() => {
+  notifications.disconnect()
 })
 
 function goMyPage() {

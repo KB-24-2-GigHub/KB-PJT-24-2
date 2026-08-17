@@ -24,6 +24,7 @@ export default [
         sessionStorage: 'readonly',
         console: 'readonly',
         fetch: 'readonly',
+        EventSource: 'readonly',
         FormData: 'readonly',
         URL: 'readonly',
         Blob: 'readonly',
