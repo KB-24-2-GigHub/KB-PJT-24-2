@@ -2,11 +2,6 @@
 /**
  * 토스트 호스트 — ui 스토어의 토스트 큐를 화면 상단에 렌더한다.
  * App.vue 에 한 번만 배치한다. 표시는 어디서든 `useUiStore().toast('메시지')`.
- *
- * 클래스 이름에 `app-` 접두사를 붙인 이유: main.js 가 Bootstrap 전체 CSS 를 로드하고,
- * Bootstrap 에도 Toast 컴포넌트가 있어 `.toast:not(.show) { display: none }` 규칙이 걸린다.
- * 여기 토스트에는 `.show` 가 없으므로 `.toast` 를 그대로 쓰면 렌더되어도 화면에 뜨지 않는다.
- * 특이도로 겨루는 대신(삽입 순서에 의존한다) 이름을 분리해 충돌 자체를 없앤다.
  */
 import { storeToRefs } from 'pinia'
 

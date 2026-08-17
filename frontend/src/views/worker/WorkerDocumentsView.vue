@@ -756,6 +756,8 @@ async function doRevoke(share) {
   color: var(--color-text);
 }
 .wp small {
+  /* 크기를 명시한다 — 이전에는 Bootstrap 의 small{font-size:.875em} 에 기대고 있었다(#406). */
+  font-size: var(--text-sm);
   color: var(--color-text-sub);
 }
 .muted {

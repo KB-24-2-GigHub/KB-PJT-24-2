@@ -68,7 +68,8 @@ const emit = defineEmits(['select', 'copy-invite'])
   flex-direction: column;
   gap: var(--space-sm);
   margin-top: var(--space-sm);
-  /* Bootstrap Reboot 의 ul padding-left 무효화 */
+  /* UA 기본 ul padding-left 무효화. base.css 가 이미 전역으로 지우지만,
+     이 목록은 scoped 규칙이 padding 을 직접 잡으므로 여기서도 명시한다. */
   padding: 0;
 }
 .item {

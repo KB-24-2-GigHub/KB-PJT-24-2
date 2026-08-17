@@ -157,10 +157,7 @@ onUnmounted(() => {
 }
 
 /* 헤더 폭(=카드 콘텐츠 폭)에 물려 뜬다 — 어떤 화면 폭에서도 카드를 넘지 않고,
-   아래 내용을 밀어내지 않고 덮는다.
-   클래스 이름이 `.popover` 가 아닌 이유: main.js 가 Bootstrap 전체 CSS 를 로드하고,
-   Bootstrap 의 `.popover { max-width: 276px }` 가 걸려 left:0/right:0 로 잡은 폭이 276px 에
-   잘린다(font-family 도 함께 샌다). 이름을 분리해 충돌 자체를 없앤다. */
+   아래 내용을 밀어내지 않고 덮는다. */
 .info-popover {
   position: absolute;
   z-index: 1;

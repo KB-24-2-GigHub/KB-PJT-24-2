@@ -19,9 +19,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@popperjs/core": "2.11.8",
     "axios": "^1.18.1",
-    "bootstrap": "5.3.8",
     "lucide-vue-next": "^1.0.0",
     "pinia": "3.0.4",
     "qrcode": "1.5.4",

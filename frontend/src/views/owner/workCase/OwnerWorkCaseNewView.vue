@@ -222,7 +222,6 @@ async function onSubmit() {
   margin: 0;
 }
 
-/* Bootstrap 에 .row 가 있어 이름을 피한다(음수 margin 이 새어 들어온다) */
 .field-row {
   display: flex;
   gap: var(--space-sm);

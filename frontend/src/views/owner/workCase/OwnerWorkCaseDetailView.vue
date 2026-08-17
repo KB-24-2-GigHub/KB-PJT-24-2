@@ -961,12 +961,7 @@ async function onApproveSettlement() {
   font-weight: var(--weight-medium);
 }
 
-/* ---- 진행 현황(초대·계약·예치·근태) ----
-   클래스 이름이 `.progress` 가 아닌 이유: main.js 가 Bootstrap 전체 CSS 를 로드하고,
-   Bootstrap 의 `.progress { display:flex; height:1rem; overflow:hidden }` 가 걸려 섹션이
-   16px 로 잘린다(제목 "진행 현황"과 목록이 가로로 눌려 깨져 보인다). scoped 는 [data-v] 로
-   특이도만 올릴 뿐, 여기서 선언하지 않은 속성은 막지 못한다 — 이름을 분리해 충돌 자체를
-   없앤다(.field-row · .app-toast 와 같은 이유). */
+/* ---- 진행 현황(초대·계약·예치·근태) ---- */
 .progress-section {
   margin-top: var(--space-xl);
 }
@@ -1093,7 +1088,6 @@ async function onApproveSettlement() {
   margin: 0;
 }
 
-/* Bootstrap 에 .row 가 있어 이름을 피한다(음수 margin 이 새어 들어온다) */
 .field-row {
   display: flex;
   gap: var(--space-sm);
