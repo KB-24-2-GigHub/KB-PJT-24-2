@@ -8,7 +8,6 @@
  * 사용: <AttendanceViewToggle v-model="viewMode" />   // 'list' | 'calendar'
  *
  * 접근성: 두 버튼을 라디오 그룹처럼 다루고, 선택된 쪽에 aria-pressed 를 준다.
- * 클래스명은 Bootstrap 과 겹치지 않도록 `view-toggle-` 접두사를 붙였다(docs/rules/frontend.md).
  */
 
 //  CalenderDays: 달력 아이콘, List: 목록 아이콘

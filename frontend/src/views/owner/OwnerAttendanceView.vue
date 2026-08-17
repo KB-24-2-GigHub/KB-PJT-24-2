@@ -480,11 +480,10 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   align-items: center;
   gap: var(--space-sm);
 }
-/* Bootstrap Reboot 의 heading 기본값을 두 군데 되돌린다. base.css 의 `* { margin: 0 }` 은
-   특이도(0,0,0)라 element 선택자 h2(0,0,1)에 밀린다.
-   - margin-bottom: .5rem → 0. 남겨두면 align-items:center 가 margin 포함 박스를 기준으로
-     잡아 제목이 추가 버튼보다 4px(8px 의 절반) 위로 올라간다.
-   - line-height: 1.2 → 1.5. 16px 에 19.2px 라인박스는 한글 어센더가 잘려 보인다. */
+/* margin·line-height 를 h2 기본값에 맡기지 않고 명시한다.
+   - margin: 0. 값이 남으면 align-items:center 가 margin 포함 박스를 기준으로 잡아
+     제목이 추가 버튼보다 위로 올라간다.
+   - line-height: 1.5. 16px 에 19.2px 이하의 라인박스는 한글 어센더가 잘려 보인다. */
 .list-title {
   margin: 0;
   font-size: var(--text-lg);

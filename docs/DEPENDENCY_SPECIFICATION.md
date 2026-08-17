@@ -96,7 +96,7 @@
 | UI Framework | `vue`                                                                                                  |
 | Routing·상태 | `vue-router`, `pinia`                                                                                  |
 | HTTP         | `axios`                                                                                                |
-| UI·Icon      | `bootstrap`, `@popperjs/core`, `lucide-vue-next`                                                       |
+| UI·Icon      | `lucide-vue-next`                                                                                      |
 | QR 생성      | `qrcode`                                                                                               |
 | Build        | `vite`, `@vitejs/plugin-vue`, `vite-svg-loader`                                                        |
 | Lint·Format  | `eslint`, `@eslint/js`, `eslint-plugin-vue`, `vue-eslint-parser`, `prettier`, `eslint-config-prettier` |
