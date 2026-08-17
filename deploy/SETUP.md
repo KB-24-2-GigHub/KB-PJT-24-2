@@ -285,7 +285,7 @@ mysql -h <rds-endpoint> -u <rds-user> -p \
 ## 7. /opt/gighub 디렉터리와 설정 파일
 
 ```bash
-sudo mkdir -p /opt/gighub/{config,documents,migrations,drivers}
+sudo mkdir -p /opt/gighub/{config,documents,migrations,drivers,logs}
 sudo chown -R ec2-user:ec2-user /opt/gighub
 chmod 700 /opt/gighub /opt/gighub/config
 ```
@@ -301,7 +301,12 @@ chmod 700 /opt/gighub /opt/gighub/config
   documents/                  계약 PDF 영속 볼륨 — 삭제 금지
   migrations/                 Flyway SQL
   drivers/                    MySQL Connector/J
+  logs/                       WARN 이상 애플리케이션 로그 (30일·100 MB 자동 정리)
 ```
+
+`logs/` 는 컨테이너를 교체해도 남아야 하는 로그만 받는다. INFO 이하와 Tomcat 자체 로그는
+`docker compose -f compose.prod.yaml logs app` 으로 본다. 파일 정리는 Log4j2 가 하므로
+logrotate 를 따로 걸지 않는다.
 
 로컬에서 템플릿과 Compose, 배포 스크립트를 복사한다:
 
@@ -1265,4 +1270,5 @@ SSE 는 전달 수단이다. 연결이 실패한 동안에도 알림 모달을 �
 | 배포할 때마다 알림이 울림     | 임계치가 낮거나 평가 기간이 짧다. 13.2절로 재관측, 3/3 유지 |
 | 알림 시각이 9시간 어긋남      | 옛 코드가 배포돼 있다. 13.5절 코드 배포 후 Deploy 버튼 |
 | 알림 배지가 새로고침해야 갱신됨 | SSE 스트림이 끊겼다. 15.1절 `curl -N` 으로 **끊기는 초 단위**를 먼저 본다 |
+| `/opt/gighub/logs` 가 비어 있음 | WARN 이상만 파일로 간다. INFO 는 `docker compose logs app` 이다. 그래도 비면 `-Dgighub.log.dir` 과 볼륨 마운트를 확인한다 |
 | SSE 가 로컬은 되는데 배포만 안 됨 | 로컬은 nginx 를 거치지 않는다. 15절 3건이 모두 배포된 이미지인지 확인 |
