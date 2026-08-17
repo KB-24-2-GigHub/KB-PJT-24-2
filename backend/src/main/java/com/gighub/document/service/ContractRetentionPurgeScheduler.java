@@ -46,9 +46,19 @@ public class ContractRetentionPurgeScheduler {
     private static final String STAGE_DB_STATUS_TRANSITION = "DB_STATUS_TRANSITION";
     private static final String STAGE_VERSION_LOOKUP = "VERSION_LOOKUP";
     private static final String STAGE_STORAGE_DELETE = "STORAGE_DELETE";
+    private static final String STAGE_ORPHAN_CHECK = "ORPHAN_CHECK";
+    private static final String STAGE_DRY_RUN_CAPACITY = "DRY_RUN_CAPACITY";
+    private static final String STAGE_CANDIDATE_FETCH = "CANDIDATE_FETCH";
     private static final String RESULT_SUCCESS = "SUCCESS";
     private static final String RESULT_FAILED = "FAILED";
     private static final String RESULT_SKIPPED = "SKIPPED";
+
+    /** 한 후보 문서의 파기 처리 결과. 완료 집계에서 성공·건너뜀·실패를 구분하는 데 쓴다. */
+    private enum PurgeOutcome {
+        SUCCESS,
+        SKIPPED,
+        FAILED
+    }
 
     private static final Logger log = LoggerFactory.getLogger(ContractRetentionPurgeScheduler.class);
 
@@ -77,9 +87,8 @@ public class ContractRetentionPurgeScheduler {
                         documentMapper.findOrphanedContractDocumentIds(afterDocumentId, BATCH_SIZE);
             } catch (RuntimeException failure) {
                 // 손상 점검 자체가 실패해도 다음 실행에서 다시 시도하면 되므로 예외를 삼킨다.
-                log.warn(
-                        "근로계약서 근무 참조 손상 점검에 실패했습니다. executionId={}, policyVersion={}",
-                        executionId, POLICY_VERSION, failure);
+                logStage(executionId, null, null, STAGE_ORPHAN_CHECK, RESULT_FAILED,
+                        failure.getClass().getSimpleName());
                 return;
             }
             if (orphanDocumentIds.isEmpty()) {
@@ -132,10 +141,8 @@ public class ContractRetentionPurgeScheduler {
             Long sum = documentMapper.sumVersionSizeBytesByDocumentIds(documentIds);
             return sum == null ? 0L : sum;
         } catch (RuntimeException failure) {
-            log.warn(
-                    "근로계약서 보존 만료 예상 Storage 회수량 집계에 실패했습니다. "
-                            + "executionId={}, policyVersion={}",
-                    executionId, POLICY_VERSION, failure);
+            logStage(executionId, null, null, STAGE_DRY_RUN_CAPACITY, RESULT_FAILED,
+                    failure.getClass().getSimpleName());
             return 0L;
         }
     }
@@ -144,6 +151,7 @@ public class ContractRetentionPurgeScheduler {
         long afterDocumentId = 0L;
         int totalCandidates = 0;
         int purged = 0;
+        int skipped = 0;
         int failed = 0;
         while (true) {
             List<ContractRetentionCandidateRow> page = fetchNextPage(executionId, afterDocumentId);
@@ -152,10 +160,10 @@ public class ContractRetentionPurgeScheduler {
             }
             totalCandidates += page.size();
             for (ContractRetentionCandidateRow candidate : page) {
-                if (purgeOne(executionId, candidate)) {
-                    purged++;
-                } else {
-                    failed++;
+                switch (purgeOne(executionId, candidate)) {
+                    case SUCCESS -> purged++;
+                    case SKIPPED -> skipped++;
+                    case FAILED -> failed++;
                 }
             }
             afterDocumentId = lastDocumentId(page);
@@ -163,8 +171,8 @@ public class ContractRetentionPurgeScheduler {
         if (totalCandidates > 0) {
             log.info(
                     "근로계약서 보존 만료 파기 실행을 완료했습니다. executionId={}, policyVersion={}, "
-                            + "candidates={}, purged={}, failed={}",
-                    executionId, POLICY_VERSION, totalCandidates, purged, failed);
+                            + "candidates={}, purged={}, skipped={}, failed={}",
+                    executionId, POLICY_VERSION, totalCandidates, purged, skipped, failed);
         }
     }
 
@@ -174,9 +182,8 @@ public class ContractRetentionPurgeScheduler {
             return documentMapper.findContractRetentionCandidates(afterDocumentId, BATCH_SIZE);
         } catch (RuntimeException failure) {
             // 후보 조회 자체가 실패해도 다음 실행에서 다시 시도하면 되므로 예외를 삼킨다.
-            log.warn(
-                    "근로계약서 보존 만료 후보 조회에 실패했습니다. executionId={}, policyVersion={}",
-                    executionId, POLICY_VERSION, failure);
+            logStage(executionId, null, null, STAGE_CANDIDATE_FETCH, RESULT_FAILED,
+                    failure.getClass().getSimpleName());
             return null;
         }
     }
@@ -187,16 +194,20 @@ public class ContractRetentionPurgeScheduler {
      * 않는다). 한 Version의 Storage 삭제 실패가 같은 문서의 다른 Version 재시도를 막지
      * 않도록 Version 단위로 계속 진행한다.
      *
-     * @return 이 문서의 모든 단계가 성공했으면 {@code true}
+     * @return 이 문서의 처리 결과({@link PurgeOutcome#SUCCESS}는 모든 단계 성공,
+     *         {@link PurgeOutcome#SKIPPED}는 상태 전이 조건 재검증에서 0건이라 손대지 않은
+     *         경우, {@link PurgeOutcome#FAILED}는 그 외 단계 실패)
      */
-    private boolean purgeOne(String executionId, ContractRetentionCandidateRow candidate) {
+    private PurgeOutcome purgeOne(String executionId, ContractRetentionCandidateRow candidate) {
         long documentId = candidate.getDocumentId();
-        if (!"DELETED".equals(candidate.getStatus())
-                && !transitionToDeleted(executionId, documentId)) {
-            // 영향 행 0(취소됨·조건 재검증 실패·경합 등)은 이 문서가 지금 확실히 DELETED임을
-            // 보장하지 않는다. Version/Storage 삭제로 진행하지 않고 다음 실행의 후보
-            // 재조회에 맡긴다.
-            return false;
+        if (!"DELETED".equals(candidate.getStatus())) {
+            PurgeOutcome transitionOutcome = transitionToDeleted(executionId, documentId);
+            if (transitionOutcome != PurgeOutcome.SUCCESS) {
+                // 영향 행 0(취소됨·조건 재검증 실패·경합 등)은 이 문서가 지금 확실히
+                // DELETED임을 보장하지 않는다. Version/Storage 삭제로 진행하지 않고
+                // 다음 실행의 후보 재조회에 맡긴다.
+                return transitionOutcome;
+            }
         }
 
         List<ContractRetentionVersionKeyRow> versions;
@@ -206,7 +217,7 @@ public class ContractRetentionPurgeScheduler {
             // Version 조회 실패도 이 문서 하나만 실패로 남긴다 — 다음 실행이 같은 조건으로
             // 다시 후보로 잡아 재시도한다.
             logStageFailure(executionId, documentId, null, STAGE_VERSION_LOOKUP, failure);
-            return false;
+            return PurgeOutcome.FAILED;
         }
 
         boolean allVersionsSucceeded = true;
@@ -215,31 +226,32 @@ public class ContractRetentionPurgeScheduler {
                 allVersionsSucceeded = false;
             }
         }
-        return allVersionsSucceeded;
+        return allVersionsSucceeded ? PurgeOutcome.SUCCESS : PurgeOutcome.FAILED;
     }
 
     /**
      * 영향 행 수를 반드시 확인한다. 1이면 이번 호출로 실제 전이가 일어난 것이고, 0이면
      * 이미 {@code DELETED}·취소됨·더 이상 만료 대상 아님 중 하나라 문서가 지금 확실히
      * {@code DELETED}라고 볼 수 없다({@link ContractDocumentWriteMapper#markContractDeleted}).
-     * 두 경우를 구분해 예외 없이 0이 나온 것을 성공으로 잘못 기록하지 않는다.
+     * 두 경우를 구분해 예외 없이 0이 나온 것을 성공으로 잘못 기록하지 않는다 — 완료 집계에서도
+     * 0건은 실패가 아니라 건너뜀으로 별도 집계한다.
      */
-    private boolean transitionToDeleted(String executionId, long documentId) {
+    private PurgeOutcome transitionToDeleted(String executionId, long documentId) {
         int updatedRows;
         try {
             updatedRows = documentMapper.markContractDeleted(documentId);
         } catch (RuntimeException failure) {
             logStageFailure(executionId, documentId, null, STAGE_DB_STATUS_TRANSITION, failure);
-            return false;
+            return PurgeOutcome.FAILED;
         }
         if (updatedRows == 0) {
             logStage(
                     executionId, documentId, null,
                     STAGE_DB_STATUS_TRANSITION, RESULT_SKIPPED, null);
-            return false;
+            return PurgeOutcome.SKIPPED;
         }
         logStage(executionId, documentId, null, STAGE_DB_STATUS_TRANSITION, RESULT_SUCCESS, null);
-        return true;
+        return PurgeOutcome.SUCCESS;
     }
 
     private boolean deleteVersionObjects(
@@ -273,7 +285,7 @@ public class ContractRetentionPurgeScheduler {
 
     private void logStage(
             String executionId,
-            long documentId,
+            Long documentId,
             Long versionId,
             String stage,
             String result,
