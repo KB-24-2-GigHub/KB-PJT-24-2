@@ -98,6 +98,14 @@ async function draw() {
 
   try {
     await QRCode.toCanvas(canvasEl.value, token, QR_OPTIONS)
+    // qrcode 는 그리면서 canvas 에 style.width/height 를 QR_OPTIONS.width(512px) 로 직접
+    // 박는다(lib/renderer/canvas.js 의 clearCanvas). 인라인 스타일이라 scoped CSS 의
+    // width/height 를 이겨, 그대로 두면 표시 크기를 화면이 통제하지 못한다.
+    // 실제로 그 탓에 QR 이 512px 로 상자를 뚫거나, max-width 로 폭만 눌리고 높이는
+    // 512px 로 남아 세로로 늘어나 보였다.
+    // width/height **속성**(512)은 지우지 않는다 — 인쇄·확대 시 선명도가 거기서 나온다.
+    canvasEl.value.style.width = ''
+    canvasEl.value.style.height = ''
   } catch {
     qr.value = null
     ui.toast('QR 이미지를 만들지 못했어요.', { type: 'danger' })
@@ -131,17 +139,21 @@ watch(() => qr.value?.qrToken, draw)
         <p class="desc">QR은 바뀌지 않으니 출력해서 매장에 붙여두고 계속 사용하세요.</p>
       </header>
 
+      <!-- 상자에는 QR 만 담는다. 토큰까지 넣으면 정사각형이 무너지고 QR 이 그만큼 작아진다. -->
       <div class="qr-box">
-        <template v-if="qr">
-          <canvas ref="canvasEl" class="qr-canvas"></canvas>
-          <!-- 알바생 화면의 토큰 직접 입력 경로가 남아 있어 사장이 값을 읽어줄 수 있어야 한다 -->
-          <p class="qr-token">{{ qr.qrToken }}</p>
-        </template>
+        <canvas v-if="qr" ref="canvasEl" class="qr-canvas"></canvas>
         <p v-else class="qr-placeholder">
           <template v-if="loading">QR을 불러오는 중…</template>
           <template v-else>표시할 QR이 없어요.</template>
         </p>
       </div>
+
+      <!-- 인쇄물이 훼손됐을 때 사장이 값을 확인·대조할 수 있게 남긴다. 읽을 일이 드문
+           보조 정보라 상자 밖에서 보조 텍스트로 표시한다. -->
+      <p v-if="qr" class="qr-token">
+        <span class="qr-token-label">QR 값</span>
+        {{ qr.qrToken }}
+      </p>
 
       <!--
         재발급 버튼을 qr 존재 여부에 묶지 않는다. 활성 QR 이 없는 지점은 조회가 실패하는데,
@@ -191,12 +203,13 @@ watch(() => qr.value?.qrToken, draw)
   color: var(--color-text-sub);
 }
 
+/* 내용이 QR 하나뿐이라 aspect-ratio 가 실제로 정사각형을 만든다. 토큰이 함께 있던
+   동안에는 텍스트가 세 줄로 늘어나 상자가 260x281 로 어긋나 있었다.
+   QR 은 상자 안쪽 폭을 그대로 채운다 — 남는 여백 없이 상자와 한 덩어리로 읽힌다. */
 .qr-box {
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-sm);
   width: 100%;
   max-width: 260px;
   aspect-ratio: 1;
@@ -207,11 +220,12 @@ watch(() => qr.value?.qrToken, draw)
   text-align: center;
 }
 
-/* 512px 로 그린 캔버스를 축소해 표시한다(인쇄·확대 시 선명도 확보) */
+/* 512px 로 그린 캔버스를 축소해 표시한다(인쇄·확대 시 선명도 확보).
+   여기 값이 실제로 먹으려면 draw() 가 qrcode 의 인라인 style 을 지워야 한다 —
+   지우지 않으면 이 규칙은 인라인 512px 에 밀린다. */
 .qr-canvas {
   display: block;
   width: 100%;
-  max-width: 180px;
   height: auto;
   border-radius: var(--radius-sm);
 }
@@ -220,9 +234,16 @@ watch(() => qr.value?.qrToken, draw)
   color: var(--color-text-sub);
 }
 .qr-token {
+  max-width: 260px;
   font-size: var(--text-sm);
-  color: var(--color-text);
+  color: var(--color-text-sub);
   word-break: break-all;
+  text-align: center;
+}
+.qr-token-label {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--color-text-sub);
 }
 
 .confirm-text {

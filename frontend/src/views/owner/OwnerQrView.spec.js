@@ -19,6 +19,8 @@ vi.mock('@/services/workplaces', () => ({
 
 vi.mock('qrcode', () => ({ default: { toCanvas: vi.fn().mockResolvedValue(undefined) } }))
 
+import QRCode from 'qrcode'
+
 import { getWorkplaceQr, reissueWorkplaceQr } from '@/services/workplaces'
 import { useWorkplaceStore } from '@/stores/workplace'
 import OwnerQrView from '@/views/owner/OwnerQrView.vue'
@@ -52,6 +54,26 @@ describe('OwnerQrView 재발급', () => {
 
     getWorkplaceQr.mockResolvedValue({ workplaceId: 7, qrToken: 'v1.k1.7.old.mac' })
     reissueWorkplaceQr.mockResolvedValue({ workplaceId: 7, qrToken: 'v1.k1.7.new.mac' })
+  })
+
+  /**
+   * qrcode 는 그리면서 canvas 에 style.width/height 를 옵션 width(512px)로 직접 박는다
+   * (lib/renderer/canvas.js 의 clearCanvas). 인라인 스타일이라 scoped CSS 를 이기고,
+   * 그대로 두면 QR 이 512px 로 상자를 뚫거나 max-width 로 폭만 눌려 세로로 늘어난다.
+   * 표시 크기는 CSS 가 정해야 하므로 그리기 직후 인라인 값이 남아 있으면 안 된다.
+   */
+  it('그리기 후 canvas 의 인라인 크기 스타일을 남기지 않는다', async () => {
+    QRCode.toCanvas.mockImplementation(async (canvas) => {
+      canvas.style.width = '512px'
+      canvas.style.height = '512px'
+    })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    const canvas = wrapper.get('canvas').element
+    expect(canvas.style.width).toBe('')
+    expect(canvas.style.height).toBe('')
   })
 
   it('버튼만 눌러서는 재발급이 실행되지 않는다', async () => {

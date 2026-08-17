@@ -2,6 +2,9 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+const push = vi.fn()
+vi.mock('vue-router', () => ({ useRouter: () => ({ push }) }))
+
 vi.mock('@/services/worker', () => ({
   scan: vi.fn()
 }))
@@ -70,6 +73,7 @@ describe('WorkerScanView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     scan.mockReset()
+    push.mockReset()
   })
 
   afterEach(() => {
@@ -141,6 +145,66 @@ describe('WorkerScanView', () => {
 
     expect(wrapper.vm.$.setupState.phase).toBe('idle')
     expect(wrapper.vm.$.setupState.result).toBeNull()
+  })
+
+  /**
+   * 기록을 마친 사용자에게 다시 스캔 화면을 보여줄 이유가 없다. 결과 확인은 홈으로 보낸다.
+   * 경로를 문자열로 고정한다 — 역할별 홈이 갈려 있어 사장 홈으로 새면 라우터 가드가 막는다.
+   */
+  it('결과 모달의 확인은 알바생 홈으로 이동한다', async () => {
+    stubCapability()
+    scan.mockResolvedValue({
+      result: 'RECORDED',
+      workCaseId: 1,
+      scanType: 'CHECK_IN',
+      recordedAt: '2026-08-12T01:00:00Z',
+      isLate: false,
+      lateMinutes: 0,
+      earlyCheckoutConfirmedAt: null,
+      settlementDueAt: null
+    })
+
+    const wrapper = mount(WorkerScanView)
+    await flushPromises()
+    await wrapper.vm.$.setupState.submitScan('qr-token')
+    await flushPromises()
+
+    expect(wrapper.vm.$.setupState.phase).toBe('result')
+
+    // 모달은 Teleport 로 body 에 붙는다. 내부 함수 이름이 아니라 실제 버튼을 누른다.
+    const confirmButton = [...document.querySelectorAll('.base-modal-footer .btn')].find(
+      (button) => button.textContent.trim() === '확인'
+    )
+    expect(confirmButton).toBeTruthy()
+    confirmButton.click()
+    await flushPromises()
+
+    expect(push).toHaveBeenCalledWith('/worker/home')
+  })
+
+  /**
+   * 조기 퇴근 확인을 취소한 것은 아무것도 기록하지 않았다는 뜻이다. 홈으로 보내면
+   * 기록이 끝난 것처럼 읽히므로 스캔 화면에 남긴다.
+   */
+  it('조기 퇴근 확인 취소는 홈으로 이동하지 않는다', async () => {
+    stubCapability()
+    scan.mockResolvedValue({
+      result: 'CONFIRMATION_REQUIRED',
+      workCaseId: 1,
+      scanType: 'CHECK_OUT',
+      scheduledEndAt: '2026-08-12T09:00:00Z'
+    })
+
+    const wrapper = mount(WorkerScanView)
+    await flushPromises()
+    await wrapper.vm.$.setupState.submitScan('qr-token')
+    await flushPromises()
+
+    wrapper.vm.$.setupState.cancelConfirmation()
+    await flushPromises()
+
+    expect(push).not.toHaveBeenCalled()
+    expect(wrapper.vm.$.setupState.phase).toBe('idle')
   })
 
   it('응답 유실(네트워크 오류)은 같은 의도를 보존해 재확인 버튼을 제공한다', async () => {
