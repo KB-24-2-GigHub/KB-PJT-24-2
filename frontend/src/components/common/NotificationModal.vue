@@ -12,17 +12,16 @@ import { useNotificationsStore } from '@/stores/notifications'
 import { formatDateTime } from '@/utils/format'
 
 const store = useNotificationsStore()
-const { items, isOpen, loading, enabled } = storeToRefs(store)
+const { items, isOpen, loading, loadError } = storeToRefs(store)
 </script>
 
 <template>
   <BaseBottomSheet :open="isOpen" title="알림" @close="store.close()">
-    <!-- Schema Gap: notifications 미구현 → '준비 중' 안내만(API 호출 없음) -->
-    <EmptyState v-if="!enabled" message="알림 기능은 준비 중입니다.">
+    <p v-if="loading" class="state">불러오는 중…</p>
+    <EmptyState v-else-if="loadError" message="알림을 불러오지 못했습니다.">
       <template #icon><Bell :size="32" /></template>
-      곧 근무 확정·정산·공유 알림을 받아보실 수 있어요.
+      잠시 후 다시 열어봐 주세요.
     </EmptyState>
-    <p v-else-if="loading" class="state">불러오는 중…</p>
     <EmptyState v-else-if="items.length === 0" message="새 알림이 없습니다." />
     <ul v-else class="list">
       <li
