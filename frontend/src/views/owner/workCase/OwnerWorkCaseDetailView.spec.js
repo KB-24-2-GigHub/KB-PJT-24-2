@@ -217,6 +217,43 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('휴게시간은 0분 이상이어야 합니다.')
   })
 
+  /**
+   * 휴게 경계는 등록 화면과 같아야 한다. 이 화면은 그동안 breakMinutes 를 아예 보지 않아
+   * 근무보다 긴 휴게가 서버까지 가서 400 으로 돌아왔다.
+   * 고정값 근무는 서울 09:00~18:00 = 540분이다.
+   */
+  async function startEditing(wrapper) {
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '수정')
+      .trigger('click')
+  }
+
+  it('근무 시간을 넘는 휴게는 저장하지 않고 그 필드에 알린다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await startEditing(wrapper)
+    await wrapper.find('input[placeholder="0"]').setValue('541')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateWorkCase).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('540분')
+  })
+
+  it('근무 시간과 정확히 같은 휴게는 서버와 같이 통과시킨다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await startEditing(wrapper)
+    await wrapper.find('input[placeholder="0"]').setValue('540')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateWorkCase).toHaveBeenCalled()
+  })
+
   it('초대·계약·예치·근태 근거가 없으면 진행 현황을 감춘다', async () => {
     const wrapper = mountView()
     await flushPromises()

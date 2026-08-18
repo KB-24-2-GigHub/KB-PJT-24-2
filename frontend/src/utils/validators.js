@@ -9,7 +9,7 @@
  * 각 검증 함수는 `{ valid: boolean, message: string }` 를 반환한다(통과 시 message '').
  * 회원가입·사업장 등록·비밀번호 변경 등 폼 화면에서 공통으로 사용한다.
  */
-import { onlyDigits } from '@/utils/format'
+import { onlyDigits, parseWallClockMinutes } from '@/utils/format'
 
 const ok = { valid: true, message: '' }
 const fail = (message) => ({ valid: false, message })
@@ -152,6 +152,80 @@ export function bankAccountRule(value) {
   return /^\d{10,14}$/.test(normalized)
     ? ok
     : fail('계좌번호는 공백·하이픈을 제외한 숫자 10~14자리여야 합니다.')
+}
+
+const MINUTES_PER_DAY = 24 * 60
+
+/**
+ * 근무 한 건의 최대 길이(분). 서버 WorkCaseTimes.MAX_WORK_DURATION 과 같은 값이다.
+ * 두 곳이 어긋나면 프론트를 통과한 입력이 서버에서 거절된다.
+ */
+export const WORK_DURATION_MAX_MINUTES = 16 * 60
+
+/**
+ * 근무 시간대 검증 — 자정 넘김을 허용하되 길이 상한을 둔다(SPEC-413-01).
+ *
+ * 종료가 시작보다 뒤가 아니면 **다음 날**로 본다. 그래서 `23:00~01:00` 은 2시간이고,
+ * `09:00~09:00` 은 0분이 아니라 24시간이라 상한에서 걸린다 — 0분으로 접으면 그 오타가
+ * 저장 가능한 값이 되어 버린다.
+ *
+ * 시작·종료 순서로는 더 이상 오타를 걸러 낼 수 없으므로 길이 상한이 그 자리를 대신한다.
+ *
+ * @param {string} startTime "HH:mm"
+ * @param {string} endTime "HH:mm"
+ */
+export function workPeriodRule(startTime, endTime) {
+  const required = isRequired(endTime, '종료시간')
+  if (!required.valid) return required
+
+  const end = parseWallClockMinutes(endTime)
+  // 비어 있지 않은데 시각으로 읽히지 않으면 길이를 잴 수 없다. 여기서 통과시키면 형식이
+  // 어긋난 입력이 상한 검사를 통째로 건너뛴다.
+  if (end === null) return fail('종료시간을 HH:mm 형식으로 입력해주세요.')
+
+  const start = parseWallClockMinutes(startTime)
+  // 시작시간이 아직 비었거나 형식이 아니면 이 규칙이 판단할 게 없다(그 필드가 따로 알린다).
+  if (start === null) return ok
+
+  const minutes = end > start ? end - start : end - start + MINUTES_PER_DAY
+  return minutes <= WORK_DURATION_MAX_MINUTES
+    ? ok
+    : fail(`근무 시간은 최대 ${WORK_DURATION_MAX_MINUTES / 60}시간까지 등록할 수 있어요.`)
+}
+
+/**
+ * 휴게시간 규칙 — 0 이상 정수이면서 그 근무의 길이를 넘지 않아야 한다.
+ *
+ * 서버 `WorkCaseServiceImpl.requireValidWorkPeriod` 와 같은 경계다. `휴게 == 근무` 는
+ * 통과하고 1분 초과부터 400 이므로 여기서도 같게 잡는다 — 한 칸 좁히면 서버가 받아 주는
+ * 값을 화면이 막고, 넓히면 제출한 뒤에야 400 을 본다.
+ *
+ * 길이는 workPeriodRule 과 같은 방식으로 앞으로 흐른 거리로 잰다. 자정을 넘기는 근무를
+ * 단순 뺄셈으로 재면 음수가 되어 어떤 휴게든 통과한다.
+ *
+ * 등록·수정 두 화면이 같은 경계를 쓰도록 규칙을 여기 한 곳에 둔다.
+ *
+ * @param {string} startTime "HH:mm"
+ * @param {string} endTime "HH:mm"
+ * @param {number|string} breakMinutes 비우면 휴게 없음
+ */
+export function breakMinutesRule(startTime, endTime, breakMinutes) {
+  if (breakMinutes === '' || breakMinutes == null) return ok
+
+  const minutes = Number(breakMinutes)
+  if (!Number.isInteger(minutes) || minutes < 0) {
+    return fail('휴게시간은 0 이상 분 단위로 입력해주세요.')
+  }
+
+  const start = parseWallClockMinutes(startTime)
+  const end = parseWallClockMinutes(endTime)
+  // 시각을 읽을 수 없으면 길이를 잴 수 없다. 그 필드들의 검증은 각자 따로 한다.
+  if (start === null || end === null) return ok
+
+  const workMinutes = end > start ? end - start : end - start + MINUTES_PER_DAY
+  return minutes <= workMinutes
+    ? ok
+    : fail(`휴게시간은 근무 시간(${workMinutes}분)을 넘을 수 없어요.`)
 }
 
 /** 지갑 충전·출금 금액: 1원 이상 1억원 이하의 원 단위 정수. */

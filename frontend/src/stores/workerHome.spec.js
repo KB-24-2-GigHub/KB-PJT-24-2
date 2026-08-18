@@ -53,6 +53,40 @@ describe('useWorkerHomeStore', () => {
     expect(store.todayWorkCase.attendance.isLate).toBe(true)
   })
 
+  /**
+   * SPEC-413-01 — 자정을 넘기는 근무는 '익일'이 붙어야 22시간 근무와 구분된다.
+   *
+   * 카드가 startTime·endTime 을 직접 이어 붙이면 '23:00–01:00' 이 되어 두 근무가 같은
+   * 문자열로 보인다. 표기 규칙은 formatSeoulTimeRange 한 곳에만 있으므로 이 store 도 그
+   * 함수를 거친 timeRange 를 내려보내야 한다.
+   */
+  it('자정을 넘기는 근무의 표시 시간대에 익일을 붙인다', async () => {
+    getWorkerHome.mockResolvedValue({
+      todayWorkCase: {
+        ...RAW_TODAY_WORK_CASE,
+        startsAt: '2026-07-22T14:00:00Z', // KST 23:00
+        endsAt: '2026-07-22T16:00:00Z' // KST 익일 01:00 (UTC 날짜는 같다)
+      }
+    })
+    const store = useWorkerHomeStore()
+
+    await store.loadHome()
+
+    expect(store.todayWorkCase.timeRange).toBe('23:00 ~ 익일 01:00')
+    // 경과 적립 계산(calcElapsedPay)은 접미사 없는 벽시계 문자열을 받는다.
+    expect(store.todayWorkCase.startTime).toBe('23:00')
+    expect(store.todayWorkCase.endTime).toBe('01:00')
+  })
+
+  it('같은 날 끝나는 근무의 표시 시간대에는 익일이 붙지 않는다', async () => {
+    getWorkerHome.mockResolvedValue({ todayWorkCase: RAW_TODAY_WORK_CASE })
+    const store = useWorkerHomeStore()
+
+    await store.loadHome()
+
+    expect(store.todayWorkCase.timeRange).toBe('10:15 ~ 18:00')
+  })
+
   it('startsAt이 자정을 넘겨 서울 날짜가 바뀌는 경우 workDate가 서울 기준으로 밀린다', async () => {
     // 07-21 23:30 UTC = 07-22 08:30 KST — UTC 날짜와 서울 날짜가 갈리는 경계 케이스.
     getWorkerHome.mockResolvedValue({

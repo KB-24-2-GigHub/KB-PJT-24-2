@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 
 import { getWorkerHome } from '@/services/worker'
-import { formatSeoulDateKey, formatSeoulTime } from '@/utils/format'
+import { formatSeoulDateKey, formatSeoulTime, formatSeoulTimeRange } from '@/utils/format'
 
 /**
  * 알바생 홈 화면 상태.
@@ -24,6 +24,11 @@ export const useWorkerHomeStore = defineStore('workerHome', () => {
   /**
    * 표시 계산(calcElapsedPay/useEarningTick)은 워크지 기준 벽시계 문자열을 받는다.
    * startsAt/endsAt(UTC Instant)에서 Asia/Seoul 기준으로 뽑아 붙인다.
+   *
+   * 카드에 보여줄 시간대는 startTime/endTime 을 잇지 않고 timeRange 를 따로 만든다.
+   * 자정을 넘기는 근무의 '익일' 표기가 formatSeoulTimeRange 안에 있어(SPEC-413-01), 두
+   * 시각을 따로 뽑아 붙이면 23:00~01:00 이 2시간인지 22시간인지 구분되지 않는다.
+   * startTime/endTime 은 계산용이라 접미사가 붙으면 안 되므로 그대로 둔다.
    */
   function mapTodayWorkCase(raw) {
     if (!raw) return null
@@ -31,7 +36,8 @@ export const useWorkerHomeStore = defineStore('workerHome', () => {
       ...raw,
       workDate: formatSeoulDateKey(raw.startsAt),
       startTime: formatSeoulTime(raw.startsAt),
-      endTime: formatSeoulTime(raw.endsAt)
+      endTime: formatSeoulTime(raw.endsAt),
+      timeRange: formatSeoulTimeRange(raw.startsAt, raw.endsAt)
     }
   }
 

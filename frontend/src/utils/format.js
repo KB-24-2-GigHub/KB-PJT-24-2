@@ -50,12 +50,29 @@ export function formatTime(value) {
   return `${hh}:${mi}`
 }
 
-/** 시작·종료 시간 → "09:00 ~ 18:00" */
-export function formatTimeRange(start, end) {
-  const s = formatTime(start)
-  const e = formatTime(end)
-  if (!s && !e) return ''
-  return `${s} ~ ${e}`
+/**
+ * "HH:mm", "HH:mm:ss", ISO 문자열 → 자정 기준 분. 읽을 수 없으면 null.
+ *
+ * 위 formatTime 과 같은 입력을 받아들이고 ISO 는 같은 방식으로 로컬 시:분을 읽는다. 두
+ * 유틸이 서로 다른 입력을 받아들이면 같은 값이 화면과 검증에서 다르게 해석된다.
+ *
+ * 시·분의 범위를 여기서 함께 본다. `"99:99"` 같은 값을 숫자로 접으면 6039분이 되어
+ * 근무 길이 검증이 조용히 통과한다.
+ */
+export function parseWallClockMinutes(value) {
+  if (typeof value !== 'string') return null
+
+  const m = /^(\d{1,2}):(\d{2})/.exec(value)
+  if (m) {
+    const hours = Number(m[1])
+    const minutes = Number(m[2])
+    if (hours > 23 || minutes > 59) return null
+    return hours * 60 + minutes
+  }
+
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return null
+  return d.getHours() * 60 + d.getMinutes()
 }
 
 /**
@@ -76,11 +93,21 @@ const SEOUL_WALL_CLOCK_TIME = new Intl.DateTimeFormat('en-GB', {
   hourCycle: 'h23'
 })
 
-export function formatSeoulTime(value) {
-  if (value == null || value === '') return ''
+/**
+ * 값이 해석 가능한 Instant 면 Date, 아니면 null.
+ *
+ * 같은 값을 두 포매터에 넘기는 곳(formatSeoulTimeRange)에서 재파싱을 막으려고 분리했다.
+ * 근태·근무 목록은 행마다 렌더마다 이 경로를 탄다.
+ */
+function toInstant(value) {
+  if (value == null || value === '') return null
   const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return SEOUL_WALL_CLOCK_TIME.format(d)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+export function formatSeoulTime(value) {
+  const at = toInstant(value)
+  return at === null ? '' : SEOUL_WALL_CLOCK_TIME.format(at)
 }
 
 /** UTC Instant → 근무지 기준(Asia/Seoul) 날짜 키 "2026-07-22". formatSeoulTime 과 같은 이유로
@@ -93,18 +120,37 @@ const SEOUL_WALL_CLOCK_DATE_KEY = new Intl.DateTimeFormat('en-CA', {
 })
 
 export function formatSeoulDateKey(value) {
-  if (value == null || value === '') return ''
-  const d = new Date(value)
-  if (Number.isNaN(d.getTime())) return ''
-  return SEOUL_WALL_CLOCK_DATE_KEY.format(d)
+  const at = toInstant(value)
+  return at === null ? '' : SEOUL_WALL_CLOCK_DATE_KEY.format(at)
 }
 
-/** UTC Instant 시작·종료 → 근무지 기준 "09:00 ~ 18:00" */
+/**
+ * UTC Instant 시작·종료 → 근무지 기준 "09:00 ~ 18:00".
+ *
+ * 자정을 넘기는 근무는 종료 앞에 '익일'을 붙여 "23:00 ~ 익일 01:00" 로 보여준다
+ * (SPEC-413-01). 시각만 보여주면 23:00~01:00 이 22시간 근무인지 2시간 근무인지 구분되지
+ * 않는다. 판정은 서울 날짜 키로 한다 — 브라우저 로컬 TZ 로 비교하면 시차가 있는 곳에서
+ * 같은 날 근무에 '익일'이 붙는다.
+ *
+ * 근무 시간을 보여주는 화면이 모두 이 함수를 거치므로 표기 규칙은 여기 한 곳에만 둔다.
+ *
+ * '익일'은 종료가 시작의 **다음 날**이라는 뜻이고, 그 전제는 근무 길이가 16시간을 넘지
+ * 못한다는 데서 온다(FE workPeriodRule · BE WorkCaseTimes.MAX_WORK_DURATION). 자정 넘김
+ * 이전에 만들어진 근무는 종료를 같은 근무일에 결합했으므로 모두 같은 날이다. 그래서 날짜
+ * 키가 다르면 차이는 항상 하루다. 상한이 사라지면 이 표기도 함께 다시 봐야 한다.
+ */
 export function formatSeoulTimeRange(start, end) {
-  const s = formatSeoulTime(start)
-  const e = formatSeoulTime(end)
+  const startAt = toInstant(start)
+  const endAt = toInstant(end)
+  const s = startAt === null ? '' : SEOUL_WALL_CLOCK_TIME.format(startAt)
+  const e = endAt === null ? '' : SEOUL_WALL_CLOCK_TIME.format(endAt)
   if (!s && !e) return ''
-  return `${s} ~ ${e}`
+
+  const overnight =
+    startAt !== null &&
+    endAt !== null &&
+    SEOUL_WALL_CLOCK_DATE_KEY.format(startAt) !== SEOUL_WALL_CLOCK_DATE_KEY.format(endAt)
+  return `${s} ~ ${overnight ? '익일 ' : ''}${e}`
 }
 
 /** UTC Instant → 근무지 기준(Asia/Seoul) "2026.08.01 09:00" */
