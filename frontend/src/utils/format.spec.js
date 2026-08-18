@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { formatSeoulTimeRange } from '@/utils/format'
+import { formatSeoulTimeRange, formatWorkPeriodSummary } from '@/utils/format'
 
 // 서울은 UTC+9. 아래 Instant 들은 모두 그 기준으로 계산한 값이다.
 const SEOUL_0900 = '2026-08-10T00:00:00Z'
@@ -42,5 +42,61 @@ describe('formatSeoulTimeRange', () => {
   it('한쪽만 있으면 익일을 붙이지 않는다', () => {
     // 비교할 날짜가 없으면 자정을 넘겼는지 알 수 없다. 모르는 것을 단정하지 않는다.
     expect(formatSeoulTimeRange(SEOUL_2300, null)).toBe('23:00 ~ ')
+  })
+})
+
+/**
+ * 근무 등록/수정 폼의 라이브 요약.
+ *
+ * 시작·종료만 보여주는 폼은 "22:00~06:00" 이 8시간인지 16시간인지, 무급 휴게를 빼면
+ * 얼마가 남는지를 제출 뒤에야 알려 준다. 이 요약은 입력 중에 그 결과를 그대로 보여주는
+ * 자리라, 총·실근로·익일 세 값이 각각 어긋나지 않는지가 전부다.
+ */
+describe('formatWorkPeriodSummary', () => {
+  const summary = (over = {}) =>
+    formatWorkPeriodSummary({
+      startTime: '09:00',
+      endTime: '18:00',
+      breakMinutes: 0,
+      breakPaid: false,
+      ...over
+    })
+
+  it('휴게가 없으면 총 근무시간만 보여준다', () => {
+    expect(summary()).toBe('총 9시간')
+  })
+
+  it('무급 휴게는 실근로에서 뺀다', () => {
+    expect(summary({ breakMinutes: 60 })).toBe('총 9시간 · 휴게 1시간 제외 실근로 8시간')
+  })
+
+  it('유급 휴게는 빼지 않는다', () => {
+    expect(summary({ breakMinutes: 60, breakPaid: true })).toBe('총 9시간')
+  })
+
+  it('자정을 넘기면 종료가 다음 날임을 알린다', () => {
+    expect(summary({ startTime: '22:00', endTime: '06:00' })).toBe('총 8시간 · 익일 06:00 종료')
+  })
+
+  it('자정을 넘기면서 휴게가 있으면 둘 다 보여준다', () => {
+    expect(summary({ startTime: '22:00', endTime: '06:00', breakMinutes: 30 })).toBe(
+      '총 8시간 · 휴게 30분 제외 실근로 7시간 30분 · 익일 06:00 종료'
+    )
+  })
+
+  it('시각이 아직 덜 채워졌으면 아무것도 보여주지 않는다', () => {
+    expect(summary({ startTime: '' })).toBe('')
+    expect(summary({ endTime: '' })).toBe('')
+    expect(summary({ endTime: '25:00' })).toBe('')
+  })
+
+  /* 시작과 종료가 같으면 0분이 아니라 24시간이고, 그건 등록될 수 없는 값이다(SPEC-413-01). */
+  it('시작과 종료가 같으면 요약할 값이 없다', () => {
+    expect(summary({ startTime: '09:00', endTime: '09:00' })).toBe('')
+  })
+
+  /* 휴게가 근무보다 길어도 음수 시간을 만들어 내지는 않는다. */
+  it('무급 휴게가 총 시간보다 길면 실근로를 0분으로 접는다', () => {
+    expect(summary({ breakMinutes: 600 })).toBe('총 9시간 · 휴게 10시간 제외 실근로 0분')
   })
 })

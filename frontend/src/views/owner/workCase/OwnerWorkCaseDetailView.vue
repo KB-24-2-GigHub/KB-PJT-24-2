@@ -18,6 +18,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import TimePickerField from '@/components/common/TimePickerField.vue'
 import {
   canIssueInvitation,
   invitationStatusLabel,
@@ -46,7 +47,8 @@ import {
   formatKRW,
   formatSeoulDateTime,
   formatSeoulTime,
-  formatSeoulTimeRange
+  formatSeoulTimeRange,
+  formatWorkPeriodSummary
 } from '@/utils/format'
 import {
   canApproveNoShowRefund as canApproveNoShowRefundState,
@@ -59,7 +61,13 @@ import {
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
 } from '@/utils/settlement'
-import { breakMinutesRule, isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
+import {
+  breakMinutesRule,
+  isPositiveAmount,
+  isRequired,
+  WORK_DURATION_MAX_MINUTES,
+  workPeriodRule
+} from '@/utils/validators'
 
 const route = useRoute()
 const router = useRouter()
@@ -200,6 +208,21 @@ const errors = reactive({
   breakMinutes: '',
   dailyWage: ''
 })
+
+/** 등록 화면과 같은 규칙 — 상한 밖 눈금은 고를 수 없고 workPeriodRule 은 그대로 남는다. */
+const endTimeLimit = computed(() => ({
+  time: form.startTime,
+  minutes: WORK_DURATION_MAX_MINUTES
+}))
+
+const periodSummary = computed(() =>
+  formatWorkPeriodSummary({
+    startTime: form.startTime,
+    endTime: form.endTime,
+    breakMinutes: Number(form.breakMinutes || 0),
+    breakPaid: form.breakPaid
+  })
+)
 
 async function load() {
   loading.value = true
@@ -759,21 +782,26 @@ async function onApproveSettlement() {
             required
             :error="errors.workDate"
           />
-          <div class="field-row">
-            <AppField
-              v-model="form.startTime"
-              type="time"
-              label="시작시간"
-              required
-              :error="errors.startTime"
-            />
-            <AppField
-              v-model="form.endTime"
-              type="time"
-              label="종료시간"
-              required
-              :error="errors.endTime"
-            />
+          <div class="time-group">
+            <div class="field-row">
+              <TimePickerField
+                v-model="form.startTime"
+                label="시작시간"
+                accent="owner"
+                required
+                :error="errors.startTime"
+              />
+              <TimePickerField
+                v-model="form.endTime"
+                label="종료시간"
+                accent="owner"
+                required
+                :default-time="form.startTime || '18:00'"
+                :max-from="endTimeLimit"
+                :error="errors.endTime"
+              />
+            </div>
+            <p v-if="periodSummary" class="period-summary">{{ periodSummary }}</p>
           </div>
           <AppField
             v-model="form.breakMinutes"
@@ -1093,6 +1121,22 @@ async function onApproveSettlement() {
 .field-row > * {
   flex: 1;
   min-width: 0;
+}
+
+/* 시각 두 칸과 그 결과(요약)를 한 덩어리로 묶는다 — 등록 화면과 같은 규칙 */
+.time-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.period-summary {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-owner-weak);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-owner);
+  font-variant-numeric: tabular-nums;
 }
 .field {
   display: flex;

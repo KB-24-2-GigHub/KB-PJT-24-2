@@ -232,6 +232,8 @@ export function blockNonDigitKeydown(e) {
   if (!/^\d$/.test(e.key)) e.preventDefault()
 }
 
+const MINUTES_PER_DAY = 24 * 60
+
 /** 분(minutes) → "7시간 30분" / "45분" */
 export function formatDuration(minutes) {
   const m = Number(minutes) || 0
@@ -240,4 +242,45 @@ export function formatDuration(minutes) {
   if (h && rest) return `${h}시간 ${rest}분`
   if (h) return `${h}시간`
   return `${rest}분`
+}
+
+/**
+ * 근무 등록·수정 폼의 라이브 요약 — "총 9시간 · 휴게 1시간 제외 실근로 8시간 · 익일 06:00 종료".
+ *
+ * 시작·종료 두 칸만 있는 폼은 22:00~06:00 이 8시간인지 16시간인지를 제출한 뒤에야
+ * 알려 준다. 자정 넘김을 허용한 이상(SPEC-413-01) 그 결과는 입력하는 동안 보여야 한다.
+ *
+ * 길이는 앞으로 흐른 거리로 잰다 — 종료가 시작보다 작다고 해서 잘못된 입력이 아니다.
+ * 거리 0(시작과 종료가 같음)은 0분이 아니라 24시간이고 등록될 수 없는 값이라 빈 문자열을
+ * 돌려준다. 무엇을 보여줄지 모르는 상태를 그럴듯한 숫자로 메우지 않는다.
+ *
+ * @param {{ startTime: string, endTime: string, breakMinutes?: number, breakPaid?: boolean }} period
+ * @returns {string} 요약 문구. 시각을 읽을 수 없거나 길이가 성립하지 않으면 "".
+ */
+export function formatWorkPeriodSummary({
+  startTime,
+  endTime,
+  breakMinutes = 0,
+  breakPaid = false
+}) {
+  const start = parseWallClockMinutes(startTime)
+  const end = parseWallClockMinutes(endTime)
+  if (start === null || end === null) return ''
+
+  const total = (end - start + MINUTES_PER_DAY) % MINUTES_PER_DAY
+  if (total === 0) return ''
+
+  const parts = [`총 ${formatDuration(total)}`]
+
+  const unpaidBreak = breakPaid ? 0 : Math.max(0, Number(breakMinutes) || 0)
+  if (unpaidBreak > 0) {
+    // 휴게가 근무보다 길어도 음수 시간을 만들지 않는다. 그 조합 자체가 잘못됐다는 건
+    // "실근로 0분" 으로 드러난다.
+    const worked = Math.max(0, total - unpaidBreak)
+    parts.push(`휴게 ${formatDuration(unpaidBreak)} 제외 실근로 ${formatDuration(worked)}`)
+  }
+
+  if (end < start) parts.push(`익일 ${formatTime(endTime)} 종료`)
+
+  return parts.join(' · ')
 }

@@ -6,18 +6,25 @@
  * 연계 API: POST /workplaces/{id}/work-cases  →  @/services/workCases (createWorkCase)
  * 공통: AppField · BaseButton · @/utils/validators
  */
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
+import TimePickerField from '@/components/common/TimePickerField.vue'
 import { fieldErrorMap } from '@/services/http'
 import { createWorkCase } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
 import { useWorkplaceStore } from '@/stores/workplace'
-import { formatKRW } from '@/utils/format'
-import { breakMinutesRule, isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
+import { formatKRW, formatWorkPeriodSummary } from '@/utils/format'
+import {
+  breakMinutesRule,
+  isPositiveAmount,
+  isRequired,
+  WORK_DURATION_MAX_MINUTES,
+  workPeriodRule
+} from '@/utils/validators'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -43,6 +50,25 @@ const errors = reactive({
 })
 
 const submitting = ref(false)
+
+/**
+ * 종료시간 피커에 넘길 길이 상한. 피커는 상한 밖 눈금을 고를 수 없게 만들고, 아래
+ * workPeriodRule 은 그대로 남는다 — 서버 응답과 이 화면을 거치지 않는 경로가 있다.
+ */
+const endTimeLimit = computed(() => ({
+  time: form.startTime,
+  minutes: WORK_DURATION_MAX_MINUTES
+}))
+
+/** 시작·종료가 모두 채워지면 총·실근로·익일을 입력 중에 바로 보여준다. */
+const periodSummary = computed(() =>
+  formatWorkPeriodSummary({
+    startTime: form.startTime,
+    endTime: form.endTime,
+    breakMinutes: Number(form.breakMinutes || 0),
+    breakPaid: form.breakPaid
+  })
+)
 
 onMounted(() => workplaceStore.load())
 
@@ -120,21 +146,26 @@ async function onSubmit() {
           :error="errors.workDate"
         />
 
-        <div class="field-row">
-          <AppField
-            v-model="form.startTime"
-            type="time"
-            label="시작시간"
-            required
-            :error="errors.startTime"
-          />
-          <AppField
-            v-model="form.endTime"
-            type="time"
-            label="종료시간"
-            required
-            :error="errors.endTime"
-          />
+        <div class="time-group">
+          <div class="field-row">
+            <TimePickerField
+              v-model="form.startTime"
+              label="시작시간"
+              accent="owner"
+              required
+              :error="errors.startTime"
+            />
+            <TimePickerField
+              v-model="form.endTime"
+              label="종료시간"
+              accent="owner"
+              required
+              :default-time="form.startTime || '18:00'"
+              :max-from="endTimeLimit"
+              :error="errors.endTime"
+            />
+          </div>
+          <p v-if="periodSummary" class="period-summary">{{ periodSummary }}</p>
         </div>
 
         <AppField
@@ -215,6 +246,22 @@ async function onSubmit() {
 .field-row > * {
   flex: 1;
   min-width: 0;
+}
+
+/* 시각 두 칸과 그 결과(요약)를 한 덩어리로 묶는다 */
+.time-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+.period-summary {
+  padding: var(--space-sm) var(--space-md);
+  border-radius: var(--radius-sm);
+  background: var(--color-owner-weak);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-owner);
+  font-variant-numeric: tabular-nums;
 }
 
 /* 휴게시간 유급/무급 토글 — AppField 와 같은 라벨 스타일을 맞춘다 */
