@@ -2,7 +2,7 @@
 patch_id: SPEC-359-01
 status: draft
 issue: 359
-base_spec_version: 8.1.0
+base_spec_version: 8.0.0
 targets:
   - requirement: CONTRACT-003
   - decision: DEC-CONTRACT-AUTO-GENERATION

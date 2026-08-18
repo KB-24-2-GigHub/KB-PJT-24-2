@@ -2,7 +2,7 @@
 patch_id: SPEC-180-01
 status: draft
 issue: 180
-base_spec_version: 8.1.0
+base_spec_version: 8.0.0
 targets:
   - requirement: DOC-005
   - requirement: DOC-006

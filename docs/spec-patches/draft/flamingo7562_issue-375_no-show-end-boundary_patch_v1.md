@@ -2,7 +2,7 @@
 patch_id: SPEC-375-01
 status: draft
 issue: 375
-base_spec_version: 8.1.0
+base_spec_version: 8.0.0
 targets:
   - requirement: ATT-002
   - requirement: ATT-005
