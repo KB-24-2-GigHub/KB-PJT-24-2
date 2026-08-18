@@ -12,11 +12,16 @@ import { computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
 import LogoSymbol from '@/assets/images/logo/logo-symbol.svg'
+import { useAuthStore } from '@/stores/auth'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useWorkplaceStore } from '@/stores/workplace'
 
 const props = defineProps({
-  role: { type: String, required: true } // 'OWNER' | 'WORKER'
+  // 레이아웃이 정적으로 넘기는 값이라 이 둘 외에는 올 자리가 없다. 검증하지 않으면 오타나
+  // 새 역할이 조용히 WORKER 분기로 떨어진다 — 가드 G2 가 뒤에서 역할 불일치로 튕겨내지만
+  // 원인이 이 prop 이라는 단서는 그때 남지 않는다.
+  // (허용 목록은 defineProps 가 setup 밖으로 끌어올려져 지역 상수를 참조할 수 없어 인라인이다.)
+  role: { type: String, required: true, validator: (value) => ['OWNER', 'WORKER'].includes(value) }
 })
 
 const router = useRouter()
@@ -25,6 +30,8 @@ const isOwner = computed(() => props.role === 'OWNER')
 
 // 사장 홈(지갑)은 전 지점 합산이라 지점 선택이 무의미하다 → select 대신 '전체지점' 고정 표시.
 const isOwnerHome = computed(() => isOwner.value && route.path === '/owner/home')
+
+const auth = useAuthStore()
 
 const workplace = useWorkplaceStore()
 const { activeWorkplaces, selectedId } = storeToRefs(workplace)
@@ -60,24 +67,30 @@ function goMyPage() {
 }
 
 /**
- * 로고 → 역할별 홈. 마이페이지 이동과 같은 role 분기를 쓴다.
+ * 로고 → 홈. 목적지는 로그인한 사용자의 역할이 정한다.
  *
- * router.push 가 아니라 RouterLink 로 두는 이유가 두 가지 있다.
- *   - 실제 `<a href>` 라야 키보드 포커스·Enter 활성화·"링크" 역할이 공짜로 따라온다.
- *     button 이나 click 핸들러를 단 span 으로는 이 중 하나씩 직접 만들어야 한다.
- *   - 이미 홈에 있을 때 눌러도 RouterLink 가 중복 내비게이션 실패를 삼킨다.
- *     router.push 는 rejected Promise 를 남긴다.
+ * 역할→홈 매핑은 auth 스토어가 원본이고 라우터 가드 G2·G3 가 그것을 쓴다. 여기서 같은
+ * 표를 다시 적으면 홈 경로가 바뀔 때 가드만 따라가고 상단바 로고는 조용히 어긋난다.
+ * role prop 은 레이아웃이 박아 넣는 표시용 값이라 로고 색·지점 select 분기에만 쓴다.
+ *
+ * RouterLink 로 두는 이유는 하나다 — 실제 `<a href>` 라야 키보드 포커스·Enter 활성화·
+ * "링크" 역할이 따라온다. click 핸들러를 단 span 으로는 이 셋을 각각 직접 만들어야 한다.
+ * 중복 내비게이션은 근거가 아니다: vue-router 5 는 NAVIGATION_DUPLICATED 를 reject 가
+ * 아니라 resolve 하므로 router.push 로도 경고나 unhandled rejection 이 나지 않는다.
+ *
  * AppTopBar 는 탭 레이아웃에서만 렌더되므로 비로그인 화면에는 이 경로가 없다.
  */
-const homePath = computed(() => (isOwner.value ? '/owner/home' : '/worker/home'))
+const homePath = computed(() => auth.homeRoute())
 </script>
 
 <template>
   <header class="topbar">
     <!-- 로고는 홈으로 가는 관례적 경로다. 옆의 알림·마이페이지가 눌리는데 로고만 죽어 있으면
          눌러본 사용자에게 반응 없는 영역으로 남는다. -->
-    <!-- 링크 이름은 aria-label 하나로 정한다. 로고 svg 에 이름을 남겨두면 "Gig Hub Gig Hub"
-         처럼 두 번 읽힌다(스크린리더는 aria-label 이 있으면 내용을 이름으로 쓰지 않는다). -->
+    <!-- 링크 이름은 aria-label 이 정한다. aria-label 이 있으면 접근 가능한 이름 계산이
+         서브트리를 순회하지 않으므로(ANC 2C) svg 가 들고 있는 이름은 링크 이름에 섞이지
+         않는다. svg 의 aria-hidden 은 그것과 다른 일을 한다 — 일부 스크린리더의 browse
+         mode 가 링크 '안'의 role="img" 노드를 별도 항목으로 읽는 것을 막는다. -->
     <RouterLink :to="homePath" class="brand" aria-label="Gig Hub 홈">
       <LogoSymbol
         class="brand-logo"
