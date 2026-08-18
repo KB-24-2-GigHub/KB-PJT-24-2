@@ -75,14 +75,6 @@ export function parseWallClockMinutes(value) {
   return d.getHours() * 60 + d.getMinutes()
 }
 
-/** 시작·종료 시간 → "09:00 ~ 18:00" */
-export function formatTimeRange(start, end) {
-  const s = formatTime(start)
-  const e = formatTime(end)
-  if (!s && !e) return ''
-  return `${s} ~ ${e}`
-}
-
 /**
  * API 의 UTC Instant → 근무지 기준(Asia/Seoul) 벽시계 "HH:mm".
  *
