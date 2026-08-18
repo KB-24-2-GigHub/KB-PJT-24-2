@@ -59,7 +59,7 @@ import {
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
 } from '@/utils/settlement'
-import { isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
+import { breakMinutesRule, isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
 
 const route = useRoute()
 const router = useRouter()
@@ -250,13 +250,13 @@ function startEdit() {
 }
 
 function validate() {
-  // 직전 서버 검증 오류가 다음 제출을 막지 않도록 다시 검증할 때 비운다.
-  errors.breakMinutes = ''
   errors.title = isRequired(form.title, '제목').message
   errors.workDate = isRequired(form.workDate, '근무 날짜').message
   errors.startTime = isRequired(form.startTime, '시작시간').message
   // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 등록 화면과 같은 규칙을 쓴다.
   errors.endTime = workPeriodRule(form.startTime, form.endTime).message
+  // 등록 화면과 같은 경계다. 직전 서버 검증 오류도 이 대입으로 함께 지워진다.
+  errors.breakMinutes = breakMinutesRule(form.startTime, form.endTime, form.breakMinutes).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')

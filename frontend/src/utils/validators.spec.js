@@ -23,7 +23,8 @@ import {
   passwordRule,
   WALLET_AMOUNT_MAX,
   WORK_DURATION_MAX_MINUTES,
-  workPeriodRule
+  workPeriodRule,
+  breakMinutesRule
 } from '@/utils/validators'
 
 const repeat = (char, count) => char.repeat(count)
@@ -262,5 +263,60 @@ describe('workPeriodRule', () => {
     expect(workPeriodRule('9:00', '18:00').valid).toBe(true)
     expect(workPeriodRule('09:00:00', '18:00:00').valid).toBe(true)
     expect(workPeriodRule('9:00', '9:00').valid).toBe(false) // 24시간
+  })
+})
+
+/**
+ * 휴게시간 규칙 — BE `requireValidWorkPeriod`(WorkCaseServiceImpl:434) 와 같은 경계를 쓴다.
+ *
+ * ```java
+ * long workMinutes = Duration.between(startsAt, endsAt).toMinutes();
+ * if (breakMinutes != null && breakMinutes > workMinutes) → 400
+ * ```
+ *
+ * 두 곳의 경계가 어긋나면 화면을 통과한 입력이 서버에서 400 을 받는다. 특히 `휴게 == 근무`
+ * 는 **통과**여야 한다 — 여기서 한 칸 좁게 잡으면 서버가 받아 주는 값을 화면이 막는다.
+ */
+describe('breakMinutesRule', () => {
+  it('휴게가 근무 시간과 정확히 같으면 통과한다', () => {
+    // 09:00~18:00 = 540분. 실근로 0분이지만 서버가 허용하는 값이다.
+    expect(breakMinutesRule('09:00', '18:00', 540).valid).toBe(true)
+  })
+
+  it('휴게가 근무 시간을 1분이라도 넘으면 거부한다', () => {
+    expect(breakMinutesRule('09:00', '18:00', 541).valid).toBe(false)
+  })
+
+  it('자정을 넘기는 근무도 실제 길이로 잰다', () => {
+    // 22:00~06:00 은 단순 뺄셈이면 -960분이다. 실제 길이는 480분.
+    expect(breakMinutesRule('22:00', '06:00', 480).valid).toBe(true)
+    expect(breakMinutesRule('22:00', '06:00', 481).valid).toBe(false)
+  })
+
+  it('거부 사유에 그 근무의 실제 길이를 담는다', () => {
+    const result = breakMinutesRule('22:00', '06:00', 481)
+    expect(result.message).toContain('480분')
+  })
+
+  it('비워두면 휴게 없음이라 통과한다', () => {
+    expect(breakMinutesRule('09:00', '18:00', '').valid).toBe(true)
+  })
+
+  it('0 이상 정수가 아니면 거부한다', () => {
+    expect(breakMinutesRule('09:00', '18:00', -1).valid).toBe(false)
+    expect(breakMinutesRule('09:00', '18:00', 1.5).valid).toBe(false)
+    expect(breakMinutesRule('09:00', '18:00', 'abc').valid).toBe(false)
+  })
+
+  /* 시각이 아직 없으면 길이를 잴 수 없다. 그 필드의 필수 검증은 각자 따로 한다. */
+  it('시각이 덜 채워졌으면 길이 판단을 하지 않는다', () => {
+    expect(breakMinutesRule('', '18:00', 99999).valid).toBe(true)
+    expect(breakMinutesRule('09:00', '', 99999).valid).toBe(true)
+    expect(breakMinutesRule('09:00', '99:99', 99999).valid).toBe(true)
+  })
+
+  it('범위는 시각이 없어도 본다', () => {
+    // 형식 오류는 시각과 무관하게 바로 알려 줘야 한다.
+    expect(breakMinutesRule('', '', -1).valid).toBe(false)
   })
 })

@@ -17,7 +17,7 @@ import { createWorkCase } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { formatKRW } from '@/utils/format'
-import { isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
+import { breakMinutesRule, isPositiveAmount, isRequired, workPeriodRule } from '@/utils/validators'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -46,21 +46,14 @@ const submitting = ref(false)
 
 onMounted(() => workplaceStore.load())
 
-/** 휴게시간: 비워두면 0분. 값이 있으면 0 이상 정수여야 한다. */
-function validateBreakMinutes(value) {
-  if (value === '') return ''
-  const n = Number(value)
-  if (!Number.isInteger(n) || n < 0) return '휴게시간은 0 이상 분 단위로 입력해주세요.'
-  return ''
-}
-
 function validate() {
   errors.title = isRequired(form.title, '제목').message
   errors.workDate = isRequired(form.workDate, '근무 날짜').message
   errors.startTime = isRequired(form.startTime, '시작시간').message
   // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 순서 대신 길이 상한으로 거른다.
   errors.endTime = workPeriodRule(form.startTime, form.endTime).message
-  errors.breakMinutes = validateBreakMinutes(form.breakMinutes)
+  // 휴게가 근무 길이를 넘는 것도 서버가 400 으로 거절한다 — 같은 경계를 여기서 먼저 본다.
+  errors.breakMinutes = breakMinutesRule(form.startTime, form.endTime, form.breakMinutes).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')

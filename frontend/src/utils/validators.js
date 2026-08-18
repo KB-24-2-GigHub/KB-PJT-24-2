@@ -193,6 +193,41 @@ export function workPeriodRule(startTime, endTime) {
     : fail(`근무 시간은 최대 ${WORK_DURATION_MAX_MINUTES / 60}시간까지 등록할 수 있어요.`)
 }
 
+/**
+ * 휴게시간 규칙 — 0 이상 정수이면서 그 근무의 길이를 넘지 않아야 한다.
+ *
+ * 서버 `WorkCaseServiceImpl.requireValidWorkPeriod` 와 같은 경계다. `휴게 == 근무` 는
+ * 통과하고 1분 초과부터 400 이므로 여기서도 같게 잡는다 — 한 칸 좁히면 서버가 받아 주는
+ * 값을 화면이 막고, 넓히면 제출한 뒤에야 400 을 본다.
+ *
+ * 길이는 workPeriodRule 과 같은 방식으로 앞으로 흐른 거리로 잰다. 자정을 넘기는 근무를
+ * 단순 뺄셈으로 재면 음수가 되어 어떤 휴게든 통과한다.
+ *
+ * 등록·수정 두 화면이 같은 경계를 쓰도록 규칙을 여기 한 곳에 둔다.
+ *
+ * @param {string} startTime "HH:mm"
+ * @param {string} endTime "HH:mm"
+ * @param {number|string} breakMinutes 비우면 휴게 없음
+ */
+export function breakMinutesRule(startTime, endTime, breakMinutes) {
+  if (breakMinutes === '' || breakMinutes == null) return ok
+
+  const minutes = Number(breakMinutes)
+  if (!Number.isInteger(minutes) || minutes < 0) {
+    return fail('휴게시간은 0 이상 분 단위로 입력해주세요.')
+  }
+
+  const start = parseWallClockMinutes(startTime)
+  const end = parseWallClockMinutes(endTime)
+  // 시각을 읽을 수 없으면 길이를 잴 수 없다. 그 필드들의 검증은 각자 따로 한다.
+  if (start === null || end === null) return ok
+
+  const workMinutes = end > start ? end - start : end - start + MINUTES_PER_DAY
+  return minutes <= workMinutes
+    ? ok
+    : fail(`휴게시간은 근무 시간(${workMinutes}분)을 넘을 수 없어요.`)
+}
+
 /** 지갑 충전·출금 금액: 1원 이상 1억원 이하의 원 단위 정수. */
 export function isWalletAmount(value) {
   const base = isPositiveAmount(value)
