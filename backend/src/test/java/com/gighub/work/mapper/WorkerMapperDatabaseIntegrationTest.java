@@ -76,6 +76,8 @@ class WorkerMapperDatabaseIntegrationTest {
                         jdbc, mapper, ownerUserId, workplaceId, otherWorkerUserId);
                 verifyTodayCandidatePicksCarriedOverInProgress(
                         jdbc, mapper, ownerUserId, workplaceId, workerUserId);
+                verifyTodayCandidateCarriesOverOvernightBeforeCheckIn(
+                        jdbc, mapper, ownerUserId, workplaceId, workerUserId);
                 verifyHistoryExcludesDraftAndCanceled(
                         jdbc, mapper, ownerUserId, workplaceId, otherWorkerUserId);
                 verifyHistoryIsWorkerScopedAndOrdered(
@@ -191,6 +193,43 @@ class WorkerMapperDatabaseIntegrationTest {
 
         // 뒤 검증이 쓰도록 이월 하한 밖 근무 한 건만 남깁니다.
         assertNotNull(staleId);
+    }
+
+    /**
+     * 자정을 넘긴 근무는 아직 출근 전이어도 오늘로 넘어와야 합니다(SPEC-413-01).
+     *
+     * <p>이월 조건이 상태만 볼 때는 {@code 23:30~03:00} 근무가 자정 직후 홈에서 사라졌습니다.
+     * 노쇼가 확정되는 {@code 00:30}까지 상태는 {@code READY}이고 {@code starts_at}은 어제라
+     * 상태 조건에도 오늘 조건에도 걸리지 않기 때문입니다. QR 스캔은 열려 있는데 화면에서만
+     * 없어지는 구간이라, 근무 시간이 오늘에 걸쳐 있는지를 함께 봅니다.</p>
+     *
+     * <p>뒤 검증이 "이월 하한 밖 근무 한 건"만 남아 있다고 가정하므로 여기서 넣은 행은
+     * 모두 지웁니다.</p>
+     */
+    private void verifyTodayCandidateCarriesOverOvernightBeforeCheckIn(
+            JdbcTemplate jdbc,
+            WorkerMapper mapper,
+            Long ownerUserId,
+            Long workplaceId,
+            Long workerUserId) {
+        Long overnightReadyId = insertWorkCase(
+                jdbc, ownerUserId, workplaceId, workerUserId, "자정 넘김 야간 근무",
+                TODAY.minusDays(1).atTime(23, 30), TODAY.atTime(3, 0), "READY");
+
+        WorkerHomeCandidateRow row = mapper.findTodayCandidate(
+                workerUserId, CARRY_OVER_START, TODAY_START, TOMORROW_START);
+
+        assertNotNull(row, "자정을 넘긴 READY 근무가 오늘 후보에서 빠지면 안 됩니다.");
+        assertEquals(overnightReadyId, row.getWorkCaseId());
+
+        // 경계는 열린 구간입니다. 어제 시작해 정확히 자정에 끝난 근무는 오늘에 걸쳐 있지
+        // 않으므로 후보가 아닙니다.
+        jdbc.update("UPDATE work_cases SET ends_at = ? WHERE id = ?", TODAY_START, overnightReadyId);
+        assertNull(
+                mapper.findTodayCandidate(workerUserId, CARRY_OVER_START, TODAY_START, TOMORROW_START),
+                "자정에 끝난 어제 근무는 오늘 근무가 아닙니다.");
+
+        jdbc.update("DELETE FROM work_cases WHERE id = ?", overnightReadyId);
     }
 
     /**

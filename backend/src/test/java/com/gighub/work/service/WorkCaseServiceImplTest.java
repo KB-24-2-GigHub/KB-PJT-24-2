@@ -40,6 +40,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doAnswer;
@@ -109,19 +110,88 @@ class WorkCaseServiceImplTest {
     /**
      * 자정 넘김을 허용하면 순서 검증이 잡아 주던 오타를 길이 상한이 대신 잡는다.
      * {@code 09:00~09:00} 은 0분이 아니라 24시간으로 해석되어 여기서 걸린다.
+     *
+     * <p>사업장 조회를 stub 하지 않는다. 상한 검증이 그보다 앞서므로 stub 을 세우면
+     * "조회 뒤에 검증해도 통과하는" 테스트가 된다 — 조회는 실제로 일어나면 안 된다.</p>
+     *
+     * <p>거절은 {@code endTime} 필드 오류를 함께 실어야 한다. 프론트가 같은 상한을 먼저
+     * 걸러 주는 동안에는 드러나지 않지만, 두 상한이 어긋나면 사용자가 마주치는 것이
+     * 정확히 이 경로다. 필드가 비면 화면은 무엇이 문제인지 알려주지 못한다.</p>
      */
     @Test
     void createRejectsWorkPeriodLongerThanTheCap() {
-        when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
-                .thenReturn(snapshot());
-
-        assertThrows(ValidationException.class, () -> service.create(
+        ValidationException equalTimes = assertThrows(ValidationException.class, () -> service.create(
                 owner(), createCommandWithTimes(LocalTime.of(9, 0), LocalTime.of(9, 0))));
         // 16시간 1분
-        assertThrows(ValidationException.class, () -> service.create(
+        ValidationException justOverCap = assertThrows(ValidationException.class, () -> service.create(
                 owner(), createCommandWithTimes(LocalTime.of(20, 0), LocalTime.of(12, 1))));
 
+        assertTrue(equalTimes.getMessage().contains("16시간"), equalTimes.getMessage());
+        assertEquals(1, justOverCap.getFieldErrors().size());
+        assertEquals("endTime", justOverCap.getFieldErrors().get(0).getField());
+        assertTrue(
+                justOverCap.getFieldErrors().get(0).getReason().contains("16시간"),
+                justOverCap.getFieldErrors().get(0).getReason());
+
+        verifyNoInteractions(invitationMapper);
+        verify(workCaseMapper, never()).findOwnedActiveWorkplace(any(), any());
         verify(workCaseMapper, never()).insert(any());
+    }
+
+    /**
+     * 휴게 시간이 근무 시간을 넘으면 등록에서 막는다.
+     *
+     * <p>{@code breakMinutes}의 Bean Validation 상한은 컬럼 표현 범위(65535)뿐이라 이 값이
+     * 그대로 저장됐다. 그 뒤 초대 수락 트랜잭션에서 {@code ContractSnapshot}이 거절해
+     * 계약·에스크로가 도는 도중 500이 된다. 자정 넘김 이전에도 있던 구멍이지만, 근무 길이
+     * 상한이 16시간으로 좁아지면서 통과 가능한 휴게 시간 범위와의 간극이 커졌다.</p>
+     */
+    @Test
+    void createRejectsBreakLongerThanTheWorkPeriod() {
+        // 23:00 ~ 다음 날 01:00 = 120분 근무인데 휴게 180분
+        WorkCaseCreateCommand command = WorkCaseCreateCommand.builder()
+                .workplaceId(WORKPLACE_ID)
+                .title("야간 마감")
+                .workDate(LocalDate.of(2026, 8, 10))
+                .startTime(LocalTime.of(23, 0))
+                .endTime(LocalTime.of(1, 0))
+                .breakMinutes(180)
+                .breakPaid(false)
+                .dailyWage(120_000L)
+                .build();
+
+        ValidationException thrown =
+                assertThrows(ValidationException.class, () -> service.create(owner(), command));
+
+        assertEquals("breakMinutes", thrown.getFieldErrors().get(0).getField());
+        assertTrue(thrown.getMessage().contains("120"), thrown.getMessage());
+        verify(workCaseMapper, never()).insert(any());
+    }
+
+    /** 휴게 시간이 근무 시간과 같은 경계는 저장된다 — ContractSnapshot 도 같은 경계를 쓴다. */
+    @Test
+    void createAcceptsBreakEqualToTheWorkPeriod() {
+        when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
+                .thenReturn(snapshot());
+        doAnswer(invocation -> {
+            invocation.getArgument(0, WorkCaseInsertParam.class).setWorkCaseId(WORK_CASE_ID);
+            return 1;
+        }).when(workCaseMapper).insert(any(WorkCaseInsertParam.class));
+
+        WorkCaseCreateCommand command = WorkCaseCreateCommand.builder()
+                .workplaceId(WORKPLACE_ID)
+                .title("야간 마감")
+                .workDate(LocalDate.of(2026, 8, 10))
+                .startTime(LocalTime.of(23, 0))
+                .endTime(LocalTime.of(1, 0))
+                .breakMinutes(120)
+                .breakPaid(false)
+                .dailyWage(120_000L)
+                .build();
+
+        service.create(owner(), command);
+
+        verify(workCaseMapper).insert(any(WorkCaseInsertParam.class));
     }
 
     /** 경계값 자체는 저장된다 — 상한을 벗어난 입력만 거절해야 한다. */

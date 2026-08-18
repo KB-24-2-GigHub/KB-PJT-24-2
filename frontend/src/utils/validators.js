@@ -9,7 +9,7 @@
  * 각 검증 함수는 `{ valid: boolean, message: string }` 를 반환한다(통과 시 message '').
  * 회원가입·사업장 등록·비밀번호 변경 등 폼 화면에서 공통으로 사용한다.
  */
-import { onlyDigits } from '@/utils/format'
+import { onlyDigits, parseWallClockMinutes } from '@/utils/format'
 
 const ok = { valid: true, message: '' }
 const fail = (message) => ({ valid: false, message })
@@ -154,18 +154,13 @@ export function bankAccountRule(value) {
     : fail('계좌번호는 공백·하이픈을 제외한 숫자 10~14자리여야 합니다.')
 }
 
+const MINUTES_PER_DAY = 24 * 60
+
 /**
  * 근무 한 건의 최대 길이(분). 서버 WorkCaseTimes.MAX_WORK_DURATION 과 같은 값이다.
  * 두 곳이 어긋나면 프론트를 통과한 입력이 서버에서 거절된다.
  */
 export const WORK_DURATION_MAX_MINUTES = 16 * 60
-
-/** "HH:mm" → 자정 기준 분. 형식이 아니면 null. */
-function toMinutes(time) {
-  const match = /^(\d{2}):(\d{2})$/.exec(String(time ?? ''))
-  if (!match) return null
-  return Number(match[1]) * 60 + Number(match[2])
-}
 
 /**
  * 근무 시간대 검증 — 자정 넘김을 허용하되 길이 상한을 둔다(SPEC-413-01).
@@ -183,12 +178,16 @@ export function workPeriodRule(startTime, endTime) {
   const required = isRequired(endTime, '종료시간')
   if (!required.valid) return required
 
-  const start = toMinutes(startTime)
-  const end = toMinutes(endTime)
-  // 시작시간이 아직 비었거나 형식이 아니면 이 규칙이 판단할 게 없다(그 필드가 따로 알린다).
-  if (start === null || end === null) return ok
+  const end = parseWallClockMinutes(endTime)
+  // 비어 있지 않은데 시각으로 읽히지 않으면 길이를 잴 수 없다. 여기서 통과시키면 형식이
+  // 어긋난 입력이 상한 검사를 통째로 건너뛴다.
+  if (end === null) return fail('종료시간을 HH:mm 형식으로 입력해주세요.')
 
-  const minutes = end > start ? end - start : end - start + 24 * 60
+  const start = parseWallClockMinutes(startTime)
+  // 시작시간이 아직 비었거나 형식이 아니면 이 규칙이 판단할 게 없다(그 필드가 따로 알린다).
+  if (start === null) return ok
+
+  const minutes = end > start ? end - start : end - start + MINUTES_PER_DAY
   return minutes <= WORK_DURATION_MAX_MINUTES
     ? ok
     : fail(`근무 시간은 최대 ${WORK_DURATION_MAX_MINUTES / 60}시간까지 등록할 수 있어요.`)

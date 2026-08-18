@@ -245,4 +245,22 @@ describe('workPeriodRule', () => {
     // 시작시간의 필수 검증은 그 필드가 따로 한다. 여기서 겹쳐 알리면 오류가 두 번 뜬다.
     expect(workPeriodRule('', '18:00').valid).toBe(true)
   })
+
+  /**
+   * 시각으로 읽히지 않는 종료시간을 통과시키면 길이 상한이 통째로 건너뛰어진다. 시·분
+   * 범위를 보지 않던 예전 파서는 '99:99' 를 6039분으로 접어 상한 검사를 통과시켰다.
+   */
+  it('종료시간이 시각으로 읽히지 않으면 거부한다', () => {
+    expect(workPeriodRule('09:00', '99:99').valid).toBe(false)
+    expect(workPeriodRule('09:00', '25:00').valid).toBe(false)
+    expect(workPeriodRule('09:00', '오후 6시').valid).toBe(false)
+  })
+
+  it('한 자리 시각과 초를 포함한 표기도 같은 규칙으로 읽는다', () => {
+    // 화면은 input[type=time] 이라 "HH:mm" 만 오지만, 서버 값을 그대로 넣는 경로가
+    // 생기면 "09:00:00" 이 온다. earning.js 와 같은 파서를 쓰므로 해석이 갈리지 않는다.
+    expect(workPeriodRule('9:00', '18:00').valid).toBe(true)
+    expect(workPeriodRule('09:00:00', '18:00:00').valid).toBe(true)
+    expect(workPeriodRule('9:00', '9:00').valid).toBe(false) // 24시간
+  })
 })

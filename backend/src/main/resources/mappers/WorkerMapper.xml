@@ -86,9 +86,16 @@
     </sql>
 
     <!--
-        오늘 후보는 시작일이 오늘인 배정 근무와 전날부터 남은 IN_PROGRESS·CHECK_OUT_MISSING
-        입니다. 이월 하한을 두지 않으면 몇 달 전에 멈춘 IN_PROGRESS가 계속 "오늘 근무"로
-        올라옵니다.
+        오늘 후보는 시작일이 오늘인 배정 근무와, 전날에서 오늘로 넘어온 근무입니다. 이월
+        하한을 두지 않으면 몇 달 전에 멈춘 IN_PROGRESS가 계속 "오늘 근무"로 올라옵니다.
+
+        이월은 두 갈래입니다. 상태로 남은 것(IN_PROGRESS·CHECK_OUT_MISSING)과, 근무 시간이
+        아직 오늘에 걸쳐 있는 것(ends_at > todayStart)입니다. 뒤엣것은 SPEC-413-01이 자정
+        넘김을 허용하면서 생겼습니다 — 23:30~03:00 근무를 자정 직후에 열면 아직 출근 전이라
+        상태가 READY고 starts_at은 어제라, 상태 조건만 두면 노쇼가 확정되는 00:30까지 홈에서
+        사라집니다. QR 스캔은 열려 있는데 화면에서만 없어지는 구간입니다.
+
+        경계는 열린 구간입니다. ends_at이 정확히 자정이면 오늘로 넘어온 것이 아닙니다.
 
         starts_at에 DATE()를 씌우면 함수가 좌변에 걸려 idx_work_cases_worker_status_start를
         타지 못하므로, 경계 값을 그대로 비교하는 범위 조건으로 씁니다. 두 구간의 합집합을
@@ -109,6 +116,7 @@
           AND (
                 wc.starts_at &gt;= #{todayStart}
                 OR wc.status IN ('IN_PROGRESS', 'CHECK_OUT_MISSING')
+                OR wc.ends_at &gt; #{todayStart}
               )
         ORDER BY CASE wc.status
                      WHEN 'IN_PROGRESS' THEN 1

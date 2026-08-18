@@ -33,10 +33,30 @@ class WorkCaseTimesTest {
                 NullPointerException.class,
                 () -> WorkCaseTimes.combine(WORK_DATE, null)
         );
-        assertThrows(
+    }
+
+    /**
+     * {@code combineEnd} 는 세 인자를 모두 요구한다. {@code workDate}·{@code startTime} 은
+     * {@code combine} 에는 없던 새 전제조건이다 — 앞은 다음 날 결합, 뒤는 순서 판정에 쓰인다.
+     *
+     * <p>어느 인자였는지까지 확인한다. 가드를 지워도 {@code java.time} 안쪽에서 결국
+     * {@code NullPointerException} 이 나므로, 예외 타입만 보면 가드가 사라진 것을 잡지
+     * 못한다.</p>
+     */
+    @Test
+    void namesTheMissingArgumentOfCombineEnd() {
+        assertEquals("workDate", assertThrows(
+                NullPointerException.class,
+                () -> WorkCaseTimes.combineEnd(null, LocalTime.of(9, 0), LocalTime.of(18, 0))
+        ).getMessage());
+        assertEquals("startTime", assertThrows(
+                NullPointerException.class,
+                () -> WorkCaseTimes.combineEnd(WORK_DATE, null, LocalTime.of(18, 0))
+        ).getMessage());
+        assertEquals("endTime", assertThrows(
                 NullPointerException.class,
                 () -> WorkCaseTimes.combineEnd(WORK_DATE, LocalTime.of(9, 0), null)
-        );
+        ).getMessage());
     }
 
     @Test
@@ -83,7 +103,7 @@ class WorkCaseTimesTest {
                 LocalTime.of(23, 59), // 같은 날
                 LocalTime.of(22, 31), // 같은 날, 1분 뒤
                 LocalTime.of(22, 30), // 동일 → 다음 날
-                LocalTime.of(22, 29), // 이름 → 다음 날
+                LocalTime.of(22, 29), // 이른 시각 → 다음 날
                 LocalTime.MIDNIGHT,   // 자정 → 다음 날
                 LocalTime.of(6, 0)    // 다음 날 아침
         };
