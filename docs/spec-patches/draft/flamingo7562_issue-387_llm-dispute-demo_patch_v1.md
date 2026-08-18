@@ -2,7 +2,7 @@
 patch_id: SPEC-387-01
 status: draft
 issue: 387
-base_spec_version: 8.0.0
+base_spec_version: 8.1.0
 targets:
   - requirement: DISPUTE-001
   - requirement: DISPUTE-002

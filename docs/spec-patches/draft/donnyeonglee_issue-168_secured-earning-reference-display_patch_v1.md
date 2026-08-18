@@ -2,7 +2,7 @@
 patch_id: SPEC-168-01
 status: draft
 issue: 168
-base_spec_version: 8.0.0
+base_spec_version: 8.1.0
 targets:
   - requirement: DASH-002
   - decision: DEC-OPEN-DASHBOARD-BREAK

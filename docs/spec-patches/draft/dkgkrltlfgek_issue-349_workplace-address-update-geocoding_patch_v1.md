@@ -2,7 +2,7 @@
 patch_id: SPEC-349-01
 status: draft
 issue: 349
-base_spec_version: 8.0.0
+base_spec_version: 8.1.0
 targets:
   - requirement: WORKPLACE-002
   - decision: DEC-WORKPLACE-IMMUTABLE
