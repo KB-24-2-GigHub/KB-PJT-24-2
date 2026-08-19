@@ -117,7 +117,7 @@ export const BADGE_TYPE = {
     normalLabel: '성실근로',
     remainingLabel: '근무',
     definitionTitle: '👷 성실근로란?',
-    definitionDesc: '지각·결근 없이 정상 출퇴근 완료'
+    definitionDesc: '지각이나 결근 없이 정시에 출퇴근을 마친 근무 내역이에요.'
   },
   TRUST_OWNER: {
     role: 'owner',
