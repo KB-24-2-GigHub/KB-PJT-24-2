@@ -82,6 +82,7 @@ function selectDate(dateKey) {
           sun: cell.weekday === 0,
           sat: cell.weekday === 6
         }"
+        :disabled="!cell.inMonth"
         :aria-pressed="cell.dateKey === modelValue"
         :aria-label="`${cell.dateKey}${cell.dateKey === today ? ', 오늘' : ''}`"
         @click="selectDate(cell.dateKey)"
@@ -160,6 +161,7 @@ function selectDate(dateKey) {
 }
 .cal-cell.outside {
   color: var(--color-border);
+  cursor: default;
 }
 .cal-cell.sun {
   color: var(--color-danger);
