@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import OwnerWithdrawView from '@/views/owner/wallet/OwnerWithdrawView.vue'
+import { typePin } from '@/test-utils/pinKeypad'
 
 const back = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ back }) }))
@@ -41,7 +42,7 @@ describe('OwnerWithdrawView', () => {
     await accountInput.setValue('170-0000-00001')
     await amountInput.setValue('100000')
     await wrapper.find('button.submit').trigger('click')
-    await wrapper.find('input[type="password"]').setValue('0000')
+    await typePin(wrapper, '0000')
     const confirmButtons = wrapper.findAll('button.modal-btn')
     await confirmButtons[confirmButtons.length - 1].trigger('click')
     await flushPromises()
@@ -68,7 +69,7 @@ describe('OwnerWithdrawView', () => {
     await accountInput.setValue('170-0000-00001')
     await amountInput.setValue('100000')
     await wrapper.find('button.submit').trigger('click')
-    await wrapper.find('input[type="password"]').setValue('0000')
+    await typePin(wrapper, '0000')
     const confirm = () => {
       const buttons = wrapper.findAll('button.modal-btn')
       return buttons[buttons.length - 1]

@@ -2,8 +2,10 @@
 /**
  * PIN 입력 보안키패드 — 계좌 PIN·지갑 비밀번호 공용.
  * 기기 키보드 대신 화면에 무작위로 배치된 숫자판을 눌러 입력한다. 내부 input 은
- * readonly 라 기기 키보드가 뜨지 않고, 접근성·자동화(스크린리더·테스트)를 위해서만
- * DOM 에 남긴다(시각적으로는 숨김).
+ * readonly 라 기기 키보드가 뜨지 않고 사용자 입력으로 값이 바뀌지 않는다 — 실제
+ * 입력은 오직 아래 숫자 버튼(press/backspace)으로만 반영된다. 이 input 자체는
+ * `@/test-utils/pinKeypad`(typePin) 도입 전 테스트가 값을 읽던 자리이자 현재값을
+ * 화면 밖에서 조회하는 용도로만 남겨뒀다 — `aria-hidden`이라 접근성 트리에는 없다.
  *
  * 숫자 배열은 마운트 시 한 번 섞고, 부모가 PIN 을 비울 때마다(오입력·제출 후 폐기)
  * 다시 섞는다 — 매번 같은 자리를 눌러 어깨너머로 자리만 외우는 것을 막는다.
@@ -54,10 +56,6 @@ function backspace() {
   if (!props.modelValue) return
   emit('update:modelValue', props.modelValue.slice(0, -1))
 }
-
-function onHiddenInput(e) {
-  emit('update:modelValue', e.target.value.replace(/\D/g, '').slice(0, props.length))
-}
 </script>
 
 <template>
@@ -68,8 +66,10 @@ function onHiddenInput(e) {
       <span v-for="i in length" :key="i" class="dot" :class="{ filled: i <= modelValue.length }" />
     </div>
 
-    <!-- readonly: 기기 키보드를 막아 보안키패드만으로 입력하게 한다.
-         화면에는 보이지 않지만 접근성·자동화 목적으로 DOM 에는 남긴다. -->
+    <!-- readonly: 기기 키보드를 막아 보안키패드만으로 입력하게 한다 — 사용자 입력으로는
+         절대 값이 바뀌지 않으므로 @input 핸들러를 두지 않는다(달아도 도달 불가한 죽은
+         코드가 된다). 화면에는 보이지 않고 aria-hidden 이라 접근성 트리에도 없다 —
+         현재값을 스크립트로 조회하는 용도로만 DOM 에 남긴다. -->
     <input
       ref="inputEl"
       class="hidden-input"
@@ -80,7 +80,6 @@ function onHiddenInput(e) {
       tabindex="-1"
       aria-hidden="true"
       :value="modelValue"
-      @input="onHiddenInput"
     />
 
     <div class="pad">

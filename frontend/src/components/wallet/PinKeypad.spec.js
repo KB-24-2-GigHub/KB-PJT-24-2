@@ -30,6 +30,34 @@ describe('PinKeypad', () => {
     expect(wrapper.emitted('update:modelValue')[0][0]).toBe('12')
   })
 
+  it('기존 값에 이어서 붙인다', async () => {
+    const wrapper = mount(PinKeypad, { props: { modelValue: '12' } })
+    const key = wrapper.findAll('button.key').find((b) => b.text() === '3')
+
+    await key.trigger('click')
+
+    expect(wrapper.emitted('update:modelValue')[0][0]).toBe('123')
+  })
+
+  it('값이 비워지면 숫자 배치를 다시 섞는다', async () => {
+    // 셔플 결과가 우연히 같을 수 있어 순서 불일치를 단언하면 플레이키해진다.
+    // 재배치 뒤에도 숫자 10개 구성이 그대로 보존되는지만 확인한다.
+    const wrapper = mount(PinKeypad, { props: { modelValue: '1234' } })
+    const before = wrapper
+      .findAll('button.key')
+      .map((b) => b.text())
+      .filter((t) => /^\d$/.test(t))
+
+    await wrapper.setProps({ modelValue: '' })
+
+    const after = wrapper
+      .findAll('button.key')
+      .map((b) => b.text())
+      .filter((t) => /^\d$/.test(t))
+    expect(after).toHaveLength(before.length)
+    expect(new Set(after)).toEqual(new Set(before))
+  })
+
   it('입력한 자리수만큼 점을 채워 보여준다', async () => {
     const wrapper = mount(PinKeypad, { props: { modelValue: '12' } })
 

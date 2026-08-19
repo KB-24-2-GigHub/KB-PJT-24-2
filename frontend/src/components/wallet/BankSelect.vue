@@ -16,7 +16,7 @@ import { BANKS } from '@/utils/constants'
 
 const VISIBLE_COUNT = 8
 
-defineProps({
+const props = defineProps({
   modelValue: { type: String, default: '' },
   label: { type: String, default: '은행' }
 })
@@ -30,7 +30,15 @@ function onLogoError(code) {
 }
 
 const expanded = ref(false)
-const visibleBanks = computed(() => (expanded.value ? BANKS : BANKS.slice(0, VISIBLE_COUNT)))
+const visibleBanks = computed(() => {
+  if (expanded.value) return BANKS
+
+  // 선택된 은행이 기본 노출 범위 밖이면 접힌 상태에서도 함께 보여준다.
+  // 그러지 않으면 고른 은행이 화면에서 사라져 아무것도 선택하지 않은 것처럼 보인다.
+  const head = BANKS.slice(0, VISIBLE_COUNT)
+  const selected = BANKS.find((bank) => bank.code === props.modelValue)
+  return selected && !head.includes(selected) ? [...head, selected] : head
+})
 
 function select(code) {
   emit('update:modelValue', code)

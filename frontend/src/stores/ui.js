@@ -49,6 +49,11 @@ export const useUiStore = defineStore('ui', () => {
 
   /** 최소 노출 시간(LOADING_MIN_VISIBLE_MS)을 채운 뒤에 로딩을 끈다. */
   function stopLoading() {
+    // 이전 호출이 예약한 타이머를 먼저 지운다 — 지우지 않으면 그 타이머가 살아남아
+    // 나중에(예: 다음 startLoading 이후) 로딩을 예상치 못하게 꺼버릴 수 있다.
+    clearTimeout(loadingHideTimer)
+    loadingHideTimer = null
+
     const remaining = LOADING_MIN_VISIBLE_MS - (Date.now() - loadingShownAt)
     if (remaining <= 0) {
       loading.value = false

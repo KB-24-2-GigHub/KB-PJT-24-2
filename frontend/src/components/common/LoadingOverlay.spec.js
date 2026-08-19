@@ -59,5 +59,27 @@ describe('LoadingOverlay', () => {
 
       expect(wrapper.find('.loading-overlay').exists()).toBe(false)
     })
+
+    it('stopLoading을 연속으로 불러도 이전 타이머가 다음 로딩을 끄지 않는다', async () => {
+      // stopLoading 을 두 번 부르면(예: 재시도 흐름) 두 타이머가 같은 목표 시각(t=500)을
+      // 겨눈다. 정리 없이 두 번째로 덮어쓰면 첫 타이머(A)가 고아로 남아, 그 시각에 시작한
+      // 지 얼마 안 된 다음 로딩 세션을 뒤늦게 꺼버릴 수 있다.
+      const wrapper = mountOverlay()
+      const ui = useUiStore()
+
+      ui.startLoading() // 세션1 시작 (t=0)
+      await wrapper.vm.$nextTick()
+      ui.stopLoading() // 타이머 A 예약 (목표 t=500)
+      ui.stopLoading() // 타이머 B 예약 (같은 목표 t=500) — 수정 전이라면 A가 고아로 남는다
+
+      await vi.advanceTimersByTimeAsync(200) // 아직 500ms 전 — A·B 모두 대기 중
+      ui.startLoading() // 세션2 시작 (t=200)
+      await wrapper.vm.$nextTick()
+
+      await vi.advanceTimersByTimeAsync(300) // 절대 시각 t=500 — A·B 의 옛 목표 시각 도달
+      // 수정 전이면 정리되지 않은 A가 여기서 발동해, 막 시작한 세션2(아직 300ms 밖에
+      // 안 지남)를 꺼버린다.
+      expect(wrapper.find('.loading-overlay').exists()).toBe(true)
+    })
   })
 })

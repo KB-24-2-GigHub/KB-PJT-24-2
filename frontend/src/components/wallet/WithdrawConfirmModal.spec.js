@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import WithdrawConfirmModal from '@/components/wallet/WithdrawConfirmModal.vue'
+import { typePin } from '@/test-utils/pinKeypad'
 
 function mountModal(props = {}) {
   return mount(WithdrawConfirmModal, {
@@ -33,7 +34,7 @@ describe('WithdrawConfirmModal', () => {
   it('4자리를 입력하면 출금하기를 눌러 confirm을 올린다', async () => {
     const wrapper = mountModal()
 
-    await wrapper.find('input[type="password"]').setValue('0000')
+    await typePin(wrapper, '0000')
     await confirmButton(wrapper).trigger('click')
 
     expect(wrapper.emitted('confirm')).toHaveLength(1)
@@ -41,7 +42,7 @@ describe('WithdrawConfirmModal', () => {
 
   it('모달을 닫으면 입력했던 비밀번호를 비운다', async () => {
     const wrapper = mountModal()
-    await wrapper.find('input[type="password"]').setValue('12')
+    await typePin(wrapper, '12')
 
     await wrapper.setProps({ open: false })
     await wrapper.setProps({ open: true })

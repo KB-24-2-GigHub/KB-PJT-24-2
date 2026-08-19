@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import OwnerChargeConfirmView from '@/views/owner/wallet/OwnerChargeConfirmView.vue'
+import { typePin } from '@/test-utils/pinKeypad'
 
 const replace = vi.fn()
 vi.mock('vue-router', () => ({ useRouter: () => ({ replace }) }))
@@ -53,8 +54,7 @@ describe('OwnerChargeConfirmView', () => {
     expect(wrapper.text()).toContain('170000000001')
     expect(wrapper.text()).toContain('100,000원')
 
-    const pinInput = wrapper.find('input[type="password"]')
-    await pinInput.setValue('0000')
+    await typePin(wrapper, '0000')
     await wrapper.find('button.confirm').trigger('click')
     await flushPromises()
 
@@ -78,17 +78,15 @@ describe('OwnerChargeConfirmView', () => {
     expect(replace).toHaveBeenCalledWith({ name: 'owner-home' })
   })
 
-  it('3자리·비숫자 PIN은 제출하지 않고 5번째 숫자는 저장하지 않는다', async () => {
+  it('3자리까지는 제출할 수 없고, 5번째로 누른 숫자는 저장하지 않는다', async () => {
     prepareDraft()
     const wrapper = mount(OwnerChargeConfirmView)
-    const pinInput = wrapper.find('input[type="password"]')
 
-    await pinInput.setValue('12a')
-    expect(pinInput.element.value).toBe('12')
+    await typePin(wrapper, '123')
     expect(wrapper.find('button.confirm').attributes('disabled')).toBeDefined()
 
-    await pinInput.setValue('12345')
-    expect(pinInput.element.value).toBe('1234')
+    await typePin(wrapper, '45')
+    expect(wrapper.vm.$.setupState.pin).toBe('1234')
     expect(wrapper.find('button.confirm').attributes('disabled')).toBeUndefined()
     expect(chargeWallet).not.toHaveBeenCalled()
   })
@@ -111,13 +109,12 @@ describe('OwnerChargeConfirmView', () => {
       }
     })
     const wrapper = mount(OwnerChargeConfirmView)
-    const pinInput = wrapper.find('input[type="password"]')
 
-    await pinInput.setValue('0000')
+    await typePin(wrapper, '0000')
     await wrapper.find('button.confirm').trigger('click')
     await flushPromises()
 
-    expect(pinInput.element.value).toBe('')
+    expect(wrapper.find('input[type="password"]').element.value).toBe('')
     expect(wrapper.find('[role="alert"]').text()).toBe('계좌를 사용할 수 없습니다.')
     expect(useWalletFundingStore().draft).not.toBeNull()
   })
@@ -127,7 +124,7 @@ describe('OwnerChargeConfirmView', () => {
     let resolveCharge
     chargeWallet.mockImplementation(() => new Promise((resolve) => (resolveCharge = resolve)))
     const wrapper = mount(OwnerChargeConfirmView)
-    await wrapper.find('input[type="password"]').setValue('0000')
+    await typePin(wrapper, '0000')
 
     const button = wrapper.find('button.confirm')
     await button.trigger('click')
@@ -144,12 +141,11 @@ describe('OwnerChargeConfirmView', () => {
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValueOnce({ fundingOrderId: 10, status: 'COMPLETED', bankTransactionId: 20 })
     const wrapper = mount(OwnerChargeConfirmView)
-    const pinInput = wrapper.find('input[type="password"]')
 
-    await pinInput.setValue('0000')
+    await typePin(wrapper, '0000')
     await wrapper.find('button.confirm').trigger('click')
     await flushPromises()
-    await pinInput.setValue('0000')
+    await typePin(wrapper, '0000')
     await wrapper.find('button.confirm').trigger('click')
     await flushPromises()
 
@@ -161,7 +157,7 @@ describe('OwnerChargeConfirmView', () => {
   it('화면을 이탈하면 PIN과 계좌 초안을 모두 폐기한다', async () => {
     prepareDraft()
     const wrapper = mount(OwnerChargeConfirmView)
-    await wrapper.find('input[type="password"]').setValue('0000')
+    await typePin(wrapper, '0000')
 
     wrapper.unmount()
 
