@@ -201,7 +201,7 @@ describe('InviteConfirmView', () => {
     await acceptButton(wrapper).trigger('click')
     await flushPromises()
 
-    const wallet = wrapper.findAll('button').find((b) => b.text().includes('안심지갑'))
+    const wallet = wrapper.findAll('button').find((b) => b.text().includes('홈으로'))
     await wallet.trigger('click')
     expect(push).toHaveBeenCalledWith('/worker/home')
 
@@ -227,7 +227,7 @@ describe('InviteConfirmView', () => {
 
     await wrapper
       .findAll('button')
-      .find((b) => b.text().includes('안심지갑'))
+      .find((b) => b.text().includes('홈으로'))
       .trigger('click')
     expect(push).toHaveBeenCalledWith('/worker/home')
   })
