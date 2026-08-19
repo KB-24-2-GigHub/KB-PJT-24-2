@@ -36,6 +36,67 @@ jobs:
       AWS_DEFAULT_REGION: ap-northeast-2
 
     steps:
+      # AWS 는 신뢰 정책이 거부한 이유를 알려주지 않는다. Provider 미등록, sub 나 aud
+      # 불일치, AWS_ROLE_ARN 에 Role 이 아닌 ARN 이 들어간 경우가 전부 같은 메시지
+      # "Not authorized to perform sts:AssumeRoleWithWebIdentity" 로 돌아온다. 그래서
+      # AssumeRole 보다 먼저, GitHub 쪽에서 확인할 수 있는 값을 남겨 후보를 줄인다.
+      #
+      # Secret 값 자체는 출력하지 않는다. 형태만 판정한다.
+      - name: Inspect role ARN shape
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          set -uo pipefail
+          case "${ROLE_ARN}" in
+            '')
+              echo "::error::AWS_ROLE_ARN 이 비어 있다."
+              exit 1
+              ;;
+            *':oidc-provider/'*)
+              echo "::error::AWS_ROLE_ARN 에 Role 이 아니라 OIDC Provider 의 ARN 이 들어 있다."
+              echo "::error::arn:aws:iam::<계정>:role/<역할이름> 형태여야 한다."
+              exit 1
+              ;;
+            *':role/'*)
+              echo "OK   ARN 이 :role/ 을 포함한다"
+              ;;
+            *)
+              echo "::error::AWS_ROLE_ARN 이 Role ARN 형태가 아니다."
+              exit 1
+              ;;
+          esac
+
+          # 콘솔에서 붙여넣을 때 끝에 줄바꿈이 딸려오는 경우가 있다. 값을 드러내지 않고
+          # 공백 제거 전후 길이만 비교한다.
+          stripped="$(printf '%s' "${ROLE_ARN}" | tr -d '[:space:]')"
+          if [ "${#stripped}" -ne "${#ROLE_ARN}" ]; then
+            echo "::error::AWS_ROLE_ARN 에 공백이나 줄바꿈이 섞여 있다. 다시 저장할 것."
+            exit 1
+          fi
+          echo "OK   공백 없음 (길이 ${#ROLE_ARN})"
+
+      # 신뢰 정책의 sub 조건과 문자 단위로 대조할 수 있게, GitHub 이 실제로 발급한
+      # 값을 그대로 남긴다. ID 토큰 원문은 즉시 마스킹하고 Claim 만 꺼낸다.
+      - name: Show OIDC claims
+        run: |
+          set -euo pipefail
+          token="$(curl -sS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | jq -r '.value')"
+          echo "::add-mask::${token}"
+
+          # JWT Payload 는 base64url 이다. jq 에 넘기기 전에 표준 base64 로 되돌리고
+          # 잘려 나간 padding 을 채운다.
+          payload="$(printf '%s' "${token}" | cut -d. -f2)"
+          case $(( ${#payload} % 4 )) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+
+          printf '%s' "${payload}" | tr '_-' '/+' | base64 -d \
+            | jq '{sub, aud, repository, repository_owner, ref}'
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
