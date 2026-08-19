@@ -43,7 +43,7 @@ const intros = [
     features: [
       {
         icon: ShieldCheck,
-        title: '확보된 임금 확인',
+        title: '예치된 임금 확인',
         desc: '사장님이 예치한 안심 금액을 바로 확인해요.'
       },
       { icon: QrCode, title: 'QR 출퇴근', desc: '스캔 한 번으로 출퇴근을 간편하게 인증해요.' },
@@ -65,7 +65,7 @@ function onSelectRole(next) {
 
 const features = [
   { title: '안심 에스크로', desc: '근무 확정 시 임금을 미리 예치, 정산까지 안전하게.' },
-  { title: 'QR 출퇴근', desc: '짧은 수명 QR + 위치로 출퇴근을 간편하게 인증.' },
+  { title: 'QR 출퇴근', desc: 'QR + GPS 위치로 출퇴근을 간편하게 인증.' },
   { title: '문서·정산 한곳에', desc: '계약서·보건증·정산 이력을 한 화면에서.' }
 ]
 </script>

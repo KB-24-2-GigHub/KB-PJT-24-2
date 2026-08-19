@@ -172,7 +172,6 @@ async function onSubmit() {
           class="pin-field"
           :model-value="pin"
           label="계좌 PIN"
-          hint="Demo PIN은 0000입니다."
           :error="pinError"
           @update:model-value="updatePin"
         />
