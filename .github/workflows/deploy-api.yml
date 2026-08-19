@@ -120,6 +120,17 @@ jobs:
           # 호스트 키 수집은 22번이 열린 뒤여야 한다. 순서를 바꾸면 타임아웃으로 실패한다.
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
+      # .env 갱신은 stdin 으로 넘기는 원격 스크립트에 인라인하지 않고 파일로 올린다.
+      # 이 로직은 FLYWAY_* 접속값이 함께 든 파일을 제자리에서 고치므로 실행 전에
+      # 검증돼야 하고, 파일이어야 scripts/set-api-tag.test.js 가 실제로 돌려볼 수 있다.
+      # 서버에 남으므로 롤백 뒤 손으로 맞출 때도 같은 스크립트를 쓴다(SETUP.md 10절).
+      - name: Upload .env updater
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy.pem -o ConnectTimeout=15 \
+            deploy/set-api-tag.sh \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/gighub/set-api-tag.sh"
+
       # 원격 스크립트는 stdin 으로 넘긴다. 따옴표 중첩 없이 여러 줄을 그대로 보낼 수 있고,
       # ssh 가 원격 종료 코드를 그대로 반환하므로 set -euo pipefail 의 실패가 이 Step 의
       # 실패가 된다. 이 전파는 실측으로 확인했다(원격 false -> 이후 줄 미실행 -> exit 1).
@@ -133,6 +144,11 @@ jobs:
           export API_TAG=${{ github.sha }}
           docker compose -f compose.prod.yaml pull app
           docker compose -f compose.prod.yaml up -d app
+          # up -d 뒤에 갱신한다. .env 는 "지금 떠 있는 것" 을 가리켜야 하므로, 기동이
+          # 실패하면 직전 값이 남는 편이 맞다. 셸의 export 는 이 세션과 함께 사라지고
+          # .env 만 서버에 남으므로, 이 한 줄이 없으면 다음 맨손 up -d 가 옛 태그로
+          # 되돌아간다 (#450, #452).
+          sh set-api-tag.sh "$API_TAG"
           docker image prune -f
           REMOTE
 
@@ -187,3 +203,6 @@ jobs:
           echo "- 커밋: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- 이미지: \`${IMAGE}:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- 롤백: EC2 에서 \`API_TAG=<이전sha> docker compose -f /opt/gighub/compose.prod.yaml up -d app\`" >> "$GITHUB_STEP_SUMMARY"
+          # 두 줄이다. .env 를 함께 되돌리지 않으면 이후 맨손 up -d 가 방금 물린
+          # 버전을 다시 올린다(SETUP.md 10절).
+          echo "  그리고 \`sh /opt/gighub/set-api-tag.sh <이전sha>\` — 둘 다 해야 되돌린 상태가 유지된다" >> "$GITHUB_STEP_SUMMARY"
