@@ -1,5 +1,10 @@
 import http from '@/services/http'
 
+/**
+ * 목록 조회. `page`·`size` 에 더해 `unreadOnly` 를 받는다(SPEC-423-01).
+ *
+ * 서버 기본값은 `unreadOnly=false` 라 Query 를 붙이지 않으면 읽은 알림까지 함께 온다.
+ */
 export async function listNotifications(params = {}) {
   const { data } = await http.get('/notifications', { params })
   return data
@@ -18,6 +23,16 @@ export async function getUnreadCount() {
 
 export async function markNotificationRead(notificationId) {
   await http.patch(`/notifications/${notificationId}/read`)
+}
+
+/**
+ * 전체 읽음 (SPEC-423-01).
+ *
+ * 처리 건수를 돌려받지 않는다. 화면이 필요로 하는 것은 갱신된 안읽음 개수이고, 그것은
+ * `unread-count` 가 이미 소유한다.
+ */
+export async function markAllNotificationsRead() {
+  await http.patch('/notifications/read-all')
 }
 
 /**
