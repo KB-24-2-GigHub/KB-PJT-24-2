@@ -303,7 +303,7 @@ chmod 700 /opt/gighub /opt/gighub/config
   drivers/                    MySQL Connector/J
 ```
 
-로컬에서 템플릿과 Compose를 복사한다:
+로컬에서 템플릿과 Compose, 배포 스크립트를 복사한다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
@@ -313,7 +313,15 @@ scp -i ~/.ssh/my-keypair.pem \
 scp -i ~/.ssh/my-keypair.pem \
   deploy/compose.prod.yaml \
   ec2-user@13.125.191.199:/opt/gighub/compose.prod.yaml
+
+scp -i ~/.ssh/my-keypair.pem \
+  deploy/set-api-tag.sh \
+  ec2-user@13.125.191.199:/opt/gighub/set-api-tag.sh
 ```
+
+뒤의 두 파일은 **배포가 매번 다시 올린다**(`deploy-api.yml` 의 `Upload deploy artifacts`).
+여기서 한 번 올려 두는 것은 첫 배포 전에도 9.2절 수동 교체와 아래 Compose 문법 확인이
+동작하게 하기 위해서다.
 
 EC2에서 값을 채우고 권한을 잠근다:
 
@@ -380,18 +388,18 @@ docker compose -f compose.prod.yaml config --images | grep kb-pjt-24-2-api
 `API_TAG` 가 없는 것이다. `app` 이미지 태그에는 기본값을 두지 않았으므로 그 상태의
 `up -d app` 은 `invalid reference format` 으로 멈춘다 — 구버전이 조용히 뜨지 않는다.
 
-> **이미 돌고 있는 서버라면 `compose.prod.yaml` 을 다시 올려야 한다.** 배포 워크플로는
-> 이 파일을 덮어쓰지 않는다. `app` 이미지 태그에서 `:-dev` 기본값을 없앤 변경이
-> 반영되지 않으면, `.env` 가 깨졌을 때 여전히 낡은 `:dev` 이미지로 조용히 떨어진다.
+> **`compose.prod.yaml` 과 `set-api-tag.sh` 는 배포가 매번 덮어쓴다.** 예전에는 사람이
+> scp 하도록 남겨 뒀는데, 그 수동 단계를 놓치면 서버 파일이 저장소와 조용히 어긋난다.
+> 14.1절의 `seed` 서비스 추가가 그 형태였다. 지금은 `deploy-api.yml` 의
+> `Upload deploy artifacts` 가 배포마다 두 파일을 올리므로 별도 조치가 필요 없다.
+>
+> 서버 파일이 저장소와 같은지 확인하려면:
 >
 > ```bash
-> scp -i ~/.ssh/my-keypair.pem \
->   deploy/compose.prod.yaml \
->   ec2-user@13.125.191.199:/opt/gighub/compose.prod.yaml
 > ssh ... "grep -n 'kb-pjt-24-2-api:' /opt/gighub/compose.prod.yaml"
 > ```
 >
-> 기대: `${API_TAG}` — `${API_TAG:-dev}` 가 보이면 아직 옛 파일이다.
+> 기대: `${API_TAG}` — `${API_TAG:-dev}` 가 보이면 첫 배포 전이거나 배포가 실패한 것이다.
 
 ## 8. 최초 Flyway 적용
 
@@ -1010,8 +1018,11 @@ Migration 은 한 번만 되돌릴 수 없이 적용되고 seed 는 반복 실�
 
 ### 14.1 최초 1회 준비
 
-`compose.prod.yaml` 에 `seed` 서비스가 추가됐다. 배포 워크플로는 이 파일을 덮어쓰지 않으므로
-사람이 한 번 올려야 한다.
+`compose.prod.yaml` 에 `seed` 서비스가 필요하다. **`Deploy API` 가 배포마다 이 파일을 올리므로
+보통은 배포 한 번이면 끝난다.** 예전에는 사람이 올려야 했고, 그 수동 단계를 놓쳐 서버 파일이
+저장소와 어긋나는 일이 반복돼 배포에 넣었다(7절).
+
+배포를 기다릴 수 없으면 직접 올린다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
