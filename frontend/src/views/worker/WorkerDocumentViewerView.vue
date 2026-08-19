@@ -14,6 +14,7 @@ import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import PdfCanvasViewer from '@/components/common/PdfCanvasViewer.vue'
 import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { getDocument } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
@@ -36,7 +37,13 @@ const isPdf = computed(() => isPdfDocument(doc.value))
 const isExpired = computed(() => doc.value?.status === 'EXPIRED')
 const canDownload = computed(() => doc.value?.capabilities?.canDownload === true)
 
-const { previewUrl: fileUrl, downloading, loadPreview, downloadDocument } = useDocumentPreview()
+const {
+  previewUrl: fileUrl,
+  previewBlob: fileBlob,
+  downloading,
+  loadPreview,
+  downloadDocument
+} = useDocumentPreview()
 
 /**
  * 문서 조회와 미리보기는 실패 의미가 다르다. 파일 Stream 만 실패했을 때 문서 전체를
@@ -105,13 +112,13 @@ async function onDownload() {
         </section>
 
         <div class="preview">
-          <iframe
-            v-if="fileUrl && isPdf"
+          <PdfCanvasViewer v-if="fileBlob && isPdf" :blob="fileBlob" />
+          <img
+            v-else-if="fileUrl && !isPdf"
             :src="fileUrl"
-            class="preview-frame"
-            title="문서 미리보기"
+            alt="문서 미리보기"
+            class="preview-img"
           />
-          <img v-else-if="fileUrl" :src="fileUrl" alt="문서 미리보기" class="preview-img" />
           <div v-else class="preview-empty">
             <FileText :size="40" />
             <p>미리보기를 불러오지 못했어요.</p>
@@ -189,12 +196,6 @@ async function onDownload() {
   border-radius: var(--radius-md);
   overflow: hidden;
   background: var(--color-bg);
-}
-.preview-frame {
-  display: block;
-  width: 100%;
-  height: 60vh;
-  border: none;
 }
 .preview-img {
   display: block;

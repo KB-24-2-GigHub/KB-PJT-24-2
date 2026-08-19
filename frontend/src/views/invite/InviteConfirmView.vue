@@ -12,6 +12,7 @@ import { useRoute, useRouter } from 'vue-router'
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import PdfCanvasViewer from '@/components/common/PdfCanvasViewer.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
 import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { contractFileUrl } from '@/services/documents'
@@ -56,7 +57,7 @@ let inviteLoadSequence = 0
 const workDateText = computed(() => formatSeoulDateTime(invite.value?.startsAt).split(' ')[0])
 const contractDocumentId = computed(() => acceptedWorkCase.value?.contract?.documentId ?? null)
 const {
-  previewUrl: contractViewUrl,
+  previewBlob: contractBlob,
   loadPreview: loadContractPreview,
   clearPreview: clearContractPreview
 } = useDocumentPreview()
@@ -219,12 +220,7 @@ function goHome() {
             <h2>최종 근로계약서</h2>
             <span>서명 완료본</span>
           </div>
-          <iframe
-            v-if="contractViewUrl"
-            :src="contractViewUrl"
-            title="최종 근로계약서"
-            class="contract-frame"
-          />
+          <PdfCanvasViewer v-if="contractBlob" :blob="contractBlob" class="contract-preview" />
           <p v-else class="contract-preview-error">
             미리보기를 불러오지 못했어요. 아래에서 계약서를 다운로드할 수 있어요.
           </p>
@@ -470,10 +466,13 @@ function goHome() {
   font-size: var(--text-sm);
   color: var(--color-worker);
 }
-.contract-frame {
-  width: 100%;
-  height: 55vh;
-  border: 0;
+/*
+ * 수락 화면의 계약서는 확인용이라 화면을 다 차지하지 않는다. 높이를 제한하고 안에서
+ * 스크롤한다. 문서 뷰어는 문서를 보는 것이 목적이라 이 제한을 두지 않는다.
+ */
+.contract-preview {
+  max-height: 55vh;
+  overflow-y: auto;
   border-radius: var(--radius-sm);
   background: var(--color-bg);
 }

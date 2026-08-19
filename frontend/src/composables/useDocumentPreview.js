@@ -12,6 +12,9 @@ import { fetchDocumentFile } from '@/services/documents'
  */
 export function useDocumentPreview() {
   const previewUrl = ref('')
+  // PDF 는 Blob 자체가 필요하다. Object URL 을 <iframe> 에 넣는 방식은 모바일 브라우저에
+  // 내장 PDF 뷰어가 없어 빈 화면으로 끝나므로, 원본을 canvas 에 직접 그린다(#433).
+  const previewBlob = ref(null)
   const previewLoading = ref(false)
   const previewError = ref(null)
   const downloading = ref(false)
@@ -25,6 +28,7 @@ export function useDocumentPreview() {
       currentObjectUrl = ''
     }
     previewUrl.value = ''
+    previewBlob.value = null
   }
 
   async function loadPreview(documentId) {
@@ -41,6 +45,7 @@ export function useDocumentPreview() {
 
       currentObjectUrl = URL.createObjectURL(blob)
       previewUrl.value = currentObjectUrl
+      previewBlob.value = blob
       return currentObjectUrl
     } catch (error) {
       if (sequence !== requestSequence) return ''
@@ -85,6 +90,7 @@ export function useDocumentPreview() {
 
   return {
     previewUrl,
+    previewBlob,
     previewLoading,
     previewError,
     downloading,

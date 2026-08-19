@@ -14,6 +14,7 @@ import { useRoute } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
+import PdfCanvasViewer from '@/components/common/PdfCanvasViewer.vue'
 import { useDocumentPreview } from '@/composables/useDocumentPreview'
 import { getDocument } from '@/services/documents'
 import { useUiStore } from '@/stores/ui'
@@ -32,7 +33,13 @@ const doc = ref(null)
 const loading = ref(true)
 const loadError = ref(null)
 
-const { previewUrl: viewUrl, downloading, loadPreview, downloadDocument } = useDocumentPreview()
+const {
+  previewUrl: viewUrl,
+  previewBlob: viewBlob,
+  downloading,
+  loadPreview,
+  downloadDocument
+} = useDocumentPreview()
 
 const typeLabel = computed(() => docTypeLabel(doc.value))
 const isImage = computed(() => isImageDocument(doc.value))
@@ -109,7 +116,7 @@ async function onDownload() {
 
         <div class="viewer">
           <img v-if="viewUrl && isImage" :src="viewUrl" :alt="doc.fileName" />
-          <iframe v-else-if="viewUrl" :src="viewUrl" :title="doc.fileName" class="pdf-frame" />
+          <PdfCanvasViewer v-else-if="viewBlob" :blob="viewBlob" />
           <div v-else class="viewer-placeholder">
             <ImageIcon v-if="isImage" :size="40" />
             <FileText v-else :size="40" />
@@ -165,11 +172,6 @@ async function onDownload() {
   width: 100%;
   max-height: 480px;
   object-fit: contain;
-}
-.pdf-frame {
-  width: 100%;
-  height: 480px;
-  border: none;
 }
 .viewer-placeholder {
   display: flex;
