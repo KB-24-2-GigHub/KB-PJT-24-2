@@ -55,8 +55,21 @@ const ACCEPTED_WORK_CASE = {
   contract: { documentId: 99, sourceTermsVersion: 3, acceptedAt: '2026-08-10T04:00:00Z' }
 }
 
+/*
+ * 계약서 미리보기는 canvas 렌더링이라 jsdom 에서 실제로 그릴 수 없다(#433). 여기서 확인할
+ * 것은 수락 직후 최종본 Blob 이 미리보기로 넘어가는지이므로 대역으로 바꿔 그 경계만 본다.
+ * 렌더링 자체는 PdfCanvasViewer 의 테스트가 담당한다.
+ */
+const PdfCanvasViewerStub = {
+  name: 'PdfCanvasViewer',
+  props: { blob: { type: Blob, default: null } },
+  template: '<div class="pdf-preview-stub" />'
+}
+
 function mountView() {
-  return mount(InviteConfirmView)
+  return mount(InviteConfirmView, {
+    global: { stubs: { PdfCanvasViewer: PdfCanvasViewerStub } }
+  })
 }
 
 function acceptButton(wrapper) {
@@ -167,9 +180,9 @@ describe('InviteConfirmView', () => {
     expect(fetchWallet).toHaveBeenCalled()
     expect(fetchTransactions).toHaveBeenCalled()
     expect(fetchDocumentFile).toHaveBeenCalledWith(99, 'view')
-    expect(wrapper.get('iframe').attributes('src')).toBe(
-      'blob:https://gighub.store/contract-preview'
-    )
+    const preview = wrapper.findComponent(PdfCanvasViewerStub)
+    expect(preview.exists()).toBe(true)
+    expect(preview.props('blob')).toBeInstanceOf(Blob)
     expect(wrapper.get('.download-link').attributes('href')).toBe(
       '/api/documents/99/file?mode=download'
     )

@@ -10,15 +10,14 @@ name: Seed DB
 # 방법이 없고, 기본 브랜치가 유일한 Actions 등록 경로다. 없으면 이렇게 거부된다.
 #   HTTP 404: workflow seed-db.yml not found on the default branch
 #
-# 적용 대상 SQL 은 backend/src/test/resources/db/seed/ 에 있다. 전부 올린 뒤
-# file 입력으로 고른 하나만 실행한다. 이 seed 들은 전 구간 ON DUPLICATE KEY UPDATE
-# 라 반복 적용해도 결과가 같고, DELETE 는 자기 fixture 의 owner/workplace 범위에만
-# 걸려 있다. 새 seed 를 추가할 때도 그 두 성질을 지킨다.
+# 적용 대상 SQL 은 backend/src/test/resources/db/seed/ 에 있다. 기존 test-*.sql은
+# 고정 Fixture이고 demo-*.sql은 모든 애플리케이션 데이터를 지운 뒤 시연 상태를 다시 만든다.
+# 그래서 demo 시드는 별도 확인 문구, 앱 정지, 문서 저장소 초기화를 추가로 요구한다.
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "RDS 데이터를 변경한다. 진행하려면 seed 라고 입력"
+        description: "기존 Fixture는 seed, 전체 초기화 demo는 reset-all-data 입력"
         required: true
         default: ""
       file:
@@ -33,9 +32,16 @@ concurrency:
 jobs:
   seed:
     # 버튼을 잘못 눌러 운영 데이터가 바뀌는 것을 막는다.
-    if: inputs.confirm == 'seed'
+    if: inputs.confirm == 'seed' || inputs.confirm == 'reset-all-data'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+
+    # 이 워크플로에는 원래 permissions 블록이 없어 기본값을 그대로 썼다. id-token 을
+    # 주려면 블록을 만들어야 하고, 블록을 만드는 순간 기본값이 통째로 대체된다.
+    # checkout 이 계속 동작하도록 contents: read 를 함께 명시한다.
+    permissions:
+      contents: read
+      id-token: write
 
     env:
       AWS_DEFAULT_REGION: ap-northeast-2
@@ -56,10 +62,26 @@ jobs:
         id: seed
         env:
           SEED_FILE_INPUT: ${{ inputs.file }}
+          SEED_CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
           name="$(sh scripts/resolve-seed-file.sh)"
+          case "$name" in
+            demo-*.sql)
+              expected="reset-all-data"
+              is_demo="true"
+              ;;
+            *)
+              expected="seed"
+              is_demo="false"
+              ;;
+          esac
+          if [ "$SEED_CONFIRM" != "$expected" ]; then
+            echo "::error::$name 실행 확인값은 $expected 이어야 한다."
+            exit 1
+          fi
           printf 'name=%s\n' "$name" >> "$GITHUB_OUTPUT"
+          printf 'is_demo=%s\n' "$is_demo" >> "$GITHUB_OUTPUT"
 
       - name: Install SSH key
         run: |
@@ -68,12 +90,19 @@ jobs:
           echo "${{ secrets.EC2_SSH_KEY }}" > ~/.ssh/deploy.pem
           chmod 600 ~/.ssh/deploy.pem
 
+      # 만료되지 않는 IAM User Key 대신 이 실행에만 유효한 임시 세션을 받는다.
+      # 자격증명은 이후 모든 Step 에 남으므로 job 마지막의 Close SSH 도 같은 세션을
+      # 쓴다. role-duration-seconds 를 좁게 주면 그 revoke 가 만료로 실패해 22번
+      # /32 규칙이 열린 채 남으므로 값을 생략하고 Role 의 MaxSessionDuration 을 따른다.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
       # 22번 인바운드는 평소 닫혀 있다. 이 실행의 러너 IP 만 잠시 허용한다.
       - name: Open SSH for this runner
         id: sg
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           set -euo pipefail
           RUNNER_IP="$(curl -sS --retry 3 https://checkip.amazonaws.com | tr -d '[:space:]')"
@@ -98,16 +127,27 @@ jobs:
             exit 1
           fi
 
-      - name: Upload seed SQL and entrypoint
+      - name: Upload seed SQL fragments and entrypoint
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/deploy.pem "${REMOTE}" "mkdir -p /opt/gighub/seed"
           scp -i ~/.ssh/deploy.pem \
             "${SEED_SOURCE}"/*.sql \
+            "${SEED_SOURCE}"/*.inc \
             "${REMOTE}:/opt/gighub/seed/"
           scp -i ~/.ssh/deploy.pem \
             deploy/apply-seed.sh \
             "${REMOTE}:/opt/gighub/apply-seed.sh"
+
+      # demo 시드는 앱이 Scheduler나 사용자 요청으로 초기화 도중 데이터를 다시 쓰지 못하게
+      # 먼저 멈춘다. 이후 단계가 실패해도 Restart step은 always()로 실행한다.
+      - name: Stop application for full demo reset
+        id: stop_app
+        if: steps.seed.outputs.is_demo == 'true'
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
+            "docker compose -f /opt/gighub/compose.prod.yaml stop app"
 
       # 원격 명령은 문자열 한 덩어리로 전달되어 서버 셸이 다시 파싱한다. 값은
       # 이미 허용 목록을 통과해 [A-Za-z0-9._-] 만 남지만, 원격에 넘기는 값은
@@ -116,18 +156,62 @@ jobs:
       - name: Apply seed
         env:
           SEED_FILE_NAME: ${{ steps.seed.outputs.name }}
+          SEED_RESET_CONFIRM: ${{ inputs.confirm }}
         run: |
           set -euo pipefail
           escaped="$(printf '%q' "$SEED_FILE_NAME")"
+          escaped_confirm="$(printf '%q' "$SEED_RESET_CONFIRM")"
           ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
-            "docker compose -f /opt/gighub/compose.prod.yaml --profile tools run --rm -e SEED_FILE=${escaped} seed"
+            "docker compose -f /opt/gighub/compose.prod.yaml --profile tools run --rm -e SEED_FILE=${escaped} -e DEMO_RESET_CONFIRM=${escaped_confirm} seed"
+
+      # SQL이 실패하면 Transaction이 Rollback되므로 기존 문서도 그대로 보존합니다.
+      # 새 DB 상태가 확정된 뒤에만 더 이상 참조되지 않는 기존 파일을 지웁니다.
+      - name: Clear production document storage for full demo reset
+        if: steps.seed.outputs.is_demo == 'true'
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy.pem "${REMOTE}" '
+            set -eu
+            mkdir -p /opt/gighub/documents
+            resolved="$(readlink -f -- /opt/gighub/documents)"
+            if [ "$resolved" != "/opt/gighub/documents" ]; then
+              echo "unexpected document storage path: $resolved" >&2
+              exit 1
+            fi
+            find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+          '
+
+      - name: Restart application after full demo reset
+        id: restart_app
+        if: always() && steps.seed.outputs.is_demo == 'true' && steps.stop_app.outcome == 'success'
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
+            "docker compose -f /opt/gighub/compose.prod.yaml up -d app"
+
+      - name: Wait for application after full demo reset
+        if: steps.seed.outputs.is_demo == 'true'
+        run: |
+          set -euo pipefail
+          curl -fsS --retry 18 --retry-delay 5 --retry-all-errors \
+            "https://api.gighub.store/api/health"
+          echo
+
+      # 기능 SEED의 초대 Token, 계약 PDF, 알림, 보건증은 실제 API를 거쳐야 유효하다.
+      - name: Complete functional demo through public API
+        if: steps.seed.outputs.name == 'demo-functional.sql'
+        env:
+          DEMO_SEED_CONFIRM: ${{ inputs.confirm }}
+          GIGHUB_API_BASE_URL: https://api.gighub.store
+        run: |
+          set -euo pipefail
+          node scripts/prepare-demo-seed.js functional \
+            --skip-sql \
+            --confirm-production-reset
 
       # 실패 여부와 무관하게 반드시 회수한다.
       - name: Close SSH
         if: always() && steps.sg.outputs.runner_ip != ''
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         run: |
           aws ec2 revoke-security-group-ingress \
             --group-id "${{ secrets.EC2_SG_ID }}" \

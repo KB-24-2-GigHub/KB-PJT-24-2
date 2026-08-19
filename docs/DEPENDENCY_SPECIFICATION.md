@@ -98,6 +98,7 @@
 | HTTP         | `axios`                                                                                                |
 | UI·Icon      | `lucide-vue-next`                                                                                      |
 | QR 생성      | `qrcode`                                                                                               |
+| PDF 미리보기 | `pdfjs-dist`                                                                                           |
 | Build        | `vite`, `@vitejs/plugin-vue`, `vite-svg-loader`                                                        |
 | Lint·Format  | `eslint`, `@eslint/js`, `eslint-plugin-vue`, `vue-eslint-parser`, `prettier`, `eslint-config-prettier` |
 | 테스트       | `vitest`, `@vue/test-utils`, `jsdom`                                                                   |
@@ -105,6 +106,13 @@
 `package.json`의 버전 범위는 허용 범위이고 `package-lock.json`은 실제 설치 결과를 고정한다. Manifest와 lockfile을 함께 변경하고, 현재 패키지를 과거 문서의 설치 명령으로 다시 설치하지 않는다.
 
 `qrcode`는 사장 QR 화면에서 브라우저가 QR 이미지를 그리는 용도다. Backend의 ZXing은 계약 PDF 등 서버 측 생성에 사용하므로 역할이 겹치지 않는다. 서버가 QR 이미지를 직접 내려주는 방식으로 바꾸면 이 의존성은 제거 대상이 된다.
+
+`pdfjs-dist`는 문서 뷰어에서 PDF 미리보기를 canvas에 그리는 용도이며 사용처는 그 한 곳이다. Backend의 PDFBox는 계약 PDF를 생성하고 이쪽은 이미 받은 PDF를 화면에 표시하므로 역할이 겹치지 않는다. 다음 조건을 함께 유지한다.
+
+- **버전을 `5.4.149`로 고정한다.** 상위 버전은 Node `>=22.13.0`을 요구해 이 문서가 정한 Node 하한 `20.19.0`을 벗어난다. Node 하한을 올리는 것은 고정 기술의 호환 경계 변경이므로 별도 결정이며, 하한이 올라가기 전에는 이 버전선을 유지한다.
+- 라이선스는 Apache-2.0이다. optional 의존성 `@napi-rs/canvas`(MIT)가 플랫폼별 네이티브 바이너리를 함께 설치하지만, 이는 Node에서 렌더링할 때 쓰는 구현이라 Vite 빌드 산출물에는 포함되지 않는다. optional이므로 특정 플랫폼에서 내려받지 못해도 설치가 실패하지 않는다.
+- 문서 뷰어에 들어올 때만 필요하므로 동적 `import`로 분리하고 Worker도 별도 chunk로 뽑는다. 첫 화면 번들에 넣지 않는다.
+- 대상 모바일 브라우저가 임베드 PDF를 안정적으로 렌더링하게 되거나 서버가 페이지 이미지를 직접 내려주는 방식으로 바꾸면 이 의존성은 제거 대상이 된다.
 
 ### 저장소 공통 도구와 인프라
 

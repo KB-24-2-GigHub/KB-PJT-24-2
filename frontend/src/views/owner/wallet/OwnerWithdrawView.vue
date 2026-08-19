@@ -82,6 +82,7 @@ function onRequestConfirm() {
 
 async function onSubmit() {
   submitting.value = true
+  ui.startLoading('출금을 처리하고 있어요…')
   try {
     await withdrawWallet(
       {
@@ -99,6 +100,7 @@ async function onSubmit() {
     ui.toast('출금에 실패했습니다. 잔액을 확인해주세요.', { type: 'danger' })
   } finally {
     submitting.value = false
+    ui.stopLoading()
   }
 }
 </script>
