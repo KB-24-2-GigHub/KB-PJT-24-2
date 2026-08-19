@@ -248,9 +248,7 @@ function goHome() {
           화면에 가두면 사용자가 같은 수락을 다시 시도하게 된다.
         -->
         <div class="accepted-actions">
-          <BaseButton variant="worker" size="lg" block @click="goHome">
-            안심지갑 확인하기
-          </BaseButton>
+          <BaseButton variant="worker" size="lg" block @click="goHome"> 홈으로 </BaseButton>
           <BaseButton variant="secondary" block @click="goWorkCase">근무 상세 확인</BaseButton>
         </div>
       </template>
