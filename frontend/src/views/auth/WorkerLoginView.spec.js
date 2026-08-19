@@ -44,4 +44,14 @@ describe('WorkerLoginView', () => {
     resolveLogin({})
     await flushPromises()
   })
+
+  it('아이디·비밀번호를 입력하지 않으면 전체화면으로 전환하지 않는다', async () => {
+    const login = vi.spyOn(useAuthStore(), 'login')
+    const wrapper = mount(WorkerLoginView)
+
+    await wrapper.find('form').trigger('submit')
+
+    expect(requestFullscreenSafely).not.toHaveBeenCalled()
+    expect(login).not.toHaveBeenCalled()
+  })
 })
