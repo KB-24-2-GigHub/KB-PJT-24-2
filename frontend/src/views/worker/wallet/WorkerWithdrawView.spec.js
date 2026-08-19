@@ -68,6 +68,7 @@ describe('WorkerWithdrawView', () => {
     expect(withdrawWallet).not.toHaveBeenCalled()
 
     // 모달의 '출금하기'(두 번째 modal-btn) 확인 → 실제 출금 요청.
+    await wrapper.find('input[type="password"]').setValue('0000')
     const confirmButtons = wrapper.findAll('button.modal-btn')
     await confirmButtons[confirmButtons.length - 1].trigger('click')
     await flushPromises()
@@ -94,6 +95,7 @@ describe('WorkerWithdrawView', () => {
     await accountInput.setValue('170-0000-00001')
     await amountInput.setValue('100000')
     await wrapper.find('button.submit').trigger('click')
+    await wrapper.find('input[type="password"]').setValue('0000')
     const confirm = () => {
       const buttons = wrapper.findAll('button.modal-btn')
       return buttons[buttons.length - 1]
