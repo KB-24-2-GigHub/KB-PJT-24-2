@@ -173,10 +173,7 @@ async function confirmWithdraw() {
         :total-label="badgeModel.totalLabel.value"
         :definition-title="badgeModel.definitionTitle.value"
         :definition-desc="badgeModel.definitionDesc.value"
-        :criteria-desc="[
-          '누적 근무 건수와 성실근로 비율로 계산되는 알바생 신뢰 지표예요.',
-          '지원할 때 사장님에게 나의 신뢰 뱃지로 노출돼요.'
-        ]"
+        :criteria-desc="badgeModel.criteriaDesc.value"
         @close="levelModalOpen = false"
       />
 

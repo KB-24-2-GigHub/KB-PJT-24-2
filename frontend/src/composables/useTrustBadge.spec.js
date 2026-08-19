@@ -193,6 +193,13 @@ describe('useTrustBadge', () => {
       expect(badge.definitionTitle.value).toContain('성실근로란')
     })
 
+    it('등급 설명 모달의 기준 설명을 BADGE_TYPE 에서 그대로 가져온다', async () => {
+      const badge = await loadWorkerBadge(response({ badgeType: 'TRUST_WORKER' }))
+
+      expect(badge.criteriaDesc.value).toHaveLength(2)
+      expect(badge.criteriaDesc.value[0]).toContain('신뢰 지표')
+    })
+
     it('WORKER 화면이 TRUST_OWNER 응답을 받으면 그리지 않는다', async () => {
       const badge = await loadWorkerBadge(response({ badgeType: 'TRUST_OWNER' }))
 

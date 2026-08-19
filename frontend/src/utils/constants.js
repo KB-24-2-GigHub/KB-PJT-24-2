@@ -132,7 +132,12 @@ export const BADGE_TYPE = {
     normalLabel: '성실근로',
     remainingLabel: '근무',
     definitionTitle: '👷 성실근로란?',
-    definitionDesc: '지각이나 결근 없이 정시에 출퇴근을 마친 근무 내역이에요.'
+    definitionDesc: '지각이나 결근 없이 정시에 출퇴근을 마친 근무 내역이에요.',
+    // 신뢰 뱃지 등급 설명 모달(TrustBadgeLevelModal)의 기준 설명 두 줄.
+    criteriaDesc: [
+      '누적 근무 건수와 성실근로 비율로 계산되는 알바생 신뢰 지표예요.',
+      '지원할 때 사장님에게 나의 신뢰 뱃지로 노출돼요.'
+    ]
   },
   TRUST_OWNER: {
     role: 'owner',
@@ -141,7 +146,11 @@ export const BADGE_TYPE = {
     normalLabel: '안심정산',
     remainingLabel: '정산',
     definitionTitle: '💵 안심정산이란?',
-    definitionDesc: '임금 분쟁 없이 깔끔하게 완료된 정산 내역이에요.'
+    definitionDesc: '임금 분쟁 없이 깔끔하게 완료된 정산 내역이에요.',
+    criteriaDesc: [
+      '사장님의 정산 건수와 안심정산 비율로 계산되는 매장 신뢰 지표예요.',
+      '알바생에게 근무 초대를 보낼 때 사장님의 신뢰 뱃지로 노출돼요.'
+    ]
   }
 }
 

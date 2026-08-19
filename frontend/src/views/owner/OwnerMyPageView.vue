@@ -190,10 +190,7 @@ async function confirmWithdraw() {
         :total-label="badgeModel.totalLabel.value"
         :definition-title="badgeModel.definitionTitle.value"
         :definition-desc="badgeModel.definitionDesc.value"
-        :criteria-desc="[
-          '사장님의 정산 건수와 안심정산 비율로 계산되는 매장 신뢰 지표예요.',
-          '알바생에게 근무 초대를 보낼 때 사장님의 신뢰 뱃지로 노출돼요.'
-        ]"
+        :criteria-desc="badgeModel.criteriaDesc.value"
         @close="levelModalOpen = false"
       />
 

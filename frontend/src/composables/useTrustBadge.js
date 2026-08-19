@@ -142,6 +142,10 @@ export function useTrustBadge(expectedRole) {
   const definitionDesc = computed(() =>
     ready.value ? (BADGE_TYPE[badge.value.badgeType].definitionDesc ?? '') : ''
   )
+  /** 등급 설명 모달(TrustBadgeLevelModal)의 기준 설명 두 줄. FE 소유 정의문과 같은 자리다. */
+  const criteriaDesc = computed(() =>
+    ready.value ? (BADGE_TYPE[badge.value.badgeType].criteriaDesc ?? []) : []
+  )
 
   async function load() {
     const sequence = ++requestSequence
@@ -187,6 +191,7 @@ export function useTrustBadge(expectedRole) {
     showProgress,
     definitionTitle,
     definitionDesc,
+    criteriaDesc,
     normalCount,
     totalCount,
     normalPercent,
