@@ -7,15 +7,15 @@ import { computed, onBeforeMount, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
-import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
+import PinKeypad from '@/components/wallet/PinKeypad.vue'
 import { newIdempotencyKey } from '@/services/http'
 import { chargeWallet } from '@/services/wallet'
 import { useUiStore } from '@/stores/ui'
 import { useWalletStore } from '@/stores/wallet'
 import { useWalletFundingStore } from '@/stores/walletFunding'
 import { findBank } from '@/utils/constants'
-import { formatKRW, onlyDigits } from '@/utils/format'
+import { formatKRW } from '@/utils/format'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -55,7 +55,7 @@ onBeforeUnmount(() => {
 })
 
 function updatePin(value) {
-  pin.value = onlyDigits(value).slice(0, 4)
+  pin.value = value
   pinError.value = ''
   requestError.value = ''
 }
@@ -171,16 +171,10 @@ async function onSubmit() {
       </section>
 
       <section class="pin-section">
-        <AppField
+        <PinKeypad
           class="pin-field"
           :model-value="pin"
           label="계좌 PIN"
-          type="password"
-          inputmode="numeric"
-          autocomplete="off"
-          digits-only
-          maxlength="4"
-          placeholder="숫자 4자리"
           hint="Demo PIN은 0000입니다."
           :error="pinError"
           @update:model-value="updatePin"
