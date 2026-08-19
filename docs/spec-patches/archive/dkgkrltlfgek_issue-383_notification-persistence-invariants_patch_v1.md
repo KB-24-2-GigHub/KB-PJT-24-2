@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-383-01
-status: draft
+status: accepted
 issue: 383
 base_spec_version: 8.0.0
 targets:
