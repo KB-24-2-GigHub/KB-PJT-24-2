@@ -25,6 +25,11 @@ const activeIndex = ref(
 let settleTimer = null
 let rafPending = false
 let programmatic = false
+let programmaticTimer = null
+// 브라우저 smooth 스크롤 애니메이션이 실제로 걸리는 시간보다 넉넉히 잡는다 — 이보다
+// 짧으면 애니메이션이 끝나기 전에 onScroll 이 프로그램적 스크롤을 사용자 스크롤로
+// 오인해 activeIndex 를 다시 계산하고 settle 타이머를 반복 재시작해 버린다.
+const PROGRAMMATIC_SCROLL_MS = 350
 
 function indexOfValue(value) {
   const i = props.options.findIndex((o) => o.value === value)
@@ -35,12 +40,23 @@ function scrollToIndex(index, smooth) {
   const el = scrollerRef.value
   if (!el) return
   programmatic = true
-  el.scrollTo({ top: index * props.itemHeight, behavior: smooth ? 'smooth' : 'instant' })
-  // smooth 스크롤은 비동기로 여러 scroll 이벤트를 내므로, 이 스크롤이 자기 자신이 건 것임을
-  // 알리는 플래그를 다음 프레임에 풀어 이후의 사용자 스크롤과 구분한다.
-  requestAnimationFrame(() => {
-    programmatic = false
-  })
+  const top = index * props.itemHeight
+  // 일부 구형 WebView(및 테스트 환경의 jsdom)는 Element.scrollTo 가 없다 — 있으면 쓰고,
+  // 없으면 scrollTop 대입으로 대체한다(애니메이션 없이 바로 이동하지만 값은 맞는다).
+  if (typeof el.scrollTo === 'function') {
+    el.scrollTo({ top, behavior: smooth ? 'smooth' : 'auto' })
+  } else {
+    el.scrollTop = top
+  }
+  // smooth 스크롤은 수백 ms 동안 여러 scroll 이벤트를 내므로, 이 스크롤이 자기 자신이
+  // 건 것임을 알리는 플래그를 애니메이션이 끝날 만큼 기다렸다가 푼다.
+  clearTimeout(programmaticTimer)
+  programmaticTimer = setTimeout(
+    () => {
+      programmatic = false
+    },
+    smooth ? PROGRAMMATIC_SCROLL_MS : 0
+  )
 }
 
 function onItemClick(index) {
