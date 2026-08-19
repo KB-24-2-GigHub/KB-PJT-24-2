@@ -18,6 +18,7 @@ function response(overrides = {}) {
     badgeType: 'TRUST_WORKER',
     level: 1,
     recentCount: 12,
+    normalCount: 11,
     remainingToNextLevel: 8,
     criterionLabel: '성실근로',
     criterionDesc: '누적 12건 중 정상 11건입니다.',
@@ -121,6 +122,52 @@ describe('useTrustBadge', () => {
     })
   })
 
+  describe('정상 건수·비율(SPEC-432-01)', () => {
+    it('정상 건수와 누적 건수를 서버 값 그대로 노출한다', async () => {
+      const badge = await loadWorkerBadge(response({ recentCount: 12, normalCount: 11 }))
+
+      expect(badge.totalCount.value).toBe(12)
+      expect(badge.normalCount.value).toBe(11)
+    })
+
+    it('비율은 반올림한 표시 전용 값이다', async () => {
+      const badge = await loadWorkerBadge(response({ recentCount: 3, normalCount: 2 }))
+
+      expect(badge.normalPercent.value).toBe(67) // 2/3 = 66.67% → 반올림
+    })
+
+    it('누적 건수가 0이면 비율도 0이다', async () => {
+      const badge = await loadWorkerBadge(
+        response({ level: 0, recentCount: 0, normalCount: 0, remainingToNextLevel: 10 })
+      )
+
+      expect(badge.normalPercent.value).toBe(0)
+    })
+
+    it('다음 등급의 정상 비율 문턱을 알려준다', async () => {
+      const badge = await loadWorkerBadge(response({ level: 1 }))
+
+      expect(badge.nextThresholdPercent.value).toBe(90) // Lv.2 문턱
+    })
+
+    it('최고 등급에는 다음 문턱이 없다', async () => {
+      const badge = await loadWorkerBadge(
+        response({ level: 3, recentCount: 30, normalCount: 30, remainingToNextLevel: 0 })
+      )
+
+      expect(badge.nextThresholdPercent.value).toBeNull()
+    })
+
+    it('역할별 타이틀·라벨을 BADGE_TYPE 에서 그대로 가져온다', async () => {
+      const badge = await loadWorkerBadge(response())
+
+      expect(badge.title.value).toBe('성실알바')
+      expect(badge.totalLabel.value).toBe('근로')
+      expect(badge.normalLabel.value).toBe('성실근로')
+      expect(badge.remainingLabel.value).toBe('근무')
+    })
+  })
+
   describe('역할 정합성', () => {
     let warn
 
@@ -143,7 +190,7 @@ describe('useTrustBadge', () => {
       const badge = await loadWorkerBadge(response({ badgeType: 'TRUST_WORKER' }))
 
       expect(badge.role.value).toBe('worker')
-      expect(badge.definition.value).toContain('성실근로란')
+      expect(badge.definitionTitle.value).toContain('성실근로란')
     })
 
     it('WORKER 화면이 TRUST_OWNER 응답을 받으면 그리지 않는다', async () => {
@@ -171,6 +218,8 @@ describe('useTrustBadge', () => {
       ['level 누락', response({ level: undefined })],
       ['등급 범위 초과', response({ level: 4 })],
       ['음수 누적 건수', response({ recentCount: -1 })],
+      ['정상 건수 누락', response({ normalCount: undefined })],
+      ['음수 정상 건수', response({ normalCount: -1 })],
       ['남은 건수 누락', response({ remainingToNextLevel: null })],
       ['빈 criterionLabel', response({ criterionLabel: '  ' })],
       // 객체 리터럴 상속 프로퍼티는 truthy 라, 브래킷 조회로 멤버십을 보면 통과해 버린다.

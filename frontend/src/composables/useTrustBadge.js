@@ -1,5 +1,6 @@
 import { computed, ref } from 'vue'
 
+import { thresholdForLevel } from '@/constants/trustBadgeLevels'
 import { getBadge } from '@/services/users'
 import { BADGE_TYPE } from '@/utils/constants'
 
@@ -45,6 +46,7 @@ function isApprovedShape(data) {
   if (!Object.hasOwn(BADGE_TYPE, data.badgeType)) return false
   if (!Number.isInteger(data.level) || data.level < 0 || data.level > MAX_LEVEL) return false
   if (!Number.isInteger(data.recentCount) || data.recentCount < 0) return false
+  if (!Number.isInteger(data.normalCount) || data.normalCount < 0) return false
   if (!Number.isInteger(data.remainingToNextLevel) || data.remainingToNextLevel < 0) return false
   return typeof data.criterionLabel === 'string' && data.criterionLabel.trim() !== ''
 }
@@ -81,6 +83,39 @@ export function useTrustBadge(expectedRole) {
 
   const nextLevelLabel = computed(() => (maxLevel.value ? '최고 등급' : `Lv.${level.value + 1}`))
 
+  /** 누적 건수 중 정상으로 판정된 건수(SPEC-432-01). */
+  const normalCount = computed(() => (ready.value ? badge.value.normalCount : 0))
+
+  /** 누적 건수. `recentCount`는 SPEC-178-06 의 호환 필드명이라 화면 쪽 이름을 따로 둔다. */
+  const totalCount = computed(() => (ready.value ? badge.value.recentCount : 0))
+
+  /**
+   * 정상 비율(표시 전용). 등급 판정은 서버가 반올림 없이 하므로 이 값을 판정에 쓰지 않는다
+   * (SPEC-432-01).
+   */
+  const normalPercent = computed(() => {
+    if (!ready.value || totalCount.value <= 0) return 0
+    return Math.round((normalCount.value / totalCount.value) * 100)
+  })
+
+  /** 다음 등급의 정상 비율 문턱(TRUST_BADGE_LEVEL_THRESHOLDS). 최고 등급이면 없다. */
+  const nextThresholdPercent = computed(() => {
+    if (!ready.value || maxLevel.value) return null
+    return thresholdForLevel(level.value + 1)?.thresholdPercent ?? null
+  })
+
+  /** 프로필 카드 타이틀("안심사장"/"성실알바")과 본문 라벨. */
+  const title = computed(() => (ready.value ? BADGE_TYPE[badge.value.badgeType].title : ''))
+  const totalLabel = computed(() =>
+    ready.value ? BADGE_TYPE[badge.value.badgeType].totalLabel : ''
+  )
+  const normalLabel = computed(() =>
+    ready.value ? BADGE_TYPE[badge.value.badgeType].normalLabel : ''
+  )
+  const remainingLabel = computed(() =>
+    ready.value ? BADGE_TYPE[badge.value.badgeType].remainingLabel : ''
+  )
+
   /**
    * 다음 등급 건수 문턱까지의 진행률. 분모는 서버가 준 두 값의 합
    * (`recentCount + remainingToNextLevel`)이라 문턱 숫자를 화면이 알 필요가 없다.
@@ -100,8 +135,11 @@ export function useTrustBadge(expectedRole) {
   const showProgress = computed(() => ready.value && !countMetRatioShort.value)
 
   /** FE 소유 정의문. 서버 `criterionDesc`(진행 설명문)를 대체하지 않고 함께 보여준다. */
-  const definition = computed(() =>
-    ready.value ? (BADGE_TYPE[badge.value.badgeType].definition ?? '') : ''
+  const definitionTitle = computed(() =>
+    ready.value ? (BADGE_TYPE[badge.value.badgeType].definitionTitle ?? '') : ''
+  )
+  const definitionDesc = computed(() =>
+    ready.value ? (BADGE_TYPE[badge.value.badgeType].definitionDesc ?? '') : ''
   )
 
   async function load() {
@@ -146,7 +184,16 @@ export function useTrustBadge(expectedRole) {
     nextLevelLabel,
     progressPercent,
     showProgress,
-    definition,
+    definitionTitle,
+    definitionDesc,
+    normalCount,
+    totalCount,
+    normalPercent,
+    nextThresholdPercent,
+    title,
+    totalLabel,
+    normalLabel,
+    remainingLabel,
     load
   }
 }

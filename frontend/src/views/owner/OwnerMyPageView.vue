@@ -7,7 +7,7 @@
  *   →  @/services/users (getMe, deleteMe) · @/composables/useTrustBadge
  * 진입: /owner/mypage/{profile,password,workplaces}. 공통: TrustBadge
  */
-import { Building2, ChevronRight, KeyRound, UserRound } from 'lucide-vue-next'
+import { Building2, ChevronRight, Info, KeyRound, UserRound } from 'lucide-vue-next'
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 
@@ -17,6 +17,7 @@ import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import TrustBadge from '@/components/common/TrustBadge.vue'
 import TrustBadgeCard from '@/components/common/TrustBadgeCard.vue'
+import TrustBadgeLevelModal from '@/components/common/TrustBadgeLevelModal.vue'
 import { BADGE_STATE, useTrustBadge } from '@/composables/useTrustBadge'
 import { PENDING_FEATURES } from '@/constants/pendingFeatures'
 import { fieldErrorMap } from '@/services/http'
@@ -34,6 +35,7 @@ const me = ref(null)
 // 뱃지 값·등급은 전부 서버 소유다. 이 화면은 문턱 숫자를 알지 못한다.
 // 그림과 본문(TrustBadgeCard)이 같은 인스턴스를 공유해 한쪽만 다른 상태를 그리지 않는다.
 const badgeModel = useTrustBadge('owner')
+const levelModalOpen = ref(false)
 
 const menuItems = [
   { label: '회원정보 변경', to: '/owner/mypage/profile', icon: UserRound },
@@ -132,19 +134,28 @@ async function confirmWithdraw() {
            그 경우에도 프로필 카드 자체는 보여줘야 하므로 뱃지 조각만 따로 게이팅한다. -->
       <section v-if="me" class="profile-card">
         <div class="profile-top">
-          <!-- 승인 프로필 응답에 사진 필드가 없어 기본 아이콘만 노출한다. -->
-          <span class="avatar">
-            <UserRound :size="24" />
-          </span>
+          <div class="profile-text">
+            <p class="profile-name">{{ me.name }} 님</p>
 
-          <div class="profile-info">
-            <p class="profile-name">{{ me.name }}</p>
-            <p class="profile-sub">{{ me.loginId }} | {{ me.email }}</p>
+            <span v-if="badgeModel.state.value === BADGE_STATE.READY" class="profile-divider"
+              >|</span
+            >
+
+            <!-- 역할은 응답 badgeType 에서 파생한다 — 화면이 'owner' 를 고정하지 않는다. -->
+            <button
+              v-if="badgeModel.state.value === BADGE_STATE.READY"
+              type="button"
+              class="badge-title"
+              @click="levelModalOpen = true"
+            >
+              {{ badgeModel.title.value }} Lv.{{ badgeModel.level.value }}
+              <Info :size="14" aria-hidden="true" />
+            </button>
           </div>
 
-          <!-- 역할은 응답 badgeType 에서 파생한다 — 화면이 'owner' 를 고정하지 않는다. -->
+          <!-- 이름·타이틀 줄 높이에 걸치도록 큰 원형 뱃지를 오른쪽에 둔다. -->
           <div v-if="badgeModel.state.value === BADGE_STATE.READY" class="badge-slot">
-            <TrustBadge :role="badgeModel.role.value" :level="badgeModel.level.value" :size="40" />
+            <TrustBadge :role="badgeModel.role.value" :level="badgeModel.level.value" :size="58" />
           </div>
         </div>
 
@@ -167,6 +178,24 @@ async function confirmWithdraw() {
 
         <TrustBadgeCard :model="badgeModel" />
       </section>
+
+      <TrustBadgeLevelModal
+        v-if="badgeModel.state.value === BADGE_STATE.READY"
+        :open="levelModalOpen"
+        headline-before="우리 매장 신뢰도, '"
+        headline-after="'로 증명하세요"
+        accent-color="var(--color-owner)"
+        :title="badgeModel.title.value"
+        :label="badgeModel.normalLabel.value"
+        :total-label="badgeModel.totalLabel.value"
+        :definition-title="badgeModel.definitionTitle.value"
+        :definition-desc="badgeModel.definitionDesc.value"
+        :criteria-desc="[
+          '사장님의 정산 건수와 안심정산 비율로 계산되는 매장 신뢰 지표예요.',
+          '알바생에게 근무 초대를 보낼 때 사장님의 신뢰 뱃지로 노출돼요.'
+        ]"
+        @close="levelModalOpen = false"
+      />
 
       <nav class="menu-list">
         <RouterLink v-for="item in menuItems" :key="item.to" :to="item.to" class="menu-item">
@@ -229,36 +258,40 @@ async function confirmWithdraw() {
 .profile-top {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: var(--space-md);
 }
-
-.avatar {
-  display: inline-flex;
-  flex-shrink: 0;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  overflow: hidden;
-  color: var(--color-owner);
-  background: var(--color-owner-weak);
-  border-radius: var(--radius-pill);
-}
-.profile-info {
-  flex: 1;
+/* 이름·구분선·타이틀을 한 줄에 나란히 둔다(요청: "이름 님 | 타이틀 Lv.N"). */
+.profile-text {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
   min-width: 0;
 }
 .profile-name {
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--text-xl);
   font-weight: var(--weight-bold);
   color: var(--color-text);
 }
-.profile-sub {
-  margin-top: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
+.profile-divider {
+  flex-shrink: 0;
+  color: var(--color-border);
 }
 
+.badge-title {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: var(--space-xs);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  color: var(--color-owner);
+}
 .badge-slot {
   flex-shrink: 0;
 }

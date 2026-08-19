@@ -102,19 +102,31 @@ export const DOC_SHARE_STATUS = {
 /* ---- 신뢰 뱃지(GET /api/users/me/badge) ----
  *
  * `role` 은 응답 `badgeType` 을 화면 역할로 옮기는 유일한 표이고, 여기 있는 타입만 그린다.
- * `definition` 은 "무엇이 정상인가"를 설명하는 FE 소유 정의문이다 — 서버 응답의
- * `criterionDesc`(누적·정상 건수와 다음 등급 조건을 안내하는 진행 설명문)와 다른 문장이며
- * 서로 대체하지 않는다. `criterionLabel` 은 승인 계약상 서버 값을 그대로 쓰므로 여기 두지
- * 않는다 — 화면이 지어낸 라벨이 응답을 덮어쓰는 경로를 만들지 않기 위함이다.
+ * `definitionTitle`/`definitionDesc` 는 "무엇이 정상인가"를 설명하는 FE 소유 정의문이다 —
+ * 서버 응답의 `criterionDesc`(누적·정상 건수와 다음 등급 조건을 안내하는 진행 설명문)와
+ * 다른 문장이며 서로 대체하지 않는다. `criterionLabel` 은 승인 계약상 서버 값을 그대로
+ * 쓰므로 여기 두지 않는다 — 화면이 지어낸 라벨이 응답을 덮어쓰는 경로를 만들지 않기 위함이다.
  */
 export const BADGE_TYPE = {
   TRUST_WORKER: {
     role: 'worker',
-    definition: '*성실근로란? 지각·결근 없이 정상 출퇴근 완료'
+    // 프로필 카드 타이틀("성실알바 Lv.N")·본문 라벨. criterionLabel(서버 값 "성실근로")과
+    // 값이 같지만 별개 소유다 — 여기 문구를 바꿔도 API 계약은 그대로다.
+    title: '성실알바',
+    totalLabel: '근로',
+    normalLabel: '성실근로',
+    remainingLabel: '근무',
+    definitionTitle: '👷 성실근로란?',
+    definitionDesc: '지각·결근 없이 정상 출퇴근 완료'
   },
   TRUST_OWNER: {
     role: 'owner',
-    definition: '*안심거래란? 임금분쟁 신고 없이 정상 정산 완료'
+    title: '안심사장',
+    totalLabel: '정산',
+    normalLabel: '안심정산',
+    remainingLabel: '정산',
+    definitionTitle: '💵 안심정산이란?',
+    definitionDesc: '임금 분쟁 없이 깔끔하게 완료된 정산 내역이에요.'
   }
 }
 

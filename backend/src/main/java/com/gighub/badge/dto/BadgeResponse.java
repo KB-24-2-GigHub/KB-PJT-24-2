@@ -7,7 +7,9 @@ import lombok.Getter;
 /**
  * {@code GET /api/users/me/badge}가 반환하는 승인 Shape입니다.
  *
- * <p>{@code recentCount}는 SPEC-178-06이 정한 호환 필드명이며 값은 누적 건수입니다.</p>
+ * <p>{@code recentCount}는 SPEC-178-06이 정한 호환 필드명이며 값은 누적 건수입니다.
+ * {@code normalCount}는 SPEC-432-01이 추가한 정상 건수이며, {@code criterionDesc} 문장
+ * 조립에 쓰던 값을 그대로 노출합니다.</p>
  */
 @Getter
 public final class BadgeResponse {
@@ -15,6 +17,7 @@ public final class BadgeResponse {
     private final String badgeType;
     private final int level;
     private final long recentCount;
+    private final long normalCount;
     private final long remainingToNextLevel;
     private final String criterionLabel;
     private final String criterionDesc;
@@ -23,12 +26,14 @@ public final class BadgeResponse {
             String badgeType,
             int level,
             long recentCount,
+            long normalCount,
             long remainingToNextLevel,
             String criterionLabel,
             String criterionDesc) {
         this.badgeType = badgeType;
         this.level = level;
         this.recentCount = recentCount;
+        this.normalCount = normalCount;
         this.remainingToNextLevel = remainingToNextLevel;
         this.criterionLabel = criterionLabel;
         this.criterionDesc = criterionDesc;
@@ -40,6 +45,7 @@ public final class BadgeResponse {
                 result.getBadgeType(),
                 result.getLevel(),
                 result.getTotalCount(),
+                result.getNormalCount(),
                 result.getRemainingToNextLevel(),
                 badgeType.getCriterionLabel(),
                 buildCriterionDesc(result));

@@ -49,6 +49,7 @@ class BadgeControllerTest {
                 .andExpect(jsonPath("$.data.badgeType").value("TRUST_OWNER"))
                 .andExpect(jsonPath("$.data.level").value(1))
                 .andExpect(jsonPath("$.data.recentCount").value(12))
+                .andExpect(jsonPath("$.data.normalCount").value(10))
                 .andExpect(jsonPath("$.data.remainingToNextLevel").value(8))
                 .andExpect(jsonPath("$.data.criterionLabel").value("안심거래"))
                 .andExpect(jsonPath("$.data.criterionDesc").isString());
