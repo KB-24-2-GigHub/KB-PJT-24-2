@@ -62,8 +62,14 @@ npm 11은 `--confirm-local` 같은 알 수 없는 긴 옵션을 npm 설정으로
 
 GitHub Actions의 `Seed DB` 수동 워크플로에서 다음 값을 사용합니다.
 
+- `Use workflow from`: **`dev`**
 - `file`: 적용할 `demo-*.sql` 파일명
 - `confirm`: `reset-all-data`
+
+브랜치가 `dev`여야 하는 이유는 배포용 AWS Role의 신뢰 정책이 `refs/heads/dev`로 좁혀져
+있기 때문입니다. 다른 ref로 실행하면 `Configure AWS credentials`에서 AssumeRole이 거부되어
+아무 일도 일어나지 않습니다. 실행 절차와 실패 대응은 [`deploy/SETUP.md`](../../../../../../deploy/SETUP.md)
+14절에 있습니다.
 
 워크플로는 앱을 정지하고 운영 문서 저장소와 RDS 애플리케이션 데이터를 모두 초기화한 뒤
 앱을 다시 기동합니다. `demo-functional.sql`은 기동 확인 후 공개 API로 하이브리드 준비까지

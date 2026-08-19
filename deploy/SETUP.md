@@ -966,6 +966,20 @@ kill %1 %2 ...      # 또는  pkill yes
 Migration 은 한 번만 되돌릴 수 없이 적용되고 seed 는 반복 실행이 목적이라 성질이 반대다.
 한 버튼에 묶으면 seed 를 다시 넣으려다 DDL 까지 나간다.
 
+**seed 는 성질이 다른 두 계열이다. 누르기 전에 어느 쪽인지부터 확인한다.**
+
+| 계열 | 파일 | `confirm` | 하는 일 |
+| ---- | ---- | --------- | ------- |
+| 고정 Fixture | `test-*.sql` | `seed` | 자기 fixture 범위만 바꾸고 나머지 데이터는 **보존**한다 |
+| 시연용 데모 | `demo-*.sql` | `reset-all-data` | 앱을 정지하고 **모든 애플리케이션 데이터와 문서 저장소를 지운 뒤** 실행 시각 기준으로 다시 만들고 재기동한다 |
+
+`test-*.sql` 은 멱등이라 실패해도 그냥 다시 돌리면 된다. `demo-*.sql` 은 그렇지 않다.
+운영 데이터를 지우고 앱을 잠시 내리므로, **살려 둘 데이터가 있으면 눌러선 안 된다.**
+데모 계정은 공개된 고정 비밀번호를 쓰는 합성 계정이므로 통제된 시연 시간에만 적용하고
+끝나면 즉시 정리한다. 시나리오별로 무엇이 만들어지는지는
+[`backend/src/test/resources/db/seed/README.md`](../backend/src/test/resources/db/seed/README.md)
+에 있다. 이 절은 **운영에서 어떻게 실행하는가**만 다룬다.
+
 ### 14.1 최초 1회 준비
 
 `compose.prod.yaml` 에 `seed` 서비스가 추가됐다. 배포 워크플로는 이 파일을 덮어쓰지 않으므로
@@ -994,27 +1008,60 @@ ssh ... "docker compose -f /opt/gighub/compose.prod.yaml --profile tools config 
 
 Actions → **Seed DB** → Run workflow.
 
-| 입력      | 값                                                 |
-| --------- | -------------------------------------------------- |
-| `confirm` | `seed` — 다른 값이면 job 이 아예 돌지 않는다        |
-| `file`    | 적용할 파일명 (예: `test-contract-escrow.sql`)      |
+| 입력                 | 값                                                                    |
+| -------------------- | --------------------------------------------------------------------- |
+| `Use workflow from`  | **`dev`** — 다른 브랜치는 자격증명 단계에서 거부된다                   |
+| `confirm`            | `test-*.sql` 이면 `seed`, `demo-*.sql` 이면 `reset-all-data`           |
+| `file`               | 적용할 파일명 (예: `test-contract-escrow.sql`, `demo-functional.sql`)  |
 
-`backend/src/test/resources/db/seed/` 의 `.sql` 을 전부 서버로 올린 뒤 `file` 로 고른 하나만
-실행한다.
+터미널에서 누를 때도 같다.
+
+```bash
+gh workflow run seed-db.yml --ref dev \
+  -f file=demo-functional.sql \
+  -f confirm=reset-all-data
+
+gh run list --workflow=seed-db.yml --limit 1
+```
+
+**브랜치가 `dev` 여야 하는 이유는 AWS 쪽 제약이다.** 배포용 Role 의 신뢰 정책이
+`refs/heads/dev` 로 좁혀져 있어, 다른 ref 로 실행하면 보안그룹을 열기도 전에
+`Configure AWS credentials` 에서 AssumeRole 이 거부된다. 2.1 절을 참고할 것.
+
+선택 가능한 파일은 `backend/src/test/resources/db/seed/` 의 `.sql` 7개다. 워크플로는 그
+디렉터리의 `.sql` 과 `.inc` 를 전부 서버로 올린 뒤 `file` 로 고른 하나만 실행한다.
+`.inc` 는 다른 SQL 이 포함해 쓰는 조각이므로 `file` 로 고를 수 없다.
 
 `file` 은 **그 디렉터리에 실제로 있는 `.sql` 파일 이름과 정확히 일치해야 한다.** 경로 표기,
 `../`, 다른 확장자는 모두 거부된다. 워크플로가 임의 문자열을 받아 셸로 넘기지 않게 하려는
 것이므로, 목록에 없는 이름이면 보안그룹을 열기 전에 멈추고 사용 가능한 이름을 찍어 준다.
 
+`confirm` 은 두 군데서 검사한다. 값이 `seed` 도 `reset-all-data` 도 아니면 **job 자체가
+돌지 않고 `skipped` 로 끝난다.** 실패가 아니라 건너뛴 것으로 표시되므로 오타를 눈치채기
+어렵다. 값은 맞지만 파일 계열과 어긋나면 `Resolve seed file` 이 기대값을 알려 주고 멈춘다.
+
 ### 14.3 seed 를 새로 만들 때 지킬 것
 
-기존 두 seed 가 이미 지키고 있는 성질이며, 이게 깨지면 반복 적용이 안전하지 않다.
+**`test-*.sql` 계열**은 아래 두 성질을 지킨다. 이게 깨지면 반복 적용이 안전하지 않다.
 
 - **멱등**: 모든 `INSERT` 에 `ON DUPLICATE KEY UPDATE` 를 붙인다. 몇 번을 돌려도 결과가 같아야 한다.
 - **범위 한정**: `DELETE` 는 반드시 자기 fixture 의 owner/workplace 로 좁힌다. 화면에서 손으로
   만들어 둔 다른 데이터를 지우면 안 된다.
 
-이 두 가지는 현재 사람이 지키는 규칙이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
+**`demo-*.sql` 계열은 이 두 규칙을 의도적으로 지키지 않는다.** 시연을 매번 같은 출발점에서
+시작하려면 이전 상태가 남아 있으면 안 되기 때문이다. 대신 다른 성질을 지킨다.
+
+- **전체 초기화**: Flyway Schema 는 보존하고 애플리케이션 데이터를 모두 지운 뒤 다시 만든다.
+  공통 조각은 `demo-reset.inc` 에 있다.
+- **상대 시간**: 날짜와 시각을 박아 두지 않고 실행 시점의 `Asia/Seoul` 기준으로 만든다.
+  그래서 같은 시나리오를 다음 날 다시 돌려도 일정이 어긋나지 않는다.
+- **확인값 분리**: `confirm=reset-all-data` 없이는 실행되지 않는다. `test-*.sql` 의 `seed` 와
+  값을 다르게 둔 것은 버튼을 잘못 눌러 운영 데이터가 통째로 날아가는 것을 막기 위해서다.
+
+두 계열을 섞지 않는다. 새 파일을 만들 때 이름 접두사(`test-` / `demo-`)가 곧 계열 선언이고,
+워크플로가 그 접두사로 요구 확인값을 정한다.
+
+이 규칙들은 현재 사람이 지키는 것이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
 파일이 실제로 들어오면 정적 검사 도입을 다시 판단한다.
 
 ### 14.4 실패했을 때
@@ -1025,8 +1072,28 @@ Actions → **Seed DB** → Run workflow.
 | `seed 서비스가 없다`                          | 14.1 을 하지 않음                                              |
 | `could not parse host/database`               | `.env` 의 `FLYWAY_URL` 형식이 `jdbc:mysql://host/db` 가 아님   |
 | `SEED_FILE must be a bare file name`          | 컨테이너 쪽 심층 방어가 걸린 경우. 정상 경로에서는 보이지 않는다 |
+| job 이 `skipped` 로 끝남                      | `confirm` 이 `seed` 도 `reset-all-data` 도 아님. 오타를 의심한다 |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `dev` 가 아닌 브랜치로 실행함. 2.1 절 참고 |
+| `실행 확인값은 ... 이어야 한다`               | `confirm` 과 파일 계열이 어긋남. 14.2 의 표를 볼 것            |
 
-seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구 절차가 없다.
+`test-*.sql` 은 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구
+절차가 없다.
+
+`demo-*.sql` 은 앱을 정지하고 파일을 지우므로 그렇게 단순하지 않다. 다만 SQL 이 실패하면
+Transaction 이 Rollback 되고 문서 삭제는 SQL 성공 뒤에만 일어나며, 재기동 Step 은
+`if: always()` 라 중간에 죽어도 앱은 돌아온다. 그래서 **부분 실패의 결과는 "데이터가 반쯤
+지워진 상태"가 아니라 "시연 준비가 덜 끝난 상태"다.** 원인을 고치고 다시 돌리면 된다.
+
+아래 두 가지는 2026-08-19 에 실제로 겪은 것이다. 워크플로는 고쳤지만 증상을 남겨 둔다.
+
+| 증상                                                        | 확인할 것                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `rm: cannot remove '/opt/gighub/documents/...': Permission denied` | 문서는 컨테이너가 자기 UID 로 쓴다. 삭제에 `sudo` 가 붙어 있는지 (#448) |
+| 시드 뒤 배포했던 API 가 사라짐 (`HttpRequestMethodNotSupportedException`) | 재기동이 `up -d` 가 아니라 `start` 인지. `up -d` 는 `.env` 의 `API_TAG` 를 따라가 구버전 이미지를 올린다 (#450, 근본 원인 #452) |
+
+두 번째는 시드가 **운영 애플리케이션 버전을 되돌려 놓는** 증상이라 시연 준비뿐 아니라 실제
+사용자에게도 영향이 간다. 시드 실행 뒤 앱이 이상하면 10절의 `images app` 으로 태그와
+IMAGE ID 부터 확인한다.
 
 ## 15. SSE 실시간 알림 — 배포에서만 실패하는 3건
 
