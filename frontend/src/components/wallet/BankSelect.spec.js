@@ -42,4 +42,10 @@ describe('BankSelect', () => {
 
     expect(wrapper.emitted('update:modelValue')).toEqual([['004']])
   })
+
+  it('접힌 상태에서도 이미 선택된 은행은 보여준다', () => {
+    const wrapper = mount(BankSelect, { props: { modelValue: '071' } }) // 우체국(더보기 밖 순번)
+
+    expect(wrapper.text()).toContain('우체국')
+  })
 })

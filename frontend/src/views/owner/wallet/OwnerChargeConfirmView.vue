@@ -7,15 +7,15 @@ import { computed, onBeforeMount, onBeforeUnmount, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
-import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
+import PinKeypad from '@/components/wallet/PinKeypad.vue'
 import { newIdempotencyKey } from '@/services/http'
 import { chargeWallet } from '@/services/wallet'
 import { useUiStore } from '@/stores/ui'
 import { useWalletStore } from '@/stores/wallet'
 import { useWalletFundingStore } from '@/stores/walletFunding'
 import { findBank } from '@/utils/constants'
-import { formatKRW, onlyDigits } from '@/utils/format'
+import { formatKRW } from '@/utils/format'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -32,11 +32,6 @@ const idempotencyKey = ref(newIdempotencyKey())
 
 const draft = computed(() => fundingStore.draft)
 const bank = computed(() => findBank(draft.value?.bankCode))
-const maskedAccountNo = computed(() => {
-  const value = draft.value?.accountNo ?? ''
-  if (value.length <= 4) return value
-  return `${'•'.repeat(value.length - 4)}${value.slice(-4)}`
-})
 const pinValid = computed(() => /^\d{4}$/.test(pin.value))
 const canSubmit = computed(
   () => !!draft.value && !!bank.value && pinValid.value && !submitting.value
@@ -55,7 +50,7 @@ onBeforeUnmount(() => {
 })
 
 function updatePin(value) {
-  pin.value = onlyDigits(value).slice(0, 4)
+  pin.value = value
   pinError.value = ''
   requestError.value = ''
 }
@@ -113,6 +108,7 @@ async function onSubmit() {
   if (!draft.value || !bank.value || submitting.value) return
 
   submitting.value = true
+  ui.startLoading('충전을 처리하고 있어요…')
   requestError.value = ''
   const payload = { ...draft.value, pin: pin.value }
   const submittedAmount = draft.value.amount
@@ -145,6 +141,7 @@ async function onSubmit() {
     ui.toast(info.message, { type: info.type })
   } finally {
     submitting.value = false
+    ui.stopLoading()
   }
 }
 </script>
@@ -165,23 +162,16 @@ async function onSubmit() {
           <span v-else class="bank-dot" :style="{ background: bank.chip }" />
           <strong>{{ bank.name }}</strong>
         </div>
-        <p class="account">{{ maskedAccountNo }}</p>
+        <p class="account">{{ draft.accountNo }}</p>
         <p class="amount">{{ formatKRW(draft.amount) }}</p>
         <p class="caption">위 계좌에서 지갑으로 충전합니다.</p>
       </section>
 
       <section class="pin-section">
-        <AppField
+        <PinKeypad
           class="pin-field"
           :model-value="pin"
           label="계좌 PIN"
-          type="password"
-          inputmode="numeric"
-          autocomplete="off"
-          digits-only
-          maxlength="4"
-          placeholder="숫자 4자리"
-          hint="Demo PIN은 0000입니다."
           :error="pinError"
           @update:model-value="updatePin"
         />

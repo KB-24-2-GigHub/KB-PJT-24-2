@@ -43,7 +43,7 @@ const intros = [
     features: [
       {
         icon: ShieldCheck,
-        title: '확보된 임금 확인',
+        title: '예치된 임금 확인',
         desc: '사장님이 예치한 안심 금액을 바로 확인해요.'
       },
       { icon: QrCode, title: 'QR 출퇴근', desc: '스캔 한 번으로 출퇴근을 간편하게 인증해요.' },
@@ -65,7 +65,7 @@ function onSelectRole(next) {
 
 const features = [
   { title: '안심 에스크로', desc: '근무 확정 시 임금을 미리 예치, 정산까지 안전하게.' },
-  { title: 'QR 출퇴근', desc: '짧은 수명 QR + 위치로 출퇴근을 간편하게 인증.' },
+  { title: 'QR 출퇴근', desc: 'QR + GPS 위치로 출퇴근을 간편하게 인증.' },
   { title: '문서·정산 한곳에', desc: '계약서·보건증·정산 이력을 한 화면에서.' }
 ]
 </script>
@@ -87,7 +87,7 @@ const features = [
       <div class="hero">
         <component :is="intro.icon" class="hero-icon" :class="`is-${intro.role}`" :size="56" />
         <h1 class="title">{{ intro.title }}</h1>
-        <p class="tagline">{{ intro.subtitle }}</p>
+        <p class="tagline intro-tagline">{{ intro.subtitle }}</p>
       </div>
 
       <ul class="intro-features">
@@ -217,20 +217,26 @@ const features = [
   white-space: pre-line; /* subtitle 의 \n 을 줄바꿈으로 살린다 */
   word-break: keep-all;
 }
+/* 사장님/알바생 subtitle 의 줄 수가 달라(1줄 vs 2줄) 아래 목록·버튼이 단계마다
+   위아래로 흔들렸다. 두 줄 높이를 항상 예약해 단계 전환 시 위치를 고정한다. */
+.intro-tagline {
+  min-height: calc(var(--text-md) * 1.5 * 2);
+}
 .features {
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  margin: var(--space-xl) 0;
+  margin: calc(var(--space-xl) * 1.5) 0 var(--space-xl);
 }
 .feature {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: var(--space-md) var(--space-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  padding: var(--space-sm) 0 var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+.feature:last-child {
+  border-bottom: none;
 }
 .feature strong {
   font-size: var(--text-md);
@@ -244,16 +250,17 @@ const features = [
   display: flex;
   flex-direction: column;
   gap: var(--space-sm);
-  margin: var(--space-xl) 0;
+  margin: calc(var(--space-xl) * 1.5) 0 var(--space-xl);
 }
 .intro-feature {
   display: flex;
   align-items: flex-start;
   gap: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+  padding: var(--space-sm) 0 var(--space-sm) var(--space-md);
+  border-bottom: 1px solid var(--color-border);
+}
+.intro-feature:last-child {
+  border-bottom: none;
 }
 .intro-feature-icon {
   flex-shrink: 0;

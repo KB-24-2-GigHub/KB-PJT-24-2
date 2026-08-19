@@ -136,7 +136,7 @@ watch(() => qr.value?.qrToken, draw)
         <p class="desc">
           <strong>{{ workplaceName }}</strong> 알바생이 이 QR을 스캔하면 출퇴근이 기록됩니다.
         </p>
-        <p class="desc">QR은 바뀌지 않으니 출력해서 매장에 붙여두고 계속 사용하세요.</p>
+        <p class="desc">재발급 전까지 QR은 바뀌지 않으니 출력해서 매장에 붙여두고 사용하세요.</p>
       </header>
 
       <!-- 상자에는 QR 만 담는다. 토큰까지 넣으면 정사각형이 무너지고 QR 이 그만큼 작아진다. -->
@@ -147,13 +147,6 @@ watch(() => qr.value?.qrToken, draw)
           <template v-else>표시할 QR이 없어요.</template>
         </p>
       </div>
-
-      <!-- 인쇄물이 훼손됐을 때 사장이 값을 확인·대조할 수 있게 남긴다. 읽을 일이 드문
-           보조 정보라 상자 밖에서 보조 텍스트로 표시한다. -->
-      <p v-if="qr" class="qr-token">
-        <span class="qr-token-label">QR 값</span>
-        {{ qr.qrToken }}
-      </p>
 
       <!--
         재발급 버튼을 qr 존재 여부에 묶지 않는다. 활성 QR 이 없는 지점은 조회가 실패하는데,
@@ -231,18 +224,6 @@ watch(() => qr.value?.qrToken, draw)
 }
 .qr-placeholder {
   font-size: var(--text-sm);
-  color: var(--color-text-sub);
-}
-.qr-token {
-  max-width: 260px;
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
-  word-break: break-all;
-  text-align: center;
-}
-.qr-token-label {
-  display: block;
-  margin-bottom: 2px;
   color: var(--color-text-sub);
 }
 
