@@ -1,6 +1,6 @@
 <script setup>
 /**
- * 시각 입력 필드 — AppField 와 같은 라벨/에러/힌트 배치를 쓰되, 값은 네이티브
+ * 시각 입력 필드 — AppField 와 같은 라벨/에러/힌트 배치(FieldShell)를 쓰되, 값은 네이티브
  * <input type="time"> 대신 바텀시트의 TimeWheelPicker 다이얼로 고른다.
  *
  * 네이티브 time input 은 안드로이드 Chrome 에서 `step` 을 무시하고 항상 1분 단위로
@@ -9,10 +9,12 @@
  *
  * v-model 은 AppField 와 동일하게 "HH:mm" 문자열이다.
  */
-import { ref, useId } from 'vue'
+import { ref } from 'vue'
 import BaseBottomSheet from './BaseBottomSheet.vue'
 import BaseButton from './BaseButton.vue'
+import FieldShell from './FieldShell.vue'
 import TimeWheelPicker from './TimeWheelPicker.vue'
+import { roundTimeToStep } from '@/utils/timeWheel'
 
 const props = defineProps({
   label: { type: String, default: '' },
@@ -24,14 +26,15 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const fieldId = useId()
-const messageId = `${fieldId}-msg`
 const open = ref(false)
 const draft = ref('09:00')
 
+// 다이얼(TimeWheelPicker)과 같은 반올림을 거쳐야 한다 — 안 그러면 닫힌 필드에는
+// 원래 값이 그대로 보이는데 시트를 열고 확인만 눌러도 dial 이 반올림한 값으로
+// 바뀌어 버린다(둘이 서로 다른 값을 "지금 값"이라고 보여주는 상태였다).
 function formatDisplay(value) {
   if (!value) return ''
-  const [hStr, mStr] = value.split(':')
+  const [hStr, mStr] = roundTimeToStep(value, props.step).split(':')
   const h = parseInt(hStr, 10)
   const ampm = h < 12 ? '오전' : '오후'
   const hour12 = h % 12 === 0 ? 12 : h % 12
@@ -49,53 +52,38 @@ function confirm() {
 </script>
 
 <template>
-  <div class="field" :class="{ 'has-error': error }">
-    <label v-if="label" :for="fieldId" class="label">
-      {{ label }}
-      <span v-if="required" class="req" aria-hidden="true">*</span>
-    </label>
-
+  <FieldShell
+    v-slot="{ fieldId, describedBy, invalid }"
+    :label="label"
+    :error="error"
+    :hint="hint"
+    :required="required"
+  >
     <button
       :id="fieldId"
       type="button"
       class="time-input"
       :class="{ placeholder: !modelValue }"
-      :aria-describedby="error || hint ? messageId : undefined"
-      :aria-invalid="error ? 'true' : undefined"
+      :aria-describedby="describedBy"
+      :aria-invalid="invalid"
       @click="openSheet"
     >
       {{ formatDisplay(modelValue) || '시간 선택' }}
     </button>
+  </FieldShell>
 
-    <p v-if="error" :id="messageId" class="msg error" role="alert">{{ error }}</p>
-    <p v-else-if="hint" :id="messageId" class="msg hint">{{ hint }}</p>
-
-    <BaseBottomSheet :open="open" :title="label || '시간 선택'" @close="open = false">
-      <TimeWheelPicker v-model="draft" :step="step" />
-      <template #footer>
-        <div class="sheet-actions">
-          <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
-          <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
-        </div>
-      </template>
-    </BaseBottomSheet>
-  </div>
+  <BaseBottomSheet :open="open" :title="label || '시간 선택'" @close="open = false">
+    <TimeWheelPicker v-model="draft" :step="step" />
+    <template #footer>
+      <div class="sheet-actions">
+        <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
+        <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
+      </div>
+    </template>
+  </BaseBottomSheet>
 </template>
 
 <style scoped>
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-.label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-sub);
-}
-.req {
-  color: var(--color-danger);
-}
 .time-input {
   width: 100%;
   text-align: left;
@@ -109,15 +97,6 @@ function confirm() {
 }
 .field.has-error .time-input {
   border-color: var(--color-danger);
-}
-.msg {
-  font-size: var(--text-sm);
-}
-.msg.error {
-  color: var(--color-danger);
-}
-.msg.hint {
-  color: var(--color-text-sub);
 }
 .sheet-actions {
   display: flex;

@@ -1,13 +1,14 @@
 <script setup>
 /**
- * 날짜 입력 필드 — AppDateField(다이얼) 의 대안 버전. 값 선택 방식만 월 그리드 캘린더로
- * 바꾸고, 라벨/에러/버튼/바텀시트 배치는 그대로 맞춘다. 두 버전을 같은 화면에 각각
- * 붙여서 비교해 보기 위한 것으로, 최종적으로는 하나만 남긴다.
+ * 날짜 입력 필드 — 월 그리드 캘린더(CalendarGridPicker)로 값을 고른다.
+ * 연/월/일 다이얼 버전과 비교해본 뒤 이 그리드 버전으로 확정했다(다이얼 버전은 삭제).
+ * 라벨/에러/버튼/바텀시트 배치는 AppTimeField 와 같은 톤(FieldShell)을 맞춘다.
  */
-import { ref, useId } from 'vue'
+import { ref } from 'vue'
 import BaseBottomSheet from './BaseBottomSheet.vue'
 import BaseButton from './BaseButton.vue'
 import CalendarGridPicker from './CalendarGridPicker.vue'
+import FieldShell from './FieldShell.vue'
 import { formatDateKeyWithWeekday, todayKey } from '@/utils/calendar'
 
 const props = defineProps({
@@ -19,8 +20,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue'])
 
-const fieldId = useId()
-const messageId = `${fieldId}-msg`
 const open = ref(false)
 const draft = ref(todayKey())
 
@@ -35,53 +34,38 @@ function confirm() {
 </script>
 
 <template>
-  <div class="field" :class="{ 'has-error': error }">
-    <label v-if="label" :for="fieldId" class="label">
-      {{ label }}
-      <span v-if="required" class="req" aria-hidden="true">*</span>
-    </label>
-
+  <FieldShell
+    v-slot="{ fieldId, describedBy, invalid }"
+    :label="label"
+    :error="error"
+    :hint="hint"
+    :required="required"
+  >
     <button
       :id="fieldId"
       type="button"
       class="date-input"
       :class="{ placeholder: !modelValue }"
-      :aria-describedby="error || hint ? messageId : undefined"
-      :aria-invalid="error ? 'true' : undefined"
+      :aria-describedby="describedBy"
+      :aria-invalid="invalid"
       @click="openSheet"
     >
       {{ modelValue ? formatDateKeyWithWeekday(modelValue) : '날짜 선택' }}
     </button>
+  </FieldShell>
 
-    <p v-if="error" :id="messageId" class="msg error" role="alert">{{ error }}</p>
-    <p v-else-if="hint" :id="messageId" class="msg hint">{{ hint }}</p>
-
-    <BaseBottomSheet :open="open" :title="label || '날짜 선택'" @close="open = false">
-      <CalendarGridPicker v-model="draft" />
-      <template #footer>
-        <div class="sheet-actions">
-          <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
-          <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
-        </div>
-      </template>
-    </BaseBottomSheet>
-  </div>
+  <BaseBottomSheet :open="open" :title="label || '날짜 선택'" @close="open = false">
+    <CalendarGridPicker v-model="draft" />
+    <template #footer>
+      <div class="sheet-actions">
+        <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
+        <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
+      </div>
+    </template>
+  </BaseBottomSheet>
 </template>
 
 <style scoped>
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-.label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-sub);
-}
-.req {
-  color: var(--color-danger);
-}
 .date-input {
   width: 100%;
   text-align: left;
@@ -95,15 +79,6 @@ function confirm() {
 }
 .field.has-error .date-input {
   border-color: var(--color-danger);
-}
-.msg {
-  font-size: var(--text-sm);
-}
-.msg.error {
-  color: var(--color-danger);
-}
-.msg.hint {
-  color: var(--color-text-sub);
 }
 .sheet-actions {
   display: flex;
