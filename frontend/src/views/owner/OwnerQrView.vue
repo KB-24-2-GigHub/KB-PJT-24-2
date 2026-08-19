@@ -148,13 +148,6 @@ watch(() => qr.value?.qrToken, draw)
         </p>
       </div>
 
-      <!-- 인쇄물이 훼손됐을 때 사장이 값을 확인·대조할 수 있게 남긴다. 읽을 일이 드문
-           보조 정보라 상자 밖에서 보조 텍스트로 표시한다. -->
-      <p v-if="qr" class="qr-token">
-        <span class="qr-token-label">QR 값</span>
-        {{ qr.qrToken }}
-      </p>
-
       <!--
         재발급 버튼을 qr 존재 여부에 묶지 않는다. 활성 QR 이 없는 지점은 조회가 실패하는데,
         그 상태에서 사용자가 스스로 복구할 수 있는 유일한 경로가 재발급이다.
@@ -231,18 +224,6 @@ watch(() => qr.value?.qrToken, draw)
 }
 .qr-placeholder {
   font-size: var(--text-sm);
-  color: var(--color-text-sub);
-}
-.qr-token {
-  max-width: 260px;
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
-  word-break: break-all;
-  text-align: center;
-}
-.qr-token-label {
-  display: block;
-  margin-bottom: 2px;
   color: var(--color-text-sub);
 }
 
