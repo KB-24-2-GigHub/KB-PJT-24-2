@@ -21,9 +21,12 @@ public interface NotificationMapper {
     List<NotificationRow> findPageByRecipient(
             @Param("recipientUserId") Long recipientUserId,
             @Param("size") int size,
-            @Param("offset") int offset);
+            @Param("offset") int offset,
+            @Param("unreadOnly") boolean unreadOnly);
 
-    long countByRecipient(@Param("recipientUserId") Long recipientUserId);
+    long countByRecipient(
+            @Param("recipientUserId") Long recipientUserId,
+            @Param("unreadOnly") boolean unreadOnly);
 
     long countUnreadByRecipient(@Param("recipientUserId") Long recipientUserId);
 
@@ -31,6 +34,14 @@ public interface NotificationMapper {
     int markRead(
             @Param("notificationId") Long notificationId,
             @Param("recipientUserId") Long recipientUserId);
+
+    /**
+     * 본인의 안읽음 알림을 한 번의 갱신으로 모두 읽음으로 바꿉니다.
+     *
+     * <p>행마다 {@link #markRead}를 반복 호출하지 않습니다. 알림이 쌓인 사용자일수록 왕복이
+     * 늘고, 중간에 실패하면 일부만 읽힌 상태가 남습니다.</p>
+     */
+    int markAllRead(@Param("recipientUserId") Long recipientUserId);
 
     /** 읽음 처리 대상이 본인 알림으로 존재하는지 확인합니다. 없으면 404로 구분합니다. */
     int existsForRecipient(

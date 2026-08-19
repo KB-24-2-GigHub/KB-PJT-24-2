@@ -45,14 +45,24 @@
                created_at
         FROM notifications
         WHERE recipient_user_id = #{recipientUserId}
+        <if test="unreadOnly">
+            AND is_read = 0
+        </if>
         ORDER BY created_at DESC, id DESC
         LIMIT #{size} OFFSET #{offset}
     </select>
 
+    <!--
+        같은 unreadOnly 조건을 목록과 개수가 함께 받는다. 한쪽만 좁히면 안읽음 목록에
+        전체 건수가 붙어 Page 수가 실제보다 커진다.
+    -->
     <select id="countByRecipient" resultType="long">
         SELECT COUNT(*)
         FROM notifications
         WHERE recipient_user_id = #{recipientUserId}
+        <if test="unreadOnly">
+            AND is_read = 0
+        </if>
     </select>
 
     <!-- 안읽음 개수는 저장된 읽음 상태에서 계산한다. 별도 집계 컬럼을 두지 않는다. -->
@@ -73,6 +83,18 @@
             read_at = NOW(6)
         WHERE id = #{notificationId}
           AND recipient_user_id = #{recipientUserId}
+          AND is_read = 0
+    </update>
+
+    <!--
+        단건 읽음과 같은 is_read = 0 조건을 쓴다. 조건이 없으면 전체 읽음 한 번에 이미 읽은
+        알림들의 read_at 이 모두 지금으로 덮여 최초 읽은 시각을 잃는다.
+    -->
+    <update id="markAllRead">
+        UPDATE notifications
+        SET is_read = 1,
+            read_at = NOW(6)
+        WHERE recipient_user_id = #{recipientUserId}
           AND is_read = 0
     </update>
 

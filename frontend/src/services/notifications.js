@@ -15,7 +15,7 @@ function invokeLive(method, args = []) {
   })
 }
 
-/** 목록 조회. `page`·`size` 만 받는다(SPEC-382-01). */
+/** 목록 조회. `page`·`size`·`unreadOnly` 를 받는다(SPEC-382-01, SPEC-423-01). */
 export function listNotifications(params = {}) {
   return invokeLive('listNotifications', [params])
 }
@@ -26,6 +26,10 @@ export function getUnreadCount() {
 
 export function markNotificationRead(notificationId) {
   return invokeLive('markNotificationRead', [notificationId])
+}
+
+export function markAllNotificationsRead() {
+  return invokeLive('markAllNotificationsRead')
 }
 
 /**

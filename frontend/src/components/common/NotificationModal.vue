@@ -1,7 +1,10 @@
 <script setup>
 /**
  * 알림 모달 — 공통. App.vue 에 한 번 배치하며, AppTopBar 종 아이콘이 연다.
- * 상태·데이터는 notifications 스토어. 항목 클릭 시 읽음 처리.
+ * 상태·데이터는 notifications 스토어.
+ *
+ * 목록은 안읽음만 담는다(SPEC-423-01). 항목을 누르면 읽음 처리되고 목록에서 사라지며,
+ * 헤더의 "모두 읽음" 이 남은 전부를 한 번에 치운다.
  */
 import { Bell } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
@@ -17,6 +20,14 @@ const { items, isOpen, loading, loadError } = storeToRefs(store)
 
 <template>
   <BaseBottomSheet :open="isOpen" title="알림" @close="store.close()">
+    <!--
+      목록이 비어 있으면 읽을 것이 없다. 누를 수 없는 버튼을 남겨 두면 눌러도 아무 일이
+      일어나지 않는 것처럼 보인다.
+    -->
+    <template v-if="items.length > 0" #headerAction>
+      <button type="button" class="read-all" @click="store.markAllRead()">모두 읽음</button>
+    </template>
+
     <p v-if="loading" class="state">불러오는 중…</p>
     <EmptyState v-else-if="loadError" message="알림을 불러오지 못했습니다.">
       <template #icon><Bell :size="32" /></template>
@@ -45,6 +56,10 @@ const { items, isOpen, loading, loadError } = storeToRefs(store)
 .state {
   padding: var(--space-xl) 0;
   text-align: center;
+  color: var(--color-text-sub);
+}
+.read-all {
+  font-size: var(--text-sm);
   color: var(--color-text-sub);
 }
 .list {

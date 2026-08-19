@@ -32,12 +32,14 @@ public class NotificationServiceImpl implements NotificationService {
     public PageResponse<NotificationListItemResponse> findPage(
             long recipientUserId,
             int page,
-            int size) {
-        long totalElements = notificationMapper.countByRecipient(recipientUserId);
+            int size,
+            boolean unreadOnly) {
+        long totalElements = notificationMapper.countByRecipient(recipientUserId, unreadOnly);
         List<NotificationListItemResponse> content = notificationMapper.findPageByRecipient(
                         recipientUserId,
                         size,
-                        Math.toIntExact(PageRequests.offset(page, size)))
+                        Math.toIntExact(PageRequests.offset(page, size)),
+                        unreadOnly)
                 .stream()
                 .map(NotificationServiceImpl::toResponse)
                 .toList();
@@ -66,6 +68,19 @@ public class NotificationServiceImpl implements NotificationService {
         if (notificationMapper.existsForRecipient(notificationId, recipientUserId) == 0) {
             throw new ResourceNotFoundException("알림을 찾을 수 없습니다.");
         }
+    }
+
+    /**
+     * 안읽음이 하나도 없어도 성공입니다.
+     *
+     * <p>단건 읽음과 달리 대상을 식별자로 지목하지 않으므로 "찾지 못했다"는 상태가 없습니다.
+     * 갱신 행이 0이라는 것은 이미 다 읽었다는 뜻이고, 화면이 원한 상태와 같습니다. 이것을
+     * 오류로 만들면 호출자가 무해한 결과를 실패로 다뤄야 합니다.</p>
+     */
+    @Override
+    @Transactional
+    public void markAllRead(long recipientUserId) {
+        notificationMapper.markAllRead(recipientUserId);
     }
 
     private static NotificationListItemResponse toResponse(NotificationRow row) {
