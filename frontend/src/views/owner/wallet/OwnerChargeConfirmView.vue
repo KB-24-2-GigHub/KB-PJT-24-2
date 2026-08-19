@@ -32,11 +32,6 @@ const idempotencyKey = ref(newIdempotencyKey())
 
 const draft = computed(() => fundingStore.draft)
 const bank = computed(() => findBank(draft.value?.bankCode))
-const maskedAccountNo = computed(() => {
-  const value = draft.value?.accountNo ?? ''
-  if (value.length <= 4) return value
-  return `${'•'.repeat(value.length - 4)}${value.slice(-4)}`
-})
 const pinValid = computed(() => /^\d{4}$/.test(pin.value))
 const canSubmit = computed(
   () => !!draft.value && !!bank.value && pinValid.value && !submitting.value
@@ -167,7 +162,7 @@ async function onSubmit() {
           <span v-else class="bank-dot" :style="{ background: bank.chip }" />
           <strong>{{ bank.name }}</strong>
         </div>
-        <p class="account">{{ maskedAccountNo }}</p>
+        <p class="account">{{ draft.accountNo }}</p>
         <p class="amount">{{ formatKRW(draft.amount) }}</p>
         <p class="caption">위 계좌에서 지갑으로 충전합니다.</p>
       </section>

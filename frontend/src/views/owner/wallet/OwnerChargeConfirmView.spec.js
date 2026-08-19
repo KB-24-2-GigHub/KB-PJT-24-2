@@ -44,14 +44,13 @@ describe('OwnerChargeConfirmView', () => {
     })
   })
 
-  it('은행·마스킹 계좌·금액을 표시하고 정확한 네 필드로 한 번만 충전한다', async () => {
+  it('은행·계좌·금액을 표시하고 정확한 네 필드로 한 번만 충전한다', async () => {
     prepareDraft()
     const wrapper = mount(OwnerChargeConfirmView)
     const fundingStore = useWalletFundingStore()
 
     expect(wrapper.text()).toContain('KB국민은행')
-    expect(wrapper.text()).toContain('••••••••0001')
-    expect(wrapper.text()).not.toContain('170000000001')
+    expect(wrapper.text()).toContain('170000000001')
     expect(wrapper.text()).toContain('100,000원')
 
     const pinInput = wrapper.find('input[type="password"]')
