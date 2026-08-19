@@ -6,7 +6,7 @@
  */
 import { Info, Lock } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, useId } from 'vue'
 import { useRouter } from 'vue-router'
 
 import TransactionFilterSheet from '@/components/wallet/TransactionFilterSheet.vue'
@@ -32,7 +32,7 @@ const { activeWorkplaces } = storeToRefs(workplaceStore)
 const filterOpen = ref(false)
 const appliedFilter = ref({}) // 현재 적용 중인 송금상세 필터(서버 파라미터)
 
-// 예치중(에스크로) 안내 — 홈의 예치중 요약 옆 물음표 아이콘 호버 문구.
+// 예치중(에스크로) 안내 — 홈의 예치중 요약 옆 물음표 아이콘을 눌러 여는 팝오버 문구.
 const HELD_TOOLTIP =
   '근무 계약 시 지급 예정 임금을 미리 안전하게 보관(에스크로)하는 금액입니다. 정산이 완료되면 알바생에게 지급되고, 노쇼 시 환불됩니다.'
 
@@ -51,6 +51,34 @@ function onApplyFilter(params) {
 }
 
 const onLoadMore = () => walletStore.loadNextTransactions()
+
+/* ---- 예치중 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
+const heldSummaryEl = ref(null)
+const heldInfoOpen = ref(false)
+const heldInfoId = useId()
+
+function toggleHeldInfo() {
+  heldInfoOpen.value = !heldInfoOpen.value
+}
+
+function onDocumentClick(e) {
+  if (!heldInfoOpen.value) return
+  if (!heldSummaryEl.value?.contains(e.target)) heldInfoOpen.value = false
+}
+
+function onKeydown(e) {
+  if (e.key === 'Escape') heldInfoOpen.value = false
+}
+
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  document.addEventListener('keydown', onKeydown)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', onDocumentClick)
+  document.removeEventListener('keydown', onKeydown)
+})
 </script>
 
 <template>
@@ -61,16 +89,27 @@ const onLoadMore = () => walletStore.loadNextTransactions()
       @withdraw="onWithdraw"
     />
 
-    <div class="held-summary">
+    <div ref="heldSummaryEl" class="held-summary">
       <span class="held-label">
         <Lock :size="16" />
         예치중
       </span>
       <div class="held-right">
         <strong class="held-amount">{{ formatKRW(lockedBalance) }}</strong>
-        <button type="button" class="held-info" :title="HELD_TOOLTIP" aria-label="예치중 안내">
+        <button
+          type="button"
+          class="held-info"
+          aria-label="예치중 안내"
+          :aria-expanded="heldInfoOpen"
+          :aria-controls="heldInfoId"
+          @click="toggleHeldInfo"
+        >
           <Info :size="16" />
         </button>
+      </div>
+
+      <div v-if="heldInfoOpen" :id="heldInfoId" class="held-popover" role="note">
+        {{ HELD_TOOLTIP }}
       </div>
     </div>
 
@@ -93,8 +132,9 @@ const onLoadMore = () => walletStore.loadNextTransactions()
 </template>
 
 <style scoped>
-/* 예치중 요약 — 지갑 카드 밖 별도 라인 */
+/* 예치중 요약 — 지갑 카드 밖 별도 라인. position:relative 는 안내 팝오버의 anchor. */
 .held-summary {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -124,6 +164,24 @@ const onLoadMore = () => walletStore.loadNextTransactions()
 .held-info {
   display: inline-flex;
   color: var(--color-text-sub);
-  cursor: help;
+}
+
+/* 이 라인은 화면 위쪽이라 아래로 펼쳐도 다른 요소를 가릴 걱정이 적다(SecuredEarningCard 와
+   달리 탭바에 잘릴 일이 없다). 오른쪽 정렬 — 아이콘이 우측에 있어 왼쪽으로 펼치면 화면
+   폭을 넘길 수 있다. */
+.held-popover {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + var(--space-sm));
+  right: var(--space-lg);
+  left: var(--space-lg);
+  padding: var(--space-md);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card);
+  font-size: var(--text-sm);
+  color: var(--color-text-sub);
+  line-height: 1.5;
 }
 </style>
