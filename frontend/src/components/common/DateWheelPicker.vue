@@ -8,6 +8,7 @@
  */
 import { computed } from 'vue'
 import WheelColumn from './WheelColumn.vue'
+import { WEEKDAY_LABELS } from '@/utils/calendar'
 
 const props = defineProps({
   modelValue: { type: String, required: true }, // "YYYY-MM-DD"
@@ -35,11 +36,15 @@ const monthOptions = Array.from({ length: 12 }, (_, i) => i + 1).map((m) => ({
 function daysInMonth(year, month) {
   return new Date(year, month, 0).getDate()
 }
-const dayOptions = computed(() =>
-  Array.from({ length: daysInMonth(parsed.value.year, parsed.value.month) }, (_, i) => i + 1).map(
-    (d) => ({ label: `${d}일`, value: d })
-  )
-)
+// 일 옆에 요일을 같이 보여준다 — 연/월이 바뀌면 같은 일(day)도 요일이 달라지므로
+// year·month 를 함께 좇는 이 computed 안에서 매번 다시 구한다.
+const dayOptions = computed(() => {
+  const { year, month } = parsed.value
+  return Array.from({ length: daysInMonth(year, month) }, (_, i) => i + 1).map((d) => {
+    const weekday = WEEKDAY_LABELS[new Date(year, month - 1, d).getDay()]
+    return { label: `${d}일 (${weekday})`, value: d }
+  })
+})
 
 function emitWith(next) {
   const merged = { ...parsed.value, ...next }
