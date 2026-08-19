@@ -10,6 +10,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
+import AppDateField from '@/components/common/AppDateField.vue'
 import AppField from '@/components/common/AppField.vue'
 import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
@@ -113,13 +114,7 @@ async function onSubmit() {
           :error="errors.title"
         />
 
-        <AppField
-          v-model="form.workDate"
-          type="date"
-          label="근무 날짜"
-          required
-          :error="errors.workDate"
-        />
+        <AppDateField v-model="form.workDate" label="근무 날짜" required :error="errors.workDate" />
 
         <div class="field-row">
           <AppTimeField

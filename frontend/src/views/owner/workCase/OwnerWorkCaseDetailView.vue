@@ -12,6 +12,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
+import AppDateField from '@/components/common/AppDateField.vue'
 import AppField from '@/components/common/AppField.vue'
 import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
@@ -753,9 +754,8 @@ async function onApproveSettlement() {
         <!-- ---- 수정 모드 ---- -->
         <form v-else class="form" @submit.prevent="onSave">
           <AppField v-model="form.title" label="제목" required :error="errors.title" />
-          <AppField
+          <AppDateField
             v-model="form.workDate"
-            type="date"
             label="근무 날짜"
             required
             :error="errors.workDate"

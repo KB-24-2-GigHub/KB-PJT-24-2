@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+import AppDateField from '@/components/common/AppDateField.vue'
 import AppTimeField from '@/components/common/AppTimeField.vue'
 import OwnerWorkCaseNewView from '@/views/owner/workCase/OwnerWorkCaseNewView.vue'
 import { useWorkplaceStore } from '@/stores/workplace'
@@ -17,16 +18,17 @@ import { listWorkplaces } from '@/services/workplaces'
 
 function fillForm(wrapper) {
   const [timeStart, timeEnd] = wrapper.findAllComponents(AppTimeField)
-  const [title, workDate, breakMinutes, dailyWage] = [
+  const dateField = wrapper.findComponent(AppDateField)
+  const [title, breakMinutes, dailyWage] = [
     wrapper.find('input[type="text"]'),
-    wrapper.find('input[type="date"]'),
     wrapper.find('input[placeholder="0"]'),
     wrapper.find('input[placeholder="원 단위로 입력"]')
   ]
   return {
     title,
-    workDate,
-    // AppTimeField는 네이티브 input이 아니라 v-model 컴포넌트라 setValue 대신 이렇게 채운다.
+    // AppDateField/AppTimeField는 네이티브 input이 아니라 v-model 컴포넌트라
+    // setValue 대신 이렇게 채운다.
+    workDate: { setValue: (v) => dateField.vm.$emit('update:modelValue', v) },
     startTime: { setValue: (v) => timeStart.vm.$emit('update:modelValue', v) },
     endTime: { setValue: (v) => timeEnd.vm.$emit('update:modelValue', v) },
     breakMinutes,
