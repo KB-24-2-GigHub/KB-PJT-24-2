@@ -191,13 +191,26 @@ jobs:
             sudo find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           '
 
+      # up -d 를 쓰면 안 된다. compose.prod.yaml 의 이미지가
+      # ghcr.io/.../kb-pjt-24-2-api:${API_TAG:-dev} 인데, 배포는 API_TAG 를 자기 SSH
+      # 세션 안에서만 export 하고 서버에 남기지 않는다. 여기서 API_TAG 없이 up -d 하면
+      # dev 태그로 떨어지고, 배포가 SHA 태그만 pull 하므로 서버에 남아 있던 낡은 dev
+      # 이미지가 올라온다. 즉 시드를 돌릴 때마다 운영 앱 버전이 조용히 되돌아간다.
+      #
+      # 2026-08-19 에 실제로 그랬다. 08:45 배포로 최신 WAR 가 떠 있었는데 09:12 시드
+      # 재기동 뒤 POST /api/documents 매핑이 사라져 시드의 API 후속 준비가 실패했고,
+      # 실제 사용자도 보건증 업로드가 막혔다(run 32236069569).
+      #
+      # start 는 위 stop 이 남겨 둔 그 컨테이너를 그대로 다시 켠다. 이미지 태그를 다시
+      # 해석하지 않으므로 버전이 바뀔 여지가 없다. 이 Step 은 stop 이 성공했을 때만
+      # 실행되므로 되살릴 컨테이너가 있다는 것도 보장된다.
       - name: Restart application after full demo reset
         id: restart_app
         if: always() && steps.seed.outputs.is_demo == 'true' && steps.stop_app.outcome == 'success'
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
-            "docker compose -f /opt/gighub/compose.prod.yaml up -d app"
+            "docker compose -f /opt/gighub/compose.prod.yaml start app"
 
       - name: Wait for application after full demo reset
         if: steps.seed.outputs.is_demo == 'true'
