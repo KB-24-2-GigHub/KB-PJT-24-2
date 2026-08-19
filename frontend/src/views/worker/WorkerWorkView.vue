@@ -111,11 +111,17 @@ function goDetail(workCase) {
           </div>
           <div class="work-case-sub">
             <span class="time">{{ formatSeoulTimeRange(workCase.startsAt, workCase.endsAt) }}</span>
-            <span class="wage">{{ formatKRW(workCase.dailyWage) }}</span>
+            <span class="wage" :class="{ 'wage-voided': workCase.status === 'NO_SHOW' }">{{
+              formatKRW(workCase.dailyWage)
+            }}</span>
           </div>
           <div class="work-case-status">
             <StatusChip :status="workCase.status" kind="workCase" />
-            <StatusChip :status="workCase.settlementStatus" kind="settle" />
+            <StatusChip
+              v-if="workCase.status !== 'NO_SHOW'"
+              :status="workCase.settlementStatus"
+              kind="settle"
+            />
           </div>
           <p
             v-if="workCase.settlementStatus === 'SCHEDULED' && workCase.settlementDueAt"
@@ -190,6 +196,10 @@ function goDetail(workCase) {
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
   color: var(--color-text);
+}
+.wage-voided {
+  color: var(--color-text-sub);
+  text-decoration: line-through;
 }
 .work-case-status {
   display: flex;

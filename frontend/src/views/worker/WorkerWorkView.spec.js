@@ -161,6 +161,26 @@ describe('WorkerWorkView', () => {
    * 목록 API 는 기본 20건 Page 다. 화면이 첫 Page 만 읽으면 21번째부터는 표시도 오류도
    * 없이 사라진다 — 사용자는 그 기록이 없다고 믿게 된다.
    */
+  it('NO_SHOW 건은 정산 상태 칩을 숨기고 금액에 취소선을 적용한다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([{ ...sampleWorkCase, status: 'NO_SHOW', settlementStatus: 'REFUNDED' }])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('노쇼') // status
+    expect(wrapper.text()).not.toContain('환불완료') // settlementStatus
+    expect(wrapper.find('.wage').classes()).toContain('wage-voided')
+  })
+
+  it('NO_SHOW 가 아닌 건은 정산 상태 칩과 금액을 평소대로 보여준다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase]))
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.find('.wage').classes()).not.toContain('wage-voided')
+  })
+
   it('다음 Page 가 남아 있으면 더 보기로 이어 붙인다', async () => {
     listWorkerWorkCases.mockResolvedValueOnce(pageOf([sampleWorkCase], 0, 2))
     const wrapper = mount(WorkerWorkView)
