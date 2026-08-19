@@ -3,13 +3,15 @@
 
 SOURCE /seed/demo-reset.inc
 
-SET @owner_available = 2000000;
-SET @owner_locked = 0;
-SET @owner_bank_balance = 5000000;
-SET @worker_a_available = 300000;
-SET @worker_b_available = 200000;
-SET @worker_c_available = 100000;
 SET @history_wage = 100000;
+SET @history_work_count = 65;
+SET @history_funding_amount = @history_wage * @history_work_count;
+SET @owner_available = @history_wage * 3;
+SET @owner_locked = 0;
+SET @owner_bank_balance = 10000000;
+SET @worker_a_available = @history_wage * 30;
+SET @worker_b_available = @history_wage * 20;
+SET @worker_c_available = @history_wage * 12;
 
 SOURCE /seed/demo-users.inc
 SOURCE /seed/demo-primary-workplace.inc
@@ -269,7 +271,7 @@ INSERT INTO escrows (
 SELECT
     id, agreed_wage,
     CASE WHEN status = 'NO_SHOW' THEN 'REFUNDED' ELSE 'RELEASED' END,
-    DATE_SUB(starts_at, INTERVAL 1 DAY),
+    DATE_SUB(starts_at, INTERVAL 1 HOUR),
     CASE WHEN status = 'COMPLETED' THEN DATE_ADD(ends_at, INTERVAL 1 HOUR) ELSE NULL END,
     CASE WHEN status = 'NO_SHOW' THEN DATE_ADD(starts_at, INTERVAL 2 HOUR) ELSE NULL END,
     DATE_SUB(starts_at, INTERVAL 1 DAY),
@@ -297,6 +299,134 @@ SELECT
 FROM work_cases
 WHERE title LIKE '[3YEAR-%';
 
+-- 과거 65건의 예치·지급·환불을 지갑 Snapshot과 같은 원장으로 남깁니다. 각 근무는
+-- 시간순으로 예치 후 종료되어 OWNER 잠금액이 다시 0이 된 다음 근무로 이어집니다.
+INSERT INTO wallet_transactions (
+    wallet_id, work_case_id, transaction_type, amount,
+    available_before, available_after, locked_before, locked_after,
+    reference_type, reference_id, idempotency_key, created_at
+)
+SELECT
+    @owner_wallet_id, NULL, 'FUNDING', @history_funding_amount,
+    0, @history_funding_amount, 0, 0,
+    'DEMO_SEED', @owner_id, '3YEAR-OWNER-FUNDING',
+    DATE_SUB((SELECT MIN(starts_at) FROM work_cases WHERE title LIKE '[3YEAR-%'), INTERVAL 2 HOUR);
+
+INSERT INTO wallet_transactions (
+    wallet_id, work_case_id, transaction_type, amount,
+    available_before, available_after, locked_before, locked_after,
+    reference_type, reference_id, idempotency_key, created_at
+)
+WITH ordered_cases AS (
+    SELECT
+        wc.id AS work_case_id,
+        wc.starts_at,
+        wc.agreed_wage,
+        e.id AS escrow_id,
+        COALESCE(
+            SUM(CASE WHEN wc.status = 'COMPLETED' THEN 1 ELSE 0 END) OVER (
+                ORDER BY wc.starts_at, wc.id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+            ),
+            0
+        ) AS prior_completed_count
+    FROM work_cases wc
+    JOIN escrows e ON e.work_case_id = wc.id
+    WHERE wc.title LIKE '[3YEAR-%'
+)
+SELECT
+    @owner_wallet_id, work_case_id, 'ESCROW_HOLD', agreed_wage,
+    @history_funding_amount - prior_completed_count * @history_wage,
+    @history_funding_amount - prior_completed_count * @history_wage - agreed_wage,
+    0, agreed_wage,
+    'ESCROW', escrow_id, CONCAT('3YEAR-HOLD-', work_case_id),
+    DATE_SUB(starts_at, INTERVAL 1 HOUR)
+FROM ordered_cases;
+
+INSERT INTO wallet_transactions (
+    wallet_id, work_case_id, transaction_type, amount,
+    available_before, available_after, locked_before, locked_after,
+    reference_type, reference_id, idempotency_key, created_at
+)
+WITH ordered_cases AS (
+    SELECT
+        wc.id AS work_case_id,
+        wc.starts_at,
+        wc.ends_at,
+        wc.status,
+        wc.agreed_wage,
+        e.id AS escrow_id,
+        COALESCE(
+            SUM(CASE WHEN wc.status = 'COMPLETED' THEN 1 ELSE 0 END) OVER (
+                ORDER BY wc.starts_at, wc.id
+                ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING
+            ),
+            0
+        ) AS prior_completed_count
+    FROM work_cases wc
+    JOIN escrows e ON e.work_case_id = wc.id
+    WHERE wc.title LIKE '[3YEAR-%'
+)
+SELECT
+    @owner_wallet_id,
+    work_case_id,
+    CASE WHEN status = 'COMPLETED' THEN 'ESCROW_RELEASE' ELSE 'ESCROW_REFUND' END,
+    agreed_wage,
+    @history_funding_amount - prior_completed_count * @history_wage - agreed_wage,
+    CASE WHEN status = 'COMPLETED'
+         THEN @history_funding_amount - prior_completed_count * @history_wage - agreed_wage
+         ELSE @history_funding_amount - prior_completed_count * @history_wage END,
+    agreed_wage,
+    0,
+    'ESCROW',
+    escrow_id,
+    CONCAT(
+        CASE WHEN status = 'COMPLETED' THEN '3YEAR-OWNER-RELEASE-' ELSE '3YEAR-REFUND-' END,
+        work_case_id
+    ),
+    CASE WHEN status = 'COMPLETED' THEN DATE_ADD(ends_at, INTERVAL 1 HOUR)
+         ELSE DATE_ADD(starts_at, INTERVAL 2 HOUR) END
+FROM ordered_cases;
+
+INSERT INTO wallet_transactions (
+    wallet_id, work_case_id, transaction_type, amount,
+    available_before, available_after, locked_before, locked_after,
+    reference_type, reference_id, idempotency_key, created_at
+)
+WITH completed_cases AS (
+    SELECT
+        wc.id AS work_case_id,
+        wc.worker_id,
+        wc.ends_at,
+        wc.agreed_wage,
+        e.id AS escrow_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY wc.worker_id ORDER BY wc.starts_at, wc.id
+        ) - 1 AS prior_worker_completed_count
+    FROM work_cases wc
+    JOIN escrows e ON e.work_case_id = wc.id
+    WHERE wc.title LIKE '[3YEAR-%'
+      AND wc.status = 'COMPLETED'
+)
+SELECT
+    CASE worker_id
+        WHEN @worker_a_id THEN @worker_a_wallet_id
+        WHEN @worker_b_id THEN @worker_b_wallet_id
+        ELSE @worker_c_wallet_id
+    END,
+    work_case_id,
+    'ESCROW_RELEASE',
+    agreed_wage,
+    prior_worker_completed_count * @history_wage,
+    (prior_worker_completed_count + 1) * @history_wage,
+    0,
+    0,
+    'ESCROW',
+    escrow_id,
+    CONCAT('3YEAR-WORKER-RELEASE-', work_case_id),
+    DATE_ADD(ends_at, INTERVAL 1 HOUR)
+FROM completed_cases;
+
 -- 3호점 오늘 캘린더를 채우는 수락 전 일정 8건입니다. 현재 시각과 무관하게 오늘 날짜를 씁니다.
 INSERT INTO work_cases (
     employer_id, worker_id, workplace_id, title,
@@ -321,49 +451,6 @@ SELECT
     @history_wage, 1, 'DRAFT', @seed_now, @seed_now
 FROM seq;
 
-INSERT INTO user_badges (user_id, badge_type, evidence, awarded_at)
-VALUES
-    (
-        @owner_id, 'TRUST_OWNER',
-        JSON_OBJECT(
-            'ruleVersion', 'trust-badge-cumulative-10-20-30-v1',
-            'badgeType', 'TRUST_OWNER', 'level', 3,
-            'totalCount', 62, 'normalCount', 62,
-            'thresholdCount', 30, 'thresholdPercent', 100,
-            'calculatedAt', DATE_FORMAT(@seed_now, '%Y-%m-%dT%H:%i:%s.000+09:00')
-        ), @seed_now
-    ),
-    (
-        @worker_a_id, 'TRUST_WORKER',
-        JSON_OBJECT(
-            'ruleVersion', 'trust-badge-cumulative-10-20-30-v1',
-            'badgeType', 'TRUST_WORKER', 'level', 3,
-            'totalCount', 30, 'normalCount', 30,
-            'thresholdCount', 30, 'thresholdPercent', 100,
-            'calculatedAt', DATE_FORMAT(@seed_now, '%Y-%m-%dT%H:%i:%s.000+09:00')
-        ), @seed_now
-    ),
-    (
-        @worker_b_id, 'TRUST_WORKER',
-        JSON_OBJECT(
-            'ruleVersion', 'trust-badge-cumulative-10-20-30-v1',
-            'badgeType', 'TRUST_WORKER', 'level', 2,
-            'totalCount', 20, 'normalCount', 18,
-            'thresholdCount', 20, 'thresholdPercent', 90,
-            'calculatedAt', DATE_FORMAT(@seed_now, '%Y-%m-%dT%H:%i:%s.000+09:00')
-        ), @seed_now
-    ),
-    (
-        @worker_c_id, 'TRUST_WORKER',
-        JSON_OBJECT(
-            'ruleVersion', 'trust-badge-cumulative-10-20-30-v1',
-            'badgeType', 'TRUST_WORKER', 'level', 1,
-            'totalCount', 15, 'normalCount', 12,
-            'thresholdCount', 10, 'thresholdPercent', 80,
-            'calculatedAt', DATE_FORMAT(@seed_now, '%Y-%m-%dT%H:%i:%s.000+09:00')
-        ), @seed_now
-    );
-
 COMMIT;
 
 SELECT
@@ -372,9 +459,9 @@ SELECT
     (SELECT COUNT(*) FROM workplaces WHERE owner_user_id = @owner_id) AS workplace_count,
     (SELECT COUNT(*) FROM work_cases WHERE employer_id = @owner_id) AS work_case_count,
     (SELECT COUNT(*) FROM work_cases WHERE workplace_id = @workplace_3_id AND DATE(starts_at) = @seed_today) AS today_store_3_count,
-    (SELECT JSON_EXTRACT(evidence, '$.level') FROM user_badges WHERE user_id = @owner_id) AS owner_badge_level,
-    (SELECT JSON_EXTRACT(evidence, '$.level') FROM user_badges WHERE user_id = @worker_a_id) AS worker_a_badge_level,
-    (SELECT JSON_EXTRACT(evidence, '$.level') FROM user_badges WHERE user_id = @worker_b_id) AS worker_b_badge_level,
-    (SELECT JSON_EXTRACT(evidence, '$.level') FROM user_badges WHERE user_id = @worker_c_id) AS worker_c_badge_level,
+    (SELECT COUNT(*) FROM settlements s JOIN work_cases wc ON wc.id = s.work_case_id
+     WHERE wc.employer_id = @owner_id AND s.status = 'COMPLETED') AS owner_completed_count,
+    (SELECT COUNT(*) FROM wallet_transactions) AS wallet_transaction_count,
+    (SELECT COUNT(*) FROM user_badges) AS badge_rows_before_api_recalculation,
     (SELECT COUNT(*) FROM documents WHERE status = 'DELETED') AS deleted_contract_count,
     'Demo1234!' AS demo_password;

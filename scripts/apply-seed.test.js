@@ -22,6 +22,7 @@ function createSandbox() {
   fs.mkdirSync(seedDir);
   fs.mkdirSync(binDir);
   fs.writeFileSync(path.join(seedDir, "demo.sql"), "SELECT 1;\n");
+  fs.writeFileSync(path.join(seedDir, "demo-functional.sql"), "SELECT 1;\n");
 
   // 인자와 표준입력 길이를 남기고 끝나는 mysql 대역.
   const argsLog = path.join(root, "args.txt");
@@ -158,6 +159,29 @@ test("없는 seed 파일은 mysql 을 부르지 않고 실패한다", () => {
   assert.notStrictEqual(result.status, 0);
   assert.match(result.stderr, /seed file not found/);
   assert.ok(!fs.existsSync(sandbox.argsLog), "mysql 이 실행됐다");
+});
+
+test("demo 전체 초기화 seed는 별도 확인값 없이는 실행하지 않는다", () => {
+  const sandbox = createSandbox();
+  const result = run({ SEED_FILE: "demo-functional.sql" }, sandbox);
+
+  assert.notStrictEqual(result.status, 0);
+  assert.match(result.stderr, /DEMO_RESET_CONFIRM=reset-all-data/);
+  assert.ok(!fs.existsSync(sandbox.argsLog), "mysql 이 실행됐다");
+});
+
+test("demo 전체 초기화 seed는 정확한 확인값과 함께 실행한다", () => {
+  const sandbox = createSandbox();
+  const result = run(
+    {
+      SEED_FILE: "demo-functional.sql",
+      DEMO_RESET_CONFIRM: "reset-all-data",
+    },
+    sandbox,
+  );
+
+  assert.strictEqual(result.status, 0, result.stderr);
+  assert.ok(fs.existsSync(sandbox.argsLog), "mysql 이 실행되지 않았다");
 });
 
 test("필수 환경변수가 없으면 실패한다", () => {

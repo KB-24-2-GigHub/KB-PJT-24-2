@@ -40,6 +40,7 @@ SELECT
     @a_start AS normal_starts_at,
     @work_case_b_id AS late_work_case_id,
     @b_start AS late_starts_at,
+    DATE_ADD(@b_start, INTERVAL 1 HOUR) AS late_no_show_at,
     @work_case_c_id AS no_show_work_case_id,
     DATE_ADD(@c_start, INTERVAL 1 HOUR) AS no_show_at,
     'hardworker / 김성실' AS worker_a,

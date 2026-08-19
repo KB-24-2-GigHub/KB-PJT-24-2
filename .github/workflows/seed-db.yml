@@ -135,6 +135,23 @@ jobs:
           ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
             "docker compose -f /opt/gighub/compose.prod.yaml stop app"
 
+      # 원격 명령은 문자열 한 덩어리로 전달되어 서버 셸이 다시 파싱한다. 값은
+      # 이미 허용 목록을 통과해 [A-Za-z0-9._-] 만 남지만, 원격에 넘기는 값은
+      # 명시적으로 이스케이프한 뒤 끼운다. 허용 목록이 나중에 느슨해져도 이쪽이
+      # 무너지지 않게 한다.
+      - name: Apply seed
+        env:
+          SEED_FILE_NAME: ${{ steps.seed.outputs.name }}
+          SEED_RESET_CONFIRM: ${{ inputs.confirm }}
+        run: |
+          set -euo pipefail
+          escaped="$(printf '%q' "$SEED_FILE_NAME")"
+          escaped_confirm="$(printf '%q' "$SEED_RESET_CONFIRM")"
+          ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
+            "docker compose -f /opt/gighub/compose.prod.yaml --profile tools run --rm -e SEED_FILE=${escaped} -e DEMO_RESET_CONFIRM=${escaped_confirm} seed"
+
+      # SQL이 실패하면 Transaction이 Rollback되므로 기존 문서도 그대로 보존합니다.
+      # 새 DB 상태가 확정된 뒤에만 더 이상 참조되지 않는 기존 파일을 지웁니다.
       - name: Clear production document storage for full demo reset
         if: steps.seed.outputs.is_demo == 'true'
         run: |
@@ -149,19 +166,6 @@ jobs:
             fi
             find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           '
-
-      # 원격 명령은 문자열 한 덩어리로 전달되어 서버 셸이 다시 파싱한다. 값은
-      # 이미 허용 목록을 통과해 [A-Za-z0-9._-] 만 남지만, 원격에 넘기는 값은
-      # 명시적으로 이스케이프한 뒤 끼운다. 허용 목록이 나중에 느슨해져도 이쪽이
-      # 무너지지 않게 한다.
-      - name: Apply seed
-        env:
-          SEED_FILE_NAME: ${{ steps.seed.outputs.name }}
-        run: |
-          set -euo pipefail
-          escaped="$(printf '%q' "$SEED_FILE_NAME")"
-          ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
-            "docker compose -f /opt/gighub/compose.prod.yaml --profile tools run --rm -e SEED_FILE=${escaped} seed"
 
       - name: Restart application after full demo reset
         id: restart_app
@@ -183,7 +187,7 @@ jobs:
       - name: Complete functional demo through public API
         if: steps.seed.outputs.name == 'demo-functional.sql'
         env:
-          DEMO_SEED_CONFIRM: reset-all-data
+          DEMO_SEED_CONFIRM: ${{ inputs.confirm }}
           GIGHUB_API_BASE_URL: https://api.gighub.store
         run: |
           set -euo pipefail

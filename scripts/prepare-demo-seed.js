@@ -15,6 +15,7 @@ const {
   CONFIRM_FLAG,
   DisposableDatabaseError,
   assertDisposableDatabase,
+  parseEnvFile,
 } = require("./assert-disposable-database");
 
 const DEFAULT_BASE_URL = "http://localhost:8080";
@@ -65,12 +66,12 @@ function log(message) {
 
 function parseOptions(argv = process.argv.slice(2)) {
   const scenarioKey = argv[0];
-  const scenario = SCENARIOS[scenarioKey];
-  if (!scenario) {
+  if (!Object.hasOwn(SCENARIOS, scenarioKey)) {
     throw new DemoSeedError(
       `시나리오를 골라 주세요: ${Object.keys(SCENARIOS).join(", ")}`,
     );
   }
+  const scenario = SCENARIOS[scenarioKey];
 
   const flags = argv.slice(1);
   const allowed = new Set([
@@ -104,6 +105,16 @@ function resolveLocalConfirmation(argv) {
     resetConfirmed,
     guardArgv: localConfirmed ? [...argv, CONFIRM_FLAG] : argv,
   };
+}
+
+function assertLocalResetConfirmation(argv) {
+  const confirmation = resolveLocalConfirmation(argv);
+  if (!confirmation.resetConfirmed) {
+    throw new DemoSeedError(
+      `${RESET_CONFIRM_FLAG} 또는 ${RESET_CONFIRM_VALUE} 확인값이 없습니다.`,
+    );
+  }
+  return confirmation;
 }
 
 /** mysql TSV 출력에서 Compose 진행 문구를 건너뛰고 SEED 요약만 읽습니다. */
@@ -152,20 +163,6 @@ function runSeedService(rootDir, seedFile) {
   return result.stdout;
 }
 
-function parseProperties(contents) {
-  const values = {};
-  for (const line of contents.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const separator = trimmed.indexOf("=");
-    if (separator <= 0) continue;
-    values[trimmed.slice(0, separator).trim()] = trimmed
-      .slice(separator + 1)
-      .trim();
-  }
-  return values;
-}
-
 /**
  * DB 초기화와 파일 저장소 상태가 갈라지지 않도록 로컬 문서도 비웁니다.
  * 설정값이 저장소의 정확한 local-data/documents 경로가 아니면 삭제하지 않습니다.
@@ -178,14 +175,14 @@ function clearLocalDocumentStorage({ rootDir, configPath } = {}) {
     throw new DemoSeedError(`문서 저장소 설정 파일이 없습니다: ${propertiesPath}`);
   }
 
-  const configuredValue = parseProperties(
+  const configuredValue = parseEnvFile(
     fs.readFileSync(propertiesPath, "utf8"),
   )["document.storage.base-path"];
   if (!configuredValue) {
     throw new DemoSeedError("document.storage.base-path 설정이 없습니다.");
   }
 
-  const configured = path.resolve(configuredValue);
+  const configured = path.resolve(rootDir, configuredValue);
   if (configured !== expected) {
     throw new DemoSeedError(
       `문서 삭제 경로가 안전한 로컬 경로와 다릅니다.\n설정: ${configured}\n허용: ${expected}`,
@@ -269,11 +266,12 @@ async function callApi(
   }
 
   collectCookies(jar, response);
-  if (response.status === 204) return null;
-  const text = await response.text();
   if (!response.ok) {
+    const text = await response.text();
     throw new DemoSeedError(`${method} ${apiPath} 응답이 ${response.status}입니다.\n${text}`);
   }
+  if (response.status === 204) return null;
+  const text = await response.text();
   return text ? JSON.parse(text).data : null;
 }
 
@@ -339,6 +337,7 @@ function pageContent(page) {
 async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   const jar = new Map();
   await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
+  const initialWallet = await callApi(baseUrl, jar, "/api/wallet");
 
   const workplaces = await callApi(baseUrl, jar, "/api/workplaces?page=0&size=100");
   const workplace = pageContent(workplaces).find(
@@ -346,6 +345,7 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   );
   if (!workplace) throw new DemoSeedError(`${PRIMARY_WORKPLACE_NAME}을 찾지 못했습니다.`);
 
+  const acceptedWage = 100000;
   const accepted = await createInvitation(baseUrl, jar, workplace.workplaceId, {
     title: "[FUNCTION-API] 김성실 계약·문서 확인",
     workDate: seoulDate(1),
@@ -353,7 +353,7 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
     endTime: "13:00",
     breakMinutes: 30,
     breakPaid: false,
-    dailyWage: 100000,
+    dailyWage: acceptedWage,
   });
   const pending = await createInvitation(baseUrl, jar, workplace.workplaceId, {
     title: "[FUNCTION-API] 이수면 초대 수락 확인",
@@ -400,11 +400,14 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   await logout(baseUrl, jar);
 
   await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
-  const [notifications, documents, wallet] = await Promise.all([
-    callApi(baseUrl, jar, "/api/notifications?page=0&size=100"),
-    callApi(baseUrl, jar, "/api/documents?page=0&size=100"),
-    callApi(baseUrl, jar, "/api/wallet"),
-  ]);
+  // 인증 응답이 Cookie를 회전해도 Jar 갱신 순서가 결정적이도록 순차 호출합니다.
+  const notifications = await callApi(
+    baseUrl,
+    jar,
+    "/api/notifications?page=0&size=100",
+  );
+  const documents = await callApi(baseUrl, jar, "/api/documents?page=0&size=100");
+  const wallet = await callApi(baseUrl, jar, "/api/wallet");
   const notificationTypes = new Set(pageContent(notifications).map(({ notiType }) => notiType));
   for (const required of ["WORK_CASE_CONFIRMED", "ESCROW_HELD", "DOC_SHARED"]) {
     if (!notificationTypes.has(required)) {
@@ -417,7 +420,12 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
       throw new DemoSeedError(`OWNER 문서함에서 ${required}를 확인하지 못했습니다.`);
     }
   }
-  if (wallet.availableBalance !== 1100000 || wallet.lockedBalance !== 300000) {
+  const expectedAvailable = initialWallet.availableBalance - acceptedWage;
+  const expectedLocked = initialWallet.lockedBalance + acceptedWage;
+  if (
+    wallet.availableBalance !== expectedAvailable ||
+    wallet.lockedBalance !== expectedLocked
+  ) {
     throw new DemoSeedError(
       `API 준비 후 OWNER 지갑이 예상과 다릅니다: 가용 ${wallet.availableBalance}, 예치 ${wallet.lockedBalance}`,
     );
@@ -443,24 +451,19 @@ async function prepare({ rootDir, baseUrl, argv, processEnv = process.env }) {
   } else {
     // npm 11은 `npm run ... -- --confirm-local`도 알 수 없는 npm config로 가로챕니다.
     // npm 경로에서는 위치 인자를 받고, 직접 node 실행의 기존 Flag도 계속 지원합니다.
-    const confirmation = resolveLocalConfirmation(argv);
+    const confirmation = assertLocalResetConfirmation(argv);
 
     assertDisposableDatabase({
       rootDir,
       argv: confirmation.guardArgv,
       processEnv,
     });
-    if (!confirmation.resetConfirmed) {
-      throw new DemoSeedError(
-        `${RESET_CONFIRM_FLAG} 또는 ${RESET_CONFIRM_VALUE} 확인값이 없습니다.`,
-      );
-    }
-    const cleared = clearLocalDocumentStorage({ rootDir });
-    log(`로컬 문서 저장소를 비웠습니다: ${cleared}`);
     summary = parseSeedSummary(runSeedService(rootDir, options.scenario.file));
     if (summary.scenario_key !== options.scenarioKey) {
       throw new DemoSeedError("요청한 시나리오와 SQL 결과가 일치하지 않습니다.");
     }
+    const cleared = clearLocalDocumentStorage({ rootDir });
+    log(`로컬 문서 저장소를 비웠습니다: ${cleared}`);
   }
 
   const apiResult = options.scenario.apiSetup
@@ -469,7 +472,11 @@ async function prepare({ rootDir, baseUrl, argv, processEnv = process.env }) {
   return { options, summary, apiResult };
 }
 
-function printResult({ options, summary, apiResult }) {
+function shouldPrintPendingInvitation(processEnv = process.env) {
+  return processEnv.GITHUB_ACTIONS !== "true";
+}
+
+function printResult({ options, summary, apiResult }, processEnv = process.env) {
   console.log(`\n${options.scenario.description} SEED 준비가 끝났습니다.`);
   if (summary) console.log(`  기준 시각       ${summary.seed_now}`);
   console.log(`  OWNER 긱사장     ${OWNER_LOGIN_ID} / ${PASSWORD}`);
@@ -480,11 +487,18 @@ function printResult({ options, summary, apiResult }) {
     console.log(`  사업장 ID        ${apiResult.workplaceId}`);
     console.log(`  김성실 근무 ID   ${apiResult.acceptedWorkCaseId}`);
     console.log(`  보건증 문서 ID   ${apiResult.healthCertificateDocumentId}`);
-    console.log(`  이수면 초대 URL  ${apiResult.pendingInvitation.inviteUrl}`);
-    console.log("  초대 URL은 이 출력 외 파일이나 이슈에 저장하지 마세요.");
+    if (shouldPrintPendingInvitation(processEnv)) {
+      console.log(`  이수면 초대 URL  ${apiResult.pendingInvitation.inviteUrl}`);
+      console.log("  초대 URL은 이 출력 외 파일이나 이슈에 저장하지 마세요.");
+    } else {
+      console.log("  이수면 초대 URL은 Actions 로그에 출력하지 않았습니다.");
+    }
   }
   if (options.scenarioKey === "video-02-check-in" || options.scenarioKey === "functional") {
     console.log("  박잠수 근무는 앱 실행 후 다음 60초 Scheduler 주기에서 NO_SHOW가 됩니다.");
+    if (summary?.late_no_show_at) {
+      console.log(`  이수면 출근 마감 ${summary.late_no_show_at} (KST, 이후에는 SEED 재실행)`);
+    }
   }
   if (options.scenarioKey === "video-03-check-out") {
     console.log("  이수면의 30분 지각 차감 지급은 #424 구현 후 검증합니다.");
@@ -511,9 +525,16 @@ async function main(argv = process.argv.slice(2)) {
 }
 
 if (require.main === module) {
-  main().then((code) => {
-    process.exitCode = code;
-  });
+  main().then(
+    (code) => {
+      process.exitCode = code;
+    },
+    (error) => {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error(`[demo-seed] 예상하지 못한 오류입니다: ${message}`);
+      process.exitCode = 1;
+    },
+  );
 }
 
 module.exports = {
@@ -524,6 +545,7 @@ module.exports = {
   RESET_CONFIRM_VALUE,
   SCENARIOS,
   SKIP_SQL_FLAG,
+  assertLocalResetConfirmation,
   assertProductionReset,
   clearLocalDocumentStorage,
   invitationToken,
@@ -532,4 +554,5 @@ module.exports = {
   parseSeedSummary,
   resolveLocalConfirmation,
   seoulDate,
+  shouldPrintPendingInvitation,
 };

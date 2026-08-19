@@ -134,10 +134,18 @@ INSERT INTO notifications (
 ) VALUES
     (@owner_id, 'WORK_CASE_CONFIRMED', 'WORK_CASE', @functional_b_id,
      @functional_b_id, '근무 확정', '''[FUNCTION] 이수면 지각 출석체크'' 근무가 확정됐어요.', 0, @accepted_at),
+    (@worker_b_id, 'WORK_CASE_CONFIRMED', 'WORK_CASE', @functional_b_id,
+     @functional_b_id, '근무 확정', '''[FUNCTION] 이수면 지각 출석체크'' 근무가 확정됐어요.', 0, @accepted_at),
+    (@owner_id, 'ESCROW_HELD', 'ESCROW', @functional_b_escrow_id,
+     @functional_b_id, '예치 완료', '''[FUNCTION] 이수면 지각 출석체크'' 근무의 임금이 안전하게 예치됐어요.', 0, @accepted_at),
     (@worker_b_id, 'ESCROW_HELD', 'ESCROW', @functional_b_escrow_id,
      @functional_b_id, '예치 완료', '''[FUNCTION] 이수면 지각 출석체크'' 근무의 임금이 안전하게 예치됐어요.', 0, @accepted_at),
     (@owner_id, 'WORK_CASE_CONFIRMED', 'WORK_CASE', @functional_c_id,
      @functional_c_id, '근무 확정', '''[FUNCTION] 박잠수 자동 노쇼'' 근무가 확정됐어요.', 0, DATE_ADD(@accepted_at, INTERVAL 1 SECOND)),
+    (@worker_c_id, 'WORK_CASE_CONFIRMED', 'WORK_CASE', @functional_c_id,
+     @functional_c_id, '근무 확정', '''[FUNCTION] 박잠수 자동 노쇼'' 근무가 확정됐어요.', 0, DATE_ADD(@accepted_at, INTERVAL 1 SECOND)),
+    (@owner_id, 'ESCROW_HELD', 'ESCROW', @functional_c_escrow_id,
+     @functional_c_id, '예치 완료', '''[FUNCTION] 박잠수 자동 노쇼'' 근무의 임금이 안전하게 예치됐어요.', 0, DATE_ADD(@accepted_at, INTERVAL 1 SECOND)),
     (@worker_c_id, 'ESCROW_HELD', 'ESCROW', @functional_c_escrow_id,
      @functional_c_id, '예치 완료', '''[FUNCTION] 박잠수 자동 노쇼'' 근무의 임금이 안전하게 예치됐어요.', 0, DATE_ADD(@accepted_at, INTERVAL 1 SECOND));
 
@@ -175,6 +183,7 @@ SELECT
     @seed_now AS seed_now,
     @workplace_id AS workplace_id,
     @functional_b_id AS attendance_work_case_id,
+    DATE_ADD(@b_start, INTERVAL 1 HOUR) AS late_no_show_at,
     @functional_c_id AS no_show_work_case_id,
     DATE_ADD(@c_start, INTERVAL 1 HOUR) AS no_show_at,
     @owner_available AS owner_available_balance,
