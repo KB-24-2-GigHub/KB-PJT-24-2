@@ -71,6 +71,34 @@ nslookup api.gighub.store
 > 죽으면 회수되지 않은 `/32` 규칙이 남을 수 있다. `gh-actions run <id>` 설명이 붙은
 > 오래된 규칙이 보이면 지운다.
 
+### 2.1 GitHub Actions 자격증명 — OIDC
+
+`/32` 규칙을 넣고 빼는 것이 워크플로가 AWS에 하는 유일한 일이다. 여기에 만료되지
+않는 IAM User Access Key를 쓰면 그 키가 저장소 Secret에 영구히 남는다. 대신 실행마다
+만료되는 임시 세션을 받는다.
+
+AWS 콘솔에서 한 번만 준비한다.
+
+1. **IAM → Identity providers**에 GitHub OIDC Provider를 등록한다.
+   Provider URL은 `https://token.actions.githubusercontent.com`,
+   Audience는 `sts.amazonaws.com`이다.
+2. **Role**을 만들고 신뢰 정책의 `sub`를 이 저장소로 제한한다.
+   기본 통합 브랜치만 배포하므로 `repo:KB-24-2-GigHub/KB-PJT-24-2:ref:refs/heads/dev`
+   형태로 좁힌다. 다른 브랜치에서 실행하면 AssumeRole 단계에서 거부된다.
+3. **권한 정책**은 대상 보안그룹에 대한 `ec2:AuthorizeSecurityGroupIngress`와
+   `ec2:RevokeSecurityGroupIngress` 둘만 준다. 그 이상은 필요 없다.
+4. Role ARN을 저장소 Secret `AWS_ROLE_ARN`에 넣는다.
+
+> **Role의 `MaxSessionDuration`이 워크플로 `timeout-minutes`보다 길어야 한다.**
+> `Close SSH`는 job 마지막에 `if: always()`로 `/32` 규칙을 회수하는데, 세션이 job보다
+> 먼저 만료되면 그 회수가 실패해 22번이 열린 채 남는다. 워크플로가
+> `role-duration-seconds`를 지정하지 않고 Role 값을 따르는 이유가 이것이다.
+> 현재 최장은 `deploy-api.yml`의 25분이므로 기본값 1시간으로 충분하다.
+
+확인은 `Verify AWS OIDC` 워크플로를 수동 실행한다. AssumeRole과 위 두 권한을
+`--dry-run`으로 확인만 하고 보안그룹은 바꾸지 않는다. 배포가 `Open SSH`에서 멈췄을 때
+원인이 자격증명인지 아닌지를 여기서 먼저 가른다.
+
 ## 3. SSH 접속과 잠금
 
 기본 환경 확인:
