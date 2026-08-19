@@ -113,6 +113,7 @@ async function onSubmit() {
   if (!draft.value || !bank.value || submitting.value) return
 
   submitting.value = true
+  ui.startLoading('충전을 처리하고 있어요…')
   requestError.value = ''
   const payload = { ...draft.value, pin: pin.value }
   const submittedAmount = draft.value.amount
@@ -145,6 +146,7 @@ async function onSubmit() {
     ui.toast(info.message, { type: info.type })
   } finally {
     submitting.value = false
+    ui.stopLoading()
   }
 }
 </script>
