@@ -13,6 +13,7 @@ import { useRoute, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
+import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
@@ -760,16 +761,14 @@ async function onApproveSettlement() {
             :error="errors.workDate"
           />
           <div class="field-row">
-            <AppField
+            <AppTimeField
               v-model="form.startTime"
-              type="time"
               label="시작시간"
               required
               :error="errors.startTime"
             />
-            <AppField
+            <AppTimeField
               v-model="form.endTime"
-              type="time"
               label="종료시간"
               required
               :error="errors.endTime"

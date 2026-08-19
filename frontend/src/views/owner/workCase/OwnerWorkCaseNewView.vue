@@ -4,13 +4,14 @@
  * 제목·날짜·시작/종료시간·휴게시간(유급/무급)·일급 입력 → status=DRAFT 생성.
  * 지점 컨텍스트: useWorkplaceStore().selectedId.
  * 연계 API: POST /workplaces/{id}/work-cases  →  @/services/workCases (createWorkCase)
- * 공통: AppField · BaseButton · @/utils/validators
+ * 공통: AppField · AppTimeField · BaseButton · @/utils/validators
  */
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
+import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import { fieldErrorMap } from '@/services/http'
 import { createWorkCase } from '@/services/workCases'
@@ -121,20 +122,13 @@ async function onSubmit() {
         />
 
         <div class="field-row">
-          <AppField
+          <AppTimeField
             v-model="form.startTime"
-            type="time"
             label="시작시간"
             required
             :error="errors.startTime"
           />
-          <AppField
-            v-model="form.endTime"
-            type="time"
-            label="종료시간"
-            required
-            :error="errors.endTime"
-          />
+          <AppTimeField v-model="form.endTime" label="종료시간" required :error="errors.endTime" />
         </div>
 
         <AppField
