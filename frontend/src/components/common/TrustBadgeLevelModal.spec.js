@@ -8,6 +8,11 @@ import { describe, expect, it } from 'vitest'
 
 import TrustBadgeLevelModal from '@/components/common/TrustBadgeLevelModal.vue'
 
+/**
+ * 여기 문구는 실제 서비스 문구를 흉내 낸 테스트 픽스처일 뿐이다. 이 모달은 정의문·기준
+ * 설명을 스스로 만들지 않고 props 로 받은 값을 그대로 그리므로, 진짜 문구는
+ * `BADGE_TYPE`(constants.js) 한 곳에서만 관리되고 여기와는 동기화 대상이 아니다.
+ */
 function mountModal(props = {}) {
   return mount(TrustBadgeLevelModal, {
     props: {
