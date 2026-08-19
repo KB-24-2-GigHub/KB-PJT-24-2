@@ -178,7 +178,17 @@ jobs:
               echo "unexpected document storage path: $resolved" >&2
               exit 1
             fi
-            find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            # 문서는 Tomcat 컨테이너가 자기 UID 로 쓴다. SSH 사용자 권한으로는 지울 수
+            # 없어서 2026-08-19 실행(run 32234708454)이 여기서 Permission denied 로 멈췄다.
+            # 지우지 못한 대상은 컨테이너가 만든 documents/contracts 디렉터리였다.
+            #
+            # 그 실패가 이 Step 에서 끝나지 않는 것이 진짜 문제였다. 뒤따르는 앱 기동 확인과
+            # Complete functional demo through public API 가 전부 건너뛰어져, SQL 은 적용됐는데
+            # 초대 수락·계약서 PDF·보건증이 없는 반쪽 시연 상태로 끝난다.
+            #
+            # 권한 상승은 위 경로 검증을 통과한 뒤에만 한다. 순서를 바꾸면 sudo 가 검증되지
+            # 않은 경로를 지우게 된다.
+            sudo find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           '
 
       - name: Restart application after full demo reset
