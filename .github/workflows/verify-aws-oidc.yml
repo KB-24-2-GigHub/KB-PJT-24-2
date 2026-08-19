@@ -104,8 +104,19 @@ jobs:
           aws-region: ${{ env.AWS_DEFAULT_REGION }}
 
       # 여기까지 왔다면 신뢰 정책은 통과한 것이다. 어떤 Role 을 받았는지 남긴다.
+      #
+      # 이 저장소는 Public 이고 Public 저장소의 Actions 로그는 누구나 볼 수 있다.
+      # get-caller-identity 를 그대로 찍으면 AWS 계정 ID 가 공개된다. 자격증명은
+      # 아니지만 굳이 내보낼 이유도 없으므로, 출력 전에 마스크로 등록한다. Arn 에도
+      # 같은 숫자가 들어 있어 함께 가려진다.
+      #
+      # 마스크 등록이 출력보다 먼저여야 한다. 순서를 바꾸면 이미 찍힌 줄은 가려지지 않는다.
       - name: Show assumed identity
-        run: aws sts get-caller-identity
+        run: |
+          set -euo pipefail
+          identity="$(aws sts get-caller-identity --output json)"
+          echo "::add-mask::$(printf '%s' "${identity}" | jq -r '.Account')"
+          printf '%s' "${identity}" | jq '{UserId, Arn}'
 
       # 신뢰 정책과 권한 정책은 다른 문제다. AssumeRole 이 되어도 보안그룹을 못
       # 바꾸면 배포는 Open SSH 에서 멈춘다. 배포가 실제로 쓰는 두 API 를 확인한다.
