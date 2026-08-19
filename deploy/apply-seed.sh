@@ -30,6 +30,17 @@ case "$SEED_FILE" in
     ;;
 esac
 
+# demo 시드는 전체 애플리케이션 데이터를 지웁니다. Compose 서비스나 Workflow를
+# 우회해 entrypoint를 직접 호출해도 명시적 전체 초기화 확인값 없이는 실행하지 않습니다.
+case "$SEED_FILE" in
+  demo-*.sql)
+    if [ "${DEMO_RESET_CONFIRM:-}" != "reset-all-data" ]; then
+      echo "demo seed requires DEMO_RESET_CONFIRM=reset-all-data" >&2
+      exit 1
+    fi
+    ;;
+esac
+
 case "$FLYWAY_URL" in
   jdbc:mysql://*) ;;
   *)
