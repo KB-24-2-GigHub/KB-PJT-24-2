@@ -13,6 +13,7 @@
     "db:migrate": "docker compose --profile tools run --rm flyway migrate",
     "db:seed:contract": "npm run db:migrate && docker compose --profile tools run --rm seed-contract-test",
     "db:fixture:invite": "npm run db:migrate && node scripts/prepare-invitation-fixture.js --confirm-local",
+    "db:seed:demo": "npm run db:migrate && node scripts/prepare-demo-seed.js",
     "db:backfill:coordinates": "node scripts/backfill-workplace-coordinates.js",
     "lint": "node scripts/run-lint.js all",
     "lint:fe": "node scripts/run-lint.js frontend",
@@ -20,7 +21,7 @@
     "test:fe": "npm --prefix frontend run test:run",
     "build:fe": "npm --prefix frontend run build",
     "format:staged": "lint-staged",
-    "test:harness": "node --test deploy/lambda/slack-alert/index.test.mjs scripts/apply-seed.test.js scripts/assert-disposable-database.test.js scripts/backfill-workplace-coordinates.test.js scripts/check-project-guardrails.test.js scripts/prepare-invitation-fixture.test.js scripts/project-automation-workflow.test.js scripts/resolve-seed-file.test.js scripts/run-precommit.test.js",
+    "test:harness": "node --test deploy/lambda/slack-alert/index.test.mjs scripts/apply-seed.test.js scripts/assert-disposable-database.test.js scripts/backfill-workplace-coordinates.test.js scripts/check-project-guardrails.test.js scripts/prepare-demo-seed.test.js scripts/prepare-invitation-fixture.test.js scripts/project-automation-workflow.test.js scripts/resolve-seed-file.test.js scripts/run-precommit.test.js",
     "check": "npm run check:guardrails && npm run test:harness && npm run test:fe && npm run build:fe && npm run lint"
   },
   "devDependencies": {
