@@ -12,7 +12,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
-import AppDateField from '@/components/common/AppDateField.vue'
+import AppDateField from '@/components/common/AppDateFieldCalendar.vue'
 import AppField from '@/components/common/AppField.vue'
 import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'

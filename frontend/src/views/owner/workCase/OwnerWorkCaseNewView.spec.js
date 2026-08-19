@@ -2,7 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-import AppDateField from '@/components/common/AppDateField.vue'
+import AppDateField from '@/components/common/AppDateFieldCalendar.vue'
 import AppTimeField from '@/components/common/AppTimeField.vue'
 import OwnerWorkCaseNewView from '@/views/owner/workCase/OwnerWorkCaseNewView.vue'
 import { useWorkplaceStore } from '@/stores/workplace'
