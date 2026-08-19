@@ -130,6 +130,16 @@ export const useNotificationsStore = defineStore('notifications', () => {
       stream = null
       return
     }
+    /*
+     * 연결될 때마다 개수를 다시 읽는다 (#430).
+     *
+     * EventSource 는 끊기면 스스로 다시 붙지만, 끊겨 있던 동안 발생한 알림의 신호는 소급해서
+     * 오지 않는다. 그 구간의 알림은 배지에 영영 반영되지 않아 새로고침해야만 맞게 된다.
+     * open 은 최초 연결과 재연결 모두에서 발생하므로 여기서 한 번 맞추면 그 구멍이 닫힌다.
+     */
+    stream.addEventListener('open', () => {
+      loadUnreadCount()
+    })
     stream.addEventListener('notification', () => {
       loadUnreadCount()
       // 모달이 열려 있을 때만 목록을 다시 읽는다. 닫혀 있으면 열 때 어차피 조회한다.
@@ -142,9 +152,18 @@ export const useNotificationsStore = defineStore('notifications', () => {
     stream = null
   }
 
+  /**
+   * 모달을 열 때 목록과 배지를 함께 맞춘다 (#430).
+   *
+   * 목록만 조회하면 "목록은 최신인데 배지는 옛 값"이 남는다. 배지를 서버에서 다시 읽는 곳이
+   * 상단 바 마운트와 SSE 신호뿐이라, 신호를 놓친 사이 쌓인 알림은 새로고침 전까지 배지에
+   * 반영되지 않는다. 모달을 여는 것은 사용자가 알림 상태를 확인하겠다는 시점이므로 여기서
+   * 맞춘다. SSE 가 죽어 있어도 이 경로만으로 정합성이 회복된다.
+   */
   function open() {
     isOpen.value = true
     load()
+    loadUnreadCount()
   }
   function close() {
     isOpen.value = false

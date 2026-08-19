@@ -260,6 +260,23 @@ describe('notifications store', () => {
   })
 
   /*
+   * 목록만 조회하면 "목록은 최신인데 배지는 옛 값"이 남는다 (#430).
+   *
+   * 배지를 서버에서 다시 읽는 곳이 상단 바 마운트와 SSE 신호뿐이라, 신호를 놓친 사이 쌓인
+   * 알림은 새로고침 전까지 배지에 반영되지 않는다.
+   */
+  it('모달을 열면 배지도 서버 값으로 맞춘다', async () => {
+    listNotifications.mockResolvedValue(page([notification(), notification({ notificationId: 2 })]))
+    getUnreadCount.mockResolvedValue({ unreadCount: 8 })
+    const store = useNotificationsStore()
+
+    store.open()
+    await vi.waitFor(() => expect(store.unreadCount).toBe(8))
+
+    expect(getUnreadCount).toHaveBeenCalledTimes(1)
+  })
+
+  /*
    * 실시간 구독(#386).
    *
    * 서버가 보내는 것은 "다시 조회하라"는 신호뿐이다. 스트림에서 알림 본문을 읽어 화면에 넣으면
@@ -281,6 +298,27 @@ describe('notifications store', () => {
       globalThis.EventSource = function EventSourceStub() {}
       return source
     }
+
+    /*
+     * EventSource 는 끊기면 스스로 다시 붙지만, 끊겨 있던 동안 발생한 알림의 신호는 소급해서
+     * 오지 않는다 (#430). open 은 최초 연결과 재연결 모두에서 발생하므로 그때마다 맞춘다.
+     */
+    it('연결될 때마다 배지를 다시 조회한다', async () => {
+      const source = fakeEventSource()
+      getUnreadCount.mockResolvedValue({ unreadCount: 5 })
+      const store = useNotificationsStore()
+
+      store.connect()
+      expect(getUnreadCount).not.toHaveBeenCalled()
+
+      source.emit('open')
+      await vi.waitFor(() => expect(store.unreadCount).toBe(5))
+
+      // 재연결도 같은 이벤트를 거친다. 끊긴 동안 쌓인 알림이 여기서 반영된다.
+      getUnreadCount.mockResolvedValue({ unreadCount: 12 })
+      source.emit('open')
+      await vi.waitFor(() => expect(store.unreadCount).toBe(12))
+    })
 
     it('신호를 받으면 배지를 다시 조회한다', async () => {
       const source = fakeEventSource()
