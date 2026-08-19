@@ -4,6 +4,7 @@ import { ref } from 'vue'
 import {
   getUnreadCount,
   listNotifications,
+  markAllNotificationsRead,
   markNotificationRead,
   openNotificationStream
 } from '@/services/notifications'
@@ -22,13 +23,21 @@ export const useNotificationsStore = defineStore('notifications', () => {
   const loadError = ref(false)
   // 처리 중인 notificationId. 같은 항목을 연달아 눌러도 요청과 개수 차감을 한 번만 만든다.
   const readInFlight = new Set()
+  // 전체 읽음 진행 중 여부. 버튼을 연달아 눌러도 요청을 한 번만 만든다.
+  let markAllInFlight = false
   // 실시간 구독 연결. 상단 바가 여러 번 마운트돼도 하나만 유지한다.
   let stream = null
 
+  /**
+   * 목록은 안읽음만 조회한다(SPEC-423-01).
+   *
+   * 읽은 항목을 화면 배열에서만 걷어내면 모달을 닫았다 열 때 이 조회가 전체를 다시 받아와
+   * 되살아난다. "누르면 사라진다"를 유지하려면 서버 조회 자체가 안읽음으로 좁혀져야 한다.
+   */
   async function load() {
     loading.value = true
     try {
-      const page = await listNotifications()
+      const page = await listNotifications({ unreadOnly: true })
       items.value = page?.content ?? []
       loadError.value = false
     } catch {
@@ -58,6 +67,9 @@ export const useNotificationsStore = defineStore('notifications', () => {
    *
    * 화면 상태는 응답 뒤에 바뀌므로 `isRead` 검사만으로는 같은 항목을 빠르게 두 번 눌렀을 때
    * 두 호출이 모두 통과해 개수가 두 번 줄어든다. 처리 중인 식별자를 따로 들고 막는다.
+   *
+   * 성공하면 항목을 목록에서 제거한다(SPEC-423-01). 목록은 안읽음만 담으므로 읽은 항목이
+   * 남아 있을 자리가 없다.
    */
   async function markRead(notificationId) {
     const target = items.value.find((item) => item.notificationId === notificationId)
@@ -72,9 +84,31 @@ export const useNotificationsStore = defineStore('notifications', () => {
     } finally {
       readInFlight.delete(notificationId)
     }
-    target.isRead = true
-    target.readAt = new Date().toISOString()
+    items.value = items.value.filter((item) => item.notificationId !== notificationId)
     unreadCount.value = Math.max(0, unreadCount.value - 1)
+  }
+
+  /**
+   * 전체 읽음 (SPEC-423-01).
+   *
+   * 항목마다 `markRead` 를 부르지 않는다. 안읽음이 여러 Page 에 걸쳐 있으면 화면에 없는
+   * 알림은 영영 남고, 배지는 0이 되지 않는다. 서버가 한 번에 처리한다.
+   *
+   * 서버 성공 뒤에만 화면을 비운다. 단건과 같은 이유다.
+   */
+  async function markAllRead() {
+    if (markAllInFlight) return
+    markAllInFlight = true
+    try {
+      await markAllNotificationsRead()
+    } catch {
+      // 실패해도 목록은 그대로 둔다. 다시 누르면 재시도된다.
+      return
+    } finally {
+      markAllInFlight = false
+    }
+    items.value = []
+    unreadCount.value = 0
   }
 
   /**
@@ -96,6 +130,16 @@ export const useNotificationsStore = defineStore('notifications', () => {
       stream = null
       return
     }
+    /*
+     * 연결될 때마다 개수를 다시 읽는다 (#430).
+     *
+     * EventSource 는 끊기면 스스로 다시 붙지만, 끊겨 있던 동안 발생한 알림의 신호는 소급해서
+     * 오지 않는다. 그 구간의 알림은 배지에 영영 반영되지 않아 새로고침해야만 맞게 된다.
+     * open 은 최초 연결과 재연결 모두에서 발생하므로 여기서 한 번 맞추면 그 구멍이 닫힌다.
+     */
+    stream.addEventListener('open', () => {
+      loadUnreadCount()
+    })
     stream.addEventListener('notification', () => {
       loadUnreadCount()
       // 모달이 열려 있을 때만 목록을 다시 읽는다. 닫혀 있으면 열 때 어차피 조회한다.
@@ -108,9 +152,18 @@ export const useNotificationsStore = defineStore('notifications', () => {
     stream = null
   }
 
+  /**
+   * 모달을 열 때 목록과 배지를 함께 맞춘다 (#430).
+   *
+   * 목록만 조회하면 "목록은 최신인데 배지는 옛 값"이 남는다. 배지를 서버에서 다시 읽는 곳이
+   * 상단 바 마운트와 SSE 신호뿐이라, 신호를 놓친 사이 쌓인 알림은 새로고침 전까지 배지에
+   * 반영되지 않는다. 모달을 여는 것은 사용자가 알림 상태를 확인하겠다는 시점이므로 여기서
+   * 맞춘다. SSE 가 죽어 있어도 이 경로만으로 정합성이 회복된다.
+   */
   function open() {
     isOpen.value = true
     load()
+    loadUnreadCount()
   }
   function close() {
     isOpen.value = false
@@ -125,6 +178,7 @@ export const useNotificationsStore = defineStore('notifications', () => {
     load,
     loadUnreadCount,
     markRead,
+    markAllRead,
     connect,
     disconnect,
     open,

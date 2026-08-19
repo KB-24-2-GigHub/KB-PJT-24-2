@@ -11,12 +11,14 @@ vi.mock('@/services/notifications', () => ({
   listNotifications: vi.fn(),
   getUnreadCount: vi.fn(),
   markNotificationRead: vi.fn(),
+  markAllNotificationsRead: vi.fn(),
   openNotificationStream: vi.fn()
 }))
 
 import {
   getUnreadCount,
   listNotifications,
+  markAllNotificationsRead,
   markNotificationRead,
   openNotificationStream
 } from '@/services/notifications'
@@ -81,9 +83,22 @@ describe('notifications store', () => {
     expect(getUnreadCount).toHaveBeenCalledTimes(1)
   })
 
-  it('읽음 처리에 성공하면 항목과 개수를 함께 줄인다', async () => {
+  /*
+   * 목록은 안읽음만 담으므로(SPEC-423-01) 읽은 항목이 남아 있을 자리가 없다.
+   * 화면에서 지우는 것만으로는 부족하고 조회 자체가 좁혀져야 다시 열 때 되살아나지 않는다.
+   */
+  it('목록을 안읽음만 조회한다', async () => {
     listNotifications.mockResolvedValue(page([notification()]))
-    getUnreadCount.mockResolvedValue({ unreadCount: 1 })
+    const store = useNotificationsStore()
+
+    await store.load()
+
+    expect(listNotifications).toHaveBeenCalledWith({ unreadOnly: true })
+  })
+
+  it('읽음 처리에 성공하면 항목을 목록에서 빼고 개수도 줄인다', async () => {
+    listNotifications.mockResolvedValue(page([notification(), notification({ notificationId: 2 })]))
+    getUnreadCount.mockResolvedValue({ unreadCount: 2 })
     markNotificationRead.mockResolvedValue(undefined)
     const store = useNotificationsStore()
     await store.load()
@@ -92,9 +107,8 @@ describe('notifications store', () => {
     await store.markRead(1)
 
     expect(markNotificationRead).toHaveBeenCalledWith(1)
-    expect(store.items[0].isRead).toBe(true)
-    expect(store.items[0].readAt).not.toBeNull()
-    expect(store.unreadCount).toBe(0)
+    expect(store.items.map((item) => item.notificationId)).toEqual([2])
+    expect(store.unreadCount).toBe(1)
   })
 
   /*
@@ -111,6 +125,7 @@ describe('notifications store', () => {
 
     await expect(store.markRead(1)).resolves.toBeUndefined()
 
+    expect(store.items).toHaveLength(1)
     expect(store.items[0].isRead).toBe(false)
     expect(store.unreadCount).toBe(1)
   })
@@ -138,7 +153,7 @@ describe('notifications store', () => {
     await Promise.all([first, second])
 
     expect(markNotificationRead).toHaveBeenCalledTimes(1)
-    expect(store.items[0].isRead).toBe(true)
+    expect(store.items).toHaveLength(0)
     expect(store.unreadCount).toBe(1)
   })
 
@@ -150,6 +165,65 @@ describe('notifications store', () => {
     await store.markRead(1)
 
     expect(markNotificationRead).not.toHaveBeenCalled()
+  })
+
+  /*
+   * 전체 읽음 (SPEC-423-01).
+   *
+   * 항목마다 markRead 를 부르면 안읽음이 여러 Page 에 걸쳐 있을 때 화면에 없는 알림이 남고
+   * 배지가 0이 되지 않는다. 서버가 한 번에 처리한다.
+   */
+  describe('전체 읽음', () => {
+    it('한 번의 호출로 목록을 비우고 배지를 0으로 만든다', async () => {
+      listNotifications.mockResolvedValue(
+        page([notification(), notification({ notificationId: 2 })])
+      )
+      getUnreadCount.mockResolvedValue({ unreadCount: 9 })
+      markAllNotificationsRead.mockResolvedValue(undefined)
+      const store = useNotificationsStore()
+      await store.load()
+      await store.loadUnreadCount()
+
+      await store.markAllRead()
+
+      expect(markAllNotificationsRead).toHaveBeenCalledTimes(1)
+      expect(markNotificationRead).not.toHaveBeenCalled()
+      expect(store.items).toEqual([])
+      expect(store.unreadCount).toBe(0)
+    })
+
+    it('실패하면 목록과 배지를 그대로 둔다', async () => {
+      listNotifications.mockResolvedValue(page([notification()]))
+      getUnreadCount.mockResolvedValue({ unreadCount: 1 })
+      markAllNotificationsRead.mockRejectedValue({ response: { status: 500 } })
+      const store = useNotificationsStore()
+      await store.load()
+      await store.loadUnreadCount()
+
+      await expect(store.markAllRead()).resolves.toBeUndefined()
+
+      expect(store.items).toHaveLength(1)
+      expect(store.unreadCount).toBe(1)
+    })
+
+    it('연달아 눌러도 요청을 한 번만 만든다', async () => {
+      listNotifications.mockResolvedValue(page([notification()]))
+      let resolveAll
+      markAllNotificationsRead.mockReturnValue(
+        new Promise((resolve) => {
+          resolveAll = resolve
+        })
+      )
+      const store = useNotificationsStore()
+      await store.load()
+
+      const first = store.markAllRead()
+      const second = store.markAllRead()
+      resolveAll()
+      await Promise.all([first, second])
+
+      expect(markAllNotificationsRead).toHaveBeenCalledTimes(1)
+    })
   })
 
   it('목록 조회가 실패해도 던지지 않고 오류 상태만 남긴다', async () => {
@@ -186,6 +260,23 @@ describe('notifications store', () => {
   })
 
   /*
+   * 목록만 조회하면 "목록은 최신인데 배지는 옛 값"이 남는다 (#430).
+   *
+   * 배지를 서버에서 다시 읽는 곳이 상단 바 마운트와 SSE 신호뿐이라, 신호를 놓친 사이 쌓인
+   * 알림은 새로고침 전까지 배지에 반영되지 않는다.
+   */
+  it('모달을 열면 배지도 서버 값으로 맞춘다', async () => {
+    listNotifications.mockResolvedValue(page([notification(), notification({ notificationId: 2 })]))
+    getUnreadCount.mockResolvedValue({ unreadCount: 8 })
+    const store = useNotificationsStore()
+
+    store.open()
+    await vi.waitFor(() => expect(store.unreadCount).toBe(8))
+
+    expect(getUnreadCount).toHaveBeenCalledTimes(1)
+  })
+
+  /*
    * 실시간 구독(#386).
    *
    * 서버가 보내는 것은 "다시 조회하라"는 신호뿐이다. 스트림에서 알림 본문을 읽어 화면에 넣으면
@@ -207,6 +298,27 @@ describe('notifications store', () => {
       globalThis.EventSource = function EventSourceStub() {}
       return source
     }
+
+    /*
+     * EventSource 는 끊기면 스스로 다시 붙지만, 끊겨 있던 동안 발생한 알림의 신호는 소급해서
+     * 오지 않는다 (#430). open 은 최초 연결과 재연결 모두에서 발생하므로 그때마다 맞춘다.
+     */
+    it('연결될 때마다 배지를 다시 조회한다', async () => {
+      const source = fakeEventSource()
+      getUnreadCount.mockResolvedValue({ unreadCount: 5 })
+      const store = useNotificationsStore()
+
+      store.connect()
+      expect(getUnreadCount).not.toHaveBeenCalled()
+
+      source.emit('open')
+      await vi.waitFor(() => expect(store.unreadCount).toBe(5))
+
+      // 재연결도 같은 이벤트를 거친다. 끊긴 동안 쌓인 알림이 여기서 반영된다.
+      getUnreadCount.mockResolvedValue({ unreadCount: 12 })
+      source.emit('open')
+      await vi.waitFor(() => expect(store.unreadCount).toBe(12))
+    })
 
     it('신호를 받으면 배지를 다시 조회한다', async () => {
       const source = fakeEventSource()

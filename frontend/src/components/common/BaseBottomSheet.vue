@@ -6,8 +6,12 @@
  * 사용:
  *   <BaseBottomSheet :open="open" title="필터" @close="open = false">
  *     ...본문...
+ *     <template #headerAction> ...제목 옆 보조 동작... </template>
  *     <template #footer> ...액션 버튼... </template>
  *   </BaseBottomSheet>
+ *
+ * `headerAction` 은 닫기 버튼 왼쪽에 놓인다. 목록 전체에 걸리는 동작(예: 알림 모두 읽음)은
+ * 본문과 함께 스크롤되면 안 되므로 헤더에 둔다.
  */
 import { X } from 'lucide-vue-next'
 
@@ -26,9 +30,12 @@ const emit = defineEmits(['close'])
         <div class="sheet" role="dialog" aria-modal="true">
           <header class="sheet-head">
             <h2 class="sheet-title">{{ title }}</h2>
-            <button type="button" class="close" aria-label="닫기" @click="emit('close')">
-              <X :size="22" />
-            </button>
+            <div class="sheet-actions">
+              <slot name="headerAction" />
+              <button type="button" class="close" aria-label="닫기" @click="emit('close')">
+                <X :size="22" />
+              </button>
+            </div>
           </header>
 
           <div class="sheet-body">
@@ -76,6 +83,11 @@ const emit = defineEmits(['close'])
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
   color: var(--color-text);
+}
+.sheet-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }
 .close {
   color: var(--color-text-sub);

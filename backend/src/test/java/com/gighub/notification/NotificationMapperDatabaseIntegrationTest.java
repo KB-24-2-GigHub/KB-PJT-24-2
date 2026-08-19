@@ -57,7 +57,7 @@ class NotificationMapperDatabaseIntegrationTest {
                 insert(mapper, ownerId, NotificationType.SETTLED, 8801L, workCaseId);
 
                 List<NotificationRow> workerPage =
-                        mapper.findPageByRecipient(workerId, 20, 0);
+                        mapper.findPageByRecipient(workerId, 20, 0, false);
                 assertEquals(2, workerPage.size(), "본인 알림만 나와야 합니다.");
                 // 최신순이므로 나중에 넣은 SETTLED가 앞에 온다.
                 assertEquals(NotificationType.SETTLED.name(), workerPage.get(0).getNotiType());
@@ -67,7 +67,7 @@ class NotificationMapperDatabaseIntegrationTest {
                 assertEquals(workCaseId, workerPage.get(0).getWorkCaseId());
                 assertFalse(workerPage.get(0).getIsRead());
                 assertNull(workerPage.get(0).getReadAt());
-                assertEquals(2, mapper.countByRecipient(workerId));
+                assertEquals(2, mapper.countByRecipient(workerId, false));
                 assertEquals(2, mapper.countUnreadByRecipient(workerId));
 
                 long targetId = workerPage.get(0).getNotificationId();
@@ -81,12 +81,35 @@ class NotificationMapperDatabaseIntegrationTest {
                 assertEquals(0, mapper.existsForRecipient(targetId, ownerId));
                 assertEquals(1, mapper.existsForRecipient(targetId, workerId));
 
-                NotificationRow read = mapper.findPageByRecipient(workerId, 20, 0).stream()
+                NotificationRow read = mapper.findPageByRecipient(workerId, 20, 0, false).stream()
                         .filter(row -> row.getNotificationId().equals(targetId))
                         .findFirst()
                         .orElseThrow();
                 assertTrue(read.getIsRead());
                 assertNotNull(read.getReadAt());
+
+                // unreadOnly 는 읽은 알림을 빼고, 개수도 같은 조건으로 센다(SPEC-423-01).
+                List<NotificationRow> unreadPage =
+                        mapper.findPageByRecipient(workerId, 20, 0, true);
+                assertEquals(1, unreadPage.size());
+                assertFalse(unreadPage.get(0).getIsRead());
+                assertEquals(1, mapper.countByRecipient(workerId, true));
+
+                // 전체 읽음은 남은 안읽음만 갱신한다. 이미 읽은 행은 대상이 아니다.
+                assertEquals(1, mapper.markAllRead(workerId));
+                assertEquals(0, mapper.countUnreadByRecipient(workerId));
+                assertEquals(0, mapper.findPageByRecipient(workerId, 20, 0, true).size());
+
+                // 먼저 읽은 알림의 read_at 이 전체 읽음으로 덮이지 않았다.
+                NotificationRow reReadTarget =
+                        mapper.findPageByRecipient(workerId, 20, 0, false).stream()
+                                .filter(row -> row.getNotificationId().equals(targetId))
+                                .findFirst()
+                                .orElseThrow();
+                assertEquals(read.getReadAt(), reReadTarget.getReadAt());
+
+                // 전체 읽음이 타인 알림을 건드리지 않는다.
+                assertEquals(1, mapper.countUnreadByRecipient(ownerId));
             } finally {
                 deleteFixtures(jdbcTemplate, workCaseId, workplaceId, workerLoginId, ownerLoginId);
             }
