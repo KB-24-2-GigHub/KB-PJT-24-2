@@ -38,6 +38,7 @@ const BADGE = {
   badgeType: 'TRUST_WORKER',
   level: 1,
   recentCount: 12,
+  normalCount: 11,
   remainingToNextLevel: 8,
   criterionLabel: '성실근로',
   criterionDesc:
@@ -133,21 +134,25 @@ describe('WorkerMyPageView', () => {
       expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('60')
     })
 
-    it('WORKER 정의문을 서버 진행 설명문과 함께 보여준다', async () => {
+    it('정상 건수를 구조화된 문구로 보여준다', async () => {
       getBadge.mockResolvedValue({ ...BADGE })
 
       const wrapper = mount(WorkerMyPageView)
       await flushPromises()
 
-      expect(wrapper.find('.badge-desc').text()).toBe(BADGE.criterionDesc)
-      expect(wrapper.find('.badge-definition').text()).toContain('성실근로란')
+      // normalPercent = round(11/12*100) = 92
+      expect(wrapper.find('.badge-counts').text()).toBe('누적 근로 12건 중 성실근로 11건 (92%)')
     })
+
+    // FE 정의문(*성실근로란?…)은 카드가 아니라 레벨 설명 모달(TrustBadgeLevelModal) 맨 위에
+    // 있다 — 그 계약은 TrustBadgeLevelModal.spec.js 가 지킨다.
 
     it('미부여(0단계)는 오류가 아니라 남은 건수를 안내한다', async () => {
       getBadge.mockResolvedValue({
         ...BADGE,
         level: 0,
         recentCount: 0,
+        normalCount: 0,
         remainingToNextLevel: 10,
         criterionDesc: '누적 0건 중 정상 0건입니다.'
       })
@@ -157,7 +162,10 @@ describe('WorkerMyPageView', () => {
 
       expect(wrapper.find('.badge-slot').exists()).toBe(true)
       expect(wrapper.find('.badge-notice').exists()).toBe(false)
-      expect(wrapper.find('.level-remaining').text()).toBe('다음 레벨 Lv.1까지 성실근로 10건 남음')
+      // 다음 등급(Lv.1) 문턱은 누적 10건·정상 비율 80%다.
+      expect(wrapper.find('.level-remaining').text()).toBe(
+        '다음 Lv.1까지 근무 10건, 성실근로 80%이상 유지 필요'
+      )
     })
 
     /*
