@@ -47,6 +47,7 @@ function isApprovedShape(data) {
   if (!Number.isInteger(data.level) || data.level < 0 || data.level > MAX_LEVEL) return false
   if (!Number.isInteger(data.recentCount) || data.recentCount < 0) return false
   if (!Number.isInteger(data.normalCount) || data.normalCount < 0) return false
+  if (data.normalCount > data.recentCount) return false
   if (!Number.isInteger(data.remainingToNextLevel) || data.remainingToNextLevel < 0) return false
   return typeof data.criterionLabel === 'string' && data.criterionLabel.trim() !== ''
 }

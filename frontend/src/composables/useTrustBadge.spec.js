@@ -41,7 +41,7 @@ describe('useTrustBadge', () => {
   describe('등급 경계', () => {
     it('이력이 없으면 오류가 아니라 미부여(0단계)다', async () => {
       const badge = await loadWorkerBadge(
-        response({ level: 0, recentCount: 0, remainingToNextLevel: 10 })
+        response({ level: 0, recentCount: 0, normalCount: 0, remainingToNextLevel: 10 })
       )
 
       expect(badge.state.value).toBe(BADGE_STATE.READY)
@@ -53,7 +53,7 @@ describe('useTrustBadge', () => {
 
     it('1단계 문턱 직전(누적 9건)은 아직 0단계이고 진행률만 오른다', async () => {
       const badge = await loadWorkerBadge(
-        response({ level: 0, recentCount: 9, remainingToNextLevel: 1 })
+        response({ level: 0, recentCount: 9, normalCount: 8, remainingToNextLevel: 1 })
       )
 
       expect(badge.level.value).toBe(0)
@@ -63,7 +63,7 @@ describe('useTrustBadge', () => {
 
     it('누적 10건 1단계는 다음 문턱 20건을 기준으로 진행률을 보인다', async () => {
       const badge = await loadWorkerBadge(
-        response({ level: 1, recentCount: 10, remainingToNextLevel: 10 })
+        response({ level: 1, recentCount: 10, normalCount: 9, remainingToNextLevel: 10 })
       )
 
       expect(badge.progressPercent.value).toBe(50)
@@ -220,6 +220,7 @@ describe('useTrustBadge', () => {
       ['음수 누적 건수', response({ recentCount: -1 })],
       ['정상 건수 누락', response({ normalCount: undefined })],
       ['음수 정상 건수', response({ normalCount: -1 })],
+      ['정상 건수가 누적 건수를 초과', response({ recentCount: 10, normalCount: 15 })],
       ['남은 건수 누락', response({ remainingToNextLevel: null })],
       ['빈 criterionLabel', response({ criterionLabel: '  ' })],
       // 객체 리터럴 상속 프로퍼티는 truthy 라, 브래킷 조회로 멤버십을 보면 통과해 버린다.
