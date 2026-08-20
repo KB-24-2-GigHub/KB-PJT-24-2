@@ -53,24 +53,24 @@ describe('OwnerAttendanceView 요약 카드', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const cards = wrapper.findAll('.stat')
+    const cards = wrapper.findAll('.stat-pill')
     const byLabel = Object.fromEntries(
       cards.map((card) => [card.find('.stat-label').text(), card.find('.stat-value').text().trim()])
     )
 
-    expect(byLabel['퇴근 확인 필요']).toBe('5')
+    expect(byLabel['퇴근 미확인']).toBe('5')
     expect(byLabel['근무완료']).toBe('6')
     expect(byLabel['노쇼']).toBe('7')
   })
 
-  it('퇴근 확인 필요 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
+  it('퇴근 미확인 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
     const wrapper = mountView()
     await flushPromises()
     listWorkCases.mockClear()
 
     const card = wrapper
-      .findAll('.stat')
-      .find((c) => c.find('.stat-label').text() === '퇴근 확인 필요')
+      .findAll('.stat-pill')
+      .find((c) => c.find('.stat-label').text() === '퇴근 미확인')
     await card.trigger('click')
     await flushPromises()
 
@@ -148,8 +148,8 @@ describe('OwnerAttendanceView 빈 결과', () => {
     await flushPromises()
 
     const card = wrapper
-      .findAll('.stat')
-      .find((c) => c.find('.stat-label').text() === '퇴근 확인 필요')
+      .findAll('.stat-pill')
+      .find((c) => c.find('.stat-label').text() === '퇴근 미확인')
     await card.trigger('click')
     await flushPromises()
 

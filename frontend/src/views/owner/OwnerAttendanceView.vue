@@ -174,6 +174,33 @@ const isFiltered = computed(() => Object.keys(appliedFilter.value).length > 0)
 const statusLabel = (status) => workCaseStatusLabel(status)
 const statusColor = (status) => workCaseStatusColor(status)
 
+/* ---- 요약 7종 배치 -----------------------------------------------------
+ * WORK_CASE_SUMMARY(단일 소스)의 순서는 상태 전이 순서(미배정→계약완료→근무예정→근무중
+ * →퇴근 미확인→근무완료→노쇼)다. 화면에는 그 순서를 그대로 쓰지 않고 두 줄로 나눠
+ * 배치한다 — 위 줄은 "진행 중" 4종(미배정·계약완료·근무예정·근무중), 아래 줄은
+ * "완료·이탈" 3종(근무완료·노쇼·퇴근 미확인) + 전체 합계. 카운트를 나누는 배치만이고
+ * 기간 필터·API 계약은 그대로 둔다(#412가 다루는 영역). */
+const bucketByKey = (key) => WORK_CASE_SUMMARY.find((b) => b.key === key)
+const summaryInProgress = computed(() =>
+  ['draft', 'accepted', 'ready', 'inProgress'].map(bucketByKey)
+)
+const summaryPast = computed(() => ['completed', 'noShow', 'checkOutMissing'].map(bucketByKey))
+
+/** 요약 7종 전체 합계 — "전체" pill의 카운트이자, 눌렀을 때 돌아갈 상태 필터 없음을 뜻한다. */
+const totalCount = computed(() =>
+  WORK_CASE_SUMMARY.reduce((sum, bucket) => sum + (summary.value[bucket.key] ?? 0), 0)
+)
+const isAllActive = computed(() => !appliedFilter.value.status)
+
+/** "전체" pill — 걸린 상태 필터를 지운다(이미 없으면 아무 것도 하지 않는다). */
+function clearStatusFilter() {
+  if (!appliedFilter.value.status) return
+  const next = { ...appliedFilter.value }
+  delete next.status
+  appliedFilter.value = next
+  load()
+}
+
 const listTitle = computed(() =>
   appliedFilter.value.status ? `${statusLabel(appliedFilter.value.status)} 근무` : '근무 목록'
 )
@@ -258,22 +285,55 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
       캘린더)만 스크롤한다. AppTopBar 바로 밑에 멈추도록 sticky 로 잡는다.
     -->
     <div class="sticky-head">
-      <!-- 상태별 요약 7종 — 카드를 누르면 해당 상태만, 다시 누르면 전체를 본다 -->
+      <!--
+        상태별 요약 7종 — pill을 누르면 해당 상태만, 다시 누르면 전체를 본다.
+        위 줄(진행중·조치 필요 5종) / 아래 줄(지나간 기록 2종)로 나눠 배치한다 — 순서는
+        WORK_CASE_SUMMARY(상태 전이 순서)를 그대로 따른다.
+      -->
       <section class="summary">
-        <button
-          v-for="bucket in WORK_CASE_SUMMARY"
-          :key="bucket.key"
-          type="button"
-          class="stat"
-          :class="{ active: appliedFilter.status === bucket.status }"
-          :aria-pressed="appliedFilter.status === bucket.status"
-          @click="toggleStatus(bucket.status)"
-        >
-          <span class="stat-label">{{ statusLabel(bucket.status) }}</span>
-          <strong class="stat-value" :style="{ color: statusColor(bucket.status) }">
-            {{ summary[bucket.key] ?? 0 }}
-          </strong>
-        </button>
+        <div class="summary-row">
+          <button
+            v-for="bucket in summaryInProgress"
+            :key="bucket.key"
+            type="button"
+            class="stat-pill"
+            :class="{ active: appliedFilter.status === bucket.status }"
+            :aria-pressed="appliedFilter.status === bucket.status"
+            @click="toggleStatus(bucket.status)"
+          >
+            <span class="stat-label">{{ statusLabel(bucket.status) }}</span>
+            <strong class="stat-value" :style="{ color: statusColor(bucket.status) }">
+              {{ summary[bucket.key] ?? 0 }}
+            </strong>
+          </button>
+        </div>
+        <div class="summary-row summary-row--past">
+          <button
+            v-for="bucket in summaryPast"
+            :key="bucket.key"
+            type="button"
+            class="stat-pill"
+            :class="{ active: appliedFilter.status === bucket.status }"
+            :aria-pressed="appliedFilter.status === bucket.status"
+            @click="toggleStatus(bucket.status)"
+          >
+            <span class="stat-label">{{ statusLabel(bucket.status) }}</span>
+            <strong class="stat-value" :style="{ color: statusColor(bucket.status) }">
+              {{ summary[bucket.key] ?? 0 }}
+            </strong>
+          </button>
+          <!-- 전체 합계 — 상태 필터를 지우고 전체를 본다. 색을 다르게 둬 상태 pill과 구분한다. -->
+          <button
+            type="button"
+            class="stat-pill stat-pill--total"
+            :class="{ active: isAllActive }"
+            :aria-pressed="isAllActive"
+            @click="clearStatusFilter"
+          >
+            <span class="stat-label">전체</span>
+            <strong class="stat-value">{{ totalCount }}</strong>
+          </button>
+        </div>
       </section>
 
       <!-- 보기 방식 전환 — 필터는 그대로 두고 표시 방법만 바꾼다 -->
@@ -411,64 +471,97 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 .sticky-head {
   /* AppTopBar 는 sticky top:0 이고 높이는 12px 패딩 + 28px 로고 + 12px 패딩 = 53px 이다.
      고정 영역은 그 바로 아래에 멈춰야 하므로 같은 값을 쓴다.
-     ※ AppTopBar 의 높이를 바꾸면 이 값도 함께 고쳐야 한다. */
+     이 요소의 스크롤 전 자연스러운 위치는 AppTopBar 높이(53px) + OwnerTabLayout
+     .screen-body 의 상단 패딩(--space-lg, 16px) = 69px 이라 top:53px 과 16px 어긋난다.
+     top 값만 69px 로 올리면 그 16px 구간에서는 아직 안 붙은 상태라 배경도 없어
+     스크롤되는 목록이 AppTopBar 바로 밑으로 비쳐 보인다(이번에 겪은 문제). 그래서 top
+     값 대신 이 요소 자체를 screen-body 상단 패딩만큼 위로 끌어올리고(margin-top 음수)
+     그만큼을 padding-top 으로 안에서 되돌린다 — 좌우 full-bleed 와 같은 방식이다.
+     이러면 스크롤 전 자연 위치가 정확히 53px 이 되어 top:53px 과 맞아떨어지고, 늘어난
+     박스가 불투명 배경까지 그 구간을 덮어 비쳐 보이는 문제도 함께 없어진다.
+     ※ AppTopBar 높이나 screen-body 상단 패딩을 바꾸면 이 값도 함께 고쳐야 한다. */
   position: sticky;
   top: 53px;
-  z-index: var(--z-tabbar);
+  /* AppTopBar(.topbar)도 같은 --z-tabbar 를 쓰는 sticky 라 여기서 그대로 쓰면 DOM
+     순서상 이 영역이 나중에 그려져 AppTopBar 위에 덮인다 — 스크롤 중 재계산 시 경계가
+     맞물리면서 AppTopBar 하단 회색 구분선이 가려져 사라져 보였다(원인). 1만큼 낮춰 항상
+     AppTopBar 아래에 머물게 한다(그래도 일반 흐름인 목록 콘텐츠보다는 위다). */
+  z-index: calc(var(--z-tabbar) - 1);
 
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
 
-  /* 좌우 full-bleed — screen-body 의 좌우 패딩(16px)만큼 밖으로 빼고 안에서 되돌린다.
-     그러지 않으면 스크롤되는 내용이 양옆 16px 여백으로 비쳐 보인다. */
-  margin: 0 calc(-1 * var(--space-lg));
-  padding: 0 var(--space-lg) var(--space-lg);
+  /* full-bleed — screen-body 의 상하좌우 패딩만큼 밖으로 빼고 안에서 되돌린다. 좌우는
+     그러지 않으면 스크롤되는 내용이 양옆 16px 여백으로 비쳐 보이기 때문이고, 위쪽은
+     위 주석의 sticky top 정렬 때문이다(아래는 그대로 padding-bottom 만 준다). */
+  margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-lg) var(--space-lg) var(--space-lg);
   /* 스크롤되는 내용이 뒤로 비치지 않게 불투명 배경을 깐다.
      색은 .app 컨테이너와 같은 --color-surface — --color-bg(회색)를 쓰면 이 영역만 띠로 보인다. */
   background: var(--color-surface);
+  /* 고정 영역(근무 목록 제목까지)과 그 아래 스크롤되는 목록 사이 경계선. */
+  border-bottom: 1px solid var(--color-border);
 }
 
-/* ---- 근태 현황 요약(7종 그리드) ---- */
-/* 3열이면 7장이 4장(꽉 참) + 1장(빈 칸 둘 남음)으로 어색하게 끝난다. 12칸 기준으로 첫 줄은
-   4장씩 3칸(4×3=12), 둘째 줄은 3장씩 4칸(3×4=12)을 차지해 두 줄 다 꽉 채운다 — 둘째 줄
-   카드가 더 넓어져 "퇴근 확인 필요"도 덜 좁게 줄바꿈된다. */
+/* ---- 근태 현황 요약(7종, 압축된 pill 2줄) ----
+ * 이전엔 카드 7장이 그리드 두 줄을 꽉 채워 세로 공간을 많이 차지했다. 값(count)만
+ * 확인하면 되는 요약이라 라벨+숫자를 한 pill에 묶어 가로로 늘어놓는다.
+ * - 위 줄: 진행 중 4종(미배정·계약완료·근무예정·근무중).
+ * - 아래 줄: 완료·이탈 3종(근무완료·노쇼·퇴근 미확인) + 맨 끝에 전체 합계 pill.
+ * 상태 pill 배경은 안심지갑 잔액 카드(WalletBalanceCard)와 같은 옅은 하늘색
+ * (--color-owner-weak)을 써 통일감을 주고, "전체" pill만 진한 파랑(--color-owner)
+ * 배경 + 흰 글자로 다르게 둬 다른 pill과 구분한다.
+ * 크기는 전부 동일하게 맞춘다 — 가장 긴 라벨(퇴근 미확인)이 두 자릿수 값과 함께
+ * 있어도 줄바꿈되지 않을 min-width를 기준으로 잡고, 짧은 라벨은 가운데 정렬로
+ * 남는 공간을 채운다(폭이 좁은 화면에서는 pill 단위로 줄바꿈한다, flex-wrap). */
 .summary {
-  display: grid;
-  grid-template-columns: repeat(12, 1fr);
-  gap: var(--space-sm);
-}
-.stat {
   display: flex;
   flex-direction: column;
-  align-items: center;
   gap: var(--space-xs);
-  padding: var(--space-md);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  grid-column: span 3;
 }
-/* 다섯 번째 카드(퇴근 확인 필요)부터 둘째 줄 — 3장이 12칸을 나눠 각 4칸씩 차지한다. */
-.stat:nth-child(n + 5) {
-  grid-column: span 4;
+.summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
 }
-/* 선택된 상태 카드 — 지금 어떤 목록을 보고 있는지 표시 */
-.stat.active {
-  border-color: var(--color-owner);
+.stat-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 96px;
+  padding: 6px var(--space-sm);
   background: var(--color-owner-weak);
+  border: 1px solid transparent;
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
+}
+/* 선택된 상태 pill — 지금 어떤 목록을 보고 있는지 표시 */
+.stat-pill.active {
+  border-color: var(--color-owner);
+}
+/* 전체 합계 pill — 상태 pill들과 헷갈리지 않게 진한 파랑 + 흰 글자로 다르게 둔다. */
+.stat-pill--total {
+  background: var(--color-owner);
+}
+.stat-pill--total .stat-label,
+.stat-pill--total .stat-value {
+  color: var(--color-surface);
+}
+/* 전체 선택 시 테두리 — 배경이 이미 진한 파랑이라 연한 파랑(--color-owner-weak) 테두리로 띄운다. */
+.stat-pill--total.active {
+  border-color: var(--color-owner-weak);
 }
 .stat-label {
   font-size: var(--text-sm);
-  color: var(--color-text-sub);
-  /* 카드 폭이 좁아지는 화면에서 "퇴근 확인 필요"가 음절 단위(필/요)로 잘려 줄바꿈되지
-     않게, 공백 단위로만 줄바꿈하게 한다(지금 폭에선 한 줄로 들어가지만 더 좁은
-     화면을 위한 보험). */
+  color: var(--color-text);
+  /* "퇴근 미확인"이 음절 단위로 잘려 줄바꿈되지 않게 공백 단위로만 줄바꿈한다. */
   word-break: keep-all;
 }
 /* 값 색은 상태색(상수)으로 인라인 바인딩한다 */
 .stat-value {
-  font-size: var(--text-xl);
+  font-size: var(--text-sm);
   font-weight: var(--weight-bold);
 }
 
@@ -491,23 +584,21 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   font-weight: var(--weight-bold);
   color: var(--color-text);
 }
-/* 검색·필터 — 사장 홈의 송금상세 필터 버튼과 같은 모양(pill + 보조 텍스트색). */
+/* 검색·필터 — 항상 하늘색 배경(안심지갑 카드와 같은 --color-owner-weak), 테두리 없음. */
 .filter-btn {
   display: inline-flex;
   align-items: center;
   gap: var(--space-xs);
   margin-left: auto;
   padding: var(--space-xs) var(--space-md);
-  border: 1px solid var(--color-border);
+  border: none;
   border-radius: var(--radius-pill);
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
-}
-/* 걸러진 상태 — 검색어·기간은 제목에 안 드러나므로 버튼 색으로 알린다. */
-.filter-btn.is-active {
-  border-color: var(--color-owner);
   background: var(--color-owner-weak);
+  font-size: var(--text-sm);
   color: var(--color-owner);
+}
+/* 걸러진 상태 — 검색어·기간은 제목에 안 드러나므로 글자 굵기로 알린다(배경은 항상 동일). */
+.filter-btn.is-active {
   font-weight: var(--weight-medium);
 }
 .add-btn {
@@ -517,9 +608,10 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   padding: var(--space-xs) var(--space-sm);
   border: 1px solid var(--color-owner);
   border-radius: var(--radius-sm);
+  background: var(--color-owner);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-owner);
+  color: var(--color-surface);
 }
 .loading {
   padding: var(--space-xl) 0;

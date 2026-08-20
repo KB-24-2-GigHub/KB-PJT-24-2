@@ -582,6 +582,26 @@ async function onApproveSettlement() {
           <p class="place">{{ workCase.workplaceName }}</p>
 
           <dl class="detail">
+            <!--
+              매칭된 알바생 — 별도 섹션으로 하단에 두지 않고, 근무 정보 맨 위 행으로 올린다.
+              worker.badge(#472)가 활성 Badge 없음(0단계)이면 null 이라 그때만 자리표시자로
+              폴백한다(초대의 ownerBadge 와 같은 관례). level 을 안 넘기던 예전 TrustBadge 는
+              항상 0단계 회색 아이콘을 그려 3단계 알바생도 미부여로 보였는데, badge 자체가
+              없을 때만 자리표시자를 쓰는 지금 방식은 그 오해를 만들지 않는다.
+            -->
+            <div v-if="workCase.worker" class="detail-row">
+              <dt>알바생</dt>
+              <dd class="worker-cell">
+                {{ workCase.worker.name }}
+                <TrustBadge
+                  v-if="workCase.worker.badge"
+                  role="worker"
+                  :level="workCase.worker.badge.level"
+                  :size="20"
+                />
+                <span v-else class="badge-placeholder">등급 정보 없음</span>
+              </dd>
+            </div>
             <div class="detail-row">
               <dt>근무 날짜</dt>
               <dd>{{ formatDate(workCase.workDate) }}</dd>
@@ -615,7 +635,8 @@ async function onApproveSettlement() {
           <section v-if="hasProgressInfo" class="progress-section">
             <h3 class="section-title">진행 현황</h3>
             <dl class="detail">
-              <div v-if="workCase.latestInvitation" class="detail-row">
+              <!-- 근로계약이 이미 체결됐으면(계약 확정 행이 대신 보여준다) 연결 링크는 감춘다. -->
+              <div v-if="workCase.latestInvitation && !workCase.contract" class="detail-row">
                 <dt>연결 링크</dt>
                 <dd>
                   {{ invitationText }}
@@ -648,11 +669,11 @@ async function onApproveSettlement() {
                 </dd>
               </div>
               <div v-if="workCase.attendance?.checkedInAt" class="detail-row">
-                <dt>출근</dt>
+                <dt>출근 시각</dt>
                 <dd>{{ formatSeoulDateTime(workCase.attendance.checkedInAt) }}</dd>
               </div>
               <div v-if="workCase.attendance?.checkedOutAt" class="detail-row">
-                <dt>퇴근</dt>
+                <dt>퇴근 시각</dt>
                 <dd>{{ formatSeoulDateTime(workCase.attendance.checkedOutAt) }}</dd>
               </div>
               <!-- settlement은 근거 행(정산 예약)이 있을 때만 온다 — 계약 확정 전에는 null. -->
@@ -660,7 +681,11 @@ async function onApproveSettlement() {
                 <dt>정산 상태</dt>
                 <dd><StatusChip :status="workCase.settlement.status" kind="settle" /></dd>
               </div>
-              <div v-if="workCase.settlement?.dueAt" class="detail-row">
+              <!-- 자동(24시간 경과)이든 수동이든 지급·환불이 끝나면(completedAt) 더는 보여줄 예정이 없다. -->
+              <div
+                v-if="workCase.settlement?.dueAt && !workCase.settlement?.completedAt"
+                class="detail-row"
+              >
                 <dt>자동 지급 예정</dt>
                 <dd>{{ formatSeoulDateTime(workCase.settlement.dueAt) }}</dd>
               </div>
@@ -726,35 +751,21 @@ async function onApproveSettlement() {
 
           <SettlementBreakdown v-if="workCase.settlement" :settlement="workCase.settlement" />
 
+          <!--
+            canViewDisputes 만으로는 상태만 맞으면 항상 그려져, 분쟁이 한 번도 없던 근무에도
+            빈 카드가 떴다. 로딩 중·조회 실패 때도 (안내 문구를 보여줘야 하니) 그대로 두고,
+            "조회에 성공했는데 0건"으로 확정된 경우에만 감춘다.
+          -->
           <DisputeTimeline
-            v-if="canViewDisputes"
+            v-if="
+              canViewDisputes && (disputeLoading || disputeLoadError || disputeReports.length > 0)
+            "
             class="disputes"
             :reports="disputeReports"
             :loading="disputeLoading"
             :error="disputeLoadError"
             @refresh="loadDisputes({ notify: true })"
           />
-
-          <!--
-            #472: Work Case 응답 worker.badge(badgeType,level)가 초대의 ownerBadge 와 같은
-            관례로 추가됐다 — 활성 Badge 없음(0단계)은 badge:null 이라 그대로 자리표시자로
-            폴백한다. level 을 안 넘기던 예전 TrustBadge 는 항상 0단계 회색 아이콘을 그려
-            3단계 알바생도 미부여로 보였는데, badge 자체가 없을 때만 자리표시자를 쓰는
-            지금 방식은 그 오해를 만들지 않는다.
-          -->
-          <section v-if="workCase.worker" class="worker">
-            <h3 class="section-title">매칭된 알바생</h3>
-            <div class="worker-card">
-              <TrustBadge
-                v-if="workCase.worker.badge"
-                role="worker"
-                :level="workCase.worker.badge.level"
-                :size="40"
-              />
-              <span v-else class="badge-placeholder">등급 정보 없음</span>
-              <span class="worker-name">{{ workCase.worker.name }}</span>
-            </div>
-          </section>
 
           <!-- 수정·삭제는 DRAFT, 링크 발급은 그보다 좁은 조건(미매칭·시작 전)까지 본다 -->
           <section v-if="canModify" class="actions">
@@ -1029,31 +1040,19 @@ async function onApproveSettlement() {
   font-size: var(--text-sm);
 }
 
-/* ---- 매칭 알바생 ---- */
 .section-title {
   font-size: var(--text-lg);
   font-weight: var(--weight-bold);
   color: var(--color-text);
 }
-.worker {
-  margin-top: var(--space-xl);
-}
 .disputes {
   margin-top: var(--space-xl);
 }
-.worker-card {
-  display: flex;
+/* ---- 알바생 행(근무 정보 맨 위) ---- */
+.worker-cell {
+  display: inline-flex;
   align-items: center;
-  gap: var(--space-md);
-  margin-top: var(--space-sm);
-  padding: var(--space-md) var(--space-lg);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-.worker-name {
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
+  gap: var(--space-sm);
 }
 /* 뱃지 자리표시자. 등급 그림과 혼동되지 않게 아이콘 없이 약한 텍스트로만 둔다. */
 .badge-placeholder {

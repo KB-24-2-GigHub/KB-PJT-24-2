@@ -56,7 +56,7 @@ describe('WORK_CASE_STATUS_FILTER', () => {
     const labels = Object.fromEntries(WORK_CASE_STATUS_FILTER.map((o) => [o.value, o.label]))
     expect(labels.ALL).toBe('전체')
     expect(labels.IN_PROGRESS).toBe('근무중')
-    expect(labels.CHECK_OUT_MISSING).toBe('퇴근 확인 필요')
+    expect(labels.CHECK_OUT_MISSING).toBe('퇴근 미확인')
     expect(labels.CANCELED).toBe('취소')
   })
 })
