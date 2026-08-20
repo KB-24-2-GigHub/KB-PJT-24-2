@@ -592,12 +592,13 @@ async function onApproveSettlement() {
             <div v-if="workCase.worker" class="detail-row">
               <dt>알바생</dt>
               <dd class="worker-cell">
+                {{ workCase.worker.name }}
+                <span class="worker-cell-divider">|</span>
                 <template v-if="workCase.worker.badge">
                   <span class="badge-level">Lv.{{ workCase.worker.badge.level }}</span>
                   <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="20" />
                 </template>
                 <span v-else class="badge-placeholder">등급 정보 없음</span>
-                {{ workCase.worker.name }}
               </dd>
             </div>
             <div class="detail-row">
@@ -1051,6 +1052,9 @@ async function onApproveSettlement() {
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
+}
+.worker-cell-divider {
+  color: var(--color-border);
 }
 /* 뱃지 그림만으로는 등급 숫자가 바로 안 읽혀 "Lv.N" 글자를 함께 둔다(마이페이지와 같은 표기). */
 .badge-level {
