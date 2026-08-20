@@ -109,7 +109,8 @@ describe('useWorkerHomeStore', () => {
     expect(store.earning).toEqual({
       agreedWage: 90000,
       isLate: true,
-      lateMinutes: 15
+      lateMinutes: 15,
+      checkedInAt: '2026-07-22T01:15:00Z'
     })
   })
 
@@ -131,6 +132,21 @@ describe('useWorkerHomeStore', () => {
 
     expect(store.earning.isLate).toBe(false)
     expect(store.earning.lateMinutes).toBe(0)
+  })
+
+  it('아직 체크인하지 않았으면(attendance.checkedInAt=null) earning.checkedInAt도 null이다', async () => {
+    getWorkerHome.mockResolvedValue({
+      todayWorkCase: {
+        ...RAW_TODAY_WORK_CASE,
+        status: 'LATE',
+        attendance: { checkedInAt: null, checkedOutAt: null, isLate: true, lateMinutes: 15 }
+      }
+    })
+    const store = useWorkerHomeStore()
+
+    await store.loadHome()
+
+    expect(store.earning.checkedInAt).toBeNull()
   })
 
   it('오늘 근무가 없으면(todayWorkCase=null) todayWorkCase·earning 모두 null이다', async () => {

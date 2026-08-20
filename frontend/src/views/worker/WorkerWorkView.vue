@@ -11,6 +11,7 @@ import { useRouter } from 'vue-router'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import { displayWorkCaseStatus } from '@/constants/workCaseStatus'
 import { listWorkerWorkCases } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
 import {
@@ -114,7 +115,7 @@ function goDetail(workCase) {
             <span class="wage">{{ formatKRW(workCase.dailyWage) }}</span>
           </div>
           <div class="work-case-status">
-            <StatusChip :status="workCase.status" kind="workCase" />
+            <StatusChip :status="displayWorkCaseStatus(workCase)" kind="workCase" />
             <StatusChip :status="workCase.settlementStatus" kind="settle" />
           </div>
           <p

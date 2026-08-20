@@ -16,6 +16,7 @@ import BaseButton from '@/components/common/BaseButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
 import SettlementBreakdown from '@/components/settlement/SettlementBreakdown.vue'
+import { displayWorkCaseStatus } from '@/constants/workCaseStatus'
 import { contractFileUrl } from '@/services/documents'
 import { getOwnerContact, getWorkCase } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
@@ -80,6 +81,10 @@ const settlementMessage = computed(() => {
       return null
   }
 })
+
+// READY·체크인 전인데 시작 시각이 지난 구간을 '지각'으로 보여준다(workCaseStatus.js
+// displayWorkCaseStatus 문서 참고). 저장 status는 그대로 두고 상단 칩 표시만 바꾼다.
+const displayStatus = computed(() => displayWorkCaseStatus(workCase.value))
 
 // workCaseId가 빠르게 바뀌면(뒤로가기 후 다른 근무 진입 등) 먼저 보낸 요청이 나중에
 // 도착해 최신 화면을 덮어쓸 수 있다. 시퀀스 번호로 최신 요청의 응답만 반영한다.
@@ -152,7 +157,7 @@ function goHome() {
               <h1 class="title">{{ workCase.title }}</h1>
             </div>
             <div class="chips">
-              <StatusChip :status="workCase.status" kind="workCase" />
+              <StatusChip :status="displayStatus" kind="workCase" />
               <StatusChip
                 v-if="workCase.settlement"
                 :status="workCase.settlement.status"

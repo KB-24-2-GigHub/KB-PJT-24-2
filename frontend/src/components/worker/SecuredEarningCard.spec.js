@@ -13,7 +13,8 @@ const earningOf = (agreedWage) => ({
   elapsedPayDisplay: 0,
   progressRatio: 0,
   isLate: false,
-  lateMinutes: 0
+  lateMinutes: 0,
+  checkedInAt: '2026-07-22T10:00:00'
 })
 
 const mountCard = (agreedWage = 90000, options = {}) =>
@@ -55,6 +56,37 @@ describe('SecuredEarningCard', () => {
     expect(earning.agreedWage).toBe(90000) // 서버가 준 실제 금액 필드는 불변
     expect(wrapper.text()).not.toContain('예상 실수령액')
     expect(wrapper.text()).not.toContain('세금 공제')
+  })
+
+  it('아직 체크인 전이면(checkedInAt=null) 지각으로 시각이 지나도 0원을 보여준다', async () => {
+    // #466 — 출근 QR 전에는 근무 경과 예상금액이 올라가면 안 된다.
+    const wrapper = mount(SecuredEarningCard, {
+      props: { earning: { ...earningOf(90000), checkedInAt: null }, workCase: WORK_CASE }
+    })
+    await nextTick()
+    expect(wrapper.text()).toContain('0원')
+  })
+
+  it('체크인 전엔 지각분만큼 주황 막대가 채워진다', async () => {
+    // 10:00 시작 예정, 10:48 기준(48분 지각) → 48/480 = 10%
+    vi.setSystemTime(new Date('2026-07-22T10:48:00'))
+    const wrapper = mount(SecuredEarningCard, {
+      props: { earning: { ...earningOf(90000), checkedInAt: null }, workCase: WORK_CASE }
+    })
+    await nextTick()
+
+    const seg = wrapper.get('.seg')
+    expect(seg.classes()).toContain('seg-late')
+    expect(seg.attributes('style')).toContain('width: 10%')
+  })
+
+  it('체크인 후엔 지각 막대가 아니라 근무 경과 막대(노랑)를 보여준다', async () => {
+    const wrapper = mountCard() // checkedInAt 있음, 14:00 기준 절반 경과
+    await nextTick()
+
+    const seg = wrapper.get('.seg')
+    expect(seg.classes()).not.toContain('seg-late')
+    expect(seg.attributes('style')).toContain('width: 50%')
   })
 
   it('i 아이콘을 누르면 안내가 열리고 다시 누르면 닫힌다', async () => {

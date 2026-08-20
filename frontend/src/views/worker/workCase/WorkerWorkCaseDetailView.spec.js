@@ -377,4 +377,40 @@ describe('WorkerWorkCaseDetailView', () => {
     await reportButton.trigger('click')
     expect(push).toHaveBeenCalledWith('/worker/work/work-cases/42/report')
   })
+
+  describe('체크인 전 지각 표시', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-08-20T01:30:00Z')) // startsAt(01:00Z) 이후
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('READY이고 체크인 전인데 시작 시각이 지났으면 지각으로 표시한다', async () => {
+      getWorkCase.mockResolvedValueOnce(
+        baseWorkCase({ status: 'READY', attendance: { checkedInAt: null, checkedOutAt: null } })
+      )
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('지각')
+      expect(wrapper.text()).not.toContain('근무예정')
+    })
+
+    it('체크인해 근무중으로 전환되면 지각으로 바꾸지 않는다', async () => {
+      getWorkCase.mockResolvedValueOnce(
+        baseWorkCase({
+          status: 'IN_PROGRESS',
+          attendance: { checkedInAt: '2026-08-20T01:10:00Z', checkedOutAt: null }
+        })
+      )
+      const wrapper = mountView()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('근무중')
+      expect(wrapper.text()).not.toContain('지각')
+    })
+  })
 })

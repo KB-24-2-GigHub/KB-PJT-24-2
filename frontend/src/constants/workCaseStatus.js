@@ -44,6 +44,33 @@ export function isDraft(status) {
 }
 
 /**
+ * '지각' 파생 표시 — READY인데 시작 시각이 지났고 아직 체크인 전인 구간의 화면 문구다.
+ * work_cases.status 8종에 없는 값이라 WORK_CASE_STATUS에 넣지 않는다(필터·요약이 그
+ * 8종만 순회하므로 섞으면 존재하지 않는 status로 필터·집계를 보내게 된다). StatusChip이
+ * status='LATE'를 받으면 이 라벨을 특별 처리한다.
+ */
+export const DERIVED_LATE_STATUS = { label: '지각', color: 'var(--color-late)' }
+
+/**
+ * 화면 표시용 파생 상태를 계산한다.
+ *
+ * 서버는 시작+1시간 경계까지 NO_SHOW로 정리하지 않고 READY를 유지한다(API_SPEC 5C-1·5C-2).
+ * 그 구간 동안 체크인 전이면 실제로는 지각인데도 화면은 '근무예정'으로 보여 사용자가 아직
+ * 여유가 있다고 오인할 수 있다. 저장 status는 그대로 두고 표시만 'LATE'로 바꾼다.
+ *
+ * @param {object} workCase status, startsAt, attendance.checkedInAt 를 가진 근무 항목
+ * @param {Date} now 비교 기준 시각(테스트에서 고정할 수 있게 주입한다)
+ */
+export function displayWorkCaseStatus(workCase, now = new Date()) {
+  if (workCase?.status !== 'READY' || workCase?.attendance?.checkedInAt) {
+    return workCase?.status
+  }
+  const startsAt = new Date(workCase?.startsAt)
+  if (Number.isNaN(startsAt.getTime())) return workCase.status
+  return now.getTime() > startsAt.getTime() ? 'LATE' : workCase.status
+}
+
+/**
  * 초대 Link 를 새로 발급할 수 있는 근무인지 판별한다.
  *
  * 서버(InvitationIssueServiceImpl)는 DRAFT 여부만이 아니라 **세 조건을 모두** 본다.

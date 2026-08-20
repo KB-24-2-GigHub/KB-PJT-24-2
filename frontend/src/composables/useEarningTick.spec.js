@@ -4,7 +4,7 @@ import { defineComponent, h, ref } from 'vue'
 
 import { useEarningTick } from '@/composables/useEarningTick'
 
-const EARNING = { agreedWage: 90000 }
+const EARNING = { agreedWage: 90000, checkedInAt: '2026-07-22T10:00:00' }
 const WORK_CASE = { workDate: '2026-07-22', startTime: '10:00', endTime: '18:00' }
 
 /** 컴포저블은 생명주기 훅을 쓰므로 호스트 컴포넌트 안에서 실행한다. */
@@ -60,6 +60,27 @@ describe('useEarningTick', () => {
     expect(api.elapsedPay.value).toBe(0)
     expect(api.progressRatio.value).toBe(0)
     expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('아직 체크인 전(checkedInAt=null)이면 지각으로 예정 시각이 지나도 0을 반환한다', () => {
+    // #466 — 출근 QR 전에는 근무 경과 예상금액이 올라가면 안 된다.
+    vi.setSystemTime(new Date('2026-07-22T14:00:00'))
+    const { api } = mountTick({ agreedWage: 90000, checkedInAt: null })
+    expect(api.elapsedPay.value).toBe(0)
+    expect(api.progressRatio.value).toBe(0)
+  })
+
+  it('체크인 전엔 lateProgressRatio가 지각분만큼 채워진다', () => {
+    // 10:00 시작 예정, 10:48 기준 → 48/480
+    vi.setSystemTime(new Date('2026-07-22T10:48:00'))
+    const { api } = mountTick({ agreedWage: 90000, checkedInAt: null })
+    expect(api.lateProgressRatio.value).toBeCloseTo(48 / 480)
+  })
+
+  it('체크인 후엔 lateProgressRatio가 0이다', () => {
+    vi.setSystemTime(new Date('2026-07-22T14:00:00'))
+    const { api } = mountTick()
+    expect(api.lateProgressRatio.value).toBe(0)
   })
 
   it('언마운트하면 타이머를 해제한다', () => {

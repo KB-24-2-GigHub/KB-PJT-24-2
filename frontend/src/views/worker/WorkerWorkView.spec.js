@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import WorkerWorkView from '@/views/worker/WorkerWorkView.vue'
 
@@ -226,5 +226,42 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('근무 내역을 불러오지 못했습니다.')
     expect(wrapper.text()).not.toContain('아직 근무 내역이 없어요.')
     expect(wrapper.findAll('.work-case')).toHaveLength(0)
+  })
+
+  describe('체크인 전 지각 표시', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T02:00:00Z')) // startsAt(10:00 KST) 이후
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('READY이고 체크인 전인데 시작 시각이 지났으면 지각으로 표시한다', async () => {
+      listWorkerWorkCases.mockResolvedValueOnce(
+        samplePage([
+          {
+            ...sampleWorkCase,
+            status: 'READY',
+            attendance: { checkedInAt: null, checkedOutAt: null, isLate: false, lateMinutes: null }
+          }
+        ])
+      )
+      const wrapper = mount(WorkerWorkView)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('지각')
+      expect(wrapper.text()).not.toContain('근무예정')
+    })
+
+    it('체크인했으면 시작 시각이 지났어도 근무중 그대로 표시한다', async () => {
+      listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase])) // status: IN_PROGRESS, checkedInAt 있음
+      const wrapper = mount(WorkerWorkView)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('근무중')
+      expect(wrapper.text()).not.toContain('지각')
+    })
   })
 })

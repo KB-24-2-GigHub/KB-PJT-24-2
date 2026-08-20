@@ -11,12 +11,19 @@ const props = defineProps({
 })
 
 // 적립액·진행률은 근무 시작 시각 기준으로 1분마다 다시 계산한다(표시 전용 추정치).
-const { elapsedPay, progressRatio } = useEarningTick(
+const { elapsedPay, progressRatio, lateProgressRatio } = useEarningTick(
   computed(() => props.earning),
   computed(() => props.workCase)
 )
 
-const progress = computed(() => Math.min(1, Math.max(0, progressRatio.value)))
+// 체크인 전엔 지각 경과(lateProgressRatio)를 주황으로, 체크인 후엔 근무 경과
+// (progressRatio)를 노랑으로 보여준다 — 두 값은 서로 배타적이라(useEarningTick 참고)
+// 막대 하나로 표시를 갈아끼워도 된다.
+const isLatePhase = computed(() => !props.earning?.checkedInAt)
+const progress = computed(() => {
+  const ratio = isLatePhase.value ? lateProgressRatio.value : progressRatio.value
+  return Math.min(1, Math.max(0, ratio))
+})
 
 /* ---- 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
 const rootEl = ref(null)
@@ -84,7 +91,11 @@ onUnmounted(() => {
       aria-valuemin="0"
       aria-valuemax="100"
     >
-      <div class="seg" :style="{ width: progress * 100 + '%' }"></div>
+      <div
+        class="seg"
+        :class="{ 'seg-late': isLatePhase }"
+        :style="{ width: progress * 100 + '%' }"
+      ></div>
     </div>
 
     <!-- 지각 시간은 참고 표시이며 실제 차감액은 서버 Snapshot이 확정한다. -->
@@ -185,9 +196,13 @@ onUnmounted(() => {
   background: var(--color-worker);
 }
 
+.seg-late {
+  background: var(--color-late);
+}
+
 .late-note {
   margin-top: var(--space-sm);
   font-size: var(--text-sm);
-  color: var(--color-warning);
+  color: var(--color-late);
 }
 </style>

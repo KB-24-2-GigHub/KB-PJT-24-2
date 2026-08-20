@@ -1,13 +1,16 @@
 <script setup>
 /**
  * 상태 표기는 workCaseStatus.js 8종 단일 소스(StatusChip)만 쓴다 — 이 카드에서 상태 문자열을
- * 따로 하드코딩하지 않는다. 지각은 work_case 상태가 아니라 attendance.isLate의 파생
- * 표시라(workCaseStatus.js 문서 참고) 상태 칩과 별개 배지로 얹는다.
+ * 따로 하드코딩하지 않는다. 체크인 후 확정된 지각은 work_case 상태가 아니라
+ * attendance.isLate의 파생 표시라(workCaseStatus.js 문서 참고) 상태 칩과 별개 배지로
+ * 얹는다. 체크인 전, 시작 시각만 지난 구간은 displayWorkCaseStatus가 상태 칩 자체를
+ * 'LATE'로 바꿔 보여준다 — 두 표시는 체크인 여부로 갈려 겹치지 않는다.
  */
 import { CalendarX, TriangleAlert } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import StatusChip from '@/components/common/StatusChip.vue'
+import { displayWorkCaseStatus } from '@/constants/workCaseStatus'
 
 const props = defineProps({
   workCase: { type: Object, default: null }
@@ -16,6 +19,7 @@ const props = defineProps({
 // 오늘 근무 후보가 없으면 서버가 todayWorkCase 자체를 null로 준다(WorkerHomeResponse).
 const isEmpty = computed(() => !props.workCase)
 const isLate = computed(() => !!props.workCase?.attendance?.isLate)
+const displayStatus = computed(() => displayWorkCaseStatus(props.workCase))
 </script>
 
 <template>
@@ -29,7 +33,7 @@ const isLate = computed(() => !!props.workCase?.attendance?.isLate)
 
     <div v-else class="work-case">
       <div class="badges">
-        <StatusChip :status="workCase.status" kind="workCase" />
+        <StatusChip :status="displayStatus" kind="workCase" />
         <span v-if="isLate" class="badge-late">
           <TriangleAlert :size="13" />
           지각 {{ workCase.attendance.lateMinutes }}분
@@ -77,7 +81,7 @@ const isLate = computed(() => !!props.workCase?.attendance?.isLate)
   gap: 3px;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-warning);
+  color: var(--color-late);
 }
 
 .work-case-title {
