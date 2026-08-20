@@ -592,7 +592,6 @@ async function onApproveSettlement() {
             <div v-if="workCase.worker" class="detail-row">
               <dt>알바생</dt>
               <dd class="worker-cell">
-                {{ workCase.worker.name }}
                 <TrustBadge
                   v-if="workCase.worker.badge"
                   role="worker"
@@ -600,6 +599,7 @@ async function onApproveSettlement() {
                   :size="20"
                 />
                 <span v-else class="badge-placeholder">등급 정보 없음</span>
+                {{ workCase.worker.name }}
               </dd>
             </div>
             <div class="detail-row">
