@@ -1,6 +1,6 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import WorkerWorkView from '@/views/worker/WorkerWorkView.vue'
 
@@ -65,7 +65,7 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('90,000원')
   })
 
-  it('근무지 기준 시각·정산 상태를 표시한다', async () => {
+  it('근무지 기준 시각·정산/예치 상태를 표시한다', async () => {
     listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase]))
     const wrapper = mount(WorkerWorkView)
     await flushPromises()
@@ -73,7 +73,38 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('10:00 ~ 18:00') // startsAt/endsAt → Asia/Seoul 벽시계
     expect(wrapper.text()).toContain('2026.07.22')
     expect(wrapper.text()).toContain('근무중') // status
-    expect(wrapper.text()).toContain('정산대기') // settlementStatus='WAITING'
+    // settlementStatus='WAITING'은 뜻이 없는 기본값이라 숨기고, 대신 진행 중임을
+    // 말해주는 escrowStatus='HELD'(예치중)를 보여준다 — 상세 화면과 같은 기준.
+    expect(wrapper.text()).not.toContain('정산대기')
+    expect(wrapper.text()).toContain('예치중')
+  })
+
+  it('settlementStatus가 WAITING이 아니면 정산 칩을, escrowStatus가 없으면 예치 칩을 숨기지 않는다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([{ ...sampleWorkCase, settlementStatus: 'SCHEDULED', escrowStatus: null }])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산예정')
+  })
+
+  it('status가 COMPLETED이면 예치 칩을 숨기고 정산 칩으로 결과를 보여준다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([
+        {
+          ...sampleWorkCase,
+          status: 'COMPLETED',
+          settlementStatus: 'COMPLETED',
+          escrowStatus: 'RELEASED'
+        }
+      ])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산완료')
+    expect(wrapper.text()).not.toContain('지급완료') // escrow RELEASED 라벨은 숨어야 함
   })
 
   it('내역이 없으면 빈 상태를 보여준다', async () => {
@@ -246,5 +277,42 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('근무 내역을 불러오지 못했습니다.')
     expect(wrapper.text()).not.toContain('아직 근무 내역이 없어요.')
     expect(wrapper.findAll('.work-case')).toHaveLength(0)
+  })
+
+  describe('체크인 전 지각 표시', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-07-22T02:00:00Z')) // startsAt(10:00 KST) 이후
+    })
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('READY이고 체크인 전인데 시작 시각이 지났으면 지각으로 표시한다', async () => {
+      listWorkerWorkCases.mockResolvedValueOnce(
+        samplePage([
+          {
+            ...sampleWorkCase,
+            status: 'READY',
+            attendance: { checkedInAt: null, checkedOutAt: null, isLate: false, lateMinutes: null }
+          }
+        ])
+      )
+      const wrapper = mount(WorkerWorkView)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('지각')
+      expect(wrapper.text()).not.toContain('근무예정')
+    })
+
+    it('체크인했으면 시작 시각이 지났어도 근무중 그대로 표시한다', async () => {
+      listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase])) // status: IN_PROGRESS, checkedInAt 있음
+      const wrapper = mount(WorkerWorkView)
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('근무중')
+      expect(wrapper.text()).not.toContain('지각')
+    })
   })
 })
