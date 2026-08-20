@@ -135,11 +135,12 @@ public final class WorkCaseDetailResponse {
     }
 
     /**
-     * 매칭된 WORKER의 현재 승인 신뢰 Badge입니다.
+     * 매칭된 WORKER의 현재 신뢰 Badge 산정 결과입니다.
      *
-     * <p>초대 응답의 {@code ownerBadge}(OwnerBadgeResponse)와 같은 관례입니다 — 활성 Badge가
-     * 없으면(0단계) 이 객체 대신 {@code badge: null}을 반환합니다. 빈 객체나 기본 등급으로
-     * 채우면 받는 쪽이 "Badge 없음"과 "가장 낮은 Badge"를 구분할 수 없습니다.</p>
+     * <p>초대 응답의 {@code ownerBadge}(OwnerBadgeResponse)와 달리 0단계를 {@code null}로
+     * 감추지 않습니다 — OWNER가 매칭된 WORKER를 볼 때는 "아직 이력 쌓는 중(0단계)"도 뱃지
+     * 그림으로 보여준다는 화면 결정이라, {@code worker}가 있으면 {@code badge}는 항상 이
+     * 객체이고 {@code level}만 0~3으로 다릅니다.</p>
      */
     @Getter
     public static final class WorkerBadge {

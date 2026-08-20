@@ -606,11 +606,12 @@ class WorkCaseServiceImplTest {
     }
 
     /**
-     * 초대 응답의 {@code ownerBadge}와 같은 계약이다 — 0단계는 활성 Badge 없음과 같은
-     * {@code null}이며, 빈 객체나 0단계 값으로 채우지 않는다.
+     * 초대 응답의 {@code ownerBadge}와 다르다 — OWNER가 매칭된 WORKER를 볼 때는 0단계도
+     * "이력 쌓는 중" 뱃지 그림으로 보여준다는 화면 결정이라, 0단계를 {@code null}로 감추지
+     * 않고 레벨 0인 객체를 그대로 돌려준다.
      */
     @Test
-    void detailReturnsNullWorkerBadgeWhenLevelIsZero() {
+    void detailReturnsWorkerBadgeWithLevelZero() {
         Long workerId = 42L;
         when(workCaseMapper.findDetailRow(WORK_CASE_ID)).thenReturn(detailRow(OWNER_ID, workerId));
         when(workCaseMapper.findAttendanceTimestamps(WORK_CASE_ID)).thenReturn(emptyAttendance());
@@ -620,7 +621,9 @@ class WorkCaseServiceImplTest {
         WorkCaseDetailResponse response = service.detail(
                 new AuthPrincipal(workerId, UserRole.WORKER, "이알바"), WORK_CASE_ID);
 
-        assertNull(response.getWorker().getBadge());
+        assertNotNull(response.getWorker().getBadge());
+        assertEquals("TRUST_WORKER", response.getWorker().getBadge().getBadgeType());
+        assertEquals(0, response.getWorker().getBadge().getLevel());
     }
 
     @Test

@@ -11,11 +11,12 @@ targets:
 
 ## 추가 사항
 
-`GET /api/work-cases/{workCaseId}` 응답의 `worker` 객체에 `badge` 필드를 추가한다. 활성
-Badge가 없으면(0단계) `worker.badge`는 `null`이며, 빈 객체나 0단계 값으로 채우지 않는다 —
-초대 조회 응답(`InvitationDetailResponse.ownerBadge`, SPEC-178 계열)이 이미 쓰는 것과 같은
-관례다. `worker`가 아직 매칭 전이라 `null`이면 `badge` 필드 자체도 당연히 없다(`worker`
-객체 전체가 없으므로).
+`GET /api/work-cases/{workCaseId}` 응답의 `worker` 객체에 `badge` 필드를 추가한다.
+`worker`가 있으면(매칭됨) `badge`는 항상 `badgeType`+`level` 객체다 — 초대 조회 응답
+(`InvitationDetailResponse.ownerBadge`, SPEC-178 계열)은 0단계를 `null`로 감추지만, 이
+필드는 그러지 않는다. OWNER가 매칭된 WORKER를 볼 때는 "아직 이력 쌓는 중(0단계)"도 뱃지
+그림으로 보여준다는 화면 결정이라, `level`은 0~3 그대로 노출한다. `worker`가 아직 매칭
+전이라 `null`이면 `badge` 필드 자체도 당연히 없다(`worker` 객체 전체가 없으므로).
 
 ```json
 "worker": {
@@ -23,7 +24,7 @@ Badge가 없으면(0단계) `worker.badge`는 `null`이며, 빈 객체나 0단�
   "name": "이알바",
   "badge": {
     "badgeType": "TRUST_WORKER",
-    "level": 2
+    "level": 0
   }
 }
 ```
@@ -39,9 +40,7 @@ Badge가 없으면(0단계) `worker.badge`는 `null`이며, 빈 객체나 0단�
 ## 완료 조건
 
 - `GET /api/work-cases/{workCaseId}` 응답에서 `worker`가 있으면(매칭됨) `worker.badge`가
-  `badgeType`+`level` 객체 또는 `null`이다.
-- WORKER의 활성 Badge 레벨이 1~3이면 `worker.badge`가 그 값을 담고, 0이면 `worker.badge`가
-  `null`이다.
+  `badgeType`+`level`(0~3) 객체다 — 0단계도 `null`로 감추지 않는다.
 - `worker`가 `null`이면(미매칭) 응답에 `badge` 필드가 별도로 존재하지 않는다.
 - 뱃지 산정 기준·다른 응답(`ownerBadge`, `GET /api/users/me/badge`)의 값과 의미는 변경되지
   않는다.

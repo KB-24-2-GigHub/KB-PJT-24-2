@@ -311,15 +311,14 @@ public class WorkCaseServiceImpl implements WorkCaseService {
     /**
      * 매칭된 WORKER의 같은 산정 결과를 재사용합니다.
      *
-     * <p>초대 조회의 {@code ownerBadge(Long employerId)}와 같은 패턴입니다. Badge Application
-     * 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준 결과이며, 0단계는 활성
-     * Badge 없음과 같은 {@code null}로 응답한다는 기존 계약을 유지합니다.</p>
+     * <p>Badge Application 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준
+     * 결과를 그대로 담습니다. 초대 조회의 {@code ownerBadge(Long employerId)}는 0단계를
+     * {@code null}로 감추지만, 여기는 그러지 않습니다 — OWNER가 매칭된 WORKER를 볼 때는
+     * "아직 이력 쌓는 중(0단계)"도 뱃지 그림으로 보여주는 게 맞다는 화면 결정이라, worker가
+     * 있으면 badge는 항상 채워진 객체입니다(레벨만 0~3으로 다릅니다).</p>
      */
     private WorkCaseDetailResponse.WorkerBadge workerBadge(Long workerId) {
         BadgeCalculationResult result = badgeApplicationService.recalculate(workerId);
-        if (result.getLevel() <= 0) {
-            return null;
-        }
         return WorkCaseDetailResponse.WorkerBadge.of(result.getBadgeType(), result.getLevel());
     }
 

@@ -584,10 +584,10 @@ async function onApproveSettlement() {
           <dl class="detail">
             <!--
               매칭된 알바생 — 별도 섹션으로 하단에 두지 않고, 근무 정보 맨 위 행으로 올린다.
-              worker.badge(#472)가 활성 Badge 없음(0단계)이면 null 이라 그때만 자리표시자로
-              폴백한다(초대의 ownerBadge 와 같은 관례). level 을 안 넘기던 예전 TrustBadge 는
-              항상 0단계 회색 아이콘을 그려 3단계 알바생도 미부여로 보였는데, badge 자체가
-              없을 때만 자리표시자를 쓰는 지금 방식은 그 오해를 만들지 않는다.
+              worker.badge(#472)는 초대의 ownerBadge 와 달리 0단계도 null 로 감추지 않는다
+              — OWNER가 매칭된 WORKER를 볼 때는 "이력 쌓는 중(0단계)"도 뱃지 그림으로 보여준다.
+              worker 가 있으면 badge 는 항상 채워진 객체라 자리표시자는 방어적 폴백일 뿐이다
+              (예상 응답을 못 받은 경우에만 탄다).
             -->
             <div v-if="workCase.worker" class="detail-row">
               <dt>알바생</dt>
