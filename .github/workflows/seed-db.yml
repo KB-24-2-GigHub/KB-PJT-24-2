@@ -112,9 +112,9 @@ jobs:
             --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description='gh-seed run ${{ github.run_id }}'}]"
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      # compose.prod.yaml 은 SETUP.md 7장대로 사람이 배치한다. 배포 워크플로도
-      # 덮어쓰지 않으므로 여기서도 덮어쓰지 않는다. 대신 seed 서비스가 반영돼
-      # 있는지 먼저 보고, 없으면 무엇을 해야 하는지 알려주고 끊는다.
+      # compose.prod.yaml 은 Deploy API 가 배포마다 올린다(#452). 이 워크플로는
+      # 덮어쓰지 않는다. 대신 seed 서비스가 반영돼 있는지 먼저 보고, 없으면 무엇을
+      # 해야 하는지 알려주고 끊는다.
       - name: Check seed service is present on server
         run: |
           set -euo pipefail
@@ -122,8 +122,8 @@ jobs:
             "docker compose -f /opt/gighub/compose.prod.yaml --profile tools config --services" \
             | grep -qx seed; then
             echo "::error::/opt/gighub/compose.prod.yaml 에 seed 서비스가 없다."
-            echo "::error::로컬에서 아래를 먼저 실행할 것:"
-            echo "::error::  scp deploy/compose.prod.yaml <user>@<host>:/opt/gighub/compose.prod.yaml"
+            echo "::error::서버 파일이 저장소보다 낡았다. Deploy API 를 한 번 돌리면 갱신된다."
+            echo "::error::기다릴 수 없으면: scp deploy/compose.prod.yaml <user>@<host>:/opt/gighub/compose.prod.yaml"
             exit 1
           fi
 
