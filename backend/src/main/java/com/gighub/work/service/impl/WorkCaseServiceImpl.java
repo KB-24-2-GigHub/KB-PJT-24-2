@@ -209,8 +209,16 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         return PageResponse.of(content, page, size, totalElements);
     }
 
+    /**
+     * readOnly가 아니다. workerBadge(row.getWorkerId())가 참여하는
+     * BadgeApplicationService.recalculate는 사용자 행을 {@code SELECT ... FOR UPDATE}로
+     * 잠그고 필요하면 Upsert까지 하므로, 이 메서드도 실제로는 쓰기를 유발한다. readOnly로
+     * 두면 MySQL이 그 잠금 SELECT를 "Cannot execute statement in a READ ONLY transaction"
+     * 로 거부해 상세 조회 자체가 실패한다(초대 조회의 ownerBadge 호출도 같은 이유로
+     * findByToken이 readOnly를 쓰지 않는다).
+     */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public WorkCaseDetailResponse detail(AuthPrincipal principal, Long workCaseId) {
         WorkCaseDetailRow row = workCaseMapper.findDetailRow(workCaseId);
         if (row == null) {
