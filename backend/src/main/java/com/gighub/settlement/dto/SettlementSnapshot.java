@@ -15,6 +15,14 @@ public class SettlementSnapshot {
     private final Long settlementId;
     private final Long workCaseId;
     private final Long amount;
+    private final Long workerPaidAmount;
+    private final Long ownerRefundAmount;
+    private final Long deductionBaseMinutes;
+    private final Long lateMinutes;
+    private final Long earlyLeaveMinutes;
+    private final String calculationReason;
+    private final String calculationVersion;
+    private final LocalDateTime calculatedAt;
     private final SettlementStatus status;
     private final Long approvedByUserId;
     private final LocalDateTime dueAt;

@@ -47,6 +47,10 @@ class NoShowRefundServiceTest {
     private NoShowRefundApprovalTransaction refundApprovalTransaction;
 
     @Mock
+    private CheckOutMissingRefundApprovalTransaction
+            checkOutMissingRefundApprovalTransaction;
+
+    @Mock
     private SettlementReplayCodec replayCodec;
 
     private SettlementService settlementService;
@@ -57,6 +61,7 @@ class NoShowRefundServiceTest {
                 claimService,
                 approvalTransaction,
                 refundApprovalTransaction,
+                checkOutMissingRefundApprovalTransaction,
                 replayCodec);
     }
 

@@ -22,6 +22,14 @@
             <idArg column="settlementId" javaType="java.lang.Long"/>
             <arg column="workCaseId" javaType="java.lang.Long"/>
             <arg column="amount" javaType="java.lang.Long"/>
+            <arg column="workerPaidAmount" javaType="java.lang.Long"/>
+            <arg column="ownerRefundAmount" javaType="java.lang.Long"/>
+            <arg column="deductionBaseMinutes" javaType="java.lang.Long"/>
+            <arg column="lateMinutes" javaType="java.lang.Long"/>
+            <arg column="earlyLeaveMinutes" javaType="java.lang.Long"/>
+            <arg column="calculationReason" javaType="java.lang.String"/>
+            <arg column="calculationVersion" javaType="java.lang.String"/>
+            <arg column="calculatedAt" javaType="java.time.LocalDateTime"/>
             <arg column="status" javaType="com.gighub.settlement.domain.SettlementStatus"/>
             <arg column="approvedByUserId" javaType="java.lang.Long"/>
             <arg column="dueAt" javaType="java.time.LocalDateTime"/>
@@ -38,6 +46,14 @@
         id                  AS settlementId,
         work_case_id        AS workCaseId,
         amount              AS amount,
+        worker_paid_amount  AS workerPaidAmount,
+        owner_refund_amount AS ownerRefundAmount,
+        deduction_base_minutes AS deductionBaseMinutes,
+        late_minutes        AS lateMinutes,
+        early_leave_minutes AS earlyLeaveMinutes,
+        calculation_reason  AS calculationReason,
+        calculation_version AS calculationVersion,
+        calculated_at       AS calculatedAt,
         status              AS status,
         approved_by_user_id AS approvedByUserId,
         due_at              AS dueAt,
@@ -92,12 +108,42 @@
     -->
     <update id="scheduleWaitingPayout">
         UPDATE settlements
-        SET status     = 'SCHEDULED',
-            due_at     = #{dueAt},
-            updated_at = NOW(6)
+        SET status                  = 'SCHEDULED',
+            due_at                  = #{dueAt},
+            worker_paid_amount      = #{calculation.workerPaidAmount},
+            owner_refund_amount     = #{calculation.ownerRefundAmount},
+            deduction_base_minutes  = #{calculation.deductionBaseMinutes},
+            late_minutes            = #{calculation.lateMinutes},
+            early_leave_minutes     = #{calculation.earlyLeaveMinutes},
+            calculation_reason      = #{calculation.reason},
+            calculation_version     = #{calculation.version},
+            calculated_at           = NOW(6),
+            updated_at              = NOW(6)
         WHERE work_case_id = #{workCaseId}
           AND status = 'WAITING'
           AND due_at IS NULL
+          AND calculated_at IS NULL
+          AND worker_paid_amount IS NULL
+          AND owner_refund_amount IS NULL
+    </update>
+
+    <update id="recordWaitingTerminalSnapshot">
+        UPDATE settlements
+        SET worker_paid_amount      = #{calculation.workerPaidAmount},
+            owner_refund_amount     = #{calculation.ownerRefundAmount},
+            deduction_base_minutes  = #{calculation.deductionBaseMinutes},
+            late_minutes            = #{calculation.lateMinutes},
+            early_leave_minutes     = #{calculation.earlyLeaveMinutes},
+            calculation_reason      = #{calculation.reason},
+            calculation_version     = #{calculation.version},
+            calculated_at           = NOW(6),
+            updated_at              = NOW(6)
+        WHERE work_case_id = #{workCaseId}
+          AND status = 'WAITING'
+          AND due_at IS NULL
+          AND calculated_at IS NULL
+          AND worker_paid_amount IS NULL
+          AND owner_refund_amount IS NULL
     </update>
 
     <update id="transitionScheduledToProcessing">

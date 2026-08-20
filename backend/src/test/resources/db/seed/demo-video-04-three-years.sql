@@ -281,11 +281,18 @@ FROM work_cases
 WHERE title LIKE '[3YEAR-%';
 
 INSERT INTO settlements (
-    work_case_id, amount, status, approved_by_user_id,
+    work_case_id, amount, worker_paid_amount, owner_refund_amount,
+    calculation_reason, calculation_version, calculated_at,
+    status, approved_by_user_id,
     due_at, processing_at, completed_at, created_at, updated_at
 )
 SELECT
     id, agreed_wage,
+    CASE WHEN status = 'COMPLETED' THEN agreed_wage ELSE 0 END,
+    CASE WHEN status = 'NO_SHOW' THEN agreed_wage ELSE 0 END,
+    'LEGACY', 'LEGACY',
+    CASE WHEN status = 'NO_SHOW' THEN DATE_ADD(starts_at, INTERVAL 2 HOUR)
+         ELSE DATE_ADD(ends_at, INTERVAL 1 HOUR) END,
     CASE WHEN status = 'NO_SHOW' THEN 'REFUNDED' ELSE 'COMPLETED' END,
     @owner_id,
     CASE WHEN status = 'COMPLETED' THEN DATE_ADD(ends_at, INTERVAL 24 HOUR) ELSE NULL END,

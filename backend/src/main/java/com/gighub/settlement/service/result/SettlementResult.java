@@ -14,6 +14,13 @@ public class SettlementResult {
     Long originalEscrowAmount;
     Long workerPaidAmount;
     Long ownerRefundAmount;
+    Long deductionAmount;
+    Long deductionBaseMinutes;
+    Long lateMinutes;
+    Long earlyLeaveMinutes;
+    String calculationReason;
+    String calculationVersion;
+    LocalDateTime calculatedAt;
     LocalDateTime completedAt;
     boolean replayed;
 }

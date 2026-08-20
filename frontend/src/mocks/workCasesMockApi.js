@@ -135,9 +135,16 @@ export async function approveSettlement() {
   return {
     settlementId: 1,
     status: 'COMPLETED',
-    originalEscrowAmount: 90000,
-    workerPaidAmount: 90000,
-    ownerRefundAmount: 0,
+    originalEscrowAmount: 100000,
+    workerPaidAmount: 85710,
+    ownerRefundAmount: 14290,
+    deductionAmount: 14290,
+    deductionBaseMinutes: 210,
+    lateMinutes: 30,
+    earlyLeaveMinutes: 0,
+    calculationReason: 'CHECKED_OUT',
+    calculationVersion: 'ATTENDANCE_V1',
+    calculatedAt: new Date().toISOString(),
     completedAt: new Date().toISOString()
   }
 }
@@ -149,6 +156,31 @@ export async function approveNoShowRefund() {
     originalEscrowAmount: 90000,
     workerPaidAmount: 0,
     ownerRefundAmount: 90000,
+    deductionAmount: 90000,
+    deductionBaseMinutes: 210,
+    lateMinutes: 0,
+    earlyLeaveMinutes: 0,
+    calculationReason: 'NO_SHOW',
+    calculationVersion: 'ATTENDANCE_V1',
+    calculatedAt: new Date().toISOString(),
+    completedAt: new Date().toISOString()
+  }
+}
+
+export async function approveCheckOutMissingRefund() {
+  return {
+    settlementId: 1,
+    status: 'REFUNDED',
+    originalEscrowAmount: 90000,
+    workerPaidAmount: 0,
+    ownerRefundAmount: 90000,
+    deductionAmount: 90000,
+    deductionBaseMinutes: 210,
+    lateMinutes: 0,
+    earlyLeaveMinutes: 0,
+    calculationReason: 'CHECK_OUT_MISSING',
+    calculationVersion: 'ATTENDANCE_V1',
+    calculatedAt: new Date().toISOString(),
     completedAt: new Date().toISOString()
   }
 }

@@ -9,6 +9,9 @@ import com.gighub.work.contract.WorkCaseEscrowSnapshot;
 import com.gighub.work.domain.WorkCaseStatus;
 
 import java.time.LocalDateTime;
+import java.math.BigInteger;
+
+import static com.gighub.settlement.domain.SettlementCalculationPolicy.VERSION;
 
 /** Work·Settlement·Escrow Snapshot을 변경하지 않고 지급 가능 여부만 판단합니다. */
 public class SettlementPayoutPolicy {
@@ -73,6 +76,9 @@ public class SettlementPayoutPolicy {
         }
         if (!work.getWorkCaseId().equals(settlement.workCaseId())
                 || !work.getAgreedWage().equals(settlement.amount())) {
+            return SettlementPayoutDecision.INTEGRITY_VIOLATION;
+        }
+        if (!hasValidCalculationSnapshot(settlement)) {
             return SettlementPayoutDecision.INTEGRITY_VIOLATION;
         }
         if (command.getTrigger() == SettlementPayoutTrigger.SCHEDULER
@@ -146,8 +152,58 @@ public class SettlementPayoutPolicy {
             Long settlementId,
             Long workCaseId,
             Long amount,
+            Long workerPaidAmount,
+            Long ownerRefundAmount,
+            Long deductionBaseMinutes,
+            Long lateMinutes,
+            Long earlyLeaveMinutes,
+            String calculationReason,
+            String calculationVersion,
+            LocalDateTime calculatedAt,
             SettlementStatus status,
             LocalDateTime dueAt,
             LocalDateTime nextRetryAt) {
+    }
+
+    private static boolean hasValidCalculationSnapshot(SettlementFacts settlement) {
+        if (settlement.workerPaidAmount() == null
+                || settlement.ownerRefundAmount() == null
+                || settlement.deductionBaseMinutes() == null
+                || settlement.deductionBaseMinutes() <= 0
+                || settlement.lateMinutes() == null
+                || settlement.lateMinutes() < 0
+                || settlement.earlyLeaveMinutes() == null
+                || settlement.earlyLeaveMinutes() < 0
+                || !"CHECKED_OUT".equals(settlement.calculationReason())
+                || !VERSION.equals(settlement.calculationVersion())
+                || settlement.calculatedAt() == null
+                || settlement.workerPaidAmount() < 0
+                || settlement.ownerRefundAmount() < 0
+                || settlement.workerPaidAmount() > settlement.amount()
+                || settlement.ownerRefundAmount() > settlement.amount()) {
+            return false;
+        }
+        try {
+            if (Math.addExact(
+                    settlement.workerPaidAmount(),
+                    settlement.ownerRefundAmount()) != settlement.amount()) {
+                return false;
+            }
+            long deductedMinutes = Math.min(
+                    settlement.deductionBaseMinutes(),
+                    Math.addExact(settlement.lateMinutes(), settlement.earlyLeaveMinutes()));
+            long expectedPaid = deductedMinutes == 0
+                    ? settlement.amount()
+                    : BigInteger.valueOf(settlement.amount())
+                            .multiply(BigInteger.valueOf(
+                                    settlement.deductionBaseMinutes() - deductedMinutes))
+                            .divide(BigInteger.valueOf(settlement.deductionBaseMinutes()))
+                            .divide(BigInteger.TEN)
+                            .multiply(BigInteger.TEN)
+                            .longValueExact();
+            return expectedPaid == settlement.workerPaidAmount();
+        } catch (ArithmeticException overflow) {
+            return false;
+        }
     }
 }

@@ -1,5 +1,7 @@
 package com.gighub.work.domain;
 
+import java.math.BigInteger;
+
 /**
  * 일용근로소득 원천징수 기준의 예상 실수령액 참고 계산입니다.
  *
@@ -21,14 +23,15 @@ public final class ExpectedNetAmount {
 
     private static final long DEDUCTION_THRESHOLD = 150_000L;
     private static final long INCOME_TAX_WAIVER_THRESHOLD = 1_000L;
+    private static final BigInteger TEN = BigInteger.TEN;
 
     private ExpectedNetAmount() {
     }
 
     public static long calculate(long dailyWage) {
         long taxableBase = Math.max(dailyWage - DEDUCTION_THRESHOLD, 0L);
-        long incomeTax = roundDownToTen(taxableBase * 27 / 1000);
-        long localIncomeTax = roundDownToTen(taxableBase * 27 / 10000);
+        long incomeTax = calculateTax(taxableBase, 1_000L);
+        long localIncomeTax = calculateTax(taxableBase, 10_000L);
         if (incomeTax < INCOME_TAX_WAIVER_THRESHOLD) {
             incomeTax = 0L;
             localIncomeTax = 0L;
@@ -36,7 +39,13 @@ public final class ExpectedNetAmount {
         return dailyWage - incomeTax - localIncomeTax;
     }
 
-    private static long roundDownToTen(long value) {
-        return (value / 10) * 10;
+    /** BIGINT 범위의 지급액도 세율 곱셈 중 overflow 없이 10원 미만을 버립니다. */
+    private static long calculateTax(long taxableBase, long denominator) {
+        return BigInteger.valueOf(taxableBase)
+                .multiply(BigInteger.valueOf(27L))
+                .divide(BigInteger.valueOf(denominator))
+                .divide(TEN)
+                .multiply(TEN)
+                .longValueExact();
     }
 }

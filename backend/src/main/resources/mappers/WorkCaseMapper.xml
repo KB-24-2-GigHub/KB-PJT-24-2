@@ -28,6 +28,9 @@
             <arg column="termsVersion" javaType="java.lang.Integer"/>
             <arg column="startsAt" javaType="java.time.LocalDateTime"/>
             <arg column="endsAt" javaType="java.time.LocalDateTime"/>
+            <arg column="agreedWage" javaType="java.lang.Long"/>
+            <arg column="breakMinutes" javaType="java.lang.Integer"/>
+            <arg column="breakPaid" javaType="java.lang.Boolean"/>
         </constructor>
     </resultMap>
 
@@ -41,6 +44,7 @@
             <arg column="title" javaType="java.lang.String"/>
             <arg column="status" javaType="com.gighub.work.domain.WorkCaseStatus"/>
             <arg column="successfulCheckInCount" javaType="java.lang.Long"/>
+            <arg column="successfulCheckOutCount" javaType="java.lang.Long"/>
         </constructor>
     </resultMap>
 
@@ -91,7 +95,10 @@
                status        AS status,
                terms_version AS termsVersion,
                starts_at     AS startsAt,
-               ends_at       AS endsAt
+               ends_at       AS endsAt,
+               agreed_wage   AS agreedWage,
+               break_minutes AS breakMinutes,
+               break_paid    AS breakPaid
         FROM work_cases
         WHERE id = #{workCaseId}
             FOR UPDATE
@@ -177,7 +184,14 @@
                    WHERE ar.work_case_id = wc.id
                      AND ar.attendance_type = 'CHECK_IN'
                      AND ar.result = 'SUCCESS'
-               ) AS successfulCheckInCount
+               ) AS successfulCheckInCount,
+               (
+                   SELECT COUNT(*)
+                   FROM attendance_records ar
+                   WHERE ar.work_case_id = wc.id
+                     AND ar.attendance_type = 'CHECK_OUT'
+                     AND ar.result = 'SUCCESS'
+               ) AS successfulCheckOutCount
         FROM work_cases wc
         WHERE wc.id = #{workCaseId}
         FOR UPDATE
@@ -188,6 +202,7 @@
                wc.employer_id  AS employerId,
                wc.worker_id    AS workerId,
                wc.agreed_wage  AS agreedWage,
+               wc.title        AS title,
                wc.status       AS status,
                (
                    SELECT COUNT(*)
@@ -195,7 +210,14 @@
                    WHERE ar.work_case_id = wc.id
                      AND ar.attendance_type = 'CHECK_IN'
                      AND ar.result = 'SUCCESS'
-               ) AS successfulCheckInCount
+               ) AS successfulCheckInCount,
+               (
+                   SELECT COUNT(*)
+                   FROM attendance_records ar
+                   WHERE ar.work_case_id = wc.id
+                     AND ar.attendance_type = 'CHECK_OUT'
+                     AND ar.result = 'SUCCESS'
+               ) AS successfulCheckOutCount
         FROM work_cases wc
         WHERE wc.id = #{workCaseId}
     </select>
@@ -338,6 +360,14 @@
         <constructor>
             <arg column="status" javaType="java.lang.String"/>
             <arg column="amount" javaType="java.lang.Long"/>
+            <arg column="workerPaidAmount" javaType="java.lang.Long"/>
+            <arg column="ownerRefundAmount" javaType="java.lang.Long"/>
+            <arg column="deductionBaseMinutes" javaType="java.lang.Long"/>
+            <arg column="lateMinutes" javaType="java.lang.Long"/>
+            <arg column="earlyLeaveMinutes" javaType="java.lang.Long"/>
+            <arg column="calculationReason" javaType="java.lang.String"/>
+            <arg column="calculationVersion" javaType="java.lang.String"/>
+            <arg column="calculatedAt" javaType="java.time.LocalDateTime"/>
             <arg column="dueAt" javaType="java.time.LocalDateTime"/>
             <arg column="completedAt" javaType="java.time.LocalDateTime"/>
         </constructor>
@@ -410,7 +440,18 @@
     </select>
 
     <select id="findSettlement" resultMap="settlementSummaryResult">
-        SELECT status, amount, due_at AS dueAt, completed_at AS completedAt
+        SELECT status,
+               amount,
+               worker_paid_amount AS workerPaidAmount,
+               owner_refund_amount AS ownerRefundAmount,
+               deduction_base_minutes AS deductionBaseMinutes,
+               late_minutes AS lateMinutes,
+               early_leave_minutes AS earlyLeaveMinutes,
+               calculation_reason AS calculationReason,
+               calculation_version AS calculationVersion,
+               calculated_at AS calculatedAt,
+               due_at AS dueAt,
+               completed_at AS completedAt
         FROM settlements
         WHERE work_case_id = #{workCaseId}
     </select>

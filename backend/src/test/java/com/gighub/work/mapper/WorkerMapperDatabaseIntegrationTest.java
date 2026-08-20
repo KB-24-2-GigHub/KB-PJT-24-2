@@ -49,6 +49,7 @@ class WorkerMapperDatabaseIntegrationTest {
     private static final LocalDateTime TOMORROW_START = TODAY.plusDays(1).atStartOfDay();
 
     private static final long DAILY_WAGE = 120_000L;
+    private static final long STORED_WORKER_PAID_AMOUNT = 118_750L;
 
     private String businessNumberPrefix;
 
@@ -139,6 +140,7 @@ class WorkerMapperDatabaseIntegrationTest {
         assertEquals("HELD", row.getEscrowStatus());
         assertEquals("SCHEDULED", row.getSettlementStatus());
         assertEquals(settlementDueAt, row.getSettlementDueAt());
+        assertEquals(STORED_WORKER_PAID_AMOUNT, row.getWorkerPaidAmount());
 
         // 실패 근태가 성공 시각을 덮어쓰면 안 됩니다. uk_attendance_records_success는
         // REJECTED 행을 여러 건 허용하므로 JOIN 조건이 result를 걸지 않으면 여기서 드러납니다.
@@ -224,7 +226,10 @@ class WorkerMapperDatabaseIntegrationTest {
 
         // 경계는 열린 구간입니다. 어제 시작해 정확히 자정에 끝난 근무는 오늘에 걸쳐 있지
         // 않으므로 후보가 아닙니다.
-        jdbc.update("UPDATE work_cases SET ends_at = ? WHERE id = ?", TODAY_START, overnightReadyId);
+        jdbc.update(
+                "UPDATE work_cases SET ends_at = ?, break_minutes = 0 WHERE id = ?",
+                TODAY_START,
+                overnightReadyId);
         assertNull(
                 mapper.findTodayCandidate(workerUserId, CARRY_OVER_START, TODAY_START, TOMORROW_START),
                 "자정에 끝난 어제 근무는 오늘 근무가 아닙니다.");
@@ -382,9 +387,19 @@ class WorkerMapperDatabaseIntegrationTest {
     private void insertSettlement(
             JdbcTemplate jdbc, Long workCaseId, String status, LocalDateTime dueAt) {
         jdbc.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at)"
-                        + " VALUES (?, ?, ?, ?)",
-                workCaseId, DAILY_WAGE, status, dueAt);
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, worker_paid_amount, owner_refund_amount,"
+                        + " deduction_base_minutes, late_minutes, early_leave_minutes,"
+                        + " calculation_reason, calculation_version, calculated_at, status, due_at)"
+                        + " VALUES (?, ?, ?, ?, 480, 5, 0, 'CHECKED_OUT', 'ATTENDANCE_V1',"
+                        + " ?, ?, ?)",
+                workCaseId,
+                DAILY_WAGE,
+                STORED_WORKER_PAID_AMOUNT,
+                DAILY_WAGE - STORED_WORKER_PAID_AMOUNT,
+                TODAY.atTime(18, 5),
+                status,
+                dueAt);
     }
 
     private Long insertUser(JdbcTemplate jdbc, String loginId, String name, String role) {

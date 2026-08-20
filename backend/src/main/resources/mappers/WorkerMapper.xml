@@ -23,6 +23,7 @@
             <arg column="escrowStatus" javaType="java.lang.String"/>
             <arg column="settlementStatus" javaType="java.lang.String"/>
             <arg column="settlementDueAt" javaType="java.time.LocalDateTime"/>
+            <arg column="workerPaidAmount" javaType="java.lang.Long"/>
         </constructor>
     </resultMap>
 
@@ -69,7 +70,8 @@
                ar_out.captured_at    AS checkedOutAt,
                escrow.status         AS escrowStatus,
                settlement.status     AS settlementStatus,
-               settlement.due_at     AS settlementDueAt
+               settlement.due_at     AS settlementDueAt,
+               settlement.worker_paid_amount AS workerPaidAmount
         FROM work_cases wc
         LEFT JOIN escrows escrow
             ON escrow.work_case_id = wc.id

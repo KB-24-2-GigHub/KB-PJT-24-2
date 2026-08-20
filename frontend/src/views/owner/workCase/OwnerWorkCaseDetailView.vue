@@ -3,7 +3,7 @@
  * [C] 근무 상세  ·  /owner/attendance/work-cases/:workCaseId  ·  OWNER
  * 근무 상세 + 매칭 알바생 이름. 수정·삭제·연결 링크 발급은 수락 전(DRAFT)만.
  * 확정(날인) 후 수정·삭제 버튼 숨김 — 서버도 409 WORK_CASE_LOCKED.
- * 연계 API: 근무 CRUD·초대와 OWNER 정상 지급·NO_SHOW 환불 승인
+ * 연계 API: 근무 CRUD·초대와 OWNER 정산 지급·NO_SHOW/퇴근 누락 환불 승인
  *   →  @/services/workCases, 승인 뒤 @/stores/wallet 재조회
  * route.params.workCaseId 사용. 공통: StatusChip · BaseModal(삭제 확인)
  */
@@ -18,6 +18,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import SettlementBreakdown from '@/components/settlement/SettlementBreakdown.vue'
 import {
   canIssueInvitation,
   invitationStatusLabel,
@@ -27,6 +28,7 @@ import {
 import { contractFileUrl } from '@/services/documents'
 import { fieldErrorMap, newIdempotencyKey } from '@/services/http'
 import {
+  approveCheckOutMissingRefund,
   approveNoShowRefund,
   approveSettlement,
   createInvite,
@@ -49,12 +51,12 @@ import {
   formatSeoulTimeRange
 } from '@/utils/format'
 import {
+  canApproveCheckOutMissingRefund as canApproveCheckOutMissingRefundState,
   canApproveNoShowRefund as canApproveNoShowRefundState,
   canApprovePayout as canApprovePayoutState,
   clearSettlementIntent,
   getOrCreateSettlementIntent,
   hasSettlementTerminalState,
-  isAmount,
   isSettlementResultConsistent,
   SETTLEMENT_ACTION,
   settlementApprovalErrorPolicy
@@ -108,31 +110,30 @@ const canReissueInviteLink = computed(
 
 const canApprovePayout = computed(() => canApprovePayoutState(workCase.value))
 const canApproveNoShowRefund = computed(() => canApproveNoShowRefundState(workCase.value))
+const canApproveCheckOutMissingRefund = computed(() =>
+  canApproveCheckOutMissingRefundState(workCase.value)
+)
 const settlementModalOpen = computed(() => settlementModalAction.value != null)
-const settlementModalTitle = computed(() =>
-  settlementModalAction.value === SETTLEMENT_ACTION.NO_SHOW_REFUND
-    ? '노쇼 예치금을 환불할까요?'
-    : '일급 전액을 지급할까요?'
-)
-const settlementModalAmount = computed(() =>
-  settlementModalAction.value === SETTLEMENT_ACTION.NO_SHOW_REFUND
-    ? workCase.value?.escrow?.amount
-    : workCase.value?.settlement?.amount
-)
-const settlementModalAmountText = computed(() =>
-  isAmount(settlementModalAmount.value) ? formatKRW(settlementModalAmount.value) : '금액 확인 필요'
-)
+const settlementModalTitle = computed(() => {
+  if (settlementModalAction.value === SETTLEMENT_ACTION.NO_SHOW_REFUND) {
+    return '노쇼 예치금을 환불할까요?'
+  }
+  if (settlementModalAction.value === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND) {
+    return '퇴근 누락 예치금을 환불할까요?'
+  }
+  return '정산 금액을 지급할까요?'
+})
 
 const settlementGuidance = computed(() => {
-  if (workCase.value?.status === 'CHECK_OUT_MISSING') {
-    return '퇴근 누락 확인 전에는 지급하거나 환불할 수 없어요.'
-  }
-
   switch (workCase.value?.settlement?.status) {
     case 'WAITING':
-      return workCase.value?.status === 'NO_SHOW'
-        ? '출근 기록이 없는 노쇼 근무예요. 예치금 전액 환불을 승인할 수 있어요.'
-        : '근무 종료 결과가 확정되면 정산할 수 있어요.'
+      if (workCase.value?.status === 'NO_SHOW') {
+        return '출근 기록이 없는 노쇼 근무예요. 예치금 전액 환불을 승인할 수 있어요.'
+      }
+      if (workCase.value?.status === 'CHECK_OUT_MISSING') {
+        return '퇴근 기록이 없어 지급액은 0원이에요. 별도 승인으로 예치금 전액을 환불할 수 있어요.'
+      }
+      return '근무 종료 결과가 확정되면 정산할 수 있어요.'
     case 'SCHEDULED':
       return '자동 지급 예정 시각 전후 모두, 자동 처리가 먼저 시작되지 않았다면 지금 지급할 수 있어요.'
     case 'ON_HOLD':
@@ -140,7 +141,7 @@ const settlementGuidance = computed(() => {
     case 'PROCESSING':
       return '정산을 처리하고 있어요. 중복 요청하지 않고 최신 상태를 확인해주세요.'
     case 'COMPLETED':
-      return '약정 일급 전액이 알바생에게 지급됐어요.'
+      return '출퇴근 기록으로 확정한 금액을 알바생에게 지급하고, 차액은 사장님께 환불했어요.'
     case 'REFUNDED':
       return '예치금 전액이 사장님 지갑으로 환불됐어요.'
     case 'FAILED':
@@ -256,7 +257,12 @@ function validate() {
   // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 등록 화면과 같은 규칙을 쓴다.
   errors.endTime = workPeriodRule(form.startTime, form.endTime).message
   // 등록 화면과 같은 경계다. 직전 서버 검증 오류도 이 대입으로 함께 지워진다.
-  errors.breakMinutes = breakMinutesRule(form.startTime, form.endTime, form.breakMinutes).message
+  errors.breakMinutes = breakMinutesRule(
+    form.startTime,
+    form.endTime,
+    form.breakMinutes,
+    form.breakPaid
+  ).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')
@@ -452,6 +458,14 @@ async function refreshSettlementSources({ notify = false } = {}) {
       if (hasSettlementTerminalState(SETTLEMENT_ACTION.NO_SHOW_REFUND, detailResult.value)) {
         discardSettlementIntent(SETTLEMENT_ACTION.NO_SHOW_REFUND)
       }
+      if (
+        hasSettlementTerminalState(
+          SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND,
+          detailResult.value
+        )
+      ) {
+        discardSettlementIntent(SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND)
+      }
     }
 
     const sourcesRefreshed = [detailResult, walletResult, transactionsResult].every(
@@ -479,9 +493,17 @@ async function refreshSettlementSources({ notify = false } = {}) {
 }
 
 function settlementSuccessMessage(action, result) {
-  return action === SETTLEMENT_ACTION.NO_SHOW_REFUND
-    ? `노쇼 환불을 승인했어요. ${formatKRW(result.ownerRefundAmount)}이 사장님 지갑으로 반환됐어요.`
-    : `지급을 승인했어요. ${formatKRW(result.workerPaidAmount)}이 알바생에게 지급됐어요.`
+  if (action === SETTLEMENT_ACTION.NO_SHOW_REFUND) {
+    return `노쇼 환불을 승인했어요. ${formatKRW(result.ownerRefundAmount)}이 사장님 지갑으로 반환됐어요.`
+  }
+  if (action === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND) {
+    return `퇴근 누락 환불을 승인했어요. ${formatKRW(result.ownerRefundAmount)}이 사장님 지갑으로 반환됐어요.`
+  }
+  const refundText =
+    result.ownerRefundAmount > 0
+      ? ` 차감액 ${formatKRW(result.ownerRefundAmount)}은 사장님 지갑으로 환불됐어요.`
+      : ''
+  return `지급을 승인했어요. ${formatKRW(result.workerPaidAmount)}이 알바생에게 지급됐어요.${refundText}`
 }
 
 async function onApproveSettlement() {
@@ -491,14 +513,20 @@ async function onApproveSettlement() {
   const intent = getSettlementIntent(action)
   settlementSubmitting.value = true
   try {
-    const result =
-      action === SETTLEMENT_ACTION.NO_SHOW_REFUND
-        ? await approveNoShowRefund(workCase.value.workCaseId, {
-            idempotencyKey: intent.idempotencyKey
-          })
-        : await approveSettlement(workCase.value.workCaseId, {
-            idempotencyKey: intent.idempotencyKey
-          })
+    let result
+    if (action === SETTLEMENT_ACTION.NO_SHOW_REFUND) {
+      result = await approveNoShowRefund(workCase.value.workCaseId, {
+        idempotencyKey: intent.idempotencyKey
+      })
+    } else if (action === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND) {
+      result = await approveCheckOutMissingRefund(workCase.value.workCaseId, {
+        idempotencyKey: intent.idempotencyKey
+      })
+    } else {
+      result = await approveSettlement(workCase.value.workCaseId, {
+        idempotencyKey: intent.idempotencyKey
+      })
+    }
 
     settlementModalAction.value = null
     if (!isSettlementResultConsistent(action, result)) {
@@ -659,7 +687,10 @@ async function onApproveSettlement() {
               </BaseButton>
             </div>
 
-            <div v-if="canApprovePayout || canApproveNoShowRefund" class="settlement-actions">
+            <div
+              v-if="canApprovePayout || canApproveNoShowRefund || canApproveCheckOutMissingRefund"
+              class="settlement-actions"
+            >
               <BaseButton
                 v-if="canApprovePayout"
                 variant="owner"
@@ -668,7 +699,7 @@ async function onApproveSettlement() {
                 :disabled="settlementSubmitting || settlementRefreshing || settlementRefreshError"
                 @click="openSettlementModal(SETTLEMENT_ACTION.PAYOUT)"
               >
-                알바생에게 일급 전액 지급
+                정산 금액 지급·차액 환불
               </BaseButton>
               <BaseButton
                 v-if="canApproveNoShowRefund"
@@ -680,8 +711,23 @@ async function onApproveSettlement() {
               >
                 노쇼 예치금 전액 환불
               </BaseButton>
+              <BaseButton
+                v-if="canApproveCheckOutMissingRefund"
+                variant="owner"
+                size="lg"
+                block
+                :disabled="settlementSubmitting || settlementRefreshing || settlementRefreshError"
+                @click="openSettlementModal(SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND)"
+              >
+                퇴근 누락 예치금 전액 환불
+              </BaseButton>
             </div>
           </section>
+
+          <SettlementBreakdown
+            v-if="workCase.settlement"
+            :settlement="workCase.settlement"
+          />
 
           <DisputeTimeline
             v-if="canViewDisputes"
@@ -834,18 +880,19 @@ async function onApproveSettlement() {
     >
       <template v-if="settlementModalAction === SETTLEMENT_ACTION.NO_SHOW_REFUND">
         <p>알바생에게 지급하지 않고, 서버가 확인한 원 예치액 전액을 사장님 지갑으로 반환합니다.</p>
-        <dl class="settlement-confirm-summary">
-          <dt>환불 대상 예치금</dt>
-          <dd>{{ settlementModalAmountText }}</dd>
-        </dl>
+      </template>
+      <template
+        v-else-if="settlementModalAction === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND"
+      >
+        <p>퇴근 기록이 누락된 근무라 알바생에게 지급하지 않고 예치액 전액을 반환합니다.</p>
       </template>
       <template v-else>
-        <p>지각 여부와 관계없이 서버가 확인한 약정 일급 전액을 알바생에게 지급합니다.</p>
-        <dl class="settlement-confirm-summary">
-          <dt>지급 대상 일급</dt>
-          <dd>{{ settlementModalAmountText }}</dd>
-        </dl>
+        <p>서버가 출퇴근 기록으로 확정한 금액을 지급하고, 차감액은 사장님께 환불합니다.</p>
       </template>
+      <SettlementBreakdown
+        v-if="workCase?.settlement"
+        :settlement="workCase.settlement"
+      />
       <p class="settlement-confirm-note">승인 뒤 상세 상태와 지갑·거래내역을 다시 불러옵니다.</p>
       <template #footer>
         <BaseButton
@@ -988,25 +1035,6 @@ async function onApproveSettlement() {
   border-radius: var(--radius-sm);
   color: var(--color-text);
   font-size: var(--text-sm);
-}
-.settlement-confirm-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-sm);
-  margin-top: var(--space-md);
-  padding: var(--space-md);
-  border-radius: var(--radius-sm);
-  background: var(--color-bg);
-}
-.settlement-confirm-summary dt {
-  color: var(--color-text-sub);
-  font-size: var(--text-sm);
-}
-.settlement-confirm-summary dd {
-  color: var(--color-owner);
-  font-size: var(--text-lg);
-  font-weight: var(--weight-bold);
 }
 .settlement-confirm-note {
   margin-top: var(--space-md);

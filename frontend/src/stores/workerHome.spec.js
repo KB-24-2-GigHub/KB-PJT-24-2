@@ -20,7 +20,7 @@ const RAW_TODAY_WORK_CASE = {
   breakMinutes: 60,
   breakPaid: false,
   dailyWage: 90000,
-  expectedNetAmount: 88500,
+  taxReference: null,
   status: 'IN_PROGRESS',
   attendance: {
     checkedInAt: '2026-07-22T01:15:00Z',
@@ -108,7 +108,6 @@ describe('useWorkerHomeStore', () => {
 
     expect(store.earning).toEqual({
       agreedWage: 90000,
-      expectedNetAmount: 88500,
       isLate: true,
       lateMinutes: 15
     })

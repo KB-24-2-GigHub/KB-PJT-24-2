@@ -49,6 +49,8 @@ class SettlementControllerTest {
     private static final String KEY = "SETTLEMENT-KEY-001";
     private static final LocalDateTime COMPLETED_AT =
             LocalDateTime.of(2026, 7, 24, 17, 12, 34, 123_456_000);
+    private static final LocalDateTime CALCULATED_AT =
+            LocalDateTime.of(2026, 7, 24, 16, 50, 0, 123_456_000);
 
     private SettlementService settlementService;
     private MockMvc mockMvc;
@@ -72,8 +74,15 @@ class SettlementControllerTest {
                         .status("COMPLETED")
                         .settlementAmount(WAGE)
                         .originalEscrowAmount(WAGE)
-                        .workerPaidAmount(WAGE)
-                        .ownerRefundAmount(0L)
+                        .workerPaidAmount(240_000L)
+                        .ownerRefundAmount(60_000L)
+                        .deductionAmount(60_000L)
+                        .deductionBaseMinutes(480L)
+                        .lateMinutes(96L)
+                        .earlyLeaveMinutes(0L)
+                        .calculationReason("CHECKED_OUT")
+                        .calculationVersion("ATTENDANCE_V1")
+                        .calculatedAt(CALCULATED_AT)
                         .completedAt(COMPLETED_AT)
                         .replayed(false)
                         .build()
@@ -86,8 +95,16 @@ class SettlementControllerTest {
                 .andExpect(jsonPath("$.data.settlementId").value(12))
                 .andExpect(jsonPath("$.data.status").value("COMPLETED"))
                 .andExpect(jsonPath("$.data.originalEscrowAmount").value(WAGE))
-                .andExpect(jsonPath("$.data.workerPaidAmount").value(WAGE))
-                .andExpect(jsonPath("$.data.ownerRefundAmount").value(0))
+                .andExpect(jsonPath("$.data.workerPaidAmount").value(240_000))
+                .andExpect(jsonPath("$.data.ownerRefundAmount").value(60_000))
+                .andExpect(jsonPath("$.data.deductionAmount").value(60_000))
+                .andExpect(jsonPath("$.data.deductionBaseMinutes").value(480))
+                .andExpect(jsonPath("$.data.lateMinutes").value(96))
+                .andExpect(jsonPath("$.data.earlyLeaveMinutes").value(0))
+                .andExpect(jsonPath("$.data.calculationReason").value("CHECKED_OUT"))
+                .andExpect(jsonPath("$.data.calculationVersion").value("ATTENDANCE_V1"))
+                .andExpect(jsonPath("$.data.calculatedAt")
+                        .value("2026-07-24T07:50:00.123456Z"))
                 .andExpect(jsonPath("$.data.completedAt").value("2026-07-24T08:12:34.123456Z"))
                 .andExpect(jsonPath("$.data.settlementAmount").doesNotExist())
                 .andExpect(jsonPath("$.data.replayed").doesNotExist());
@@ -111,6 +128,7 @@ class SettlementControllerTest {
                         .originalEscrowAmount(WAGE)
                         .workerPaidAmount(WAGE)
                         .ownerRefundAmount(0L)
+                        .deductionAmount(0L)
                         .completedAt(COMPLETED_AT)
                         .replayed(true)
                         .build());

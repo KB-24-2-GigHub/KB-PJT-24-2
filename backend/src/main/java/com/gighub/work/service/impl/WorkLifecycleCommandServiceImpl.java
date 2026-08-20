@@ -29,7 +29,13 @@ public class WorkLifecycleCommandServiceImpl implements WorkLifecycleCommandServ
             return null;
         }
         return new WorkLifecycleSnapshot(
-                row.getWorkCaseId(), row.getStatus(), row.getStartsAt(), row.getEndsAt());
+                row.getWorkCaseId(),
+                row.getStatus(),
+                row.getStartsAt(),
+                row.getEndsAt(),
+                row.getAgreedWage(),
+                row.getBreakMinutes(),
+                row.getBreakPaid());
     }
 
     @Override

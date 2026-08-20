@@ -15,6 +15,7 @@ import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import SettlementBreakdown from '@/components/settlement/SettlementBreakdown.vue'
 import { contractFileUrl } from '@/services/documents'
 import { getOwnerContact, getWorkCase } from '@/services/workCases'
 import { useUiStore } from '@/stores/ui'
@@ -58,7 +59,9 @@ const settlementMessage = computed(() => {
       : '사장님 환불 승인 대기 중 · 회원님 획득 금액은 0원이에요'
   }
   if (wc.status === 'CHECK_OUT_MISSING') {
-    return '퇴근 기록 확인 중 · 정산 결정 전이에요'
+    return settlement.status === 'REFUNDED'
+      ? '사장님 환불 완료 · 회원님 지급 내역은 없어요'
+      : '퇴근 누락 환불 승인 대기 중 · 회원님 획득 금액은 0원이에요'
   }
 
   switch (settlement.status) {
@@ -67,9 +70,10 @@ const settlementMessage = computed(() => {
     case 'PROCESSING':
       return '정산 처리 중이에요'
     case 'COMPLETED':
+      if (!Number.isSafeInteger(settlement.workerPaidAmount)) return '지급 완료 · 금액 확인 필요'
       return settlement.completedAt
-        ? `${formatSeoulDateTime(settlement.completedAt)} · ${formatKRW(settlement.amount)} 지급 완료`
-        : `${formatKRW(settlement.amount)} 지급 완료`
+        ? `${formatSeoulDateTime(settlement.completedAt)} · ${formatKRW(settlement.workerPaidAmount)} 지급 완료`
+        : `${formatKRW(settlement.workerPaidAmount)} 지급 완료`
     case 'FAILED':
       return '정산이 실패했어요'
     default:
@@ -182,6 +186,11 @@ function goHome() {
             </div>
           </dl>
         </section>
+
+        <SettlementBreakdown
+          v-if="workCase.settlement"
+          :settlement="workCase.settlement"
+        />
 
         <div class="actions">
           <a

@@ -46,7 +46,8 @@ public final class WorkerHomeResponse {
             LocalDateTime checkedOutAt,
             String escrowStatus,
             String settlementStatus,
-            LocalDateTime settlementDueAt) {
+            LocalDateTime settlementDueAt,
+            Long workerPaidAmount) {
         return new WorkerHomeResponse(new TodayWorkCase(
                 workCaseId,
                 title,
@@ -62,7 +63,8 @@ public final class WorkerHomeResponse {
                 checkedOutAt,
                 escrowStatus,
                 settlementStatus,
-                settlementDueAt));
+                settlementDueAt,
+                workerPaidAmount));
     }
 
     @Getter
@@ -76,7 +78,7 @@ public final class WorkerHomeResponse {
         private final Integer breakMinutes;
         private final Boolean breakPaid;
         private final Long dailyWage;
-        private final Long expectedNetAmount;
+        private final TaxReference taxReference;
         private final WorkCaseStatus status;
         private final Attendance attendance;
         private final String escrowStatus;
@@ -98,7 +100,8 @@ public final class WorkerHomeResponse {
                 LocalDateTime checkedOutAt,
                 String escrowStatus,
                 String settlementStatus,
-                LocalDateTime settlementDueAt) {
+                LocalDateTime settlementDueAt,
+                Long workerPaidAmount) {
             this.workCaseId = workCaseId;
             this.title = title;
             this.workplaceName = workplaceName;
@@ -107,13 +110,37 @@ public final class WorkerHomeResponse {
             this.breakMinutes = breakMinutes;
             this.breakPaid = breakPaid;
             this.dailyWage = dailyWage;
-            this.expectedNetAmount = ExpectedNetAmount.calculate(dailyWage);
+            // 세금 참고값은 약정 일급이 아니라 최초 저장된 실제 지급액만 기준으로 만듭니다.
+            this.taxReference = TaxReference.from(workerPaidAmount);
             this.status = status;
             this.attendance = Attendance.from(
                     startsAt, checkedInAt, checkInAttemptedAt, checkedOutAt);
             this.escrowStatus = escrowStatus;
             this.settlementStatus = settlementStatus;
             this.settlementDueAt = ApiTimes.toInstant(settlementDueAt);
+        }
+    }
+
+    /** 실제 원천징수 없이 저장된 지급액에서 파생한 세금 참고값입니다. */
+    @Getter
+    public static final class TaxReference {
+
+        private final Long basisAmount;
+        private final Long estimatedTaxAmount;
+        private final Long estimatedAfterTaxAmount;
+
+        private TaxReference(long basisAmount) {
+            if (basisAmount < 0) {
+                throw new IllegalArgumentException("세금 참고 기준 금액은 음수일 수 없습니다.");
+            }
+            long afterTax = ExpectedNetAmount.calculate(basisAmount);
+            this.basisAmount = basisAmount;
+            this.estimatedTaxAmount = Math.subtractExact(basisAmount, afterTax);
+            this.estimatedAfterTaxAmount = afterTax;
+        }
+
+        private static TaxReference from(Long basisAmount) {
+            return basisAmount == null ? null : new TaxReference(basisAmount);
         }
     }
 

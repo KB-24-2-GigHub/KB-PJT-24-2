@@ -27,12 +27,24 @@ public final class SettlementPayoutResultValidator {
                 || !settlement.workCaseId().equals(work.getWorkCaseId())
                 || settlement.amount() == null
                 || !settlement.amount().equals(work.getAgreedWage())
+                || settlement.workerPaidAmount() == null
+                || settlement.ownerRefundAmount() == null
+                || settlement.deductionBaseMinutes() == null
+                || settlement.lateMinutes() == null
+                || settlement.earlyLeaveMinutes() == null
+                || settlement.calculationReason() == null
+                || settlement.calculationVersion() == null
+                || settlement.calculatedAt() == null
                 || settlement.status() != SettlementStatus.COMPLETED
                 || !Objects.equals(settlement.approvedByUserId(), approvedByUserId)
                 || settlement.completedAt() == null) {
             throw new EscrowIntegrityException("완료된 정산의 식별 정보가 지급 명령과 일치하지 않습니다.");
         }
         validateAmounts(settlement.amount(), amounts);
+        if (!settlement.workerPaidAmount().equals(amounts.workerPaidAmount())
+                || !settlement.ownerRefundAmount().equals(amounts.ownerRefundAmount())) {
+            throw new EscrowIntegrityException("저장된 정산 Snapshot과 실제 자금 이동 금액이 다릅니다.");
+        }
 
         // dueAt·processingAt·completedAt·retry 조합은 Flyway lifecycle CHECK가 보장합니다.
         return SettlementResult.builder()
@@ -42,6 +54,13 @@ public final class SettlementPayoutResultValidator {
                 .originalEscrowAmount(amounts.originalEscrowAmount())
                 .workerPaidAmount(amounts.workerPaidAmount())
                 .ownerRefundAmount(amounts.ownerRefundAmount())
+                .deductionAmount(amounts.ownerRefundAmount())
+                .deductionBaseMinutes(settlement.deductionBaseMinutes())
+                .lateMinutes(settlement.lateMinutes())
+                .earlyLeaveMinutes(settlement.earlyLeaveMinutes())
+                .calculationReason(settlement.calculationReason())
+                .calculationVersion(settlement.calculationVersion())
+                .calculatedAt(settlement.calculatedAt())
                 .completedAt(settlement.completedAt())
                 .replayed(false)
                 .build();
@@ -52,6 +71,14 @@ public final class SettlementPayoutResultValidator {
             Long settlementId,
             Long workCaseId,
             Long amount,
+            Long workerPaidAmount,
+            Long ownerRefundAmount,
+            Long deductionBaseMinutes,
+            Long lateMinutes,
+            Long earlyLeaveMinutes,
+            String calculationReason,
+            String calculationVersion,
+            LocalDateTime calculatedAt,
             SettlementStatus status,
             Long approvedByUserId,
             LocalDateTime completedAt) {

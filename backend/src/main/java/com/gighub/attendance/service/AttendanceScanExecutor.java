@@ -23,12 +23,15 @@ import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.QrTokenMapper;
 import com.gighub.attendance.mapper.param.AttendanceRecordInsertParam;
 import com.gighub.attendance.mapper.result.AttendanceScanCandidateRow;
+import com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow;
 import com.gighub.attendance.mapper.result.QrTokenRow;
 import com.gighub.attendance.qr.QrTokenPayload;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.settlement.service.SettlementReservationService;
+import com.gighub.settlement.domain.SettlementCalculationReason;
+import com.gighub.settlement.service.command.SettlementCalculationCommand;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -207,7 +210,15 @@ public class AttendanceScanExecutor {
         // 지급을 예약합니다. Wallet·Escrow 금액과 원장은 바뀌지 않습니다. 영향 행이 정확히
         // 1행이 아니면 근태만 완료되고 지급이 예약되지 않은 채 commit되므로 전체를 되돌립니다.
         LocalDateTime settlementDueAt = attemptedAt.plusHours(SETTLEMENT_DUE_HOURS);
-        settlementReservationService.schedulePayout(lock.workCaseId(), settlementDueAt);
+        AttendanceSuccessTimestampsRow attendance =
+                attendanceRecordMapper.findSuccessTimestamps(lock.workCaseId());
+        if (attendance == null
+                || attendance.getCheckedInAt() == null
+                || attendance.getCheckedOutAt() == null) {
+            throw new IllegalStateException("정산 계산에 필요한 성공 출퇴근 기록이 없습니다.");
+        }
+        settlementReservationService.schedulePayout(
+                calculationCommand(lock, attendance), settlementDueAt);
 
         AttendanceScanResponse response = AttendanceScanResponse.recorded(
                 candidate.getWorkCaseId(),
@@ -218,6 +229,22 @@ public class AttendanceScanExecutor {
                 ApiTimes.toInstant(earlyConfirmedAt),
                 ApiTimes.toInstant(settlementDueAt));
         return succeed(claimId, response);
+    }
+
+    private static SettlementCalculationCommand calculationCommand(
+            WorkLifecycleSnapshot work,
+            AttendanceSuccessTimestampsRow attendance) {
+        return SettlementCalculationCommand.builder()
+                .workCaseId(work.workCaseId())
+                .agreedWage(work.agreedWage())
+                .startsAt(work.startsAt())
+                .endsAt(work.endsAt())
+                .breakMinutes(work.breakMinutes())
+                .breakPaid(work.breakPaid())
+                .checkedInAt(attendance.getCheckedInAt())
+                .checkedOutAt(attendance.getCheckedOutAt())
+                .reason(SettlementCalculationReason.CHECKED_OUT)
+                .build();
     }
 
     /**

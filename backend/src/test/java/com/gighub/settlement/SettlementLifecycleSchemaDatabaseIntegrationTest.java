@@ -100,7 +100,13 @@ class SettlementLifecycleSchemaDatabaseIntegrationTest {
 
         jdbc.update(
                 "UPDATE settlements SET status = 'SCHEDULED',"
-                        + " due_at = DATE_ADD(NOW(6), INTERVAL 1 HOUR) WHERE id = ?",
+                        + " due_at = DATE_ADD(NOW(6), INTERVAL 1 HOUR),"
+                        + " worker_paid_amount = amount, owner_refund_amount = 0,"
+                        + " deduction_base_minutes = 480, late_minutes = 0,"
+                        + " early_leave_minutes = 0,"
+                        + " calculation_reason = 'CHECKED_OUT',"
+                        + " calculation_version = 'ATTENDANCE_V1',"
+                        + " calculated_at = NOW(6) WHERE id = ?",
                 settlementId
         );
         jdbc.update(
@@ -193,7 +199,13 @@ class SettlementLifecycleSchemaDatabaseIntegrationTest {
             long ownerId) {
         jdbc.update(
                 "UPDATE settlements SET status = 'PROCESSING',"
-                        + " approved_by_user_id = ?, processing_at = NOW(6)"
+                        + " approved_by_user_id = ?, processing_at = NOW(6),"
+                        + " worker_paid_amount = 0, owner_refund_amount = amount,"
+                        + " deduction_base_minutes = 480, late_minutes = 0,"
+                        + " early_leave_minutes = 0,"
+                        + " calculation_reason = 'NO_SHOW',"
+                        + " calculation_version = 'ATTENDANCE_V1',"
+                        + " calculated_at = NOW(6)"
                         + " WHERE id = ?",
                 ownerId,
                 settlementId
@@ -231,7 +243,13 @@ class SettlementLifecycleSchemaDatabaseIntegrationTest {
     private void verifyFailedLifecycle(JdbcTemplate jdbc, long settlementId) {
         jdbc.update(
                 "UPDATE settlements SET status = 'SCHEDULED',"
-                        + " due_at = DATE_SUB(NOW(6), INTERVAL 1 MINUTE) WHERE id = ?",
+                        + " due_at = DATE_SUB(NOW(6), INTERVAL 1 MINUTE),"
+                        + " worker_paid_amount = amount, owner_refund_amount = 0,"
+                        + " deduction_base_minutes = 480, late_minutes = 0,"
+                        + " early_leave_minutes = 0,"
+                        + " calculation_reason = 'CHECKED_OUT',"
+                        + " calculation_version = 'ATTENDANCE_V1',"
+                        + " calculated_at = NOW(6) WHERE id = ?",
                 settlementId
         );
         jdbc.update(
