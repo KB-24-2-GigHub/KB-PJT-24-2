@@ -471,22 +471,37 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 .sticky-head {
   /* AppTopBar 는 sticky top:0 이고 높이는 12px 패딩 + 28px 로고 + 12px 패딩 = 53px 이다.
      고정 영역은 그 바로 아래에 멈춰야 하므로 같은 값을 쓴다.
-     ※ AppTopBar 의 높이를 바꾸면 이 값도 함께 고쳐야 한다. */
+     이 요소의 스크롤 전 자연스러운 위치는 AppTopBar 높이(53px) + OwnerTabLayout
+     .screen-body 의 상단 패딩(--space-lg, 16px) = 69px 이라 top:53px 과 16px 어긋난다.
+     top 값만 69px 로 올리면 그 16px 구간에서는 아직 안 붙은 상태라 배경도 없어
+     스크롤되는 목록이 AppTopBar 바로 밑으로 비쳐 보인다(이번에 겪은 문제). 그래서 top
+     값 대신 이 요소 자체를 screen-body 상단 패딩만큼 위로 끌어올리고(margin-top 음수)
+     그만큼을 padding-top 으로 안에서 되돌린다 — 좌우 full-bleed 와 같은 방식이다.
+     이러면 스크롤 전 자연 위치가 정확히 53px 이 되어 top:53px 과 맞아떨어지고, 늘어난
+     박스가 불투명 배경까지 그 구간을 덮어 비쳐 보이는 문제도 함께 없어진다.
+     ※ AppTopBar 높이나 screen-body 상단 패딩을 바꾸면 이 값도 함께 고쳐야 한다. */
   position: sticky;
   top: 53px;
-  z-index: var(--z-tabbar);
+  /* AppTopBar(.topbar)도 같은 --z-tabbar 를 쓰는 sticky 라 여기서 그대로 쓰면 DOM
+     순서상 이 영역이 나중에 그려져 AppTopBar 위에 덮인다 — 스크롤 중 재계산 시 경계가
+     맞물리면서 AppTopBar 하단 회색 구분선이 가려져 사라져 보였다(원인). 1만큼 낮춰 항상
+     AppTopBar 아래에 머물게 한다(그래도 일반 흐름인 목록 콘텐츠보다는 위다). */
+  z-index: calc(var(--z-tabbar) - 1);
 
   display: flex;
   flex-direction: column;
   gap: var(--space-lg);
 
-  /* 좌우 full-bleed — screen-body 의 좌우 패딩(16px)만큼 밖으로 빼고 안에서 되돌린다.
-     그러지 않으면 스크롤되는 내용이 양옆 16px 여백으로 비쳐 보인다. */
-  margin: 0 calc(-1 * var(--space-lg));
-  padding: 0 var(--space-lg) var(--space-lg);
+  /* full-bleed — screen-body 의 상하좌우 패딩만큼 밖으로 빼고 안에서 되돌린다. 좌우는
+     그러지 않으면 스크롤되는 내용이 양옆 16px 여백으로 비쳐 보이기 때문이고, 위쪽은
+     위 주석의 sticky top 정렬 때문이다(아래는 그대로 padding-bottom 만 준다). */
+  margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) 0;
+  padding: var(--space-lg) var(--space-lg) var(--space-lg);
   /* 스크롤되는 내용이 뒤로 비치지 않게 불투명 배경을 깐다.
      색은 .app 컨테이너와 같은 --color-surface — --color-bg(회색)를 쓰면 이 영역만 띠로 보인다. */
   background: var(--color-surface);
+  /* 고정 영역(근무 목록 제목까지)과 그 아래 스크롤되는 목록 사이 경계선. */
+  border-bottom: 1px solid var(--color-border);
 }
 
 /* ---- 근태 현황 요약(7종, 압축된 pill 2줄) ----
