@@ -8,7 +8,6 @@
  *   재공유 UI 를 노출하지 않는다 — 서버에 그 조작 자체가 없거나 항상 거부된다.
  * 공통: 카드 클릭 → /owner/documents/:documentId (공유 보건증은 workCaseId 를 함께 넘긴다)
  */
-import { FileText, Image as ImageIcon } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
 import { onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -17,7 +16,7 @@ import EmptyState from '@/components/common/EmptyState.vue'
 import { listDocuments } from '@/services/documents'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { useUiStore } from '@/stores/ui'
-import { docTypeLabel, isImageDocument } from '@/utils/document'
+import { docTypeLabel } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 import { hasNextPage } from '@/utils/page'
 
@@ -150,19 +149,27 @@ function openViewer(doc) {
         <ul class="doc-list">
           <li v-for="doc in documents" :key="`${doc.documentId}-${doc.workCaseId ?? 'own'}`">
             <button type="button" class="doc-card" @click="openViewer(doc)">
-              <span class="thumb">
-                <ImageIcon v-if="isImageDocument(doc)" :size="20" />
-                <FileText v-else :size="20" />
+              <span
+                class="type-badge"
+                :class="
+                  doc.docType === 'HEALTH_CERTIFICATE'
+                    ? 'type-badge--health'
+                    : 'type-badge--contract'
+                "
+              >
+                {{ docTypeLabel(doc) }}
               </span>
 
               <span class="doc-info">
                 <span class="doc-name">{{ doc.fileName }}</span>
                 <span class="doc-meta">
-                  {{ formatDate(doc.issuedDate) }} · {{ docTypeLabel(doc) }}
-                  <template v-if="doc.sharedByName"> · {{ doc.sharedByName }}</template>
-                </span>
-                <span v-if="doc.expiresDate" class="doc-expiry">
-                  만료 예정 {{ formatDate(doc.expiresDate) }}
+                  <span class="meta-row"
+                    >발급일: {{ formatDate(doc.issuedDate) }}
+                    <template v-if="doc.sharedByName"> · {{ doc.sharedByName }}</template>
+                  </span>
+                  <span v-if="doc.expiresDate" class="meta-row"
+                    >만료일: {{ formatDate(doc.expiresDate) }}</span
+                  >
                 </span>
               </span>
 
@@ -245,16 +252,25 @@ function openViewer(doc) {
   border-radius: var(--radius-md);
   text-align: left;
 }
-.thumb {
+.type-badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  min-width: 76px;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+.type-badge--health {
   color: var(--color-owner);
   background: var(--color-owner-weak);
-  border-radius: var(--radius-sm);
+}
+.type-badge--contract {
+  color: var(--color-owner);
+  background: var(--color-owner-weak);
 }
 .doc-info {
   display: flex;
@@ -272,13 +288,11 @@ function openViewer(doc) {
   white-space: nowrap;
 }
 .doc-meta {
+  display: flex;
+  flex-direction: column;
   font-size: var(--text-sm);
   color: var(--color-text-sub);
   word-break: keep-all;
-}
-.doc-expiry {
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
 }
 .badge {
   display: inline-flex;
