@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   WORK_CASE_STATUS,
+  WORK_CASE_STATUS_FILTER,
   WORK_CASE_SUMMARY,
+  displayWorkCaseStatus,
   emptyWorkCaseSummary
 } from '@/constants/workCaseStatus'
 
@@ -111,5 +113,42 @@ describe('work-case status contract', () => {
 
     expect(firstDraft).toMatchObject({ status: 'DRAFT' })
     expect(secondDraft).toMatchObject({ status: 'DRAFT' })
+  })
+})
+
+describe('displayWorkCaseStatus (LATE 파생 표시)', () => {
+  const now = new Date('2026-08-20T01:30:00Z')
+
+  it('READY이고 체크인 전인데 시작 시각이 지났으면 LATE를 반환한다', () => {
+    const workCase = { status: 'READY', startsAt: '2026-08-20T01:00:00Z', attendance: null }
+    expect(displayWorkCaseStatus(workCase, now)).toBe('LATE')
+  })
+
+  it('READY이고 시작 시각 전이면 그대로 READY다', () => {
+    const workCase = { status: 'READY', startsAt: '2026-08-20T02:00:00Z', attendance: null }
+    expect(displayWorkCaseStatus(workCase, now)).toBe('READY')
+  })
+
+  it('이미 체크인했으면 시작 시각이 지났어도 LATE로 바꾸지 않는다', () => {
+    const workCase = {
+      status: 'READY',
+      startsAt: '2026-08-20T01:00:00Z',
+      attendance: { checkedInAt: '2026-08-20T01:10:00Z' }
+    }
+    expect(displayWorkCaseStatus(workCase, now)).toBe('READY')
+  })
+
+  it('READY가 아닌 다른 상태는 그대로 반환한다', () => {
+    expect(
+      displayWorkCaseStatus({ status: 'IN_PROGRESS', startsAt: '2026-08-20T01:00:00Z' }, now)
+    ).toBe('IN_PROGRESS')
+    expect(
+      displayWorkCaseStatus({ status: 'NO_SHOW', startsAt: '2026-08-20T01:00:00Z' }, now)
+    ).toBe('NO_SHOW')
+  })
+
+  it('LATE는 파생 표시값이라 필터·요약이 순회하는 WORK_CASE_STATUS·WORK_CASE_STATUS_FILTER에 섞이지 않는다', () => {
+    expect(WORK_CASE_STATUS).not.toHaveProperty('LATE')
+    expect(WORK_CASE_STATUS_FILTER.map((f) => f.value)).not.toContain('LATE')
   })
 })

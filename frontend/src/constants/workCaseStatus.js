@@ -6,7 +6,7 @@
  *
  * 상태 전이(v1.0 확정):
  *   DRAFT(수락 전) → ACCEPTED(수락·계약) → READY(시작 대기)
- *   → IN_PROGRESS(근무중) → COMPLETED(완료)
+ *   → IN_PROGRESS(근무중) → COMPLETED(근무완료)
  *   확정 계열에서 NO_SHOW(미출근) · DRAFT에서 CANCELED(취소).
  * 초대 발급·대기 상태는 work_case가 아니라 work_invitations가 담당한다.
  *
@@ -23,7 +23,7 @@ export const WORK_CASE_STATUS = {
   READY: { label: '근무예정', color: 'var(--color-owner)' },
   IN_PROGRESS: { label: '근무중', color: 'var(--color-primary)' },
   CHECK_OUT_MISSING: { label: '퇴근 확인 필요', color: 'var(--color-warning)' },
-  COMPLETED: { label: '완료', color: 'var(--color-success)' },
+  COMPLETED: { label: '근무완료', color: 'var(--color-success)' },
   NO_SHOW: { label: '노쇼', color: 'var(--color-danger)' },
   CANCELED: { label: '취소', color: 'var(--color-text-sub)' }
 }
@@ -41,6 +41,33 @@ export function workCaseStatusColor(status) {
 /** 수정·삭제 가능 여부에 사용하는 DRAFT 판별이다(서버도 DRAFT 만 허용한다). */
 export function isDraft(status) {
   return status === 'DRAFT'
+}
+
+/**
+ * '지각' 파생 표시 — READY인데 시작 시각이 지났고 아직 체크인 전인 구간의 화면 문구다.
+ * work_cases.status 8종에 없는 값이라 WORK_CASE_STATUS에 넣지 않는다(필터·요약이 그
+ * 8종만 순회하므로 섞으면 존재하지 않는 status로 필터·집계를 보내게 된다). StatusChip이
+ * status='LATE'를 받으면 이 라벨을 특별 처리한다.
+ */
+export const DERIVED_LATE_STATUS = { label: '지각', color: 'var(--color-warning)' }
+
+/**
+ * 화면 표시용 파생 상태를 계산한다.
+ *
+ * 서버는 시작+1시간 경계까지 NO_SHOW로 정리하지 않고 READY를 유지한다(API_SPEC 5C-1·5C-2).
+ * 그 구간 동안 체크인 전이면 실제로는 지각인데도 화면은 '근무예정'으로 보여 사용자가 아직
+ * 여유가 있다고 오인할 수 있다. 저장 status는 그대로 두고 표시만 'LATE'로 바꾼다.
+ *
+ * @param {object} workCase status, startsAt, attendance.checkedInAt 를 가진 근무 항목
+ * @param {Date} now 비교 기준 시각(테스트에서 고정할 수 있게 주입한다)
+ */
+export function displayWorkCaseStatus(workCase, now = new Date()) {
+  if (workCase?.status !== 'READY' || workCase?.attendance?.checkedInAt) {
+    return workCase?.status
+  }
+  const startsAt = new Date(workCase?.startsAt)
+  if (Number.isNaN(startsAt.getTime())) return workCase.status
+  return now.getTime() > startsAt.getTime() ? 'LATE' : workCase.status
 }
 
 /**

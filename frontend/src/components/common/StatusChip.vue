@@ -24,7 +24,7 @@ import {
 } from 'lucide-vue-next'
 import { computed } from 'vue'
 
-import { WORK_CASE_STATUS } from '@/constants/workCaseStatus'
+import { DERIVED_LATE_STATUS, WORK_CASE_STATUS } from '@/constants/workCaseStatus'
 import { ESCROW_STATUS, SETTLE_STATUS, TX_STATUS } from '@/utils/constants'
 
 const props = defineProps({
@@ -64,10 +64,14 @@ const ICONS = {
   // HELD는 settle/tx의 HOLD와 철자가 달라 별도 키가 필요하다(공유 시 UNFUNDED와 같은 기본 아이콘으로 떨어짐).
   UNFUNDED: Clock,
   HELD: Lock,
-  RELEASED: CircleCheck
+  RELEASED: CircleCheck,
+  // 'LATE'는 work_cases.status 8종에 없는 파생 표시값이다(workCaseStatus.js의
+  // displayWorkCaseStatus 참고) — READY·체크인 전 구간을 표시만 지각으로 바꾼다.
+  LATE: TriangleAlert
 }
 
 const meta = computed(() => {
+  if (props.kind === 'workCase' && props.status === 'LATE') return DERIVED_LATE_STATUS
   const map = LABEL_MAPS[props.kind] ?? WORK_CASE_STATUS
   return map[props.status] ?? { label: props.status, color: 'var(--color-text-sub)' }
 })
