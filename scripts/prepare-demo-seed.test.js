@@ -245,3 +245,139 @@ test("Compose와 운영 Workflow가 전체 초기화 확인값을 함께 요구�
     "운영 문서 삭제는 SQL 성공 뒤여야 합니다.",
   );
 });
+
+/** SOURCE /seed/*.inc 를 펼쳐 시나리오 하나를 한 덩어리 SQL 로 만든다. */
+function inlineSeedIncludes(seedDir, file) {
+  const sql = fs.readFileSync(path.join(seedDir, file), "utf8");
+  return sql.replace(/^SOURCE\s+\/seed\/([\w.-]+)\s*$/gim, (whole, include) =>
+    inlineSeedIncludes(seedDir, include),
+  );
+}
+
+/**
+ * VALUES 목록을 최상위 괄호 단위로 자른다. JSON_OBJECT(...)·DATE(...)·UNHEX(...) 처럼
+ * 중첩 괄호가 들어 있어 정규식만으로는 Tuple 경계를 찾을 수 없다.
+ */
+function splitSqlTuples(valuesBody) {
+  const tuples = [];
+  let depth = 0;
+  let start = 0;
+  let inString = false;
+
+  for (let index = 0; index < valuesBody.length; index += 1) {
+    const character = valuesBody[index];
+    if (inString) {
+      // MySQL 의 '' Escape 는 닫고 곧바로 다시 열리므로 따로 다루지 않아도 경계가 맞는다.
+      if (character === "'") inString = false;
+      continue;
+    }
+    if (character === "'") inString = true;
+    else if (character === "(") {
+      if (depth === 0) start = index + 1;
+      depth += 1;
+    } else if (character === ")") {
+      depth -= 1;
+      if (depth === 0) tuples.push(valuesBody.slice(start, index));
+    }
+  }
+  return tuples;
+}
+
+/** Tuple 을 최상위 쉼표로 나눈다. 괄호 안과 문자열 안의 쉼표는 열 경계가 아니다. */
+function splitSqlColumns(tuple) {
+  const columns = [];
+  let depth = 0;
+  let inString = false;
+  let current = "";
+
+  for (const character of tuple) {
+    if (inString) {
+      current += character;
+      if (character === "'") inString = false;
+      continue;
+    }
+    if (character === "'") inString = true;
+    else if (character === "(") depth += 1;
+    else if (character === ")") depth -= 1;
+    else if (character === "," && depth === 0) {
+      columns.push(current.trim());
+      current = "";
+      continue;
+    }
+    current += character;
+  }
+  columns.push(current.trim());
+  return columns;
+}
+
+/** Table 별 INSERT ... VALUES 문 전체를 잡는다. */
+const SEED_INSERT_STATEMENTS = {
+  work_contracts: /INSERT\s+INTO\s+work_contracts\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
+  documents: /INSERT\s+INTO\s+documents\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
+};
+
+/** 주어진 Table 의 INSERT 들에서 work_case_id 자리의 변수 이름을 모은다. */
+function seededWorkCaseIds(sql, table, accept = () => true) {
+  const found = new Set();
+  const statements = SEED_INSERT_STATEMENTS[table];
+
+  for (const [, columnList, valuesBody] of sql.matchAll(statements)) {
+    const columns = columnList.split(",").map((name) => name.trim());
+    const workCaseColumn = columns.indexOf("work_case_id");
+    if (workCaseColumn < 0) continue;
+
+    for (const tuple of splitSqlTuples(valuesBody)) {
+      const values = splitSqlColumns(tuple);
+      if (accept(columns, values)) found.add(values[workCaseColumn]);
+    }
+  }
+  return found;
+}
+
+test("계약을 만드는 SEED 는 같은 근무의 EMPLOYMENT_CONTRACT 문서도 함께 만든다", () => {
+  // 계약은 있는데 연결 문서가 없으면 서버가 계약서 생성이 끊긴 손상 상태로 보고 근무 상세를
+  // 500 으로 막는다(WorkCaseServiceImpl.requireContractIntegrity). SEED 가 그 조합을 만들면
+  // 시연 중 화면을 눌러 봐야 드러나므로 파일 단계에서 잡는다.
+  const seedDir = path.join(
+    __dirname,
+    "..",
+    "backend",
+    "src",
+    "test",
+    "resources",
+    "db",
+    "seed",
+  );
+  // demo 시나리오와 기존 고정 Fixture 를 함께 본다. .inc 는 SOURCE 로 펼쳐져 들어온다.
+  const scenarios = fs
+    .readdirSync(seedDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort();
+  assert.ok(scenarios.length > 0, "SEED 시나리오를 찾지 못했습니다.");
+
+  for (const scenario of scenarios) {
+    const sql = inlineSeedIncludes(seedDir, scenario);
+    const contracted = seededWorkCaseIds(sql, "work_contracts");
+    const documented = seededWorkCaseIds(
+      sql,
+      "documents",
+      (columns, values) =>
+        values[columns.indexOf("document_type")] === "'EMPLOYMENT_CONTRACT'",
+    );
+
+    // 정규식이 조용히 아무것도 못 잡으면 모든 시나리오가 통과해 버린다.
+    if (/INSERT\s+INTO\s+work_contracts/i.test(sql)) {
+      assert.ok(
+        contracted.size > 0,
+        `${scenario}: work_contracts INSERT 를 해석하지 못했습니다.`,
+      );
+    }
+
+    for (const workCase of contracted) {
+      assert.ok(
+        documented.has(workCase),
+        `${scenario}: ${workCase} 근무에 계약만 있고 EMPLOYMENT_CONTRACT 문서가 없습니다.`,
+      );
+    }
+  }
+});
