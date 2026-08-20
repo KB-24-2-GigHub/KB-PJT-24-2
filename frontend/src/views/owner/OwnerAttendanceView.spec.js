@@ -63,7 +63,7 @@ describe('OwnerAttendanceView 요약 카드', () => {
     expect(byLabel['노쇼']).toBe('7')
   })
 
-  it('퇴근 확인 필요 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
+  it('퇴근 미확인 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
     const wrapper = mountView()
     await flushPromises()
     listWorkCases.mockClear()

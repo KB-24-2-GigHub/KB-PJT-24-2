@@ -4,7 +4,7 @@
  * 근무 히스토리 리스트(상태 뱃지). 항목 클릭 → 근무 정보 상세.
  * 연계 API: GET /worker/work-cases  →  @/services/worker (listWorkerWorkCases)
  * 문의하기·임금분쟁 신고는 상세 화면(WorkerWorkCaseDetailView) 하단 버튼에서 진입한다.
- * 공통: StatusChip(근무/정산 상태) · 항목 클릭 → /worker/work/work-cases/:workCaseId
+ * 공통: StatusChip(근무/정산/예치 상태) · 항목 클릭 → /worker/work/work-cases/:workCaseId
  */
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -84,6 +84,23 @@ async function loadMore() {
 function goDetail(workCase) {
   router.push(`/worker/work/work-cases/${workCase.workCaseId}`)
 }
+
+// 상세 화면(WorkerWorkCaseDetailView)과 같은 기준 — WAITING은 수락 시점에 예약만 해 둔
+// 기본값이라 뜻이 없어 항상 숨기고, NO_SHOW는 상태 칩과 취소선 금액이 이미 결과를
+// 설명하므로 정산 칩을 따로 겹쳐 보여주지 않는다.
+function showSettlementChip(workCase) {
+  return workCase.status !== 'NO_SHOW' && workCase.settlementStatus !== 'WAITING'
+}
+
+// 예치 칩은 근무가 진행 중일 때만 "안전하게 보관 중"이라는 의미가 있다. 완료되면 정산
+// 칩이 결과(지급/실패/보류)를 대신 말해주고, 노쇼는 상태 칩이 대신한다.
+function showEscrowChip(workCase) {
+  return (
+    Boolean(workCase.escrowStatus) &&
+    workCase.status !== 'NO_SHOW' &&
+    workCase.status !== 'COMPLETED'
+  )
+}
 </script>
 
 <template>
@@ -112,11 +129,22 @@ function goDetail(workCase) {
           </div>
           <div class="work-case-sub">
             <span class="time">{{ formatSeoulTimeRange(workCase.startsAt, workCase.endsAt) }}</span>
-            <span class="wage">{{ formatKRW(workCase.dailyWage) }}</span>
+            <span class="wage" :class="{ 'wage-voided': workCase.status === 'NO_SHOW' }">{{
+              formatKRW(workCase.dailyWage)
+            }}</span>
           </div>
           <div class="work-case-status">
             <StatusChip :status="displayWorkCaseStatus(workCase)" kind="workCase" />
-            <StatusChip :status="workCase.settlementStatus" kind="settle" />
+            <StatusChip
+              v-if="showSettlementChip(workCase)"
+              :status="workCase.settlementStatus"
+              kind="settle"
+            />
+            <StatusChip
+              v-if="showEscrowChip(workCase)"
+              :status="workCase.escrowStatus"
+              kind="escrow"
+            />
           </div>
           <p
             v-if="workCase.settlementStatus === 'SCHEDULED' && workCase.settlementDueAt"
@@ -191,6 +219,10 @@ function goDetail(workCase) {
   font-size: var(--text-md);
   font-weight: var(--weight-bold);
   color: var(--color-text);
+}
+.wage-voided {
+  color: var(--color-text-sub);
+  text-decoration: line-through;
 }
 .work-case-status {
   display: flex;

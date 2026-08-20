@@ -82,7 +82,6 @@ describe('WorkerWorkCaseDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('10:00 ~ 18:00')
-    expect(wrapper.text()).toContain('정산대기')
     expect(wrapper.get('.contract-link').attributes('href')).toBe(
       '/api/documents/99/file?mode=view'
     )
@@ -108,11 +107,11 @@ describe('WorkerWorkCaseDetailView', () => {
 
   it('workCaseId가 바뀌면 재조회하고 이전 근무의 정산 상태를 재사용하지 않는다', async () => {
     getWorkCase.mockResolvedValueOnce(
-      baseWorkCase({ workCaseId: 42, settlement: { status: 'WAITING', amount: 120000 } })
+      baseWorkCase({ workCaseId: 42, settlement: { status: 'PROCESSING', amount: 120000 } })
     )
     const wrapper = mountView()
     await flushPromises()
-    expect(wrapper.text()).toContain('정산대기')
+    expect(wrapper.text()).toContain('정산중')
 
     getWorkCase.mockResolvedValueOnce(
       baseWorkCase({
@@ -181,12 +180,13 @@ describe('WorkerWorkCaseDetailView', () => {
     })
   })
 
-  it('Escrow와 Settlement 상태를 별도 칩으로 표시한다', async () => {
+  it('완료 전에는 Escrow와 Settlement 상태를 별도 칩으로 함께 표시한다', async () => {
     getWorkCase.mockResolvedValueOnce(
       baseWorkCase({
+        status: 'IN_PROGRESS',
         escrow: { status: 'HELD', amount: 120000 },
         settlement: {
-          status: 'SCHEDULED',
+          status: 'ON_HOLD',
           amount: 120000,
           dueAt: '2026-08-21T00:00:00Z',
           completedAt: null
@@ -197,8 +197,7 @@ describe('WorkerWorkCaseDetailView', () => {
     await flushPromises()
 
     expect(wrapper.text()).toContain('예치중')
-    expect(wrapper.text()).toContain('정산예정')
-    expect(wrapper.text()).toContain('2026.08.21 09:00 지급 예정')
+    expect(wrapper.text()).toContain('정산보류')
   })
 
   it('정상 지급 완료는 완료 시각과 Snapshot 지급액·환불액을 표시한다', async () => {
@@ -211,8 +210,9 @@ describe('WorkerWorkCaseDetailView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('지급완료')
     expect(wrapper.text()).toContain('2026.08.21 09:05 · 85,710원 지급 완료')
+    expect(wrapper.text()).not.toContain('예치중')
+    expect(wrapper.text()).not.toContain('지급완료') // escrow RELEASED 칩(중복) — 완료 후엔 숨긴다
     expect(wrapper.text()).toContain('약정 일급120,000원')
     expect(wrapper.text()).toContain('근태 차감액34,290원')
     expect(wrapper.text()).toContain('사장님 환불액34,290원')
@@ -293,6 +293,37 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('회원님 지급 내역은 없어요')
   })
 
+  it('노쇼는 정산·예치 칩을 모두 숨기고 근무 상태 칩만 보여준다', async () => {
+    getWorkCase.mockResolvedValueOnce(
+      baseWorkCase({
+        status: 'NO_SHOW',
+        escrow: { status: 'HELD', amount: 120000 },
+        settlement: { status: 'WAITING', amount: 120000, dueAt: null, completedAt: null }
+      })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('노쇼')
+    expect(wrapper.text()).not.toContain('정산대기')
+    expect(wrapper.text()).not.toContain('예치중')
+  })
+
+  it('계약 완료 후 근무 예정·근무중인 경우 정산대기 칩만 숨기고 예치 칩은 보여준다', async () => {
+    getWorkCase.mockResolvedValueOnce(
+      baseWorkCase({
+        status: 'ACCEPTED',
+        escrow: { status: 'HELD', amount: 120000 },
+        settlement: { status: 'WAITING', amount: 120000, dueAt: null, completedAt: null }
+      })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('정산대기')
+    expect(wrapper.text()).toContain('예치중')
+  })
+
   it('퇴근 미기록은 별도 환불 승인 대기와 0원 지급으로 표시한다', async () => {
     getWorkCase.mockResolvedValueOnce(
       baseWorkCase({
@@ -307,6 +338,8 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('퇴근 누락 환불 승인 대기 중')
     expect(wrapper.text()).toContain('회원님 획득 금액은 0원')
     expect(wrapper.text()).not.toContain('지급 완료')
+    expect(wrapper.text()).not.toContain('정산대기') // WAITING은 판정 전이라 칩을 숨긴다
+    expect(wrapper.text()).toContain('예치중') // 예치금은 여전히 잡혀 있다
   })
 
   it('퇴근 누락 환불 완료는 사장님 환불로 표시한다', async () => {
@@ -331,6 +364,26 @@ describe('WorkerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('사장님 환불 완료')
     expect(wrapper.text()).toContain('회원님 지급 내역은 없어요')
     expect(wrapper.text()).toContain('사장님 환불액120,000원')
+  })
+
+  it('근무 완료 후 정산 전까지는 예치 칩을 숨기고 정산 칩만 보여준다', async () => {
+    getWorkCase.mockResolvedValueOnce(
+      baseWorkCase({
+        status: 'COMPLETED',
+        escrow: { status: 'HELD', amount: 120000 },
+        settlement: {
+          status: 'SCHEDULED',
+          amount: 120000,
+          dueAt: '2026-08-21T00:00:00Z',
+          completedAt: null
+        }
+      })
+    )
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산예정')
+    expect(wrapper.text()).not.toContain('예치중')
   })
 
   it('정산 보류는 서버 상태 그대로 보류로 표시한다', async () => {

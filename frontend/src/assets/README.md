@@ -20,8 +20,8 @@ assets/
 ├── main.css       전역 스타일 진입점
 ├── fonts/         Git으로 추적하는 폰트 파일
 └── images/
-    ├── logo/      GigHub SVG 로고
-    ├── badges/    역할·등급별 SVG 뱃지
+    ├── logo/      역할별(owner/worker) GigHub PNG 로고
+    ├── badges/    역할·등급별(lv0~3) PNG 뱃지
     └── banks/     은행 선택 화면에서 사용하는 PNG 로고
 ```
 
@@ -30,8 +30,8 @@ assets/
 | 자산            | 현재 기준                                                                                                               |
 | --------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | 공통 스타일     | 재사용되는 색상·간격·타이포그래피는 `base.css`의 CSS 변수를 우선 사용                                                   |
-| GigHub SVG 로고 | `vite-svg-loader`를 통해 Vue 컴포넌트로 import                                                                          |
-| 등급 뱃지 SVG   | [`TrustBadge.vue`](../components/common/TrustBadge.vue)처럼 `?url` import 후 `<img>`에서 사용                           |
+| GigHub PNG 로고 | 역할별로 색이 입혀진 파일을 두고, 화면의 role/level 에 따라 import한 URL을 `<img src>`로 전환                           |
+| 등급 뱃지 PNG   | [`TrustBadge.vue`](../components/common/TrustBadge.vue)처럼 import 후 `<img>`에서 사용                                  |
 | 은행 PNG        | [`constants.js`](../utils/constants.js)에서 import하고 [`BankSelect.vue`](../components/wallet/BankSelect.vue)에서 표시 |
 | 일반 UI 아이콘  | 파일을 새로 복제하지 않고 `lucide-vue-next` 컴포넌트를 우선 재사용                                                      |
 

@@ -152,7 +152,7 @@ async function confirmWithdraw() {
 
           <!-- 이름·타이틀 줄 높이에 걸치도록 큰 원형 뱃지를 오른쪽에 둔다. -->
           <div v-if="badgeModel.state.value === BADGE_STATE.READY" class="badge-slot">
-            <TrustBadge :role="badgeModel.role.value" :level="badgeModel.level.value" :size="58" />
+            <TrustBadge :role="badgeModel.role.value" :level="badgeModel.level.value" :size="40" />
           </div>
         </div>
 

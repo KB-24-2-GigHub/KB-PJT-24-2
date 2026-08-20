@@ -34,10 +34,9 @@ describe('공통 UI 키트 스모크', () => {
     expect(w.find('img').exists()).toBe(true)
   })
 
-  it('TrustBadge — level 0 은 미부여 아이콘', () => {
+  it('TrustBadge — level 0 은 미부여 그림', () => {
     const w = mount(TrustBadge, { props: { role: 'owner', level: 0 } })
-    expect(w.find('img').exists()).toBe(false)
-    expect(w.find('.no-badge').exists()).toBe(true)
+    expect(w.find('img').exists()).toBe(true)
   })
 
   /*
@@ -57,7 +56,6 @@ describe('공통 UI 키트 스모크', () => {
     warn.mockRestore()
 
     expect(w.find('.trust-badge').exists()).toBe(false)
-    expect(w.find('.no-badge').exists()).toBe(false)
     expect(w.find('img').exists()).toBe(false)
   })
 
