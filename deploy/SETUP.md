@@ -1081,15 +1081,27 @@ gh run list --workflow=seed-db.yml --limit 1
 
 `demo-*.sql` 은 앱을 정지하고 파일을 지우므로 그렇게 단순하지 않다. 다만 SQL 이 실패하면
 Transaction 이 Rollback 되고 문서 삭제는 SQL 성공 뒤에만 일어나며, 재기동 Step 은
-`if: always()` 라 중간에 죽어도 앱은 돌아온다. 그래서 **부분 실패의 결과는 "데이터가 반쯤
-지워진 상태"가 아니라 "시연 준비가 덜 끝난 상태"다.** 원인을 고치고 다시 돌리면 된다.
+`if: always()` 라 중간에 죽어도 **재기동을 시도한다.** 그래서 **부분 실패의 결과는 "데이터가
+반쯤 지워진 상태"가 아니라 "시연 준비가 덜 끝난 상태"다.** 원인을 고치고 다시 돌리면 된다.
+
+**다만 `always()` 는 그 Step 이 실행된다는 보장이지 성공한다는 보장이 아니다.** SSH 나
+`docker compose start` 자체가 실패하면 앱이 내려간 채로 남는다. 이어지는
+`Wait for application after full demo reset` 은 앞 Step 이 실패하면 건너뛰므로 기동을 대신
+확인해 주지도 않는다. 그래서 **demo 시드가 빨간 X 로 끝나면 run 로그에서
+`Restart application after full demo reset` 의 결과부터 본다.** 그 Step 이 실패했거나
+`https://api.gighub.store/api/health` 가 응답하지 않으면 서버에서 직접 올린다.
+
+```bash
+ssh -i ~/.ssh/my-keypair.pem ec2-user@13.125.191.199 \
+  "docker compose -f /opt/gighub/compose.prod.yaml start app"
+```
 
 아래 두 가지는 2026-08-19 에 실제로 겪은 것이다. 워크플로는 고쳤지만 증상을 남겨 둔다.
 
 | 증상                                                        | 확인할 것                                                                 |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------- |
 | `rm: cannot remove '/opt/gighub/documents/...': Permission denied` | 문서는 컨테이너가 자기 UID 로 쓴다. 삭제에 `sudo` 가 붙어 있는지 (#448) |
-| 시드 뒤 배포했던 API 가 사라짐 (`HttpRequestMethodNotSupportedException`) | 재기동이 `up -d` 가 아니라 `start` 인지. `up -d` 는 `.env` 의 `API_TAG` 를 따라가 구버전 이미지를 올린다 (#450, 근본 원인 #452) |
+| 시드 뒤 배포했던 API 가 사라짐 (`HttpRequestMethodNotSupportedException`) | 재기동이 `up -d` 가 아니라 `start` 인지. `up -d` 는 이미지 태그를 `.env` 의 `API_TAG` 로 다시 해석하므로, 그 값이 실제로 떠 있던 버전과 어긋나 있으면 다른 버전이 올라온다 (#450, 근본 원인 #452) |
 
 두 번째는 시드가 **운영 애플리케이션 버전을 되돌려 놓는** 증상이라 시연 준비뿐 아니라 실제
 사용자에게도 영향이 간다. 시드 실행 뒤 앱이 이상하면 10절의 `images app` 으로 태그와
