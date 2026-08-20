@@ -14,7 +14,7 @@ import AuthRoleToggle from '@/components/auth/AuthRoleToggle.vue'
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import LogoGighub from '@/assets/images/logo/logo-gighub.svg'
+import logoGighubOwner from '@/assets/images/logo/logo-gighub-owner.png'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { resolveOwnerLoginRedirect } from '@/utils/authRedirect'
@@ -72,7 +72,7 @@ async function onSubmit() {
   <div class="sub-page">
     <AppBackHeader title="사장 로그인" to="/?step=auth&role=owner" />
     <main class="screen-body">
-      <LogoGighub class="logo" aria-label="Gig Hub" />
+      <img :src="logoGighubOwner" class="logo" alt="Gig Hub" />
 
       <AuthRoleToggle model-value="OWNER" @update:model-value="onChangeRole" />
 
@@ -113,7 +113,6 @@ async function onSubmit() {
   width: 140px;
   height: auto;
   margin: var(--space-md) auto 0;
-  color: var(--color-owner);
 }
 .form {
   display: flex;

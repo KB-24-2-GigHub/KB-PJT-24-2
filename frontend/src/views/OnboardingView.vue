@@ -10,7 +10,8 @@ import { RouterLink, useRoute } from 'vue-router'
 import { Backpack, ChevronLeft, FileText, QrCode, ShieldCheck, Store } from 'lucide-vue-next'
 
 import AuthRoleToggle from '@/components/auth/AuthRoleToggle.vue'
-import LogoGighub from '@/assets/images/logo/logo-gighub.svg'
+import logoGighubOwner from '@/assets/images/logo/logo-gighub-owner.png'
+import logoGighubWorker from '@/assets/images/logo/logo-gighub-worker.png'
 
 const route = useRoute()
 
@@ -56,6 +57,10 @@ const isIntroStep = computed(() => step.value < intros.length)
 const intro = computed(() => intros[step.value])
 
 const role = ref(route.query.role === 'worker' ? 'worker' : 'owner') // 'owner' | 'worker' (역할 선택 단계에서 사용)
+// 온보딩 전용 로고 대신 owner/worker 로고를 그대로 쓴다 — 역할 선택 단계(③)에서 이미
+// role 이 정해져 있어 선택한 역할의 로고를 보여주는 편이 온보딩 단계임을 알리는 것보다
+// 자연스럽다(#464 PR 리뷰 논의).
+const logoGighub = computed(() => (role.value === 'owner' ? logoGighubOwner : logoGighubWorker))
 
 // AuthRoleToggle 은 'OWNER'|'WORKER' 를 쓰고, 여기 role 은 링크 경로(/owner/login)에 그대로 들어가
 // 소문자를 유지해야 한다. 그래서 토글과 주고받을 때만 변환한다.
@@ -114,11 +119,7 @@ const features = [
 
     <template v-else>
       <div class="hero">
-        <LogoGighub
-          class="logo"
-          :class="role === 'owner' ? 'is-owner' : 'is-worker'"
-          aria-label="Gig Hub"
-        />
+        <img :src="logoGighub" class="logo" alt="Gig Hub" />
         <p class="tagline">전자지갑·에스크로 근로정산 서비스</p>
       </div>
 
@@ -188,12 +189,6 @@ const features = [
   width: 180px;
   height: auto;
   margin: 0 auto;
-}
-.logo.is-owner {
-  color: var(--color-owner);
-}
-.logo.is-worker {
-  color: var(--color-worker);
 }
 .hero-icon {
   margin: 0 auto;
