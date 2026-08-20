@@ -9,7 +9,7 @@
  *     <input :id="fieldId" :aria-describedby="describedBy" :aria-invalid="invalid" ... />
  *   </FieldShell>
  */
-import { useId } from 'vue'
+import { computed, useId } from 'vue'
 
 const props = defineProps({
   label: { type: String, default: '' },
@@ -21,7 +21,10 @@ const props = defineProps({
 
 const fieldId = useId()
 const messageId = `${fieldId}-msg`
-const hasMessage = props.error || props.success || props.hint
+// 최초 렌더 이후에 생기는 검증 오류·동적 hint도 aria-describedby 에 반영돼야 하므로
+// computed 로 둔다 — setup 시점 한 번만 읽으면 나중에 생긴 메시지가 스크린리더에
+// 연결되지 않는다.
+const hasMessage = computed(() => props.error || props.success || props.hint)
 </script>
 
 <template>

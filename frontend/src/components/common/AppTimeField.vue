@@ -9,7 +9,7 @@
  *
  * v-model 은 AppField 와 동일하게 "HH:mm" 문자열이다.
  */
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import BaseBottomSheet from './BaseBottomSheet.vue'
 import BaseButton from './BaseButton.vue'
 import FieldShell from './FieldShell.vue'
@@ -29,9 +29,20 @@ const emit = defineEmits(['update:modelValue'])
 const open = ref(false)
 const draft = ref('09:00')
 
-// 다이얼(TimeWheelPicker)과 같은 반올림을 거쳐야 한다 — 안 그러면 닫힌 필드에는
-// 원래 값이 그대로 보이는데 시트를 열고 확인만 눌러도 dial 이 반올림한 값으로
-// 바뀌어 버린다(둘이 서로 다른 값을 "지금 값"이라고 보여주는 상태였다).
+// 이 다이얼로는 애초에 10분 단위가 아닌 값을 만들 수 없다 — 그런데 이 필드가 받는
+// modelValue 는 이 다이얼이 아니라 DB(과거 데이터·다른 경로로 등록된 값)에서 올 수도
+// 있다. 받자마자 반올림해서 부모(form) 값 자체를 10분 단위로 맞춰버린다 — 그래야
+// "화면에 보이는 값"과 "실제 저장되는 값"이 사용자가 필드를 건드리지 않아도 항상 같다.
+watch(
+  () => props.modelValue,
+  (value) => {
+    if (!value) return
+    const rounded = roundTimeToStep(value, props.step)
+    if (rounded !== value) emit('update:modelValue', rounded)
+  },
+  { immediate: true }
+)
+
 function formatDisplay(value) {
   if (!value) return ''
   const [hStr, mStr] = roundTimeToStep(value, props.step).split(':')
@@ -42,7 +53,10 @@ function formatDisplay(value) {
 }
 
 function openSheet() {
-  draft.value = props.modelValue || '09:00'
+  // draft 도 반올림해서 연다 — 안 그러면 닫힌 필드/다이얼엔 반올림된 값(예: 09:20)이
+  // 보이는데 아무것도 안 건드리고 확인을 눌러도 draft 에 남아있던 원본(09:23)이 그대로
+  // emit 돼서, 사용자가 본 값과 실제로 저장되는 값이 달라진다.
+  draft.value = roundTimeToStep(props.modelValue || '09:00', props.step)
   open.value = true
 }
 function confirm() {
