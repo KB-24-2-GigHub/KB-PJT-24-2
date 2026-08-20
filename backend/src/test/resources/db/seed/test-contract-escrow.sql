@@ -359,6 +359,42 @@ INSERT INTO work_contracts (
     @accepted_at
 );
 
+-- 계약이 있으면 EMPLOYMENT_CONTRACT 문서도 함께 있어야 근무 상세를 열 수 있습니다. 위에서
+-- 이 근무의 문서를 모두 지우므로, 계약과 짝이 되는 문서를 여기서 다시 만듭니다. 없으면 서버가
+-- 계약서 생성이 끊긴 손상 상태로 보고 상세 조회를 500으로 막습니다
+-- (WorkCaseServiceImpl.requireContractIntegrity).
+--
+-- SQL은 실제 계약서 PDF를 문서 저장소에 만들 수 없으므로 파기(DELETED)로 넣습니다. 파기된
+-- 문서는 documentId가 감춰져(WorkCaseServiceImpl.visibleDocumentId) 열리지 않는 '계약서 보기'
+-- 링크를 노출하지 않고 문서함 목록에서도 빠집니다.
+INSERT INTO documents (
+    created_by_user_id, owner_user_id, work_case_id,
+    document_type, status, issued_on, created_at, updated_at
+) VALUES (
+    @owner_id, @owner_id, @work_case_id,
+    'EMPLOYMENT_CONTRACT', 'DELETED', DATE(@accepted_at), @accepted_at, @accepted_at
+);
+
+SET @contract_document_id = LAST_INSERT_ID();
+
+-- 수락 한 번에 ORIGINAL(v1)과 서명본(v2)을 함께 만드는 실제 흐름과 같은 Version 구성입니다
+-- (PdfContractArtifactPort). 파기는 Version 행을 지우지 않으므로 그대로 남겨 둡니다
+-- (DocumentDeleteServiceImpl).
+INSERT INTO document_versions (
+    document_id, version_no, version_type, storage_key,
+    mime_type, size_bytes, checksum, created_at
+) VALUES
+    (
+        @contract_document_id, 1, 'ORIGINAL',
+        CONCAT('contracts/', @work_case_id, '/', @contract_document_id, '/v1.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('TEST-17-CONTRACT-V1', 256)), @accepted_at
+    ),
+    (
+        @contract_document_id, 2, 'SIGNED',
+        CONCAT('contracts/', @work_case_id, '/', @contract_document_id, '/v2.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('TEST-17-CONTRACT-V2', 256)), @accepted_at
+    );
+
 INSERT INTO escrows (
     work_case_id, amount, status, held_at
 ) VALUES (

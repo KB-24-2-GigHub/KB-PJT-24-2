@@ -87,6 +87,60 @@ INSERT INTO work_contracts (
         @accepted_at, @accepted_at
     );
 
+-- 계약이 있으면 EMPLOYMENT_CONTRACT 문서도 함께 있어야 근무 상세를 열 수 있습니다. 계약만
+-- 있고 문서가 없는 조합은 서버가 계약서 생성이 끊긴 손상 상태로 보고 예외를 던져 상세 조회가
+-- 500이 됩니다(WorkCaseServiceImpl.requireContractIntegrity).
+--
+-- SQL은 실제 계약서 PDF를 문서 저장소에 만들 수 없으므로 파기(DELETED)로 넣습니다. 파기된
+-- 문서는 documentId가 감춰져(WorkCaseServiceImpl.visibleDocumentId) 열리지 않는 '계약서 보기'
+-- 링크를 노출하지 않고 문서함 목록에서도 빠집니다. 실제 PDF까지 있는 계약서 확인은 아래
+-- prepare-demo-seed.js가 초대 수락 API로 만드는 김성실 근무가 담당합니다.
+INSERT INTO documents (
+    created_by_user_id, owner_user_id, work_case_id,
+    document_type, status, issued_on, created_at, updated_at
+) VALUES (
+    @owner_id, @owner_id, @functional_b_id,
+    'EMPLOYMENT_CONTRACT', 'DELETED', DATE(@b_start), @accepted_at, @accepted_at
+);
+SET @functional_b_document_id = LAST_INSERT_ID();
+
+INSERT INTO documents (
+    created_by_user_id, owner_user_id, work_case_id,
+    document_type, status, issued_on, created_at, updated_at
+) VALUES (
+    @owner_id, @owner_id, @functional_c_id,
+    'EMPLOYMENT_CONTRACT', 'DELETED', DATE(@c_start), @accepted_at, @accepted_at
+);
+SET @functional_c_document_id = LAST_INSERT_ID();
+
+-- 수락 한 번에 ORIGINAL(v1)과 서명본(v2)을 함께 만드는 실제 흐름과 같은 Version 구성입니다
+-- (PdfContractArtifactPort). 파기는 Version 행을 지우지 않으므로 그대로 남겨 둡니다
+-- (DocumentDeleteServiceImpl).
+INSERT INTO document_versions (
+    document_id, version_no, version_type, storage_key,
+    mime_type, size_bytes, checksum, created_at
+) VALUES
+    (
+        @functional_b_document_id, 1, 'ORIGINAL',
+        CONCAT('contracts/', @functional_b_id, '/', @functional_b_document_id, '/v1.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('FUNCTION-CONTRACT-B-V1', 256)), @accepted_at
+    ),
+    (
+        @functional_b_document_id, 2, 'SIGNED',
+        CONCAT('contracts/', @functional_b_id, '/', @functional_b_document_id, '/v2.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('FUNCTION-CONTRACT-B-V2', 256)), @accepted_at
+    ),
+    (
+        @functional_c_document_id, 1, 'ORIGINAL',
+        CONCAT('contracts/', @functional_c_id, '/', @functional_c_document_id, '/v1.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('FUNCTION-CONTRACT-C-V1', 256)), @accepted_at
+    ),
+    (
+        @functional_c_document_id, 2, 'SIGNED',
+        CONCAT('contracts/', @functional_c_id, '/', @functional_c_document_id, '/v2.pdf'),
+        'application/pdf', 1024, UNHEX(SHA2('FUNCTION-CONTRACT-C-V2', 256)), @accepted_at
+    );
+
 INSERT INTO escrows (work_case_id, amount, status, held_at, created_at, updated_at)
 VALUES
     (@functional_b_id, @demo_wage, 'HELD', @accepted_at, @accepted_at, @accepted_at),
