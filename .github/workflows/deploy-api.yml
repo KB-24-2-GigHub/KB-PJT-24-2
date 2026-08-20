@@ -120,10 +120,32 @@ jobs:
           # 호스트 키 수집은 22번이 열린 뒤여야 한다. 순서를 바꾸면 타임아웃으로 실패한다.
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
+      # 서버에 두고 쓰는 배포 산출물을 매번 저장소 버전으로 맞춘다.
+      #
+      # compose.prod.yaml 도 함께 올린다. 예전에는 사람이 scp 하도록 남겨 뒀는데, 그
+      # 수동 단계를 놓치면 서버 파일이 저장소와 조용히 어긋난다. seed 서비스 추가 때
+      # 한 번(SETUP.md 14.1), API_TAG 기본값 제거 때 또 한 번 같은 형태가 나왔다.
+      # 여기서 올리면 "서버 파일이 저장소와 다르다" 부류가 사라진다.
+      #
+      # set-api-tag.sh 를 인라인하지 않고 파일로 두는 이유는 셋이다. FLYWAY_* 가 함께
+      # 든 파일을 고치므로 실행 전에 검증돼야 하고, 파일이어야
+      # scripts/set-api-tag.test.js 가 실제로 돌려볼 수 있으며, 서버에 남아야 롤백
+      # (SETUP.md 10절)과 수동 교체(9.2절)가 같은 코드를 쓴다.
+      - name: Upload deploy artifacts
+        run: |
+          set -euo pipefail
+          scp -i ~/.ssh/deploy.pem -o ConnectTimeout=15 \
+            deploy/set-api-tag.sh \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/gighub/set-api-tag.sh"
+          scp -i ~/.ssh/deploy.pem -o ConnectTimeout=15 \
+            deploy/compose.prod.yaml \
+            "${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }}:/opt/gighub/compose.prod.yaml"
+
       # 원격 스크립트는 stdin 으로 넘긴다. 따옴표 중첩 없이 여러 줄을 그대로 보낼 수 있고,
       # ssh 가 원격 종료 코드를 그대로 반환하므로 set -euo pipefail 의 실패가 이 Step 의
       # 실패가 된다. 이 전파는 실측으로 확인했다(원격 false -> 이후 줄 미실행 -> exit 1).
       - name: Deploy over SSH
+        id: deploy
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/deploy.pem -o ConnectTimeout=15 \
@@ -133,6 +155,12 @@ jobs:
           export API_TAG=${{ github.sha }}
           docker compose -f compose.prod.yaml pull app
           docker compose -f compose.prod.yaml up -d app
+          # up -d 뒤에 갱신한다. .env 는 "지금 떠 있는 것" 을 가리켜야 하므로, 기동이
+          # 실패하면 직전 값이 남는 편이 맞다. 이유는 SETUP.md 7절에 있다.
+          #
+          # 절대 경로로 부른다. 위 cd 에 기대면, 나중에 REMOTE 본문에 cd 가 하나만 더
+          # 끼어도 up -d 가 컨테이너를 이미 갈아끼운 뒤에 배포가 깨진다.
+          sh /opt/gighub/set-api-tag.sh "$API_TAG"
           docker image prune -f
           REMOTE
 
@@ -187,3 +215,35 @@ jobs:
           echo "- 커밋: \`${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- 이미지: \`${IMAGE}:${{ github.sha }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- 롤백: EC2 에서 \`API_TAG=<이전sha> docker compose -f /opt/gighub/compose.prod.yaml up -d app\`" >> "$GITHUB_STEP_SUMMARY"
+          # 두 줄이다. .env 를 함께 되돌리지 않으면 이후 맨손 up -d 가 방금 물린
+          # 버전을 다시 올린다(SETUP.md 10절).
+          echo "  그리고 \`sh /opt/gighub/set-api-tag.sh <이전sha>\` — 둘 다 해야 되돌린 상태가 유지된다" >> "$GITHUB_STEP_SUMMARY"
+
+      # 위 Step 은 if: success() 라 정작 복구 안내가 필요한 실패 시점에 침묵한다.
+      # .env 는 up -d 직후에 갱신되므로(Deploy over SSH), 그 뒤 Smoke test 가 실패하면
+      # 서버는 "깨진 리비전을 가리키는 .env" 로 남는다. Smoke test 의 쿠키·CORS 검사는
+      # 정확히 옛 WAR 을 잡으라고 있는 검사라 이 조합은 가정이 아니다. 안내를 못 보면
+      # 운영자는 up -d 만 되돌리고, 다음 맨손 up -d 나 다음 seed 데모가 깨진 리비전을
+      # 다시 올린다 — 태그만 새로워진 #450 이다.
+      #
+      # Deploy over SSH 가 실제로 돌았을 때만 낸다. 그 앞에서 멈췄다면 서버는 손대지
+      # 않은 상태이므로 롤백 안내가 오히려 잘못된 유도다.
+      - name: Report rollback steps on failure
+        if: >-
+          failure()
+          && (steps.deploy.outcome == 'success' || steps.deploy.outcome == 'failure')
+        run: |
+          echo "### 배포 실패 — 서버 상태를 확인해야 한다" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`Deploy over SSH\` 가 실행됐다(결과: ${{ steps.deploy.outcome }})." >> "$GITHUB_STEP_SUMMARY"
+          echo "컨테이너가 이미 \`${{ github.sha }}\` 로 교체됐고 \`/opt/gighub/.env\` 도 그 값일 수 있다." >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "확인:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`grep '^API_TAG=' /opt/gighub/.env\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`docker compose -f /opt/gighub/compose.prod.yaml images app\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "되돌린다면 **두 줄 모두** 실행한다:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`API_TAG=<이전sha> docker compose -f /opt/gighub/compose.prod.yaml up -d app\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`sh /opt/gighub/set-api-tag.sh <이전sha>\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`.env\` 를 함께 되돌리지 않으면 다음 맨손 \`up -d\` 나 다음 \`Seed DB\` 가 방금 물린 리비전을 다시 올린다." >> "$GITHUB_STEP_SUMMARY"

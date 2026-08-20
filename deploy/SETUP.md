@@ -295,14 +295,15 @@ chmod 700 /opt/gighub /opt/gighub/config
 ```
 /opt/gighub/
   compose.prod.yaml           운영 Compose 정의
-  .env                        Compose 가 자동으로 읽는 Flyway 접속값
+  .env                        Compose 가 자동으로 읽는 API_TAG 와 Flyway 접속값
+  set-api-tag.sh              .env 의 API_TAG 갱신 — 배포가 매번 올린다
   config/database.properties  애플리케이션 설정 전체
   documents/                  계약 PDF 영속 볼륨 — 삭제 금지
   migrations/                 Flyway SQL
   drivers/                    MySQL Connector/J
 ```
 
-로컬에서 템플릿과 Compose를 복사한다:
+로컬에서 템플릿과 Compose, 배포 스크립트를 복사한다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
@@ -312,7 +313,15 @@ scp -i ~/.ssh/my-keypair.pem \
 scp -i ~/.ssh/my-keypair.pem \
   deploy/compose.prod.yaml \
   ec2-user@13.125.191.199:/opt/gighub/compose.prod.yaml
+
+scp -i ~/.ssh/my-keypair.pem \
+  deploy/set-api-tag.sh \
+  ec2-user@13.125.191.199:/opt/gighub/set-api-tag.sh
 ```
+
+뒤의 두 파일은 **배포가 매번 다시 올린다**(`deploy-api.yml` 의 `Upload deploy artifacts`).
+여기서 한 번 올려 두는 것은 첫 배포 전에도 9.2절 수동 교체와 아래 Compose 문법 확인이
+동작하게 하기 위해서다.
 
 EC2에서 값을 채우고 권한을 잠근다:
 
@@ -342,6 +351,8 @@ openssl rand -base64 32     # qr.hmac.key.k1
 
 ```bash
 cat > /opt/gighub/.env <<'EOF'
+# 첫 배포 전의 부트스트랩 값이다. 이후로는 deploy-api.yml 이 배포마다
+# set-api-tag.sh 로 방금 띄운 커밋 SHA 를 써 넣는다. 손으로 맞추지 않는다.
 API_TAG=dev
 FLYWAY_URL=jdbc:mysql://<rds-endpoint>:3306/kb_pjt?useSSL=true&requireSSL=true&serverTimezone=Asia%2FSeoul
 FLYWAY_USER=<rds-user>
@@ -351,6 +362,13 @@ vi /opt/gighub/.env
 chmod 600 /opt/gighub/.env
 ```
 
+> **`.env` 의 `API_TAG` 는 서버에 남는 유일한 태그 값이다.** `compose.prod.yaml` 의
+> `app` 이미지는 `${API_TAG}` 로 보간되고, Compose 는 셸 환경변수를 `.env` 보다
+> 우선한다. 그래서 배포 중에는 `export API_TAG=<sha>` 가 이기지만 그 값은 SSH 세션과
+> 함께 사라진다. 배포가 `.env` 까지 갱신하지 않으면 뒤에 누가 `API_TAG` 없이
+> `docker compose up -d app` 을 하는 순간 옛 태그가 조용히 다시 뜬다. 2026-08-19 에
+> 실제로 그렇게 구버전 WAR 가 올라와 `POST /api/documents` 가 사라졌다 (#450, #452).
+
 Compose 문법 확인:
 
 ```bash
@@ -358,6 +376,30 @@ cd /opt/gighub && docker compose -f compose.prod.yaml config >/dev/null && echo 
 ```
 
 기대: `OK`. 이미지가 아직 없어도 통과한다.
+
+`config` 는 `API_TAG` 가 비어 있어도 경고만 내고 통과한다(실측 exit 0). 값이 실제로
+들어갔는지는 이미지 참조로 확인한다:
+
+```bash
+docker compose -f compose.prod.yaml config --images | grep kb-pjt-24-2-api
+```
+
+기대: `ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:<태그>`. **콜론 뒤가 비어 있으면** `.env` 에
+`API_TAG` 가 없는 것이다. `app` 이미지 태그에는 기본값을 두지 않았으므로 그 상태의
+`up -d app` 은 `invalid reference format` 으로 멈춘다 — 구버전이 조용히 뜨지 않는다.
+
+> **`compose.prod.yaml` 과 `set-api-tag.sh` 는 배포가 매번 덮어쓴다.** 예전에는 사람이
+> scp 하도록 남겨 뒀는데, 그 수동 단계를 놓치면 서버 파일이 저장소와 조용히 어긋난다.
+> 14.1절의 `seed` 서비스 추가가 그 형태였다. 지금은 `deploy-api.yml` 의
+> `Upload deploy artifacts` 가 배포마다 두 파일을 올리므로 별도 조치가 필요 없다.
+>
+> 서버 파일이 저장소와 같은지 확인하려면:
+>
+> ```bash
+> ssh ... "grep -n 'kb-pjt-24-2-api:' /opt/gighub/compose.prod.yaml"
+> ```
+>
+> 기대: `${API_TAG}` — `${API_TAG:-dev}` 가 보이면 첫 배포 전이거나 배포가 실패한 것이다.
 
 ## 8. 최초 Flyway 적용
 
@@ -445,10 +487,14 @@ echo $CR_PAT | docker login ghcr.io -u <github-사용자명> --password-stdin
 cd /opt/gighub
 API_TAG=<tag> docker compose -f compose.prod.yaml pull app
 API_TAG=<tag> docker compose -f compose.prod.yaml up -d app
+sh set-api-tag.sh <tag>
 docker compose -f compose.prod.yaml ps
 ```
 
-셸 환경변수가 `.env` 의 `API_TAG` 보다 우선하므로 `.env` 를 고칠 필요는 없다.
+셸 환경변수가 `.env` 의 `API_TAG` 보다 우선하므로 **이 명령 자체는** 의도한 이미지로 뜬다.
+그러나 그 값은 이 셸에서만 살아 있고 `.env` 는 그대로라, 여기서 멈추면 서버에 남는 값이
+거짓이 된다. 다음에 누가 `API_TAG` 없이 `up -d app` 을 하면 옛 태그로 되돌아간다. 그래서
+`set-api-tag.sh` 로 `.env` 를 함께 맞춘다. 배포 워크플로도 같은 스크립트를 쓴다.
 
 ### 9.3 배포 검증 — 상태 코드만으로는 부족하다
 
@@ -505,6 +551,10 @@ docker compose -f compose.prod.yaml images app
 
 # 이전 커밋으로 되돌린다
 API_TAG=<이전-커밋-SHA> docker compose -f compose.prod.yaml up -d app
+
+# 되돌린 버전을 .env 에도 남긴다. 하지 않으면 서버의 .env 는 롤백 전 태그를 가리킨
+# 채로 남고, 이후 누군가의 맨손 up -d 가 방금 물린 그 버전을 다시 올린다.
+sh set-api-tag.sh <이전-커밋-SHA>
 
 # 확인은 health 가 아니라 DB 경유 엔드포인트로 한다
 sleep 20
@@ -968,8 +1018,11 @@ Migration 은 한 번만 되돌릴 수 없이 적용되고 seed 는 반복 실�
 
 ### 14.1 최초 1회 준비
 
-`compose.prod.yaml` 에 `seed` 서비스가 추가됐다. 배포 워크플로는 이 파일을 덮어쓰지 않으므로
-사람이 한 번 올려야 한다.
+`compose.prod.yaml` 에 `seed` 서비스가 필요하다. **`Deploy API` 가 배포마다 이 파일을 올리므로
+보통은 배포 한 번이면 끝난다.** 예전에는 사람이 올려야 했고, 그 수동 단계를 놓쳐 서버 파일이
+저장소와 어긋나는 일이 반복돼 배포에 넣었다(7절).
+
+배포를 기다릴 수 없으면 직접 올린다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
