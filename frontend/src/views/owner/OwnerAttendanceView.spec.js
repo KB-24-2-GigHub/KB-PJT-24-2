@@ -59,7 +59,7 @@ describe('OwnerAttendanceView 요약 카드', () => {
     )
 
     expect(byLabel['퇴근 확인 필요']).toBe('5')
-    expect(byLabel['완료']).toBe('6')
+    expect(byLabel['근무완료']).toBe('6')
     expect(byLabel['노쇼']).toBe('7')
   })
 

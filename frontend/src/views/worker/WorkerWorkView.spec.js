@@ -65,7 +65,7 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('90,000원')
   })
 
-  it('근무지 기준 시각·정산 상태를 표시한다', async () => {
+  it('근무지 기준 시각·정산/예치 상태를 표시한다', async () => {
     listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase]))
     const wrapper = mount(WorkerWorkView)
     await flushPromises()
@@ -73,7 +73,38 @@ describe('WorkerWorkView', () => {
     expect(wrapper.text()).toContain('10:00 ~ 18:00') // startsAt/endsAt → Asia/Seoul 벽시계
     expect(wrapper.text()).toContain('2026.07.22')
     expect(wrapper.text()).toContain('근무중') // status
-    expect(wrapper.text()).toContain('정산대기') // settlementStatus='WAITING'
+    // settlementStatus='WAITING'은 뜻이 없는 기본값이라 숨기고, 대신 진행 중임을
+    // 말해주는 escrowStatus='HELD'(예치중)를 보여준다 — 상세 화면과 같은 기준.
+    expect(wrapper.text()).not.toContain('정산대기')
+    expect(wrapper.text()).toContain('예치중')
+  })
+
+  it('settlementStatus가 WAITING이 아니면 정산 칩을, escrowStatus가 없으면 예치 칩을 숨기지 않는다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([{ ...sampleWorkCase, settlementStatus: 'SCHEDULED', escrowStatus: null }])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산예정')
+  })
+
+  it('status가 COMPLETED이면 예치 칩을 숨기고 정산 칩으로 결과를 보여준다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([
+        {
+          ...sampleWorkCase,
+          status: 'COMPLETED',
+          settlementStatus: 'COMPLETED',
+          escrowStatus: 'RELEASED'
+        }
+      ])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('정산완료')
+    expect(wrapper.text()).not.toContain('지급완료') // escrow RELEASED 라벨은 숨어야 함
   })
 
   it('내역이 없으면 빈 상태를 보여준다', async () => {
@@ -161,6 +192,26 @@ describe('WorkerWorkView', () => {
    * 목록 API 는 기본 20건 Page 다. 화면이 첫 Page 만 읽으면 21번째부터는 표시도 오류도
    * 없이 사라진다 — 사용자는 그 기록이 없다고 믿게 된다.
    */
+  it('NO_SHOW 건은 정산 상태 칩을 숨기고 금액에 취소선을 적용한다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(
+      samplePage([{ ...sampleWorkCase, status: 'NO_SHOW', settlementStatus: 'REFUNDED' }])
+    )
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('노쇼') // status
+    expect(wrapper.text()).not.toContain('환불완료') // settlementStatus
+    expect(wrapper.find('.wage').classes()).toContain('wage-voided')
+  })
+
+  it('NO_SHOW 가 아닌 건은 정산 상태 칩과 금액을 평소대로 보여준다', async () => {
+    listWorkerWorkCases.mockResolvedValueOnce(samplePage([sampleWorkCase]))
+    const wrapper = mount(WorkerWorkView)
+    await flushPromises()
+
+    expect(wrapper.find('.wage').classes()).not.toContain('wage-voided')
+  })
+
   it('다음 Page 가 남아 있으면 더 보기로 이어 붙인다', async () => {
     listWorkerWorkCases.mockResolvedValueOnce(pageOf([sampleWorkCase], 0, 2))
     const wrapper = mount(WorkerWorkView)

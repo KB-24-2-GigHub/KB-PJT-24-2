@@ -6,7 +6,7 @@
  *
  * 상태 전이(v1.0 확정):
  *   DRAFT(수락 전) → ACCEPTED(수락·계약) → READY(시작 대기)
- *   → IN_PROGRESS(근무중) → COMPLETED(완료)
+ *   → IN_PROGRESS(근무중) → COMPLETED(근무완료)
  *   확정 계열에서 NO_SHOW(미출근) · DRAFT에서 CANCELED(취소).
  * 초대 발급·대기 상태는 work_case가 아니라 work_invitations가 담당한다.
  *
@@ -23,7 +23,7 @@ export const WORK_CASE_STATUS = {
   READY: { label: '근무예정', color: 'var(--color-owner)' },
   IN_PROGRESS: { label: '근무중', color: 'var(--color-primary)' },
   CHECK_OUT_MISSING: { label: '퇴근 확인 필요', color: 'var(--color-warning)' },
-  COMPLETED: { label: '완료', color: 'var(--color-success)' },
+  COMPLETED: { label: '근무완료', color: 'var(--color-success)' },
   NO_SHOW: { label: '노쇼', color: 'var(--color-danger)' },
   CANCELED: { label: '취소', color: 'var(--color-text-sub)' }
 }
