@@ -336,6 +336,47 @@ test("deploy-api.yml 이 산출물을 올리고 up -d 뒤에 절대 경로로 �
   assert.ok(setAt > upAt, "set-api-tag.sh 가 up -d app 보다 먼저 실행된다");
 });
 
+// .env 는 up -d 직후에 갱신되므로, 그 뒤 Smoke test 가 실패하면 서버는 "깨진 리비전을
+// 가리키는 .env" 로 남는다. 안내를 못 보면 운영자는 up -d 만 되돌리고, 다음 맨손 up -d
+// 가 그 리비전을 다시 올린다 — 태그만 새로워진 #450 이다.
+//
+// 그 안내 전체가 steps.deploy.outcome 하나에 걸려 있다. id 를 지우거나 이름만 바꾸면
+// 조건은 오류 없이 거짓이 되고, 배포는 빨간 X 로 끝나는데 요약은 침묵한다. 조용히
+// 사라지는 연결이라 고정한다.
+test("배포 실패 시 롤백 안내 Step 이 Deploy over SSH 결과에 걸려 있다", () => {
+  const workflow = fs
+    .readFileSync(path.join(REPO, ".github", "workflows", "deploy-api.yml"), "utf8")
+    .replace(/\r\n/g, "\n");
+
+  // 조건과 Step 을 잇는 유일한 고리다.
+  assert.match(
+    workflow,
+    /- name: Deploy over SSH\n\s+id: deploy\n/,
+    "Deploy over SSH 에 id: deploy 가 없다 — 롤백 안내 조건이 조용히 거짓이 된다",
+  );
+
+  // Step 블록만 떼어 그 Step 의 if 를 본다. 파일 전체를 보면 다른 Step 의 조건이
+  // 대신 통과시켜 준다.
+  const steps = workflow.split(/\n {6}- name: /).slice(1);
+  const report = steps.find((step) => step.startsWith("Report rollback steps on failure"));
+  assert.notStrictEqual(report, undefined, "Report rollback steps on failure Step 이 없다");
+
+  const condition = report.match(/\n {8}if: ([\s\S]*?)\n {8}run:/);
+  assert.notStrictEqual(condition, null, "그 Step 의 if 조건을 찾지 못했다");
+  assert.match(condition[1], /failure\(\)/, "failure() 가 없어 정작 실패 시 실행되지 않는다");
+  // 배포 Step 앞에서 멈췄다면 서버는 손대지 않은 상태다. 그때도 안내를 내면 하지 않은
+  // 변경을 되돌리라고 유도하는 셈이다.
+  assert.match(
+    condition[1],
+    /steps\.deploy\.outcome/,
+    "Deploy over SSH 가 실제로 돌았는지 보지 않는다",
+  );
+
+  // 안내는 두 줄 모두를 시켜야 한다. up -d 만 되돌리면 .env 가 깨진 리비전을 가리킨 채
+  // 남고, 다음 맨손 up -d 가 그것을 다시 올린다.
+  assert.match(report, /set-api-tag\.sh <이전sha>/, "롤백 안내에 .env 되돌리기가 없다");
+});
+
 test("compose.prod.yaml 의 app 이미지 태그에 기본값이 없다", () => {
   // 이 수정의 나머지 절반이다. 기본값을 되살리는 변경은 #450 회귀를 그대로
   // 재장전하는데, .env 갱신 쪽 테스트로는 잡히지 않는다. 파일 내용을 고정하는 데는
