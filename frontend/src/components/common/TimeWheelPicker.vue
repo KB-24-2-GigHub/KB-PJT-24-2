@@ -9,7 +9,7 @@
  */
 import { computed } from 'vue'
 import WheelColumn from './WheelColumn.vue'
-import { roundTimeToStep } from '@/utils/timeWheel'
+import { roundTimeToStep, to12Hour } from '@/utils/timeWheel'
 
 const props = defineProps({
   modelValue: { type: String, required: true }, // "HH:mm"
@@ -35,11 +35,7 @@ const minuteOptions = computed(() =>
 function parse(value) {
   // 반올림을 총 분(hour*60+minute) 단위로 먼저 끝내 55분 같은 값이 60분이 아니라
   // 다음 시(hour)로 자리올림되게 한다 — 분만 따로 반올림하면 이 자리올림이 사라진다.
-  const [hStr, mStr] = roundTimeToStep(value, props.step).split(':')
-  const h = parseInt(hStr, 10)
-  const ampm = h < 12 ? 'AM' : 'PM'
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  return { ampm, hour12, minute: parseInt(mStr, 10) }
+  return to12Hour(roundTimeToStep(value, props.step))
 }
 
 const parsed = computed(() => parse(props.modelValue))

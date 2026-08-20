@@ -6,9 +6,9 @@
  */
 import { ref } from 'vue'
 import BaseBottomSheet from './BaseBottomSheet.vue'
-import BaseButton from './BaseButton.vue'
 import CalendarGridPicker from './CalendarGridPicker.vue'
 import FieldShell from './FieldShell.vue'
+import PickerSheetFooter from './PickerSheetFooter.vue'
 import { formatDateKeyWithWeekday, todayKey } from '@/utils/calendar'
 
 const props = defineProps({
@@ -57,10 +57,7 @@ function confirm() {
   <BaseBottomSheet :open="open" :title="label || '날짜 선택'" @close="open = false">
     <CalendarGridPicker v-model="draft" />
     <template #footer>
-      <div class="sheet-actions">
-        <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
-        <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
-      </div>
+      <PickerSheetFooter @cancel="open = false" @confirm="confirm" />
     </template>
   </BaseBottomSheet>
 </template>
@@ -79,9 +76,5 @@ function confirm() {
 }
 .field.has-error .date-input {
   border-color: var(--color-danger);
-}
-.sheet-actions {
-  display: flex;
-  gap: var(--space-sm);
 }
 </style>
