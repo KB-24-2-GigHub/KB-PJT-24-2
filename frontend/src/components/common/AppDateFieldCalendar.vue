@@ -16,7 +16,9 @@ const props = defineProps({
   modelValue: { type: String, default: '' }, // "YYYY-MM-DD"
   error: { type: String, default: '' },
   hint: { type: String, default: '' },
-  required: { type: Boolean, default: false }
+  required: { type: Boolean, default: false },
+  // 확인 버튼 톤 — 화면 역할(사장님/알바생)에 맞춘다.
+  variant: { type: String, default: 'owner' }
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -57,7 +59,7 @@ function confirm() {
   <BaseBottomSheet :open="open" :title="label || '날짜 선택'" @close="open = false">
     <CalendarGridPicker v-model="draft" />
     <template #footer>
-      <PickerSheetFooter @cancel="open = false" @confirm="confirm" />
+      <PickerSheetFooter :variant="variant" @cancel="open = false" @confirm="confirm" />
     </template>
   </BaseBottomSheet>
 </template>

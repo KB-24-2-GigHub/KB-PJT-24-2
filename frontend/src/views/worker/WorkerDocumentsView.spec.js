@@ -8,7 +8,9 @@
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+import AppDateFieldCalendar from '@/components/common/AppDateFieldCalendar.vue'
 
 vi.mock('vue-router', () => ({ useRouter: () => ({ push: vi.fn() }) }))
 vi.mock('@/services/documents', () => ({
@@ -28,6 +30,7 @@ import {
   listDocuments,
   revokeShare,
   shareDocument,
+  updateDocumentIssuedDate,
   uploadDocument
 } from '@/services/documents'
 import { listAllWorkerWorkplaces } from '@/services/worker'
@@ -83,6 +86,27 @@ function normalized(node) {
 
 function actionLabels(wrapper) {
   return wrapper.findAll('.doc-side button').map((button) => button.attributes('aria-label'))
+}
+
+/**
+ * 실제 사용자 흐름대로 발급일을 채운다: 버튼 클릭 → 캘린더 시트 열림 → 날짜 셀 클릭 → 확인.
+ * 캘린더는 기본으로 "오늘"이 속한 달을 연다 — 호출하는 쪽에서 시스템 시각을 dateKey 와
+ * 같은 달로 고정해 둬야 한다.
+ */
+async function pickIssuedDate(wrapper, dateKey) {
+  const day = String(Number(dateKey.split('-')[2]))
+  const fieldWrapper = wrapper.findComponent(AppDateFieldCalendar)
+  await fieldWrapper.get('button.date-input').trigger('click')
+
+  const cell = fieldWrapper
+    .findAll('.cal-cell')
+    .find((c) => !c.classes().includes('outside') && c.text() === day)
+  await cell.trigger('click')
+
+  await fieldWrapper
+    .findAll('button')
+    .find((b) => b.text() === '확인')
+    .trigger('click')
 }
 
 describe('WorkerDocumentsView 역할별 조작 권한', () => {
@@ -164,10 +188,17 @@ describe('WorkerDocumentsView 보건증 등록', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    vi.useFakeTimers()
+    // 발급일 캘린더는 기본으로 "오늘"이 속한 달을 연다.
+    vi.setSystemTime(new Date('2026-06-01T00:00:00Z'))
     listAllDocumentShares.mockResolvedValue([])
     listAllWorkerWorkplaces.mockResolvedValue([])
     listDocuments.mockResolvedValue(pageOf([]))
     uploadDocument.mockResolvedValue({ documentId: 9 })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('승인 Enum 과 발급일만 Multipart 로 보낸다', async () => {
@@ -180,7 +211,7 @@ describe('WorkerDocumentsView 보건증 등록', () => {
     const fileInput = wrapper.find('input[type="file"]')
     Object.defineProperty(fileInput.element, 'files', { value: [picked] })
     await fileInput.trigger('change')
-    await wrapper.find('input[type="date"]').setValue('2026-06-01')
+    await pickIssuedDate(wrapper, '2026-06-01')
 
     await wrapper.find('.sheet-footer button').trigger('click')
     await flushPromises()
@@ -194,6 +225,8 @@ describe('WorkerDocumentsView 보건증 등록', () => {
   })
 
   it('서버 fieldErrors 를 해당 입력 칸에 표시한다', async () => {
+    // 캘린더는 "오늘"이 속한 달을 기본으로 열므로, 고르려는 날짜와 같은 달로 맞춘다.
+    vi.setSystemTime(new Date('2027-01-01T00:00:00Z'))
     uploadDocument.mockRejectedValue({
       response: { status: 400, data: { code: 'VALIDATION_ERROR' } },
       fieldErrors: [{ field: 'issuedDate', reason: '발급일은 오늘 이후일 수 없습니다.' }]
@@ -207,12 +240,50 @@ describe('WorkerDocumentsView 보건증 등록', () => {
     const fileInput = wrapper.find('input[type="file"]')
     Object.defineProperty(fileInput.element, 'files', { value: [picked] })
     await fileInput.trigger('change')
-    await wrapper.find('input[type="date"]').setValue('2027-01-01')
+    await pickIssuedDate(wrapper, '2027-01-01')
 
     await wrapper.find('.sheet-footer button').trigger('click')
     await flushPromises()
 
     expect(wrapper.text()).toContain('발급일은 오늘 이후일 수 없습니다.')
+  })
+})
+
+describe('WorkerDocumentsView 발급일 수정', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-08-01T00:00:00Z'))
+    listAllDocumentShares.mockResolvedValue([])
+    listAllWorkerWorkplaces.mockResolvedValue([])
+    listDocuments.mockResolvedValue(pageOf([OWN_HEALTH_CERTIFICATE]))
+    updateDocumentIssuedDate.mockResolvedValue({})
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('캘린더에서 고른 날짜로 발급일을 수정한다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('.doc-side button')
+      .find((b) => b.attributes('aria-label') === '발급일 수정')
+      .trigger('click')
+    // 수정 시트는 시스템 시각이 아니라 기존 발급일(OWN_HEALTH_CERTIFICATE: 2026-06-01)이
+    // 속한 달을 연다.
+    await pickIssuedDate(wrapper, '2026-06-15')
+
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '저장')
+      .trigger('click')
+    await flushPromises()
+
+    expect(updateDocumentIssuedDate).toHaveBeenCalledWith(5, { issuedDate: '2026-06-15' })
   })
 })
 

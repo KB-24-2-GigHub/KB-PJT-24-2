@@ -178,7 +178,7 @@ describe('OwnerDocumentsView 읽기 전용 정책', () => {
 
     // 발급일+1년을 화면에서 추정하지 않는다.
     expect(wrapper.find('.badge--expired').exists()).toBe(true)
-    expect(wrapper.find('.doc-expiry').text()).toContain('2027')
+    expect(wrapper.find('.doc-meta').text()).toContain('만료일: 2027')
   })
 })
 

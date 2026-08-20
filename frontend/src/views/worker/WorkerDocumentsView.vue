@@ -10,19 +10,11 @@
  *   계약에 없다). 셋 다 서버 값이며 화면이 권한을 계산하지 않는다.
  * 공통: BaseBottomSheet(보건증 등록/공유) · BaseModal(발급일·삭제 확인) · 카드 클릭 → 뷰어
  */
-import {
-  FileText,
-  Image as ImageIcon,
-  MapPin,
-  Pencil,
-  Share2,
-  Trash2,
-  Upload
-} from 'lucide-vue-next'
+import { MapPin, Pencil, Share2, Trash2, Upload } from 'lucide-vue-next'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import AppField from '@/components/common/AppField.vue'
+import AppDateFieldCalendar from '@/components/common/AppDateFieldCalendar.vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -39,7 +31,7 @@ import {
 import { errorMessage, fieldErrorMap } from '@/services/http'
 import { listAllWorkerWorkplaces } from '@/services/worker'
 import { useUiStore } from '@/stores/ui'
-import { docTypeLabel, isImageDocument } from '@/utils/document'
+import { docTypeLabel } from '@/utils/document'
 import { formatDate } from '@/utils/format'
 import { hasNextPage } from '@/utils/page'
 
@@ -371,17 +363,21 @@ async function doRevoke(share) {
           class="doc-card"
         >
           <button type="button" class="doc-main" @click="goViewer(doc)">
-            <span class="thumb">
-              <ImageIcon v-if="isImageDocument(doc)" :size="20" />
-              <FileText v-else :size="20" />
+            <span
+              class="type-badge"
+              :class="
+                doc.docType === 'HEALTH_CERTIFICATE' ? 'type-badge--health' : 'type-badge--contract'
+              "
+            >
+              {{ docTypeLabel(doc) }}
             </span>
 
             <span class="doc-info">
               <span class="doc-name">{{ doc.fileName }}</span>
               <span class="doc-meta">
-                {{ formatDate(doc.issuedDate) }} · {{ docTypeLabel(doc) }}
-                <template v-if="doc.expiresDate">
-                  · 만료 {{ formatDate(doc.expiresDate) }}</template
+                <span class="meta-row">발급일: {{ formatDate(doc.issuedDate) }}</span>
+                <span v-if="doc.expiresDate" class="meta-row"
+                  >만료일: {{ formatDate(doc.expiresDate) }}</span
                 >
               </span>
               <span v-if="ownsHealthCertificate(doc)" class="doc-share">
@@ -444,7 +440,13 @@ async function doRevoke(share) {
           </label>
           <p v-if="fileError" class="field-err">{{ fileError }}</p>
         </div>
-        <AppField v-model="issuedDate" label="발급일" type="date" required :error="issuedError" />
+        <AppDateFieldCalendar
+          v-model="issuedDate"
+          label="발급일"
+          required
+          variant="worker"
+          :error="issuedError"
+        />
         <p class="form-hint">만료일은 발급일을 기준으로 서버가 계산해요.</p>
       </div>
       <template #footer>
@@ -499,7 +501,7 @@ async function doRevoke(share) {
 
     <!-- 발급일 수정 -->
     <BaseModal :open="editOpen" title="발급일 수정" @close="editOpen = false">
-      <AppField v-model="editDate" label="발급일" type="date" :error="editError" />
+      <AppDateFieldCalendar v-model="editDate" label="발급일" variant="worker" :error="editError" />
       <template #footer>
         <BaseButton variant="secondary" block @click="editOpen = false">취소</BaseButton>
         <BaseButton variant="worker" block :disabled="editSaving" @click="saveEdit"
@@ -600,16 +602,25 @@ async function doRevoke(share) {
   gap: var(--space-md);
   text-align: left;
 }
-.thumb {
+.type-badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  min-width: 76px;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
+}
+.type-badge--health {
   color: var(--color-worker);
   background: var(--color-worker-weak);
-  border-radius: var(--radius-sm);
+}
+.type-badge--contract {
+  color: var(--color-owner);
+  background: var(--color-owner-weak);
 }
 .doc-info {
   display: flex;
@@ -627,6 +638,8 @@ async function doRevoke(share) {
   white-space: nowrap;
 }
 .doc-meta {
+  display: flex;
+  flex-direction: column;
   font-size: var(--text-sm);
   color: var(--color-text-sub);
   word-break: keep-all;

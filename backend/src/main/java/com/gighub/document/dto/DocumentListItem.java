@@ -50,8 +50,7 @@ public final class DocumentListItem {
         this.documentId = documentId;
         this.docType = docType;
         this.status = status;
-        this.fileName = fileName(
-                docType, mimeType, issuedDate, ownerName, workplaceName, workerName);
+        this.fileName = fileName(docType, mimeType, ownerName, workplaceName, workerName);
         this.mimeType = mimeType;
         this.issuedDate = issuedDate;
         this.expiresDate = expiresDate;
@@ -108,18 +107,13 @@ public final class DocumentListItem {
     private static String fileName(
             String docType,
             String mimeType,
-            LocalDate issuedDateValue,
             String ownerName,
             String workplaceName,
             String workerName) {
-        String issuedDate = issuedDateValue == null
-                ? "날짜미상" : issuedDateValue.toString();
         if (HEALTH_CERTIFICATE.equals(docType)) {
-            return sanitize("보건증_" + issuedDate + "_" + ownerName)
-                    + extension(mimeType);
+            return sanitize("보건증_" + ownerName) + extension(mimeType);
         }
-        return sanitize("근로계약서_" + workplaceName + "_" + issuedDate
-                + "_" + workerName) + ".pdf";
+        return sanitize("근로계약서_" + workplaceName + "_" + workerName) + ".pdf";
     }
 
     private static String extension(String mimeType) {
