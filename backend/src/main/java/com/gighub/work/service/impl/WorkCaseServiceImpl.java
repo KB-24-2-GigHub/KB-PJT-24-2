@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ResourceNotFoundException;
@@ -53,6 +55,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
     private final InvitationMapper invitationMapper;
+    private final BadgeApplicationService badgeApplicationService;
 
     @Override
     @Transactional
@@ -259,7 +262,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                 row.getWorkerId() == null
                         ? null
                         : WorkCaseDetailResponse.WorkerSummary.of(
-                                row.getWorkerId(), row.getWorkerName()),
+                                row.getWorkerId(), row.getWorkerName(), workerBadge(row.getWorkerId())),
                 invitation == null
                         ? null
                         : WorkCaseDetailResponse.InvitationSummary.of(
@@ -295,6 +298,21 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                                 settlement.getCalculatedAt(),
                                 settlement.getDueAt(),
                                 settlement.getCompletedAt()));
+    }
+
+    /**
+     * 매칭된 WORKER의 같은 산정 결과를 재사용합니다.
+     *
+     * <p>초대 조회의 {@code ownerBadge(Long employerId)}와 같은 패턴입니다. Badge Application
+     * 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준 결과이며, 0단계는 활성
+     * Badge 없음과 같은 {@code null}로 응답한다는 기존 계약을 유지합니다.</p>
+     */
+    private WorkCaseDetailResponse.WorkerBadge workerBadge(Long workerId) {
+        BadgeCalculationResult result = badgeApplicationService.recalculate(workerId);
+        if (result.getLevel() <= 0) {
+            return null;
+        }
+        return WorkCaseDetailResponse.WorkerBadge.of(result.getBadgeType(), result.getLevel());
     }
 
     /**

@@ -121,14 +121,39 @@ public final class WorkCaseDetailResponse {
 
         private final Long workerId;
         private final String name;
+        private final WorkerBadge badge;
 
-        private WorkerSummary(Long workerId, String name) {
+        private WorkerSummary(Long workerId, String name, WorkerBadge badge) {
             this.workerId = workerId;
             this.name = name;
+            this.badge = badge;
         }
 
-        public static WorkerSummary of(Long workerId, String name) {
-            return new WorkerSummary(workerId, name);
+        public static WorkerSummary of(Long workerId, String name, WorkerBadge badge) {
+            return new WorkerSummary(workerId, name, badge);
+        }
+    }
+
+    /**
+     * 매칭된 WORKER의 현재 승인 신뢰 Badge입니다.
+     *
+     * <p>초대 응답의 {@code ownerBadge}(OwnerBadgeResponse)와 같은 관례입니다 — 활성 Badge가
+     * 없으면(0단계) 이 객체 대신 {@code badge: null}을 반환합니다. 빈 객체나 기본 등급으로
+     * 채우면 받는 쪽이 "Badge 없음"과 "가장 낮은 Badge"를 구분할 수 없습니다.</p>
+     */
+    @Getter
+    public static final class WorkerBadge {
+
+        private final String badgeType;
+        private final Integer level;
+
+        private WorkerBadge(String badgeType, Integer level) {
+            this.badgeType = badgeType;
+            this.level = level;
+        }
+
+        public static WorkerBadge of(String badgeType, Integer level) {
+            return new WorkerBadge(badgeType, level);
         }
     }
 

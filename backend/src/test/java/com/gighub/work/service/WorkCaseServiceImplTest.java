@@ -7,6 +7,8 @@ import java.time.LocalTime;
 import java.util.List;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
@@ -62,8 +64,9 @@ class WorkCaseServiceImplTest {
 
     private final WorkCaseMapper workCaseMapper = mock(WorkCaseMapper.class);
     private final InvitationMapper invitationMapper = mock(InvitationMapper.class);
+    private final BadgeApplicationService badgeApplicationService = mock(BadgeApplicationService.class);
     private final WorkCaseServiceImpl service = new WorkCaseServiceImpl(
-            workCaseMapper, invitationMapper);
+            workCaseMapper, invitationMapper, badgeApplicationService);
 
     // ---------- create ----------
 
@@ -591,11 +594,33 @@ class WorkCaseServiceImplTest {
         Long workerId = 42L;
         when(workCaseMapper.findDetailRow(WORK_CASE_ID)).thenReturn(detailRow(OWNER_ID, workerId));
         when(workCaseMapper.findAttendanceTimestamps(WORK_CASE_ID)).thenReturn(emptyAttendance());
+        when(badgeApplicationService.recalculate(workerId))
+                .thenReturn(BadgeCalculationResult.of("TRUST_WORKER", 2, 10, 9, 5, 90, 0, 100, 6));
 
         WorkCaseDetailResponse response = service.detail(
                 new AuthPrincipal(workerId, UserRole.WORKER, "이알바"), WORK_CASE_ID);
 
         assertEquals(WORK_CASE_ID, response.getWorkCaseId());
+        assertEquals("TRUST_WORKER", response.getWorker().getBadge().getBadgeType());
+        assertEquals(2, response.getWorker().getBadge().getLevel());
+    }
+
+    /**
+     * 초대 응답의 {@code ownerBadge}와 같은 계약이다 — 0단계는 활성 Badge 없음과 같은
+     * {@code null}이며, 빈 객체나 0단계 값으로 채우지 않는다.
+     */
+    @Test
+    void detailReturnsNullWorkerBadgeWhenLevelIsZero() {
+        Long workerId = 42L;
+        when(workCaseMapper.findDetailRow(WORK_CASE_ID)).thenReturn(detailRow(OWNER_ID, workerId));
+        when(workCaseMapper.findAttendanceTimestamps(WORK_CASE_ID)).thenReturn(emptyAttendance());
+        when(badgeApplicationService.recalculate(workerId))
+                .thenReturn(BadgeCalculationResult.of("TRUST_WORKER", 0, 3, 1, 5, 90, 4, 100, 5));
+
+        WorkCaseDetailResponse response = service.detail(
+                new AuthPrincipal(workerId, UserRole.WORKER, "이알바"), WORK_CASE_ID);
+
+        assertNull(response.getWorker().getBadge());
     }
 
     @Test

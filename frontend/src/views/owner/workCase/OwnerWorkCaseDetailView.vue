@@ -20,6 +20,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import TrustBadge from '@/components/common/TrustBadge.vue'
 import SettlementBreakdown from '@/components/settlement/SettlementBreakdown.vue'
 import {
   canIssueInvitation,
@@ -735,24 +736,22 @@ async function onApproveSettlement() {
           />
 
           <!--
-            TODO(#184 후속): 알바생 신뢰 뱃지 자리다. 연동되면 아래 badge-placeholder 를
-            <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="40" /> 로 바꾼다.
-
-            지금 등급을 못 채우는 이유는 승인 계약에 타인 뱃지를 읽을 수단이 없어서다 —
-            GET /api/users/me/badge 는 본인만, 초대 Read Model 의 ownerBadge 는 사장만이고
-            Work Case 응답에는 workerBadge 가 없다. 타인 ID 를 받는 Badge 조회는 #184 의
-            제외 범위이므로, 선행 조건은 Work Case 응답에 workerBadge={badgeType,level} 을
-            싣는 계약 결정이다(초대의 ownerBadge 와 같은 Read Model 방식이면 새 Endpoint 를
-            열지 않아도 된다).
-
-            예전에는 <TrustBadge role="worker" :size="40" /> 로 level 을 넘기지 않아 항상
-            0단계 회색 아이콘이 나왔다 — 3단계 알바생도 사장 화면에서는 미부여로 보였다.
-            그래서 등급을 아는 척하는 대신 "모른다"를 그대로 쓴다.
+            #472: Work Case 응답 worker.badge(badgeType,level)가 초대의 ownerBadge 와 같은
+            관례로 추가됐다 — 활성 Badge 없음(0단계)은 badge:null 이라 그대로 자리표시자로
+            폴백한다. level 을 안 넘기던 예전 TrustBadge 는 항상 0단계 회색 아이콘을 그려
+            3단계 알바생도 미부여로 보였는데, badge 자체가 없을 때만 자리표시자를 쓰는
+            지금 방식은 그 오해를 만들지 않는다.
           -->
           <section v-if="workCase.worker" class="worker">
             <h3 class="section-title">매칭된 알바생</h3>
             <div class="worker-card">
-              <span class="badge-placeholder">등급 정보 없음</span>
+              <TrustBadge
+                v-if="workCase.worker.badge"
+                role="worker"
+                :level="workCase.worker.badge.level"
+                :size="40"
+              />
+              <span v-else class="badge-placeholder">등급 정보 없음</span>
               <span class="worker-name">{{ workCase.worker.name }}</span>
             </div>
           </section>
