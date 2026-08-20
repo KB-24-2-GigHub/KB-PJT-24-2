@@ -24,6 +24,7 @@ describe('TransactionItem', () => {
     expect(wrapper.get('.amount').text()).toBe('+120,000원')
     expect(wrapper.get('.amount').classes()).toContain('is-credit')
     expect(wrapper.get('.status').text()).toContain('완료')
+    expect(wrapper.get('.desc').text()).toBe('정산 지급 · 주말 홀 서빙 · 기가 허브')
   })
 
   it('같은 Type이어도 direction=DEBIT이면 음수로 표시한다', () => {
@@ -33,5 +34,14 @@ describe('TransactionItem', () => {
 
     expect(wrapper.get('.amount').text()).toBe('-120,000원')
     expect(wrapper.get('.amount').classes()).not.toContain('is-credit')
+    expect(wrapper.get('.desc').text()).toBe('알바생 지급 · 주말 홀 서빙 · 기가 허브')
+  })
+
+  it('차감액 반환 거래는 근무 제목과 함께 예치 환불 유형을 표시한다', () => {
+    const wrapper = mount(TransactionItem, {
+      props: { tx: { ...baseTransaction, type: 'ESCROW_REFUND', direction: 'CREDIT' } }
+    })
+
+    expect(wrapper.get('.desc').text()).toBe('예치 환불 · 주말 홀 서빙 · 기가 허브')
   })
 })

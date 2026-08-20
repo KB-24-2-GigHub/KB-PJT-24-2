@@ -493,9 +493,13 @@ class WorkCaseServiceDatabaseIntegrationTest {
     private void insertSettlement(JdbcTemplate jdbc, Long workCaseId, String status) {
         jdbc.update(
                 "INSERT INTO settlements"
-                        + " (work_case_id, amount, status, due_at, processing_at, completed_at)"
-                        + " VALUES (?, 120000, ?, ?, ?, ?)",
-                workCaseId, status,
+                        + " (work_case_id, amount, worker_paid_amount, owner_refund_amount,"
+                        + " calculation_reason, calculation_version, calculated_at, status,"
+                        + " due_at, processing_at, completed_at)"
+                        + " VALUES (?, 120000, 120000, 0, 'LEGACY', 'LEGACY', ?, ?, ?, ?, ?)",
+                workCaseId,
+                LocalDateTime.of(2026, 8, 21, 0, 5),
+                status,
                 LocalDateTime.of(2026, 8, 21, 0, 0),
                 LocalDateTime.of(2026, 8, 21, 0, 1),
                 LocalDateTime.of(2026, 8, 21, 0, 5));

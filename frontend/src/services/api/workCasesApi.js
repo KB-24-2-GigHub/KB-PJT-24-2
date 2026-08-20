@@ -54,6 +54,18 @@ export async function approveNoShowRefund(workCaseId, { idempotencyKey = null } 
   return data
 }
 
+export async function approveCheckOutMissingRefund(
+  workCaseId,
+  { idempotencyKey = null } = {}
+) {
+  const { data } = await idempotentPost(
+    `/work-cases/${workCaseId}/settlement/check-out-missing-refund/approve`,
+    undefined,
+    { idempotencyKey }
+  )
+  return data
+}
+
 export async function getOwnerContact(workCaseId) {
   const { data } = await http.get(`/work-cases/${workCaseId}/workplace-contact`)
   return data

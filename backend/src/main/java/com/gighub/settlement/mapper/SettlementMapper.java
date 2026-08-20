@@ -2,6 +2,7 @@ package com.gighub.settlement.mapper;
 
 import com.gighub.settlement.dto.ScheduledPayoutCandidate;
 import com.gighub.settlement.dto.SettlementSnapshot;
+import com.gighub.settlement.domain.SettlementCalculation;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Param;
 
@@ -53,7 +54,13 @@ public interface SettlementMapper {
      */
     int scheduleWaitingPayout(
             @Param("workCaseId") Long workCaseId,
-            @Param("dueAt") LocalDateTime dueAt);
+            @Param("dueAt") LocalDateTime dueAt,
+            @Param("calculation") SettlementCalculation calculation);
+
+    /** NO_SHOW 또는 CHECK_OUT_MISSING의 승인 대기 정산에 최초 전액 환불 Snapshot을 기록합니다. */
+    int recordWaitingTerminalSnapshot(
+            @Param("workCaseId") Long workCaseId,
+            @Param("calculation") SettlementCalculation calculation);
 
     // 상태 전이: 수동 승인 가능한 SCHEDULED 정산만 처리 중으로 바꾼다.
     int transitionScheduledToProcessing(

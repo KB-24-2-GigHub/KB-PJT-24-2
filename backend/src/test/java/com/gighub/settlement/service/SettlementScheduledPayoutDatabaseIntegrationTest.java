@@ -547,9 +547,16 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
         Long escrowId = idBy(jdbcTemplate, "escrows", "work_case_id", workCaseId);
 
         jdbcTemplate.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at)"
-                        + " VALUES (?, ?, 'SCHEDULED', DATE_ADD(NOW(6), INTERVAL 1 DAY))",
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, status, due_at,"
+                        + " worker_paid_amount, owner_refund_amount,"
+                        + " deduction_base_minutes, late_minutes, early_leave_minutes,"
+                        + " calculation_reason, calculation_version, calculated_at)"
+                        + " VALUES (?, ?, 'SCHEDULED',"
+                        + " DATE_ADD(NOW(6), INTERVAL 1 DAY), ?, 0, 480, 0, 0,"
+                        + " 'CHECKED_OUT', 'ATTENDANCE_V1', NOW(6))",
                 workCaseId,
+                WAGE,
                 WAGE);
         Long settlementId = idBy(jdbcTemplate, "settlements", "work_case_id", workCaseId);
 
@@ -601,6 +608,8 @@ class SettlementScheduledPayoutDatabaseIntegrationTest {
     }
 
     private void deleteFixture(JdbcTemplate jdbcTemplate, SettlementFixture fixture) {
+        jdbcTemplate.update(
+                "DELETE FROM notifications WHERE work_case_id = ?", fixture.workCaseId());
         jdbcTemplate.update(
                 "DELETE FROM disputes WHERE work_case_id = ?", fixture.workCaseId());
         jdbcTemplate.update(

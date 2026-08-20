@@ -1,6 +1,7 @@
 package com.gighub.settlement.service.policy;
 
 import com.gighub.settlement.domain.SettlementStatus;
+import com.gighub.settlement.domain.SettlementCalculationReason;
 import com.gighub.wallet.domain.EscrowStatus;
 import com.gighub.wallet.service.result.SettlementEscrowSnapshot;
 import com.gighub.work.contract.WorkCaseEscrowSnapshot;
@@ -13,7 +14,20 @@ public class NoShowRefundPolicy {
 
     public SettlementPayoutDecision assessWork(
             Long workCaseId, Long ownerUserId, WorkCaseEscrowSnapshot work) {
+        return assessWork(
+                workCaseId, ownerUserId, work, SettlementCalculationReason.NO_SHOW);
+    }
+
+    public SettlementPayoutDecision assessWork(
+            Long workCaseId,
+            Long ownerUserId,
+            WorkCaseEscrowSnapshot work,
+            SettlementCalculationReason reason) {
         if (workCaseId == null || workCaseId <= 0 || ownerUserId == null || ownerUserId <= 0) {
+            return SettlementPayoutDecision.INTEGRITY_VIOLATION;
+        }
+        if (reason != SettlementCalculationReason.NO_SHOW
+                && reason != SettlementCalculationReason.CHECK_OUT_MISSING) {
             return SettlementPayoutDecision.INTEGRITY_VIOLATION;
         }
         if (work == null
@@ -33,11 +47,19 @@ public class NoShowRefundPolicy {
                 || work.getAgreedWage() <= 0
                 || work.getStatus() == null
                 || work.getSuccessfulCheckInCount() == null
-                || work.getSuccessfulCheckInCount() < 0) {
+                || work.getSuccessfulCheckInCount() < 0
+                || work.getSuccessfulCheckOutCount() == null
+                || work.getSuccessfulCheckOutCount() < 0) {
             return SettlementPayoutDecision.INTEGRITY_VIOLATION;
         }
-        if (work.getStatus() != WorkCaseStatus.NO_SHOW
-                || work.getSuccessfulCheckInCount() != 0L) {
+        boolean matchingTerminal = reason == SettlementCalculationReason.NO_SHOW
+                ? work.getStatus() == WorkCaseStatus.NO_SHOW
+                        && work.getSuccessfulCheckInCount() == 0L
+                        && work.getSuccessfulCheckOutCount() == 0L
+                : work.getStatus() == WorkCaseStatus.CHECK_OUT_MISSING
+                        && work.getSuccessfulCheckInCount() == 1L
+                        && work.getSuccessfulCheckOutCount() == 0L;
+        if (!matchingTerminal) {
             return SettlementPayoutDecision.NOT_READY;
         }
         return SettlementPayoutDecision.ALLOWED;
@@ -48,7 +70,22 @@ public class NoShowRefundPolicy {
             Long ownerUserId,
             WorkCaseEscrowSnapshot work,
             RefundSettlementFacts settlement) {
-        SettlementPayoutDecision workDecision = assessWork(workCaseId, ownerUserId, work);
+        return assessSettlement(
+                workCaseId,
+                ownerUserId,
+                work,
+                settlement,
+                SettlementCalculationReason.NO_SHOW);
+    }
+
+    public SettlementPayoutDecision assessSettlement(
+            Long workCaseId,
+            Long ownerUserId,
+            WorkCaseEscrowSnapshot work,
+            RefundSettlementFacts settlement,
+            SettlementCalculationReason reason) {
+        SettlementPayoutDecision workDecision = assessWork(
+                workCaseId, ownerUserId, work, reason);
         if (workDecision != SettlementPayoutDecision.ALLOWED) {
             return workDecision;
         }
@@ -63,6 +100,21 @@ public class NoShowRefundPolicy {
         }
         if (!workCaseId.equals(settlement.workCaseId())
                 || !work.getAgreedWage().equals(settlement.amount())) {
+            return SettlementPayoutDecision.INTEGRITY_VIOLATION;
+        }
+        if (settlement.workerPaidAmount() == null
+                || settlement.workerPaidAmount() != 0L
+                || settlement.ownerRefundAmount() == null
+                || !settlement.ownerRefundAmount().equals(settlement.amount())
+                || settlement.deductionBaseMinutes() == null
+                || settlement.deductionBaseMinutes() <= 0
+                || settlement.lateMinutes() == null
+                || settlement.lateMinutes() < 0
+                || settlement.earlyLeaveMinutes() == null
+                || settlement.earlyLeaveMinutes() < 0
+                || !reason.name().equals(settlement.calculationReason())
+                || !"ATTENDANCE_V1".equals(settlement.calculationVersion())
+                || settlement.calculatedAt() == null) {
             return SettlementPayoutDecision.INTEGRITY_VIOLATION;
         }
         if (settlement.status() == SettlementStatus.ON_HOLD) {
@@ -87,8 +139,26 @@ public class NoShowRefundPolicy {
             RefundSettlementFacts settlement,
             SettlementEscrowSnapshot escrow,
             boolean hasBlockingDispute) {
+        return assessRefund(
+                workCaseId,
+                ownerUserId,
+                work,
+                settlement,
+                escrow,
+                hasBlockingDispute,
+                SettlementCalculationReason.NO_SHOW);
+    }
+
+    public SettlementPayoutDecision assessRefund(
+            Long workCaseId,
+            Long ownerUserId,
+            WorkCaseEscrowSnapshot work,
+            RefundSettlementFacts settlement,
+            SettlementEscrowSnapshot escrow,
+            boolean hasBlockingDispute,
+            SettlementCalculationReason reason) {
         SettlementPayoutDecision settlementDecision =
-                assessSettlement(workCaseId, ownerUserId, work, settlement);
+                assessSettlement(workCaseId, ownerUserId, work, settlement, reason);
         if (settlementDecision != SettlementPayoutDecision.ALLOWED) {
             return settlementDecision;
         }
@@ -120,6 +190,14 @@ public class NoShowRefundPolicy {
             Long settlementId,
             Long workCaseId,
             Long amount,
+            Long workerPaidAmount,
+            Long ownerRefundAmount,
+            Long deductionBaseMinutes,
+            Long lateMinutes,
+            Long earlyLeaveMinutes,
+            String calculationReason,
+            String calculationVersion,
+            LocalDateTime calculatedAt,
             SettlementStatus status,
             LocalDateTime dueAt) {
     }

@@ -49,7 +49,7 @@ export async function getWorkerHome() {
   return {
     todayWorkCase: {
       ...workCases[0],
-      expectedNetAmount: 90000
+      taxReference: null
     }
   }
 }

@@ -105,6 +105,60 @@ class SettlementWalletServiceImplTest {
     }
 
     @Test
+    void partialReleasePaysTheWorkerAndRefundsTheOwnerWithAChainedLedger() {
+        long paid = 200_000L;
+        long refunded = 100_000L;
+        SettlementWalletCommand command = command(EMPLOYER_ID, WORKER_ID, paid, refunded);
+        stubRelease(command, wallet(30L, EMPLOYER_ID, 400_000L, AMOUNT),
+                wallet(40L, WORKER_ID, 0L, 0L));
+
+        SettlementWalletLock lock = service.lockPayoutWallets(command, ESCROW_ID);
+        SettlementAmounts amounts = service.release(command, ESCROW_ID, lock);
+
+        assertEquals(paid, amounts.workerPaidAmount());
+        assertEquals(refunded, amounts.ownerRefundAmount());
+        ArgumentCaptor<WalletBalanceUpdateParam> balances =
+                ArgumentCaptor.forClass(WalletBalanceUpdateParam.class);
+        verify(walletMapper, times(2)).updateWalletBalanceByWalletId(balances.capture());
+        assertEquals(500_000L, balances.getAllValues().get(0).getAvailableAfter());
+        assertEquals(0L, balances.getAllValues().get(0).getLockedAfter());
+        assertEquals(paid, balances.getAllValues().get(1).getAvailableAfter());
+
+        ArgumentCaptor<WalletTransactionParam> ledgers =
+                ArgumentCaptor.forClass(WalletTransactionParam.class);
+        verify(walletMapper, times(3)).insertWalletTransaction(ledgers.capture());
+        WalletTransactionParam ownerRelease = ledgers.getAllValues().get(0);
+        WalletTransactionParam workerRelease = ledgers.getAllValues().get(1);
+        WalletTransactionParam ownerRefund = ledgers.getAllValues().get(2);
+        assertEquals("ESCROW_RELEASE", ownerRelease.getTransactionType());
+        assertEquals(paid, ownerRelease.getAmount());
+        assertEquals(ownerRelease.getAvailableAfter(), ownerRefund.getAvailableBefore());
+        assertEquals(ownerRelease.getLockedAfter(), ownerRefund.getLockedBefore());
+        assertEquals("ESCROW_RELEASE", workerRelease.getTransactionType());
+        assertEquals("ESCROW_REFUND", ownerRefund.getTransactionType());
+        assertEquals(refunded, ownerRefund.getAmount());
+    }
+
+    @Test
+    void zeroPayoutOmitsWorkerMutationAndZeroReleaseLedgers() {
+        SettlementWalletCommand command = command(EMPLOYER_ID, WORKER_ID, 0L, AMOUNT);
+        stubRelease(command, wallet(30L, EMPLOYER_ID, 400_000L, AMOUNT),
+                wallet(40L, WORKER_ID, 10_000L, 0L));
+
+        SettlementWalletLock lock = service.lockPayoutWallets(command, ESCROW_ID);
+        SettlementAmounts amounts = service.release(command, ESCROW_ID, lock);
+
+        assertEquals(0L, amounts.workerPaidAmount());
+        verify(walletMapper, times(1)).updateWalletBalanceByWalletId(any());
+        ArgumentCaptor<WalletTransactionParam> ledger =
+                ArgumentCaptor.forClass(WalletTransactionParam.class);
+        verify(walletMapper, times(1)).insertWalletTransaction(ledger.capture());
+        assertEquals("ESCROW_REFUND", ledger.getValue().getTransactionType());
+        assertEquals(AMOUNT, ledger.getValue().getAmount());
+        assertEquals(command.getEmployerRefundLedgerKey(), ledger.getValue().getIdempotencyKey());
+    }
+
+    @Test
     void refundRestoresOnlyTheOwnerWalletAndWritesOneRefundLedger() {
         NoShowRefundWalletCommand command = refundCommand();
         when(walletMapper.findSettlementEscrowForUpdate(WORK_CASE_ID))
@@ -267,13 +321,21 @@ class SettlementWalletServiceImplTest {
     }
 
     private SettlementWalletCommand command(long employerId, long workerId) {
+        return command(employerId, workerId, AMOUNT, 0L);
+    }
+
+    private SettlementWalletCommand command(
+            long employerId, long workerId, long paid, long refunded) {
         return SettlementWalletCommand.builder()
                 .workCaseId(WORK_CASE_ID)
                 .employerId(employerId)
                 .workerId(workerId)
                 .amount(AMOUNT)
+                .workerPaidAmount(paid)
+                .ownerRefundAmount(refunded)
                 .employerLedgerKey("release-employer")
                 .workerLedgerKey("release-worker")
+                .employerRefundLedgerKey("refund-employer")
                 .build();
     }
 

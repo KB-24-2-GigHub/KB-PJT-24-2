@@ -1,6 +1,7 @@
 export const SETTLEMENT_ACTION = Object.freeze({
   PAYOUT: 'PAYOUT',
-  NO_SHOW_REFUND: 'NO_SHOW_REFUND'
+  NO_SHOW_REFUND: 'NO_SHOW_REFUND',
+  CHECK_OUT_MISSING_REFUND: 'CHECK_OUT_MISSING_REFUND'
 })
 
 const INTENT_STORAGE_PREFIX = 'gighub:settlement-intent'
@@ -81,8 +82,33 @@ export function canApproveNoShowRefund(workCase) {
   )
 }
 
+export function canApproveCheckOutMissingRefund(workCase) {
+  return (
+    workCase?.status === 'CHECK_OUT_MISSING' &&
+    workCase?.settlement?.status === 'WAITING' &&
+    workCase?.settlement?.dueAt == null &&
+    workCase?.escrow?.status === 'HELD'
+  )
+}
+
 export function isAmount(value) {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0
+}
+
+function isPositiveMinutes(value) {
+  return Number.isSafeInteger(value) && value > 0
+}
+
+function hasCalculationSnapshot(result) {
+  return (
+    isPositiveMinutes(result?.deductionBaseMinutes) &&
+    isAmount(result?.lateMinutes) &&
+    isAmount(result?.earlyLeaveMinutes) &&
+    ['CHECKED_OUT', 'NO_SHOW', 'CHECK_OUT_MISSING'].includes(result?.calculationReason) &&
+    result?.calculationVersion === 'ATTENDANCE_V1' &&
+    typeof result?.calculatedAt === 'string' &&
+    result.calculatedAt.length > 0
+  )
 }
 
 /** 서버가 확정한 결과의 보존식만 검증하며 지급액이나 환불액을 새로 계산하지 않는다. */
@@ -91,22 +117,31 @@ export function isSettlementResultConsistent(action, result) {
     !isAmount(result?.originalEscrowAmount) ||
     !isAmount(result?.workerPaidAmount) ||
     !isAmount(result?.ownerRefundAmount) ||
-    result.workerPaidAmount + result.ownerRefundAmount !== result.originalEscrowAmount
+    !isAmount(result?.deductionAmount) ||
+    result.workerPaidAmount + result.ownerRefundAmount !== result.originalEscrowAmount ||
+    result.deductionAmount !== result.ownerRefundAmount ||
+    !hasCalculationSnapshot(result)
   ) {
     return false
   }
 
   if (action === SETTLEMENT_ACTION.PAYOUT) {
-    return (
-      result.status === 'COMPLETED' &&
-      result.workerPaidAmount === result.originalEscrowAmount &&
-      result.ownerRefundAmount === 0
-    )
+    return result.status === 'COMPLETED' && result.calculationReason === 'CHECKED_OUT'
   }
 
   if (action === SETTLEMENT_ACTION.NO_SHOW_REFUND) {
     return (
       result.status === 'REFUNDED' &&
+      result.calculationReason === 'NO_SHOW' &&
+      result.workerPaidAmount === 0 &&
+      result.ownerRefundAmount === result.originalEscrowAmount
+    )
+  }
+
+  if (action === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND) {
+    return (
+      result.status === 'REFUNDED' &&
+      result.calculationReason === 'CHECK_OUT_MISSING' &&
       result.workerPaidAmount === 0 &&
       result.ownerRefundAmount === result.originalEscrowAmount
     )
@@ -119,7 +154,10 @@ export function hasSettlementTerminalState(action, workCase) {
   if (action === SETTLEMENT_ACTION.PAYOUT) {
     return workCase?.settlement?.status === 'COMPLETED' && workCase?.escrow?.status === 'RELEASED'
   }
-  if (action === SETTLEMENT_ACTION.NO_SHOW_REFUND) {
+  if (
+    action === SETTLEMENT_ACTION.NO_SHOW_REFUND ||
+    action === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND
+  ) {
     return workCase?.settlement?.status === 'REFUNDED' && workCase?.escrow?.status === 'REFUNDED'
   }
   return false

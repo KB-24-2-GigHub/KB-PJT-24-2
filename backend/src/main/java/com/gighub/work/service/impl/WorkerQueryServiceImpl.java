@@ -125,7 +125,8 @@ public class WorkerQueryServiceImpl implements WorkerQueryService {
                 row.getCheckedOutAt(),
                 row.getEscrowStatus(),
                 row.getSettlementStatus(),
-                row.getSettlementDueAt());
+                row.getSettlementDueAt(),
+                row.getWorkerPaidAmount());
     }
 
     private WorkerWorkCaseListItemResponse toWorkCaseResponse(WorkerWorkCaseRow row) {

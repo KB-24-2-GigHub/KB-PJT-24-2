@@ -4,6 +4,7 @@ import com.gighub.notification.domain.NotificationType;
 import com.gighub.notification.service.NotificationRecorder;
 import com.gighub.notification.service.command.NotificationRecordCommand;
 import com.gighub.settlement.dto.SettlementSnapshot;
+import com.gighub.settlement.domain.SettlementCalculationReason;
 import com.gighub.settlement.mapper.SettlementMapper;
 import com.gighub.settlement.service.NoShowRefundExecutor;
 import com.gighub.settlement.service.NoShowRefundResultValidator.RefundedSettlementFacts;
@@ -30,7 +31,7 @@ import java.util.List;
 
 import static com.gighub.settlement.service.NoShowRefundResultValidator.validateAndBuild;
 
-/** NO_SHOW 환불을 Work → Settlement → Dispute → Escrow → Wallet 잠금 순서로 실행합니다. */
+/** NO_SHOW·CHECK_OUT_MISSING 환불을 같은 잠금 순서와 원자 실행기로 처리합니다. */
 @Service
 @RequiredArgsConstructor
 public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
@@ -44,13 +45,22 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
     public SettlementResult execute(long workCaseId, long ownerUserId) {
+        return execute(workCaseId, ownerUserId, SettlementCalculationReason.NO_SHOW);
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.MANDATORY)
+    public SettlementResult execute(
+            long workCaseId,
+            long ownerUserId,
+            SettlementCalculationReason reason) {
         WorkCaseEscrowSnapshot work = workSettlementService.lockEscrowContext(workCaseId);
-        requireAllowed(refundPolicy.assessWork(workCaseId, ownerUserId, work));
+        requireAllowed(refundPolicy.assessWork(workCaseId, ownerUserId, work, reason));
 
         SettlementSnapshot settlement = settlementMapper.findByWorkCaseIdForUpdate(workCaseId);
         RefundSettlementFacts settlementFacts = facts(settlement);
         requireAllowed(refundPolicy.assessSettlement(
-                workCaseId, ownerUserId, work, settlementFacts));
+                workCaseId, ownerUserId, work, settlementFacts, reason));
 
         boolean hasBlockingDispute = !settlementMapper.findBlockingDisputeIdsForUpdate(
                 workCaseId).isEmpty();
@@ -62,7 +72,8 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
                 work,
                 settlementFacts,
                 escrow,
-                hasBlockingDispute));
+                hasBlockingDispute,
+                reason));
 
         SettlementWalletLock walletLock =
                 settlementWalletService.lockRefundWallet(walletCommand, escrow.getEscrowId());
@@ -71,7 +82,7 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
 
         if (settlementMapper.transitionWaitingToRefundProcessing(
                 settlement.getSettlementId(), ownerUserId) != 1) {
-            throw new EscrowIntegrityException("정산을 NO_SHOW 환불 처리 중 상태로 전환하지 못했습니다.");
+            throw new EscrowIntegrityException("정산을 환불 처리 중 상태로 전환하지 못했습니다.");
         }
 
         // Escrow, OWNER Wallet, 원장, Settlement는 이 바깥 Transaction과 함께만 확정됩니다.
@@ -79,7 +90,7 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
                 walletCommand, escrow.getEscrowId(), walletLock);
         if (settlementMapper.transitionRefundProcessingToRefunded(
                 settlement.getSettlementId(), ownerUserId) != 1) {
-            throw new EscrowIntegrityException("정산을 NO_SHOW 환불 완료 상태로 전환하지 못했습니다.");
+            throw new EscrowIntegrityException("정산을 환불 완료 상태로 전환하지 못했습니다.");
         }
 
         SettlementSnapshot refunded = settlementMapper.findByWorkCaseIdForUpdate(workCaseId);
@@ -117,6 +128,14 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
                 settlement.getSettlementId(),
                 settlement.getWorkCaseId(),
                 settlement.getAmount(),
+                settlement.getWorkerPaidAmount(),
+                settlement.getOwnerRefundAmount(),
+                settlement.getDeductionBaseMinutes(),
+                settlement.getLateMinutes(),
+                settlement.getEarlyLeaveMinutes(),
+                settlement.getCalculationReason(),
+                settlement.getCalculationVersion(),
+                settlement.getCalculatedAt(),
                 settlement.getStatus(),
                 settlement.getDueAt());
     }
@@ -129,6 +148,14 @@ public class NoShowRefundExecutorImpl implements NoShowRefundExecutor {
                 settlement.getSettlementId(),
                 settlement.getWorkCaseId(),
                 settlement.getAmount(),
+                settlement.getWorkerPaidAmount(),
+                settlement.getOwnerRefundAmount(),
+                settlement.getDeductionBaseMinutes(),
+                settlement.getLateMinutes(),
+                settlement.getEarlyLeaveMinutes(),
+                settlement.getCalculationReason(),
+                settlement.getCalculationVersion(),
+                settlement.getCalculatedAt(),
                 settlement.getStatus(),
                 settlement.getApprovedByUserId(),
                 settlement.getCompletedAt());
