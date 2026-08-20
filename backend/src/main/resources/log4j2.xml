@@ -43,12 +43,19 @@
       <!--
         단일 EC2 인스턴스의 디스크를 로그가 채우면 애플리케이션과 MySQL 이 함께 죽는다.
         30일 또는 100 MB 중 먼저 걸리는 쪽에서 오래된 파일을 지운다.
+
+        IfFileName 아래에 조건을 그냥 나열하면 Log4j2 는 전부 만족할 때만 삭제한다(AND).
+        그러면 최근 30일치가 100 MB 를 넘겨도 아무것도 지워지지 않으므로, IfAny 로 감싸
+        둘 중 하나만 걸려도 지우게 한다. 파일은 최신순으로 평가되므로 IfAccumulatedFileSize
+        는 누적 100 MB 를 넘긴 시점부터의 오래된 파일에만 걸린다.
       -->
       <DefaultRolloverStrategy max="20">
         <Delete basePath="${logDir}" maxDepth="1">
           <IfFileName glob="gighub-*.log.gz">
-            <IfLastModified age="30d"/>
-            <IfAccumulatedFileSize exceeds="100 MB"/>
+            <IfAny>
+              <IfLastModified age="30d"/>
+              <IfAccumulatedFileSize exceeds="100 MB"/>
+            </IfAny>
           </IfFileName>
         </Delete>
       </DefaultRolloverStrategy>
