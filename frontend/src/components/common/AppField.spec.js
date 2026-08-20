@@ -116,6 +116,20 @@ describe('AppField 접근성', () => {
     expect(wrapper.find('input').attributes('aria-describedby')).toBeUndefined()
   })
 
+  // FieldShell 이 라벨/에러 배치를 맡은 뒤로 생긴 회귀 — hasMessage 를 setup 시점에
+  // 한 번만 계산하면, 마운트 직후엔 없다가 blur 검증으로 나중에 생기는 에러가
+  // aria-describedby 에 연결되지 않는다(화면엔 보이는데 스크린리더는 못 읽음).
+  it('마운트 뒤에 생기는 에러도 aria-describedby 로 연결된다', async () => {
+    const wrapper = mount(AppField, { props: { label: '아이디' } })
+    expect(wrapper.find('input').attributes('aria-describedby')).toBeUndefined()
+
+    await wrapper.setProps({ error: '이미 사용 중입니다' })
+
+    const describedBy = wrapper.find('input').attributes('aria-describedby')
+    expect(describedBy).toBeTruthy()
+    expect(wrapper.find(`#${describedBy}`).text()).toBe('이미 사용 중입니다')
+  })
+
   it('success 문구도 aria-describedby 로 연결된다', () => {
     const wrapper = mount(AppField, {
       props: { label: '아이디', success: '사용 가능한 아이디입니다' }

@@ -54,10 +54,7 @@ export async function approveNoShowRefund(workCaseId, { idempotencyKey = null } 
   return data
 }
 
-export async function approveCheckOutMissingRefund(
-  workCaseId,
-  { idempotencyKey = null } = {}
-) {
+export async function approveCheckOutMissingRefund(workCaseId, { idempotencyKey = null } = {}) {
   const { data } = await idempotentPost(
     `/work-cases/${workCaseId}/settlement/check-out-missing-refund/approve`,
     undefined,

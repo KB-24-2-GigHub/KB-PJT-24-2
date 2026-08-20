@@ -187,10 +187,7 @@ function goHome() {
           </dl>
         </section>
 
-        <SettlementBreakdown
-          v-if="workCase.settlement"
-          :settlement="workCase.settlement"
-        />
+        <SettlementBreakdown v-if="workCase.settlement" :settlement="workCase.settlement" />
 
         <div class="actions">
           <a

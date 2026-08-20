@@ -12,7 +12,8 @@
  * IME(한글): 조합 중에는 값을 올리지 않고 조합이 끝날 때 한 번만 올린다.
  * digits-only 필드는 조합 시작 즉시 조합을 취소해 한글이 화면에 찍히지 않게 한다.
  */
-import { nextTick, ref, useId, watch } from 'vue'
+import { nextTick, ref, watch } from 'vue'
+import FieldShell from './FieldShell.vue'
 
 const props = defineProps({
   label: { type: String, default: '' },
@@ -34,10 +35,6 @@ const props = defineProps({
 
 const emit = defineEmits(['update:modelValue', 'blur'])
 
-const fieldId = useId()
-// 에러·성공·힌트 메시지(셋 중 하나만 보인다)의 id. aria-describedby 로 input 과 이어서
-// 스크린리더가 값과 함께 이 메시지를 읽게 한다.
-const messageId = `${fieldId}-msg`
 const inputEl = ref(null)
 const composing = ref(false)
 // 조합 취소용 내부 blur 인지 표시한다. 이 구간의 blur 는 사용자가 필드를 떠난 것이
@@ -93,12 +90,14 @@ function onCompositionEnd(e) {
 </script>
 
 <template>
-  <div class="field" :class="{ 'has-error': error }">
-    <label v-if="label" :for="fieldId" class="label">
-      {{ label }}
-      <span v-if="required" class="req" aria-hidden="true">*</span>
-    </label>
-
+  <FieldShell
+    v-slot="{ fieldId, describedBy, invalid }"
+    :label="label"
+    :error="error"
+    :success="success"
+    :hint="hint"
+    :required="required"
+  >
     <div class="input-row">
       <input
         :id="fieldId"
@@ -111,8 +110,8 @@ function onCompositionEnd(e) {
         :disabled="disabled"
         :maxlength="maxlength"
         :autocomplete="autocomplete"
-        :aria-describedby="error || success || hint ? messageId : undefined"
-        :aria-invalid="error ? 'true' : undefined"
+        :aria-describedby="describedBy"
+        :aria-invalid="invalid"
         @input="onInput"
         @compositionstart="onCompositionStart"
         @compositionend="onCompositionEnd"
@@ -120,27 +119,10 @@ function onCompositionEnd(e) {
       />
       <div v-if="$slots.suffix" class="suffix"><slot name="suffix" /></div>
     </div>
-
-    <p v-if="error" :id="messageId" class="msg error" role="alert">{{ error }}</p>
-    <p v-else-if="success" :id="messageId" class="msg success">{{ success }}</p>
-    <p v-else-if="hint" :id="messageId" class="msg hint">{{ hint }}</p>
-  </div>
+  </FieldShell>
 </template>
 
 <style scoped>
-.field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-xs);
-}
-.label {
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  color: var(--color-text-sub);
-}
-.req {
-  color: var(--color-danger);
-}
 .input-row {
   display: flex;
   gap: var(--space-sm);
@@ -169,17 +151,5 @@ function onCompositionEnd(e) {
   flex-shrink: 0;
   display: flex;
   align-items: stretch;
-}
-.msg {
-  font-size: var(--text-sm);
-}
-.msg.error {
-  color: var(--color-danger);
-}
-.msg.success {
-  color: var(--color-success);
-}
-.msg.hint {
-  color: var(--color-text-sub);
 }
 </style>

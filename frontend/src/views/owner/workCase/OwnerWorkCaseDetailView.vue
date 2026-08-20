@@ -12,7 +12,9 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
+import AppDateFieldCalendar from '@/components/common/AppDateFieldCalendar.vue'
 import AppField from '@/components/common/AppField.vue'
+import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
@@ -459,10 +461,7 @@ async function refreshSettlementSources({ notify = false } = {}) {
         discardSettlementIntent(SETTLEMENT_ACTION.NO_SHOW_REFUND)
       }
       if (
-        hasSettlementTerminalState(
-          SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND,
-          detailResult.value
-        )
+        hasSettlementTerminalState(SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND, detailResult.value)
       ) {
         discardSettlementIntent(SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND)
       }
@@ -724,10 +723,7 @@ async function onApproveSettlement() {
             </div>
           </section>
 
-          <SettlementBreakdown
-            v-if="workCase.settlement"
-            :settlement="workCase.settlement"
-          />
+          <SettlementBreakdown v-if="workCase.settlement" :settlement="workCase.settlement" />
 
           <DisputeTimeline
             v-if="canViewDisputes"
@@ -798,24 +794,21 @@ async function onApproveSettlement() {
         <!-- ---- 수정 모드 ---- -->
         <form v-else class="form" @submit.prevent="onSave">
           <AppField v-model="form.title" label="제목" required :error="errors.title" />
-          <AppField
+          <AppDateFieldCalendar
             v-model="form.workDate"
-            type="date"
             label="근무 날짜"
             required
             :error="errors.workDate"
           />
           <div class="field-row">
-            <AppField
+            <AppTimeField
               v-model="form.startTime"
-              type="time"
               label="시작시간"
               required
               :error="errors.startTime"
             />
-            <AppField
+            <AppTimeField
               v-model="form.endTime"
-              type="time"
               label="종료시간"
               required
               :error="errors.endTime"
@@ -881,18 +874,13 @@ async function onApproveSettlement() {
       <template v-if="settlementModalAction === SETTLEMENT_ACTION.NO_SHOW_REFUND">
         <p>알바생에게 지급하지 않고, 서버가 확인한 원 예치액 전액을 사장님 지갑으로 반환합니다.</p>
       </template>
-      <template
-        v-else-if="settlementModalAction === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND"
-      >
+      <template v-else-if="settlementModalAction === SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND">
         <p>퇴근 기록이 누락된 근무라 알바생에게 지급하지 않고 예치액 전액을 반환합니다.</p>
       </template>
       <template v-else>
         <p>서버가 출퇴근 기록으로 확정한 금액을 지급하고, 차감액은 사장님께 환불합니다.</p>
       </template>
-      <SettlementBreakdown
-        v-if="workCase?.settlement"
-        :settlement="workCase.settlement"
-      />
+      <SettlementBreakdown v-if="workCase?.settlement" :settlement="workCase.settlement" />
       <p class="settlement-confirm-note">승인 뒤 상세 상태와 지갑·거래내역을 다시 불러옵니다.</p>
       <template #footer>
         <BaseButton

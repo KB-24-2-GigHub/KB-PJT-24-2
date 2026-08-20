@@ -178,9 +178,7 @@ describe('OwnerWorkCaseDetailView', () => {
     })
     approveSettlement.mockReset().mockResolvedValue(PAYOUT_RESULT)
     approveNoShowRefund.mockReset().mockResolvedValue(REFUND_RESULT)
-    approveCheckOutMissingRefund
-      .mockReset()
-      .mockResolvedValue(CHECK_OUT_MISSING_REFUND_RESULT)
+    approveCheckOutMissingRefund.mockReset().mockResolvedValue(CHECK_OUT_MISSING_REFUND_RESULT)
     newIdempotencyKey.mockClear()
     fetchWallet.mockReset().mockResolvedValue({
       currency: 'KRW',
