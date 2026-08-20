@@ -55,4 +55,33 @@ describe('AppTimeField 표시값/저장값 일치', () => {
     const emissions = wrapper.emitted('update:modelValue')
     expect(emissions.at(-1)).toEqual(['09:20'])
   })
+
+  // PR #455 리뷰: WheelColumn 이 스크롤 정착(120ms) 뒤에야 commit 하면, 화면엔 이미
+  // 새 값이 보이는데 정착 전에 확인을 눌러 emit 은 아직 이전 값인 채로 나갈 수 있었다.
+  // 정착을 기다리지 않고(=이 테스트는 120ms 를 기다리지 않는다) 확인을 눌러도 최신
+  // 스크롤 위치의 값이 저장돼야 한다.
+  it('스크롤 정착 전에 확인을 눌러도 이미 스크롤된 값이 저장된다', async () => {
+    const wrapper = mountField('09:20')
+    await wrapper.get('button.time-input').trigger('click')
+    // 시트가 열리며 각 휠이 초기 위치로 스크롤한다(programmatic) — 그 정리가 끝나길
+    // 기다린 뒤에야 "사용자가 스크롤한" 상황을 재현할 수 있다.
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    const minuteCol = wrapper.findAll('.wheel-col')[2] // 오전/오후, 시, 분
+    // 09:20(분 옵션 index 2) → index 5(=50분)로 스크롤한다.
+    minuteCol.element.scrollTop = 5 * 44
+    await minuteCol.trigger('scroll')
+    // commit 은 settle 타이머(120ms)가 아니라 rAF 로 즉시 일어난다 — 한 프레임만 기다린다.
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+    await wrapper.vm.$nextTick()
+
+    // 120ms 를 기다리지 않고 곧바로 확인을 누른다.
+    await wrapper
+      .findAll('button')
+      .find((b) => b.text() === '확인')
+      .trigger('click')
+
+    const emissions = wrapper.emitted('update:modelValue')
+    expect(emissions.at(-1)).toEqual(['09:50'])
+  })
 })

@@ -3,10 +3,12 @@
  * 다이얼(휠) 피커의 한 컬럼 — 스크롤로 값을 고른다.
  * TimeWheelPicker 가 오전/오후·시·분 세 컬럼을 이걸로 조립한다.
  *
- * 스크롤이 멈추면(120ms) 가장 가까운 항목을 확정해 update:modelValue 를 올리고,
- * 스크롤 중에는 rAF로 가장 가까운 항목만 굵게 표시해 손끝을 따라오는 느낌을 준다.
+ * activeIndex(굵게 표시되는 항목)가 바뀌는 즉시 commit 해서 update:modelValue 를 올린다
+ * — 스크롤 정착까지 기다렸다가 emit 하면, 화면엔 이미 새 값이 보이는데 정착 전에 '확인'을
+ * 누르면 emit 은 아직 이전 값이라 화면과 저장값이 어긋난다(#455 리뷰). 스크롤이 멈추면
+ * (120ms) 정확한 위치로 스냅만 보정한다 — 값은 이미 commit 돼 있다.
  */
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 
 const props = defineProps({
   options: { type: Array, required: true }, // [{ label, value }]
@@ -26,19 +28,30 @@ let settleTimer = null
 let rafPending = false
 let programmatic = false
 let programmaticTimer = null
-// 브라우저 smooth 스크롤 애니메이션이 실제로 걸리는 시간보다 넉넉히 잡는다 — 이보다
-// 짧으면 애니메이션이 끝나기 전에 onScroll 이 프로그램적 스크롤을 사용자 스크롤로
-// 오인해 activeIndex 를 다시 계산하고 settle 타이머를 반복 재시작해 버린다.
-const PROGRAMMATIC_SCROLL_MS = 350
+let scrollEndTarget = null
+// scrollend 를 못 쓰는 환경을 위한 안전망 — 실제 애니메이션 소요 시간의 추측치라
+// 저사양 기기 등에서 벗어날 수 있다. scrollend 를 쓸 수 있으면 이 타이머는 보조일 뿐이다.
+const PROGRAMMATIC_SCROLL_FALLBACK_MS = 600
 
 function indexOfValue(value) {
   const i = props.options.findIndex((o) => o.value === value)
   return i === -1 ? 0 : i
 }
 
+function clearProgrammatic() {
+  programmatic = false
+  clearTimeout(programmaticTimer)
+  programmaticTimer = null
+  if (scrollEndTarget) {
+    scrollEndTarget.removeEventListener('scrollend', clearProgrammatic)
+    scrollEndTarget = null
+  }
+}
+
 function scrollToIndex(index, smooth) {
   const el = scrollerRef.value
   if (!el) return
+  clearProgrammatic()
   programmatic = true
   const top = index * props.itemHeight
   // 일부 구형 WebView(및 테스트 환경의 jsdom)는 Element.scrollTo 가 없다 — 있으면 쓰고,
@@ -48,21 +61,42 @@ function scrollToIndex(index, smooth) {
   } else {
     el.scrollTop = top
   }
-  // smooth 스크롤은 수백 ms 동안 여러 scroll 이벤트를 내므로, 이 스크롤이 자기 자신이
-  // 건 것임을 알리는 플래그를 애니메이션이 끝날 만큼 기다렸다가 푼다.
-  clearTimeout(programmaticTimer)
-  programmaticTimer = setTimeout(
-    () => {
+  if (!smooth) {
+    // 즉시 이동이라 애니메이션이 없다 — 다음 tick 에 바로 사용자 스크롤 감지를 재개한다.
+    // 여기서 안 풀면 programmatic 이 계속 true 로 남아 onScroll 이 영영 무시된다.
+    programmaticTimer = setTimeout(() => {
       programmatic = false
-    },
-    smooth ? PROGRAMMATIC_SCROLL_MS : 0
-  )
+    }, 0)
+    return
+  }
+
+  // smooth 스크롤은 수백 ms 동안 여러 scroll 이벤트를 낸다 — 이 스크롤이 자기 자신이
+  // 건 것임을 알리는 플래그를, 지원하면 실제 종료 이벤트(scrollend)로 정확히 풀고,
+  // 아니면 타이머로 넉넉히 기다렸다가 푼다.
+  if ('onscrollend' in el) {
+    scrollEndTarget = el
+    el.addEventListener('scrollend', clearProgrammatic, { once: true })
+  }
+  programmaticTimer = setTimeout(clearProgrammatic, PROGRAMMATIC_SCROLL_FALLBACK_MS)
 }
 
 function onItemClick(index) {
   activeIndex.value = index
   scrollToIndex(index, true)
   commit(index)
+}
+
+/** ArrowUp/ArrowDown으로 한 칸씩 옮긴다 — 스크롤 제스처 없이도 키보드만으로 값을 바꿀 수 있다. */
+function onKeydown(e, index) {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+  e.preventDefault()
+  const next =
+    e.key === 'ArrowDown' ? Math.min(props.options.length - 1, index + 1) : Math.max(0, index - 1)
+  if (next === index) return
+  onItemClick(next)
+  nextTick(() => {
+    scrollerRef.value?.querySelectorAll('button')[next]?.focus()
+  })
 }
 
 function commit(index) {
@@ -78,17 +112,22 @@ function onScroll() {
       rafPending = false
       const el = scrollerRef.value
       if (!el) return
-      activeIndex.value = Math.min(
+      const next = Math.min(
         props.options.length - 1,
         Math.max(0, Math.round(el.scrollTop / props.itemHeight))
       )
+      if (next !== activeIndex.value) {
+        activeIndex.value = next
+        commit(next)
+      }
     })
   }
 
+  // 값은 이미 위에서 commit 됐다 — 이 타이머는 스크롤이 멈춘 뒤 항목 중앙으로
+  // 정확히 스냅시키는 시각 보정만 한다.
   clearTimeout(settleTimer)
   settleTimer = setTimeout(() => {
     scrollToIndex(activeIndex.value, true)
-    commit(activeIndex.value)
   }, 120)
 }
 
@@ -106,6 +145,11 @@ onMounted(async () => {
   await nextTick()
   scrollToIndex(activeIndex.value, false)
 })
+
+onUnmounted(() => {
+  clearTimeout(settleTimer)
+  clearProgrammatic()
+})
 </script>
 
 <template>
@@ -118,7 +162,9 @@ onMounted(async () => {
       class="wheel-item"
       :class="{ 'is-active': i === activeIndex }"
       :style="{ height: itemHeight + 'px' }"
+      :aria-pressed="i === activeIndex"
       @click="onItemClick(i)"
+      @keydown="onKeydown($event, i)"
     >
       {{ opt.label }}
     </button>

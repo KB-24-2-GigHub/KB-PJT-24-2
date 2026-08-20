@@ -11,10 +11,12 @@
  */
 import { ref, watch } from 'vue'
 import BaseBottomSheet from './BaseBottomSheet.vue'
-import BaseButton from './BaseButton.vue'
+import PickerSheetFooter from './PickerSheetFooter.vue'
 import FieldShell from './FieldShell.vue'
 import TimeWheelPicker from './TimeWheelPicker.vue'
-import { roundTimeToStep } from '@/utils/timeWheel'
+import { roundTimeToStep, to12Hour } from '@/utils/timeWheel'
+
+const AMPM_LABEL = { AM: '오전', PM: '오후' }
 
 const props = defineProps({
   label: { type: String, default: '' },
@@ -45,11 +47,9 @@ watch(
 
 function formatDisplay(value) {
   if (!value) return ''
-  const [hStr, mStr] = roundTimeToStep(value, props.step).split(':')
-  const h = parseInt(hStr, 10)
-  const ampm = h < 12 ? '오전' : '오후'
-  const hour12 = h % 12 === 0 ? 12 : h % 12
-  return `${ampm} ${String(hour12).padStart(2, '0')}:${mStr}`
+  const parsed = to12Hour(roundTimeToStep(value, props.step))
+  if (!parsed) return ''
+  return `${AMPM_LABEL[parsed.ampm]} ${String(parsed.hour12).padStart(2, '0')}:${String(parsed.minute).padStart(2, '0')}`
 }
 
 function openSheet() {
@@ -89,10 +89,7 @@ function confirm() {
   <BaseBottomSheet :open="open" :title="label || '시간 선택'" @close="open = false">
     <TimeWheelPicker v-model="draft" :step="step" />
     <template #footer>
-      <div class="sheet-actions">
-        <BaseButton variant="secondary" block @click="open = false">취소</BaseButton>
-        <BaseButton variant="owner" block @click="confirm">확인</BaseButton>
-      </div>
+      <PickerSheetFooter @cancel="open = false" @confirm="confirm" />
     </template>
   </BaseBottomSheet>
 </template>
@@ -111,9 +108,5 @@ function confirm() {
 }
 .field.has-error .time-input {
   border-color: var(--color-danger);
-}
-.sheet-actions {
-  display: flex;
-  gap: var(--space-sm);
 }
 </style>
