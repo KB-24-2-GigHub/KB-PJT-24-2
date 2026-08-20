@@ -56,10 +56,7 @@ describe('AppTopBar 지점 select', () => {
 
     // AppTopBar 의 role 은 부모 레이아웃(OwnerTabLayout)이 정적으로 박아 넣는 필수 prop이라
     // auth 스토어에서 유도되지 않는다 — select 렌더 분기를 타려면 직접 전달해야 한다.
-    const wrapper = mount(AppTopBar, {
-      props: { role: 'OWNER' },
-      global: { stubs: { LogoSymbol: true } }
-    })
+    const wrapper = mount(AppTopBar, { props: { role: 'OWNER' } })
 
     const optionLabels = wrapper.findAll('option').map((o) => o.text())
     expect(optionLabels).toEqual(['홍대점'])
@@ -80,10 +77,7 @@ describe('AppTopBar 지점 select', () => {
     workplace.selectedId = 2
     workplace.loaded = true
 
-    const wrapper = mount(AppTopBar, {
-      props: { role: 'OWNER' },
-      global: { stubs: { LogoSymbol: true } }
-    })
+    const wrapper = mount(AppTopBar, { props: { role: 'OWNER' } })
 
     const select = wrapper.get('select')
     expect(select.attributes('title')).toBe('동대문역사문화공원점')
@@ -100,10 +94,7 @@ describe('AppTopBar 지점 select', () => {
     workplace.selectedId = null
     workplace.loaded = true
 
-    const wrapper = mount(AppTopBar, {
-      props: { role: 'OWNER' },
-      global: { stubs: { LogoSymbol: true } }
-    })
+    const wrapper = mount(AppTopBar, { props: { role: 'OWNER' } })
 
     expect(wrapper.find('select').exists()).toBe(false)
   })
@@ -131,10 +122,7 @@ describe('AppTopBar 로고 홈 이동', () => {
     // OWNER 는 onMounted 에서 지점 목록을 조회한다. 이 테스트는 지점과 무관하므로
     // 조회를 건너뛰게 두고, 로고 링크만 남긴다.
     useWorkplaceStore().loaded = true
-    return mount(AppTopBar, {
-      props: { role: propRole },
-      global: { stubs: { LogoSymbol: true } }
-    })
+    return mount(AppTopBar, { props: { role: propRole } })
   }
 
   it.each([
@@ -168,15 +156,15 @@ describe('AppTopBar 로고 홈 이동', () => {
     const brand = mountBar('OWNER').get('a.brand')
 
     // 이름이 없으면 스크린리더가 "링크"라고만 읽는다.
-    expect(brand.attributes('aria-label')).toBe('Gig Hub 홈')
+    expect(brand.attributes('aria-label')).toBe('GigHub 홈')
   })
 
   /**
    * 이중 낭독을 막는 것은 링크의 aria-label 이다(ANC 2C — aria-label 이 있으면 서브트리를
-   * 순회하지 않는다). svg 의 aria-hidden 이 막는 것은 그것이 아니라, 링크 안의 role="img"
-   * 노드가 browse mode 에서 별도 항목으로 읽히는 것이다.
+   * 순회하지 않는다). 로고 이미지의 aria-hidden 이 막는 것은 그것이 아니라, 링크 안의
+   * img(암묵적 role="img") 노드가 browse mode 에서 별도 항목으로 읽히는 것이다.
    */
-  it('로고 svg 를 보조기술 트리에서 감춘다', () => {
+  it('로고 이미지를 보조기술 트리에서 감춘다', () => {
     expect(mountBar('OWNER').get('.brand-logo').attributes('aria-hidden')).toBe('true')
   })
 

@@ -13,7 +13,7 @@ import AuthRoleToggle from '@/components/auth/AuthRoleToggle.vue'
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
 import AppField from '@/components/common/AppField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
-import LogoGighub from '@/assets/images/logo/logo-gighub.svg'
+import logoGighubWorker from '@/assets/images/logo/logo-gighub-worker.png'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { resolveWorkerLoginRedirect } from '@/utils/authRedirect'
@@ -71,7 +71,7 @@ async function onSubmit() {
   <div class="sub-page">
     <AppBackHeader title="알바생 로그인" to="/?step=auth&role=worker" />
     <main class="screen-body">
-      <LogoGighub class="logo" aria-label="Gig Hub" />
+      <img :src="logoGighubWorker" class="logo" alt="Gig Hub" />
 
       <AuthRoleToggle model-value="WORKER" @update:model-value="onChangeRole" />
 
@@ -112,7 +112,6 @@ async function onSubmit() {
   width: 140px;
   height: auto;
   margin: var(--space-md) auto 0;
-  color: var(--color-worker);
 }
 .form {
   display: flex;

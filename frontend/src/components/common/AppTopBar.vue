@@ -11,7 +11,8 @@ import { storeToRefs } from 'pinia'
 import { computed, onMounted, onUnmounted } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 
-import LogoSymbol from '@/assets/images/logo/logo-symbol.svg'
+import logoSymbolOwner from '@/assets/images/logo/logo-symbol-owner.png'
+import logoSymbolWorker from '@/assets/images/logo/logo-symbol-worker.png'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationsStore } from '@/stores/notifications'
 import { useWorkplaceStore } from '@/stores/workplace'
@@ -27,6 +28,7 @@ const props = defineProps({
 const router = useRouter()
 const route = useRoute()
 const isOwner = computed(() => props.role === 'OWNER')
+const logoSymbol = computed(() => (isOwner.value ? logoSymbolOwner : logoSymbolWorker))
 
 // 사장 홈(지갑)은 전 지점 합산이라 지점 선택이 무의미하다 → select 대신 '전체지점' 고정 표시.
 const isOwnerHome = computed(() => isOwner.value && route.path === '/owner/home')
@@ -91,13 +93,9 @@ const homePath = computed(() => auth.homeRoute())
          서브트리를 순회하지 않으므로(ANC 2C) svg 가 들고 있는 이름은 링크 이름에 섞이지
          않는다. svg 의 aria-hidden 은 그것과 다른 일을 한다 — 일부 스크린리더의 browse
          mode 가 링크 '안'의 role="img" 노드를 별도 항목으로 읽는 것을 막는다. -->
-    <RouterLink :to="homePath" class="brand" aria-label="Gig Hub 홈">
-      <LogoSymbol
-        class="brand-logo"
-        :class="isOwner ? 'is-owner' : 'is-worker'"
-        aria-hidden="true"
-      />
-      <span class="brand-name">Gig Hub</span>
+    <RouterLink :to="homePath" class="brand" aria-label="GigHub 홈">
+      <img :src="logoSymbol" class="brand-logo" aria-hidden="true" />
+      <span class="brand-name">GigHub</span>
     </RouterLink>
 
     <div class="right">
@@ -144,19 +142,15 @@ const homePath = computed(() => auth.homeRoute())
 .brand {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-sm);
+  gap: var(--space-xs);
   min-width: 0;
 }
 .brand-logo {
   width: 28px;
   height: 28px;
+  /* logo-symbol PNG 는 정사각이 아니라(960x1102) 28x28 박스 안에서 잘리지 않게 비율을 지킨다. */
+  object-fit: contain;
   flex-shrink: 0;
-}
-.brand-logo.is-owner {
-  color: var(--color-owner);
-}
-.brand-logo.is-worker {
-  color: var(--color-worker);
 }
 .brand-name {
   /* 상단바가 좁아지면 로고 이름이 먼저 줄어들게 둔다 — 지점명·아이콘이 밀리는 것보다 낫다. */
