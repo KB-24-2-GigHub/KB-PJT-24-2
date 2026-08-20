@@ -57,6 +57,9 @@ const isIntroStep = computed(() => step.value < intros.length)
 const intro = computed(() => intros[step.value])
 
 const role = ref(route.query.role === 'worker' ? 'worker' : 'owner') // 'owner' | 'worker' (역할 선택 단계에서 사용)
+// 온보딩 전용 로고 대신 owner/worker 로고를 그대로 쓴다 — 역할 선택 단계(③)에서 이미
+// role 이 정해져 있어 선택한 역할의 로고를 보여주는 편이 온보딩 단계임을 알리는 것보다
+// 자연스럽다(#464 PR 리뷰 논의).
 const logoGighub = computed(() => (role.value === 'owner' ? logoGighubOwner : logoGighubWorker))
 
 // AuthRoleToggle 은 'OWNER'|'WORKER' 를 쓰고, 여기 role 은 링크 경로(/owner/login)에 그대로 들어가

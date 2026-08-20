@@ -69,4 +69,8 @@ const src = computed(() => (valid.value ? BADGES[props.role][props.level] : null
   align-items: center;
   gap: var(--space-xs);
 }
+
+.trust-badge img {
+  object-fit: contain;
+}
 </style>
