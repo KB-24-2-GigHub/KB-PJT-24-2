@@ -275,6 +275,14 @@ class AuthFlowSecurityIntegrationTest {
     /**
      * 비밀번호 변경 성공이 실제 Filter Chain에서 인증을 유지한 채 Session ID만 바꾸는지 검증합니다.
      *
+     * <p>여기서 {@code UserService}는 Mock입니다. 이 테스트가 증명하는 것은 Filter Chain 경계
+     * (CSRF 통과, 인증 유지, Session ID 회전)뿐이고 비밀번호 대조·저장은 검증하지 않습니다.
+     * 그쪽은 {@code UserServiceImplTest}와 {@code PasswordChangeDatabaseIntegrationTest}가
+     * 담당합니다.</p>
+     *
+     * <p>회전 뒤에도 CSRF Token은 유효합니다. {@code CookieCsrfTokenRepository}는 Token을
+     * Session이 아니라 Cookie에 두므로 Session ID가 바뀌어도 깨지지 않습니다.</p>
+     *
      * @throws Exception MockMvc 요청 실행에 실패한 경우
      */
     @Test

@@ -1,5 +1,6 @@
 package com.gighub.member.service;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 import javax.sql.DataSource;
@@ -74,7 +75,13 @@ class PasswordChangeDatabaseIntegrationTest {
             JdbcTemplate jdbcTemplate,
             PasswordEncoder passwordEncoder,
             Long userId) {
+        LocalDateTime updatedBefore = storedUpdatedAt(jdbcTemplate, userId);
+
         userService.changePassword(userId, CURRENT_PASSWORD, NEW_PASSWORD);
+
+        // users.updated_at 은 ON UPDATE CURRENT_TIMESTAMP(6) 이라 비밀번호 교체 시각이 남는다.
+        // 이 단언이 그 Schema 속성에 의존한다는 사실을 드러내 두면, 나중에 누가 걷어낼 때 잡힌다.
+        assertTrue(storedUpdatedAt(jdbcTemplate, userId).isAfter(updatedBefore));
 
         String stored = storedHash(jdbcTemplate, userId);
         assertNotEquals(NEW_PASSWORD, stored);
@@ -118,6 +125,11 @@ class PasswordChangeDatabaseIntegrationTest {
         );
         return jdbcTemplate.queryForObject(
                 "SELECT id FROM users WHERE login_id = ?", Long.class, loginId);
+    }
+
+    private LocalDateTime storedUpdatedAt(JdbcTemplate jdbcTemplate, Long userId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT updated_at FROM users WHERE id = ?", LocalDateTime.class, userId);
     }
 
     private String storedHash(JdbcTemplate jdbcTemplate, Long userId) {

@@ -67,6 +67,11 @@ public class AuthSessionManager {
      * 보호 API는 Session 인증을 통과한 요청만 여기에 도달하므로 정상 경로에서는
      * 항상 Session이 있습니다.</p>
      *
+     * <p><b>바꾸는 것은 이 요청의 Session 하나뿐입니다.</b> 같은 사용자가 다른 기기나
+     * 브라우저에 열어 둔 Session은 그대로 살아 있습니다. 그것까지 끊으려면 사용자별 Session을
+     * 추적하는 {@code SessionRegistry}와 동시 Session 제어가 필요한데, 현재
+     * {@code SecurityConfig}에는 없습니다. 전역 무효화는 이 메서드의 계약이 아닙니다.</p>
+     *
      * @param request 현재 요청
      */
     public void rotateSessionId(HttpServletRequest request) {
