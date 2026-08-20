@@ -8,6 +8,7 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.auth.security.AuthSessionManager;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.common.exception.ConflictException;
+import com.gighub.common.exception.ForbiddenException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
@@ -403,6 +404,31 @@ class UserControllerTest {
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("CONFLICT"))
                 .andExpect(jsonPath("$.message").value("진행 중인 근무가 남아 있어 탈퇴할 수 없습니다."))
+                .andExpect(jsonPath("$.fieldErrors").doesNotExist());
+
+        assertFalse(session.isInvalid());
+    }
+
+    /**
+     * 계정 상태로 막힌 탈퇴는 403이고, 같은 요청의 409와 구분됩니다.
+     *
+     * <p>같은 {@code status != ACTIVE} 조건을 같은 등급으로 막는 비밀번호 변경과 응답을
+     * 맞춥니다(SPEC-188-01). 409는 미결 상태와 동시 요청 충돌에만 씁니다 — 두 코드가 섞이면
+     * 호출자가 "다시 시도하면 되는 상황"과 "계정이 이미 끝난 상황"을 구분할 수 없습니다.</p>
+     */
+    @Test
+    void reportsInactiveAccountAsForbiddenAndKeepsSession() throws Exception {
+        doThrow(new ForbiddenException("현재 계정 상태에서는 탈퇴할 수 없습니다."))
+                .when(userService).withdraw(USER_ID, "current-pw1");
+        MockHttpSession session = new MockHttpSession();
+
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("current-pw1")))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"))
                 .andExpect(jsonPath("$.fieldErrors").doesNotExist());
 
         assertFalse(session.isInvalid());
