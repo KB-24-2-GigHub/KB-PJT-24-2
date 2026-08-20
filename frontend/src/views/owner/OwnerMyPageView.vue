@@ -101,7 +101,9 @@ async function confirmWithdraw() {
     await deleteMe({ password: withdrawPassword.value })
     withdrawOpen.value = false
     ui.toast('회원 탈퇴가 완료됐어요.', { type: 'success' })
-    await authStore.logout()
+    // 서버가 탈퇴 응답에서 Session 과 CSRF Token 을 이미 정리했다. 여기서 logout() 을 부르면
+    // Token 없는 상태변경 요청이 되어 403 이 돌아오고, 성공 알림 뒤에 권한 오류가 겹쳐 뜬다.
+    await authStore.clearSession()
     router.push('/')
   } catch (err) {
     // 서버가 실제로 지목한 필드에만 사유를 붙인다 — 잔액·진행 근무 등 무관한 사유를

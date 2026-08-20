@@ -54,6 +54,7 @@ function findByText(wrapper, selector, text) {
 
 describe('OwnerMyPageView', () => {
   let logout
+  let clearSession
   let toastSpy
 
   beforeEach(() => {
@@ -63,6 +64,7 @@ describe('OwnerMyPageView', () => {
     getBadge.mockReset()
     deleteMe.mockReset()
     logout = vi.spyOn(useAuthStore(), 'logout').mockResolvedValue()
+    clearSession = vi.spyOn(useAuthStore(), 'clearSession').mockResolvedValue()
     toastSpy = vi.spyOn(useUiStore(), 'toast')
   })
 
@@ -353,6 +355,44 @@ describe('OwnerMyPageView', () => {
     await flushPromises()
 
     expect(findByText(wrapper, 'button', '로그아웃').attributes('disabled')).toBeUndefined()
+  })
+
+  describe('회원 탈퇴 성공', () => {
+    async function withdraw(wrapper) {
+      await findByText(wrapper, 'button', '회원 탈퇴').trigger('click')
+      await flushPromises()
+      await wrapper.find('input[type="password"]').setValue('current-pw1')
+      await findByText(wrapper, 'button', '탈퇴하기').trigger('click')
+      await flushPromises()
+    }
+
+    // 서버가 탈퇴 응답에서 Session 과 CSRF Token 을 이미 정리한다. 여기서 logout() 을 부르면
+    // Token 없는 상태변경 요청이라 403 이 돌아오고, 성공 알림 뒤에 권한 오류가 겹쳐 뜬다.
+    it('로그아웃 API 를 다시 부르지 않고 로컬 상태만 정리한다', async () => {
+      deleteMe.mockResolvedValue(undefined)
+      const wrapper = mountView()
+      await flushPromises()
+
+      await withdraw(wrapper)
+
+      expect(clearSession).toHaveBeenCalledTimes(1)
+      expect(logout).not.toHaveBeenCalled()
+      expect(push).toHaveBeenCalledWith('/')
+    })
+
+    it('성공 알림 하나만 띄우고 오류 알림을 겹쳐 띄우지 않는다', async () => {
+      deleteMe.mockResolvedValue(undefined)
+      const wrapper = mountView()
+      await flushPromises()
+
+      await withdraw(wrapper)
+
+      expect(toastSpy).toHaveBeenCalledWith('회원 탈퇴가 완료됐어요.', { type: 'success' })
+      expect(toastSpy).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ type: 'danger' })
+      )
+    })
   })
 
   describe('회원 탈퇴 오류 귀속', () => {
