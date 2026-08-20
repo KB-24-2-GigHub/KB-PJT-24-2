@@ -77,6 +77,23 @@ const settlementMessage = computed(() => {
   }
 })
 
+// WAITING은 수락 시점에 예약만 해 둔 기본값이라 완료 전까지는 뜻이 없다 — 어떤 근무
+// 상태에서도 숨긴다. NO_SHOW는 위 settlementMessage가 환불 여부를 이미 설명하므로
+// 칩을 따로 겹쳐 보여주지 않는다.
+const showSettlementChip = computed(() => {
+  const wc = workCase.value
+  if (!wc?.settlement) return false
+  return wc.status !== 'NO_SHOW' && wc.settlement.status !== 'WAITING'
+})
+
+// 예치 칩은 근무가 진행 중일 때만 "안전하게 보관 중"이라는 의미가 있다. 완료되면 정산
+// 칩이 결과(지급/실패/보류)를 대신 말해주고, 노쇼는 settlementMessage가 대신한다.
+const showEscrowChip = computed(() => {
+  const wc = workCase.value
+  if (!wc?.escrow) return false
+  return wc.status !== 'NO_SHOW' && wc.status !== 'COMPLETED'
+})
+
 // workCaseId가 빠르게 바뀌면(뒤로가기 후 다른 근무 진입 등) 먼저 보낸 요청이 나중에
 // 도착해 최신 화면을 덮어쓸 수 있다. 시퀀스 번호로 최신 요청의 응답만 반영한다.
 let loadSeq = 0
@@ -146,11 +163,11 @@ function openDispute() {
             <div class="chips">
               <StatusChip :status="workCase.status" kind="workCase" />
               <StatusChip
-                v-if="workCase.settlement"
+                v-if="showSettlementChip"
                 :status="workCase.settlement.status"
                 kind="settle"
               />
-              <StatusChip v-if="workCase.escrow" :status="workCase.escrow.status" kind="escrow" />
+              <StatusChip v-if="showEscrowChip" :status="workCase.escrow.status" kind="escrow" />
             </div>
           </header>
 
