@@ -70,17 +70,27 @@ describe('useEarningTick', () => {
     expect(api.progressRatio.value).toBe(0)
   })
 
-  it('체크인 전엔 lateProgressRatio가 지각분만큼 채워진다', () => {
+  it('체크인 전엔 lateRatio가 지각분만큼 실시간으로 채워진다', () => {
     // 10:00 시작 예정, 10:48 기준 → 48/480
     vi.setSystemTime(new Date('2026-07-22T10:48:00'))
     const { api } = mountTick({ agreedWage: 90000, checkedInAt: null })
-    expect(api.lateProgressRatio.value).toBeCloseTo(48 / 480)
+    expect(api.lateRatio.value).toBeCloseTo(48 / 480)
   })
 
-  it('체크인 후엔 lateProgressRatio가 0이다', () => {
+  it('정시 체크인 후엔 lateRatio가 0이다', () => {
     vi.setSystemTime(new Date('2026-07-22T14:00:00'))
     const { api } = mountTick()
-    expect(api.lateProgressRatio.value).toBe(0)
+    expect(api.lateRatio.value).toBe(0)
+  })
+
+  it('지각 체크인 후엔 lateRatio가 체크인 시점 폭으로 고정되고 시간이 흘러도 바뀌지 않는다', async () => {
+    // 10:00 시작 예정, 10:30 지각 체크인 → 30/480 으로 고정
+    vi.setSystemTime(new Date('2026-07-22T10:31:00'))
+    const { api } = mountTick({ agreedWage: 90000, checkedInAt: '2026-07-22T10:30:00' })
+    expect(api.lateRatio.value).toBeCloseTo(30 / 480)
+
+    vi.advanceTimersByTime(2 * 60 * 60_000)
+    expect(api.lateRatio.value).toBeCloseTo(30 / 480)
   })
 
   it('언마운트하면 타이머를 해제한다', () => {

@@ -13,7 +13,7 @@ const SHIFT = {
 describe('calcElapsedPay', () => {
   it('근무 시작 전이면 0원 0%', () => {
     const r = calcElapsedPay({ ...SHIFT, now: new Date('2026-07-22T09:00:00') })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('구간 절반이 지나면 일급의 절반이 적립된다', () => {
@@ -30,13 +30,13 @@ describe('calcElapsedPay', () => {
 
   it('근무 종료 후에는 일급 전액에서 멈춘다', () => {
     const r = calcElapsedPay({ ...SHIFT, now: new Date('2026-07-22T20:00:00') })
-    expect(r).toEqual({ elapsedPay: 90000, progressRatio: 1 })
+    expect(r).toEqual({ elapsedPay: 90000, progressRatio: 1, lateRatio: 0 })
   })
 
   it('아직 출근 QR 체크인 전이면(checkedInAt=null) 지각 등으로 예정 시각이 지나도 0원 0%', () => {
     // #466 — 지각으로 아직 체크인하지 않았는데도 예상 금액이 올라가던 문제
     const r = calcElapsedPay({ ...SHIFT, checkedInAt: null, now: new Date('2026-07-22T14:00:00') })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('지각 체크인이면 예정 시각이 아니라 실제 체크인 시각부터 적립한다', () => {
@@ -48,6 +48,34 @@ describe('calcElapsedPay', () => {
     })
     expect(r.progressRatio).toBeCloseTo(210 / 480)
     expect(r.elapsedPay).toBe(39375)
+  })
+
+  it('lateRatio는 체크인 시점의 지각 폭이다 — 진행률 바에서 주황 구간을 고정하는 값', () => {
+    // 10:00 시작 예정, 10:30 지각 체크인 → 30분/480분
+    const r = calcElapsedPay({
+      ...SHIFT,
+      checkedInAt: '2026-07-22T10:30:00',
+      now: new Date('2026-07-22T14:00:00')
+    })
+    expect(r.lateRatio).toBeCloseTo(30 / 480)
+  })
+
+  it('lateRatio는 체크인 이후 시간이 흘러도 체크인 시점 값으로 고정된다', () => {
+    // #466 — 체크인 후엔 주황 폭이 늘지 않고, 그 옆으로 progressRatio(노랑)만 쌓여야 한다.
+    const base = { ...SHIFT, checkedInAt: '2026-07-22T10:30:00' }
+    const soon = calcElapsedPay({ ...base, now: new Date('2026-07-22T10:31:00') })
+    const later = calcElapsedPay({ ...base, now: new Date('2026-07-22T17:00:00') })
+    expect(soon.lateRatio).toBeCloseTo(30 / 480)
+    expect(later.lateRatio).toBeCloseTo(30 / 480)
+  })
+
+  it('정시 또는 조기 체크인이면 lateRatio가 0이다', () => {
+    const r = calcElapsedPay({
+      ...SHIFT,
+      checkedInAt: '2026-07-22T09:30:00',
+      now: new Date('2026-07-22T10:30:00')
+    })
+    expect(r.lateRatio).toBe(0)
   })
 
   it('예정 시각보다 일찍 체크인해도 예정 시작 시각 이전으로는 적립하지 않는다', () => {
@@ -82,7 +110,7 @@ describe('calcElapsedPay', () => {
       checkedInAt: '2026-07-22T22:00:00',
       now: new Date('2026-07-22T21:00:00')
     })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('시각 형식이 잘못되면 0원 0%', () => {
@@ -92,7 +120,7 @@ describe('calcElapsedPay', () => {
       endTime: '18:00',
       checkedInAt: '2026-07-22T10:00:00'
     })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('시작과 종료가 같으면(0분 근무) 0원 0%', () => {
@@ -104,7 +132,7 @@ describe('calcElapsedPay', () => {
       checkedInAt: '2026-07-22T10:00:00',
       now: new Date('2026-07-22T14:00:00')
     })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('workDate 가 없으면 오늘 날짜로 본다', () => {
@@ -127,7 +155,7 @@ describe('calcElapsedPay', () => {
       checkedInAt: '2026-07-22T10:00:00',
       now: new Date('2026-07-22T14:00:00')
     })
-    expect(r).toEqual({ elapsedPay: 45000, progressRatio: 0.5 })
+    expect(r).toEqual({ elapsedPay: 45000, progressRatio: 0.5, lateRatio: 0 })
   })
 
   it('파싱할 수 없는 시각 형식이면 0원 0%', () => {
@@ -138,7 +166,7 @@ describe('calcElapsedPay', () => {
       checkedInAt: '2026-07-22T10:00:00',
       now: new Date('2026-07-22T14:00:00')
     })
-    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
+    expect(r).toEqual({ elapsedPay: 0, progressRatio: 0, lateRatio: 0 })
   })
 
   it('지각 체크인이어도 예정 종료 시각을 지나면 더 이상 오르지 않는다', () => {

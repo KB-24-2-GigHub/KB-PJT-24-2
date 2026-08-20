@@ -67,7 +67,7 @@ describe('SecuredEarningCard', () => {
     expect(wrapper.text()).toContain('0원')
   })
 
-  it('체크인 전엔 지각분만큼 주황 막대가 채워진다', async () => {
+  it('체크인 전엔 지각분만큼 주황 막대가 채워지고 노랑 막대는 없다', async () => {
     // 10:00 시작 예정, 10:48 기준(48분 지각) → 48/480 = 10%
     vi.setSystemTime(new Date('2026-07-22T10:48:00'))
     const wrapper = mount(SecuredEarningCard, {
@@ -75,18 +75,32 @@ describe('SecuredEarningCard', () => {
     })
     await nextTick()
 
-    const seg = wrapper.get('.seg')
-    expect(seg.classes()).toContain('seg-late')
-    expect(seg.attributes('style')).toContain('width: 10%')
+    expect(wrapper.get('.seg-late').attributes('style')).toContain('width: 10%')
+    expect(wrapper.get('.seg-progress').attributes('style')).toContain('width: 0%')
   })
 
-  it('체크인 후엔 지각 막대가 아니라 근무 경과 막대(노랑)를 보여준다', async () => {
-    const wrapper = mountCard() // checkedInAt 있음, 14:00 기준 절반 경과
+  it('정시 체크인 후엔 주황 막대 없이 근무 경과 막대(노랑)만 보여준다', async () => {
+    const wrapper = mountCard() // checkedInAt 있음(정시), 14:00 기준 절반 경과
     await nextTick()
 
-    const seg = wrapper.get('.seg')
-    expect(seg.classes()).not.toContain('seg-late')
-    expect(seg.attributes('style')).toContain('width: 50%')
+    expect(wrapper.get('.seg-late').attributes('style')).toContain('width: 0%')
+    expect(wrapper.get('.seg-progress').attributes('style')).toContain('width: 50%')
+  })
+
+  it('지각 체크인 후엔 주황(지각분 고정) 옆에 노랑(근무 경과)이 쌓인다', async () => {
+    // #466 — 10:00 시작 예정, 10:30 지각 체크인(30/480=6.25%), 14:00 기준 근무 210분 경과
+    const wrapper = mount(SecuredEarningCard, {
+      props: {
+        earning: { ...earningOf(90000), checkedInAt: '2026-07-22T10:30:00' },
+        workCase: WORK_CASE
+      }
+    })
+    await nextTick()
+
+    const lateWidth = wrapper.get('.seg-late').attributes('style')
+    const progressWidth = wrapper.get('.seg-progress').attributes('style')
+    expect(lateWidth).toContain('width: 6.25%')
+    expect(progressWidth).toContain(`width: ${(100 * 210) / 480}%`)
   })
 
   it('i 아이콘을 누르면 안내가 열리고 다시 누르면 닫힌다', async () => {

@@ -49,6 +49,11 @@ function resolveShiftWindow(workDate, startTime, endTime, now) {
  *
  * 출근 QR 체크인(attendance.checkedInAt) 전에는 근무가 시작된 것이 아니므로 적립하지
  * 않는다. 지각으로 체크인이 예정 시각보다 늦으면 실제 체크인 시각부터 적립을 센다.
+ *
+ * lateRatio는 체크인 시점에 이미 지나 있던 지각 구간의 폭(전체 구간 대비)이다.
+ * 체크인 이후로는 startAt이 고정되므로 시간이 흘러도 값이 바뀌지 않는다 — 진행률
+ * 바에서 주황(지각) 구간을 체크인 시점 폭으로 고정하고, 그 옆에 노랑(progressRatio)을
+ * 새로 쌓기 위한 값이다(#466).
  */
 export function calcElapsedPay({
   agreedWage,
@@ -60,12 +65,18 @@ export function calcElapsedPay({
 }) {
   const wage = Number(agreedWage) || 0
   const window = resolveShiftWindow(workDate, startTime, endTime, now)
-  if (!window) return { elapsedPay: 0, progressRatio: 0 }
-  if (!checkedInAt) return { elapsedPay: 0, progressRatio: 0 }
+  if (!window) return { elapsedPay: 0, progressRatio: 0, lateRatio: 0 }
+  if (!checkedInAt) return { elapsedPay: 0, progressRatio: 0, lateRatio: 0 }
 
   const { totalMinutes, scheduledStartAt, scheduledEndAt } = window
   const checkedInAtDate = new Date(checkedInAt)
   const startAt = checkedInAtDate > scheduledStartAt ? checkedInAtDate : scheduledStartAt
+  const lateMinutesAtCheckIn = clamp(
+    (startAt.getTime() - scheduledStartAt.getTime()) / 60000,
+    0,
+    totalMinutes
+  )
+  const lateRatio = lateMinutesAtCheckIn / totalMinutes
 
   // now를 예정 종료 시각에서 자른다 — 지각 체크인으로 startAt이 밀린 경우에도, 실제
   // 시계상 종료 시각을 지나면 더 이상 올라가면 안 된다(#466). totalMinutes만큼의 상한은
@@ -74,7 +85,7 @@ export function calcElapsedPay({
   const elapsed = clamp((cappedNow - startAt.getTime()) / 60000, 0, totalMinutes)
   const progressRatio = elapsed / totalMinutes
 
-  return { elapsedPay: Math.floor(wage * progressRatio), progressRatio }
+  return { elapsedPay: Math.floor(wage * progressRatio), progressRatio, lateRatio }
 }
 
 /**
