@@ -920,10 +920,33 @@ describe('OwnerWorkCaseDetailView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.find('.worker-card').text()).toContain('이알바')
+    expect(wrapper.find('.worker-cell').text()).toContain('이알바')
     expect(wrapper.find('.badge-placeholder').text()).toBe('등급 정보 없음')
     // 등급 그림은 근거가 없으므로 0단계(미부여) 아이콘조차 그리지 않는다.
-    expect(wrapper.find('.worker-card .trust-badge').exists()).toBe(false)
-    expect(wrapper.find('.worker-card .no-badge').exists()).toBe(false)
+    expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(false)
+    expect(wrapper.find('.worker-cell .no-badge').exists()).toBe(false)
+  })
+
+  /**
+   * 매칭된 알바생을 하단 별도 섹션이 아니라, 근무 날짜가 있는 상단 상세 블록의 첫 행으로
+   * 올린다(#470 4번). 알바생이 아직 매칭 전(worker=null)이면 이 행 자체가 없어야 한다.
+   */
+  it('매칭된 알바생을 근무 상세 맨 위 행에 표시한다', async () => {
+    getWorkCase.mockResolvedValue({ ...PAYOUT_READY_DETAIL })
+    const wrapper = mountView()
+    await flushPromises()
+
+    const rows = wrapper.findAll('.detail-row')
+    expect(rows[0].find('dt').text()).toBe('알바생')
+    expect(rows[0].text()).toContain('이알바')
+    expect(rows[1].find('dt').text()).toBe('근무 날짜')
+  })
+
+  it('아직 매칭 전이면 알바생 행이 보이지 않는다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('알바생')
+    expect(wrapper.findAll('.detail-row')[0].find('dt').text()).toBe('근무 날짜')
   })
 })
