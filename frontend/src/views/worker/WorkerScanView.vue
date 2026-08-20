@@ -588,7 +588,7 @@ onBeforeUnmount(() => {
 .result-late {
   margin-top: var(--space-sm);
   font-size: var(--text-sm);
-  color: var(--color-warning);
+  color: var(--color-late);
 }
 .result-early {
   margin-top: var(--space-sm);

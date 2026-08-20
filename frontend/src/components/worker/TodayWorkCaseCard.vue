@@ -81,7 +81,7 @@ const displayStatus = computed(() => displayWorkCaseStatus(props.workCase))
   gap: 3px;
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
-  color: var(--color-warning);
+  color: var(--color-late);
 }
 
 .work-case-title {

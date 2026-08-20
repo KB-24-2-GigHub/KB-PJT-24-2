@@ -49,7 +49,7 @@ export function isDraft(status) {
  * 8종만 순회하므로 섞으면 존재하지 않는 status로 필터·집계를 보내게 된다). StatusChip이
  * status='LATE'를 받으면 이 라벨을 특별 처리한다.
  */
-export const DERIVED_LATE_STATUS = { label: '지각', color: 'var(--color-warning)' }
+export const DERIVED_LATE_STATUS = { label: '지각', color: 'var(--color-late)' }
 
 /**
  * 화면 표시용 파생 상태를 계산한다.

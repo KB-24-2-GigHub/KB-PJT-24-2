@@ -13,7 +13,8 @@ const earningOf = (agreedWage) => ({
   elapsedPayDisplay: 0,
   progressRatio: 0,
   isLate: false,
-  lateMinutes: 0
+  lateMinutes: 0,
+  checkedInAt: '2026-07-22T10:00:00'
 })
 
 const mountCard = (agreedWage = 90000, options = {}) =>
@@ -55,6 +56,51 @@ describe('SecuredEarningCard', () => {
     expect(earning.agreedWage).toBe(90000) // 서버가 준 실제 금액 필드는 불변
     expect(wrapper.text()).not.toContain('예상 실수령액')
     expect(wrapper.text()).not.toContain('세금 공제')
+  })
+
+  it('아직 체크인 전이면(checkedInAt=null) 지각으로 시각이 지나도 0원을 보여준다', async () => {
+    // #466 — 출근 QR 전에는 근무 경과 예상금액이 올라가면 안 된다.
+    const wrapper = mount(SecuredEarningCard, {
+      props: { earning: { ...earningOf(90000), checkedInAt: null }, workCase: WORK_CASE }
+    })
+    await nextTick()
+    expect(wrapper.text()).toContain('0원')
+  })
+
+  it('체크인 전엔 지각분만큼 주황 막대가 채워지고 노랑 막대는 없다', async () => {
+    // 10:00 시작 예정, 10:48 기준(48분 지각) → 48/480 = 10%
+    vi.setSystemTime(new Date('2026-07-22T10:48:00'))
+    const wrapper = mount(SecuredEarningCard, {
+      props: { earning: { ...earningOf(90000), checkedInAt: null }, workCase: WORK_CASE }
+    })
+    await nextTick()
+
+    expect(wrapper.get('.seg-late').attributes('style')).toContain('width: 10%')
+    expect(wrapper.get('.seg-progress').attributes('style')).toContain('width: 0%')
+  })
+
+  it('정시 체크인 후엔 주황 막대 없이 근무 경과 막대(노랑)만 보여준다', async () => {
+    const wrapper = mountCard() // checkedInAt 있음(정시), 14:00 기준 절반 경과
+    await nextTick()
+
+    expect(wrapper.get('.seg-late').attributes('style')).toContain('width: 0%')
+    expect(wrapper.get('.seg-progress').attributes('style')).toContain('width: 50%')
+  })
+
+  it('지각 체크인 후엔 주황(지각분 고정) 옆에 노랑(근무 경과)이 쌓인다', async () => {
+    // #466 — 10:00 시작 예정, 10:30 지각 체크인(30/480=6.25%), 14:00 기준 근무 210분 경과
+    const wrapper = mount(SecuredEarningCard, {
+      props: {
+        earning: { ...earningOf(90000), checkedInAt: '2026-07-22T10:30:00' },
+        workCase: WORK_CASE
+      }
+    })
+    await nextTick()
+
+    const lateWidth = wrapper.get('.seg-late').attributes('style')
+    const progressWidth = wrapper.get('.seg-progress').attributes('style')
+    expect(lateWidth).toContain('width: 6.25%')
+    expect(progressWidth).toContain(`width: ${(100 * 210) / 480}%`)
   })
 
   it('i 아이콘을 누르면 안내가 열리고 다시 누르면 닫힌다', async () => {

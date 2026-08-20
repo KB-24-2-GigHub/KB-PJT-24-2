@@ -30,11 +30,13 @@
 
   /* 상태색 (배경 / 글자 쌍) */
   --color-warning: #e8890c;
-  --color-warning-bg: #fff4e5; /* 지각·주의 */
+  --color-warning-bg: #fff4e5; /* 근태·정산 보류 등 일반 주의 */
   --color-danger: #cc4033;
   --color-danger-bg: #ffeded; /* 노쇼·경고 */
   --color-success: #1e7e34;
   --color-success-bg: #e9f5ec; /* 정산완료 */
+
+  --color-late: #d97757; /* Claude 상징색 — 지각 전용(상태 칩·배지·진행률 바) */
 
   /* 뱃지 등급 색 (안심일터 / 성실근로자 1·2·3단계) */
   --tier-1: #b87333; /* 1단계 브론즈 */

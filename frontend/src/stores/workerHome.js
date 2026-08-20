@@ -47,7 +47,8 @@ export const useWorkerHomeStore = defineStore('workerHome', () => {
     return {
       agreedWage: workCase.dailyWage,
       isLate: !!workCase.attendance?.isLate,
-      lateMinutes: workCase.attendance?.lateMinutes ?? 0
+      lateMinutes: workCase.attendance?.lateMinutes ?? 0,
+      checkedInAt: workCase.attendance?.checkedInAt ?? null
     }
   }
 
