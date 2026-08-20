@@ -7,13 +7,17 @@
  */
 import BaseButton from './BaseButton.vue'
 
+defineProps({
+  // 확인 버튼 톤 — 화면 역할(사장님/알바생)에 맞춘다.
+  variant: { type: String, default: 'owner' }
+})
 defineEmits(['cancel', 'confirm'])
 </script>
 
 <template>
   <div class="sheet-actions">
     <BaseButton variant="secondary" block @click="$emit('cancel')">취소</BaseButton>
-    <BaseButton variant="owner" block @click="$emit('confirm')">확인</BaseButton>
+    <BaseButton :variant="variant" block @click="$emit('confirm')">확인</BaseButton>
   </div>
 </template>
 

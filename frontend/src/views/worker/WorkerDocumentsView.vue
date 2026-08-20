@@ -22,7 +22,7 @@ import {
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 
-import AppField from '@/components/common/AppField.vue'
+import AppDateFieldCalendar from '@/components/common/AppDateFieldCalendar.vue'
 import BaseBottomSheet from '@/components/common/BaseBottomSheet.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import BaseModal from '@/components/common/BaseModal.vue'
@@ -444,7 +444,13 @@ async function doRevoke(share) {
           </label>
           <p v-if="fileError" class="field-err">{{ fileError }}</p>
         </div>
-        <AppField v-model="issuedDate" label="발급일" type="date" required :error="issuedError" />
+        <AppDateFieldCalendar
+          v-model="issuedDate"
+          label="발급일"
+          required
+          variant="worker"
+          :error="issuedError"
+        />
         <p class="form-hint">만료일은 발급일을 기준으로 서버가 계산해요.</p>
       </div>
       <template #footer>
@@ -499,7 +505,7 @@ async function doRevoke(share) {
 
     <!-- 발급일 수정 -->
     <BaseModal :open="editOpen" title="발급일 수정" @close="editOpen = false">
-      <AppField v-model="editDate" label="발급일" type="date" :error="editError" />
+      <AppDateFieldCalendar v-model="editDate" label="발급일" variant="worker" :error="editError" />
       <template #footer>
         <BaseButton variant="secondary" block @click="editOpen = false">취소</BaseButton>
         <BaseButton variant="worker" block :disabled="editSaving" @click="saveEdit"
