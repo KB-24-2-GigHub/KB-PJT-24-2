@@ -26,7 +26,7 @@ describe('공통 UI 키트 스모크', () => {
 
   it('StatusChip — 상태 라벨 표기', () => {
     const w = mount(StatusChip, { props: { status: 'DRAFT', kind: 'workCase' } })
-    expect(w.text()).toContain('수락 전')
+    expect(w.text()).toContain('미배정')
   })
 
   it('TrustBadge — 등급 뱃지 렌더', () => {
