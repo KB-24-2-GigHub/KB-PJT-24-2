@@ -8,4 +8,6 @@ public interface UserService {
     UserProfileResponse getProfile(Long userId);
 
     UserProfileResponse updatePhone(Long userId, String phone);
+
+    void changePassword(Long userId, String currentPassword, String newPassword);
 }

@@ -56,6 +56,26 @@ public class AuthSessionManager {
         csrfTokenRepository.saveToken(null, request, response);
     }
 
+    /**
+     * 자격 증명이 바뀐 뒤 인증 상태는 유지한 채 Session ID만 새로 발급합니다.
+     *
+     * <p>Servlet 3.1 {@code changeSessionId()}는 Session Attribute를 그대로 옮기므로
+     * SecurityContext가 살아남아 사용자는 로그인 상태로 남습니다. 바뀐 비밀번호로 다시
+     * 로그인시키지 않으면서 이전 Session ID만 재사용 불가능하게 만듭니다.</p>
+     *
+     * <p>Session이 없으면 회전할 대상도, 탈취될 ID도 없으므로 아무것도 하지 않습니다.
+     * 보호 API는 Session 인증을 통과한 요청만 여기에 도달하므로 정상 경로에서는
+     * 항상 Session이 있습니다.</p>
+     *
+     * @param request 현재 요청
+     */
+    public void rotateSessionId(HttpServletRequest request) {
+        if (request.getSession(false) == null) {
+            return;
+        }
+        request.changeSessionId();
+    }
+
     public void logout(
             HttpServletRequest request,
             HttpServletResponse response,
