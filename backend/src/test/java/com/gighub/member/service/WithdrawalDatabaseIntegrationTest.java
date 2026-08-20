@@ -20,6 +20,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -51,6 +52,7 @@ class WithdrawalDatabaseIntegrationTest {
                 verifyWalletBalanceBlocksWithdrawal(userService, jdbcTemplate, userId);
                 verifyWithdrawalMarksStatusAndDeletedAt(userService, jdbcTemplate, userId);
                 verifyWithdrawnUserCannotLogIn(authService, loginId);
+                verifyWithdrawnIdentifiersStayTaken(authService, loginId);
                 verifySecondWithdrawalIsRejected(userService, userId);
             } finally {
                 jdbcTemplate.update(
@@ -114,6 +116,21 @@ class WithdrawalDatabaseIntegrationTest {
         assertThrows(
                 AuthRequiredException.class,
                 () -> authService.login(loginRequest(loginId)));
+    }
+
+    /**
+     * 탈퇴해도 아이디와 이메일은 계속 점유됩니다.
+     *
+     * <p>계약 사항이지 결함이 아닙니다. 계약서·정산 원장이 {@code user_id}로 이 사람을
+     * 가리키고 있어서, 같은 아이디를 다른 사람이 다시 쓰면 그 이력의 주체가 흐려집니다.
+     * {@code uk_users_login_id}와 {@code uk_users_email}이 탈퇴 행까지 포함해 걸려 있고
+     * 가용성 조회도 상태를 가리지 않으므로, 두 경로가 같은 답을 냅니다.</p>
+     *
+     * <p>여기서 재가입을 허용하도록 바꾸려면 개인정보 익명화 범위를 먼저 정해야 합니다.</p>
+     */
+    private void verifyWithdrawnIdentifiersStayTaken(AuthService authService, String loginId) {
+        assertFalse(authService.isLoginIdAvailable(loginId));
+        assertFalse(authService.isEmailAvailable(loginId + "@example.com"));
     }
 
     /** 이미 탈퇴한 계정은 ACTIVE 가드에 걸린다 — 비밀번호 변경과 같은 403 계약이다. */
