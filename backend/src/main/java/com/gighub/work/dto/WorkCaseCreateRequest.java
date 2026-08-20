@@ -42,6 +42,12 @@ import lombok.Getter;
 @Getter
 public final class WorkCaseCreateRequest {
 
+    /** {@code DATETIME(6)}이 담을 수 있는 가장 이른 날입니다. */
+    private static final LocalDate MIN_WORK_DATE = LocalDate.of(1000, 1, 1);
+
+    /** 종료가 다음 날로 결합돼도 {@code DATETIME(6)} 안에 남는 마지막 날입니다. */
+    private static final LocalDate MAX_WORK_DATE = LocalDate.of(9999, 12, 30);
+
     @NotBlank(message = "근무 제목은 필수입니다.")
     @Size(max = 150, message = "근무 제목은 150자 이하여야 합니다.")
     private final String title;
@@ -77,7 +83,7 @@ public final class WorkCaseCreateRequest {
             @JsonProperty("breakPaid") Boolean breakPaid,
             @JsonProperty("dailyWage") Long dailyWage) {
         this.title = normalizeText(title);
-        this.workDate = workDate;
+        this.workDate = requireStorableWorkDate(workDate);
         this.startTime = startTime;
         this.endTime = endTime;
         this.breakMinutes = breakMinutes;
@@ -89,6 +95,26 @@ public final class WorkCaseCreateRequest {
     @JsonAnySetter
     public void rejectUnknownField(String fieldName, Object value) {
         throw new IllegalArgumentException("허용되지 않은 근무 조건 필드입니다: " + fieldName);
+    }
+
+    /**
+     * {@code starts_at}·{@code ends_at}이 {@code DATETIME(6)}이라 저장할 수 있는 근무일에
+     * 한계가 있습니다. {@code LocalDate}는 그보다 훨씬 넓은 값을 받아들이므로 여기서 막습니다.
+     *
+     * <p>상한을 하루 앞당긴 것은 자정을 넘기는 근무의 종료가 {@code workDate}의 다음 날로
+     * 결합되기 때문입니다(SPEC-413-01). {@code LocalDate.MAX} 같은 값이 들어오면 그 덧셈이
+     * {@code DateTimeException}으로 터져 검증 실패가 아니라 500이 됩니다.</p>
+     */
+    private static LocalDate requireStorableWorkDate(LocalDate workDate) {
+        if (workDate == null) {
+            // @NotNull이 필수 누락으로 보고합니다 — 여기서 겹쳐 던지면 오류 형태가 갈립니다.
+            return null;
+        }
+        if (workDate.isBefore(MIN_WORK_DATE) || workDate.isAfter(MAX_WORK_DATE)) {
+            throw new IllegalArgumentException(
+                    "근무일은 " + MIN_WORK_DATE + "부터 " + MAX_WORK_DATE + " 사이여야 합니다.");
+        }
+        return workDate;
     }
 
     /**

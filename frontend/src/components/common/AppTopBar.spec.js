@@ -7,14 +7,32 @@ import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+// 로고 링크의 목적지를 읽으려면 RouterLink 가 필요한데 이 파일은 vue-router 를 통째로
+// 대체한다. 실제 RouterLink 대신 to 를 href 로 내보내는 스텁을 끼워 목적지를 검사한다.
+const { RouterLinkStub } = vi.hoisted(() => ({
+  RouterLinkStub: {
+    name: 'RouterLink',
+    props: ['to'],
+    template: '<a :href="to"><slot /></a>'
+  }
+}))
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
-  useRoute: () => ({ path: '/owner/attendance' })
+  useRoute: () => ({ path: '/owner/attendance' }),
+  RouterLink: RouterLinkStub
 }))
 vi.mock('@/services/workplaces', () => ({ listWorkplaces: vi.fn() }))
+// 실제 export 와 이름·개수를 맞춘다. 빠뜨린 export 를 스토어가 호출하면 Vitest 가 던지는데,
+// notifications 스토어의 맨몸 catch 와 jsdom 에 EventSource 가 없다는 사정이 겹쳐 지금은
+// 조용히 삼켜진다 — 둘 중 하나만 바뀌어도 이 파일이 로고와 무관한 이유로 무너진다.
 vi.mock('@/services/notifications', () => ({
-  listNotifications: vi.fn().mockResolvedValue([]),
-  markAllRead: vi.fn()
+  listNotifications: vi.fn().mockResolvedValue({ content: [], page: {} }),
+  getUnreadCount: vi.fn().mockResolvedValue({ unreadCount: 0 }),
+  markNotificationRead: vi.fn().mockResolvedValue(undefined),
+  // jsdom 에 EventSource 가 없어 스토어가 여기까지 오지 않지만, 오게 되더라도 addEventListener
+  // 를 가진 객체를 돌려줘야 connect() 가 그 자리에서 터지지 않는다.
+  openNotificationStream: vi.fn(() => ({ addEventListener: vi.fn(), close: vi.fn() }))
 }))
 
 import AppTopBar from '@/components/common/AppTopBar.vue'
@@ -88,5 +106,88 @@ describe('AppTopBar 지점 select', () => {
     })
 
     expect(wrapper.find('select').exists()).toBe(false)
+  })
+})
+
+/**
+ * 로고 → 역할별 홈 이동 계약(#414).
+ *
+ * 목적지는 세션의 역할 하나로 갈리므로, 두 역할을 모두 고정하지 않으면 한쪽으로 굳어도
+ * 통과한다. 그래서 OWNER·WORKER 를 같은 표로 함께 검사한다.
+ */
+describe('AppTopBar 로고 홈 이동', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  // 목적지를 정하는 것은 세션 역할이다(auth.homeRoute). role prop 은 로고 색·지점 select
+  // 같은 표시 분기에만 쓰인다. 둘을 따로 받아 두 축을 갈라 놓는다.
+  function mountBar(sessionRole, propRole = sessionRole) {
+    useAuthStore().setUser({
+      name: sessionRole === 'OWNER' ? '김사장' : '이알바',
+      role: sessionRole,
+      needsWorkplaceSetup: false
+    })
+    // OWNER 는 onMounted 에서 지점 목록을 조회한다. 이 테스트는 지점과 무관하므로
+    // 조회를 건너뛰게 두고, 로고 링크만 남긴다.
+    useWorkplaceStore().loaded = true
+    return mount(AppTopBar, {
+      props: { role: propRole },
+      global: { stubs: { LogoSymbol: true } }
+    })
+  }
+
+  it.each([
+    ['OWNER', '/owner/home'],
+    ['WORKER', '/worker/home']
+  ])('%s 상단바 로고는 %s 로 이동한다', (role, path) => {
+    const brand = mountBar(role).findComponent(RouterLinkStub)
+
+    expect(brand.exists()).toBe(true)
+    expect(brand.props('to')).toBe(path)
+  })
+
+  /**
+   * 위 표는 두 축이 같은 값이라 목적지를 prop 에서 뽑아도 통과한다. Patch 는 목적지가
+   * "로그인한 사용자의 역할"만으로 정해진다고 적었으므로, 두 축이 어긋나는 상태로 그
+   * 문장을 고정한다. 같은 표가 auth 스토어·가드 G2·G3 와 이미 있어 사본을 더 두면
+   * 홈 경로가 바뀔 때 로고만 어긋난다.
+   */
+  it('레이아웃 prop 이 아니라 세션 역할이 목적지를 정한다', () => {
+    const brand = mountBar('WORKER', 'OWNER').findComponent(RouterLinkStub)
+
+    expect(brand.props('to')).toBe('/worker/home')
+  })
+
+  /**
+   * 계약이 약속한 것은 "링크"다 — 컴포넌트가 아니라 앵커가 있어야 포커스·Enter·링크 역할이
+   * 따라온다. RouterLink 를 custom + span 으로 되돌리면 위 목적지 검사는 그대로 통과하고
+   * 이 단언만 깨진다. 그래서 태그까지 좁혀 잡는다.
+   */
+  it('로고를 앵커로 렌더한다', () => {
+    const brand = mountBar('OWNER').get('a.brand')
+
+    // 이름이 없으면 스크린리더가 "링크"라고만 읽는다.
+    expect(brand.attributes('aria-label')).toBe('Gig Hub 홈')
+  })
+
+  /**
+   * 이중 낭독을 막는 것은 링크의 aria-label 이다(ANC 2C — aria-label 이 있으면 서브트리를
+   * 순회하지 않는다). svg 의 aria-hidden 이 막는 것은 그것이 아니라, 링크 안의 role="img"
+   * 노드가 browse mode 에서 별도 항목으로 읽히는 것이다.
+   */
+  it('로고 svg 를 보조기술 트리에서 감춘다', () => {
+    expect(mountBar('OWNER').get('.brand-logo').attributes('aria-hidden')).toBe('true')
+  })
+
+  /**
+   * role 은 표시 분기(로고 색·지점 select)를 가르는데, isOwner 는 'OWNER' 가 아닌 모든 값을
+   * WORKER 로 본다. 승인된 집합을 여기에 고정해 두면 validator 를 지우거나 넓혔을 때 걸린다.
+   */
+  it('role prop 은 승인된 두 값만 받는다', () => {
+    const { validator } = AppTopBar.props.role
+
+    expect(['OWNER', 'WORKER'].map(validator)).toEqual([true, true])
+    expect(['owner', 'ADMIN', ''].map(validator)).toEqual([false, false, false])
   })
 })

@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `8.0.0`         |
-| 승인일      | 2026-08-12      |
+| 명세 릴리스 | `8.1.0`         |
+| 승인일      | 2026-08-17      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
 
@@ -1752,8 +1752,96 @@ Column은 추가하지 않고 `updated_at`을 완료 표시로 사용하지 않�
 documentId, versionId, 단계와 성공·실패 Enum만 남기고 Storage Key·Checksum·당사자 정보는
 남기지 않습니다.
 
-## 알림과 외부 결제
+## 알림
 
-알림 Endpoint의 요청·응답과 전달 방식은 `DEC-OPEN-NOTIFICATION-CONTRACT`, 외부 결제
-Endpoint는 `DEC-OPEN-PAYMENT-PROVIDER`가 승인된 뒤 이 문서에 추가합니다. 결정 전에는
-경로 또는 Payload를 규범 계약으로 추정하지 않습니다.
+### 알림 유형과 수신자
+
+MVP 알림은 아래 6종뿐이며 다른 유형을 만들지 않습니다. 알림은 이미 확정된 도메인 이벤트를
+알리기만 하고 어떤 도메인 상태나 자금 흐름도 바꾸지 않습니다. 수신자가 둘인 유형은 수신자마다
+별도 알림 행을 만들며, 수신자가 아닌 사용자는 그 알림을 조회하거나 읽음 처리할 수 없습니다.
+
+| `notiType`            | 발생 시점                      | 수신자          | `sourceType`     | `sourceId`가 가리키는 행 |
+| --------------------- | ------------------------------ | --------------- | ---------------- | ------------------------ |
+| `WORK_CASE_CONFIRMED` | 초대 수락으로 근무가 확정될 때 | OWNER, WORKER   | `WORK_CASE`      | `work_cases`             |
+| `ESCROW_HELD`         | 임금 예치가 성립할 때          | OWNER, WORKER   | `ESCROW`         | `escrows`                |
+| `SETTLED`             | 정산 지급이 완료될 때          | OWNER, WORKER   | `SETTLEMENT`     | `settlements`            |
+| `REFUNDED`            | 노쇼 환불이 완료될 때          | OWNER, WORKER   | `SETTLEMENT`     | `settlements`            |
+| `DOC_SHARED`          | 보건증이 근무에 공유될 때      | OWNER           | `DOCUMENT_SHARE` | `document_shares`        |
+| `WAGE_REPORTED`       | 임금분쟁이 생성될 때           | 신고 상대방 1인 | `DISPUTE`        | `disputes`               |
+
+**이벤트 식별자와 이동 대상은 서로 다른 값입니다.** `sourceType`+`sourceId`는 이 알림을 만든
+도메인 행을, `workCaseId`는 눌렀을 때 이동할 근무를 가리킵니다. 6종 모두 근무 문맥에서
+발생하므로 `workCaseId`는 항상 존재합니다.
+
+동일 이벤트 중복은 `(수신자, notiType, sourceType, sourceId)` 유일성으로만 막으며, 같은 Key가
+다시 들어오면 새 알림을 만들지 않고 기존 알림을 유지합니다. `title`과 `content`는 서버가
+완성된 문구로 만들어 저장하고 응답에 그대로 실으며 클라이언트는 유형별 문구를 조립하지
+않습니다.
+
+알림 적재는 원인 도메인 Transaction이 실패하면 확정되지 않습니다. 역방향은 성립하지 않아
+알림 적재가 실패해도 이미 Commit된 도메인 처리는 유지되고 도메인 응답은 성공입니다.
+
+### `GET /api/notifications`
+
+- 인증 사용자 본인의 알림만 최신순(`createdAt` 내림차순, 동률은 `notificationId` 내림차순)으로
+  반환합니다. 수신자를 Query·Path·Body로 받지 않습니다.
+- Query는 `page?`, `size?`만 받고 공통 페이지네이션 기본값을 따릅니다.
+- 응답은 공통 `{data:{content,page}}` 목록 Envelope입니다.
+
+| 필드             | 설명                                            |
+| ---------------- | ----------------------------------------------- |
+| `notificationId` | 양의 정수                                       |
+| `notiType`       | 위 6종 중 하나                                  |
+| `title`          | 서버가 만든 완성 문구                           |
+| `content`        | 서버가 만든 완성 문구                           |
+| `sourceType`     | 위 표의 이벤트 유형                             |
+| `sourceId`       | 이벤트를 만든 도메인 행 식별자                  |
+| `workCaseId`     | 이동 대상 근무 식별자                           |
+| `isRead`         | boolean                                         |
+| `readAt`         | 읽은 시각. 읽지 않았으면 `null`                 |
+| `createdAt`      | 생성 시각                                       |
+
+### `GET /api/notifications/unread-count`
+
+`{"data":{"unreadCount":3}}`로 본인의 안읽음 개수만 반환합니다. 개수는 저장된 읽음 상태에서
+계산하며 별도 집계 값을 두지 않고 0 미만이 될 수 없습니다.
+
+### `PATCH /api/notifications/{notificationId}/read`
+
+본인 알림 한 건을 읽음으로 바꾸고 `readAt`을 그때의 시각으로 확정합니다. 성공은
+`204 No Content`입니다. 이미 읽은 알림에 다시 요청해도 성공이며 `readAt`은 최초 값을
+유지합니다. **전체 읽음 처리는 이 계약에 두지 않습니다.**
+
+### `GET /api/notifications/stream`
+
+인증 사용자 본인의 알림 스트림을 여는 Server-Sent Events Operation입니다. 수신자를
+Query·Path·Body로 받지 않습니다.
+
+- **신호만 전달하고 알림 본문을 싣지 않습니다.** 알림의 내용은 위 목록·개수 Operation이 계속
+  단독으로 소유합니다.
+- 신호는 적재가 확정된 뒤에만 보냅니다. 적재에 실패한 수신자에게는 보내지 않습니다.
+- 응답은 중간 프록시의 Buffering을 끄는 지시를 포함하고, 조용한 구간에도 배포 프록시의 읽기
+  타임아웃보다 짧은 주기로 연결 유지 프레임을 보냅니다. 연결 타임아웃은 애플리케이션이
+  명시하며 컨테이너 기본값에 맡기지 않습니다.
+- 연결 종료·타임아웃·오류 어느 경로로 끊기든 서버는 그 연결을 즉시 버립니다.
+
+**이 Operation은 알림 기능의 전제가 아닙니다.** 스트림이 실패하거나 끊긴 동안에도 목록 조회와
+읽음 처리는 정상 동작하며, 신호 전달 실패는 알림 적재 결과와 도메인 응답을 바꾸지 않습니다.
+구독 연결은 애플리케이션 인스턴스 메모리에 유지하므로 인스턴스가 둘 이상이면 다른 인스턴스에
+연결된 사용자는 신호를 받지 못합니다. 이 한계는 위 독립성으로 흡수하며 공유 Broker 도입은
+별도 제품 결정과 새 명세 Patch로 승인합니다.
+
+### 알림 오류
+
+| 상황                                | HTTP | Code                 |
+| ----------------------------------- | ---: | -------------------- |
+| 인증 없음                           |  401 | `AUTH_REQUIRED`      |
+| 타인의 알림 또는 존재하지 않는 알림 |  404 | `RESOURCE_NOT_FOUND` |
+| `page`·`size` 허용 범위 밖          |  400 | `VALIDATION_ERROR`   |
+
+타인 알림은 존재를 드러내지 않도록 403이 아니라 404로 응답합니다.
+
+## 외부 결제
+
+외부 결제 Endpoint는 `DEC-OPEN-PAYMENT-PROVIDER`가 승인된 뒤 이 문서에 추가합니다. 결정
+전에는 경로 또는 Payload를 규범 계약으로 추정하지 않습니다.

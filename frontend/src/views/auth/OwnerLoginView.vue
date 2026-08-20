@@ -18,6 +18,7 @@ import LogoGighub from '@/assets/images/logo/logo-gighub.svg'
 import { useAuthStore } from '@/stores/auth'
 import { useUiStore } from '@/stores/ui'
 import { resolveOwnerLoginRedirect } from '@/utils/authRedirect'
+import { requestFullscreenSafely } from '@/utils/fullscreen'
 
 const router = useRouter()
 const route = useRoute()
@@ -44,6 +45,10 @@ async function onSubmit() {
     ui.toast('아이디와 비밀번호를 입력해주세요.', { type: 'warning' })
     return
   }
+
+  // 시연용: 전체화면은 사용자 제스처(클릭) 안에서 동기적으로 불러야만 동작한다 —
+  // auth.login() 의 await 뒤로 옮기면 브라우저가 조용히 거부한다(#438).
+  requestFullscreenSafely()
 
   submitting.value = true
   try {

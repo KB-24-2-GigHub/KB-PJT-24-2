@@ -39,6 +39,7 @@ const BADGE = {
   badgeType: 'TRUST_OWNER',
   level: 2,
   recentCount: 22,
+  normalCount: 21,
   remainingToNextLevel: 8,
   criterionLabel: '안심거래',
   criterionDesc:
@@ -114,21 +115,25 @@ describe('OwnerMyPageView', () => {
       expect(bar.attributes('aria-label')).toBe('다음 등급까지 진행률')
     })
 
-    it('서버 진행 설명문과 FE 정의문을 서로 대체하지 않고 함께 보여준다', async () => {
+    it('정상 건수를 구조화된 문구로 보여준다', async () => {
       getBadge.mockResolvedValue({ ...BADGE })
 
       const wrapper = mount(OwnerMyPageView)
       await flushPromises()
 
-      expect(wrapper.find('.badge-desc').text()).toBe(BADGE.criterionDesc)
-      expect(wrapper.find('.badge-definition').text()).toContain('안심거래란')
+      // normalPercent = round(21/22*100) = 95
+      expect(wrapper.find('.badge-counts').text()).toBe('누적 정산 22건 중 안심정산 21건 (95%)')
     })
+
+    // FE 정의문(*안심정산이란?…)은 카드가 아니라 레벨 설명 모달(TrustBadgeLevelModal) 맨 위에
+    // 있다 — 그 계약은 TrustBadgeLevelModal.spec.js 가 지킨다.
 
     it('미부여(0단계)는 오류가 아니라 남은 건수를 안내한다', async () => {
       getBadge.mockResolvedValue({
         ...BADGE,
         level: 0,
         recentCount: 0,
+        normalCount: 0,
         remainingToNextLevel: 10,
         criterionDesc: '누적 0건 중 정상 0건입니다.'
       })
@@ -138,7 +143,10 @@ describe('OwnerMyPageView', () => {
 
       expect(wrapper.find('.badge-slot').exists()).toBe(true)
       expect(wrapper.find('.badge-notice').exists()).toBe(false)
-      expect(wrapper.find('.level-remaining').text()).toBe('다음 레벨 Lv.1까지 안심거래 10건 남음')
+      // 다음 등급(Lv.1) 문턱은 누적 10건·정상 비율 80%다.
+      expect(wrapper.find('.level-remaining').text()).toBe(
+        '다음 Lv.1까지 정산 10건, 안심거래 80%이상 유지 필요'
+      )
       expect(wrapper.find('.bar').attributes('aria-valuenow')).toBe('0')
     })
 
@@ -147,6 +155,7 @@ describe('OwnerMyPageView', () => {
         ...BADGE,
         level: 3,
         recentCount: 30,
+        normalCount: 30,
         remainingToNextLevel: 0,
         criterionDesc: '누적 30건 중 정상 30건으로 최고 등급입니다.'
       })
@@ -197,16 +206,6 @@ describe('OwnerMyPageView', () => {
 
       expect(wrapper.find('.badge-notice').exists()).toBe(false)
       expect(wrapper.find('.badge-slot').exists()).toBe(true)
-    })
-
-    it('진행 설명문이 비면 빈 문단을 남기지 않는다', async () => {
-      getBadge.mockResolvedValue({ ...BADGE, criterionDesc: '' })
-
-      const wrapper = mount(OwnerMyPageView)
-      await flushPromises()
-
-      expect(wrapper.find('.badge-slot').exists()).toBe(true)
-      expect(wrapper.find('.badge-desc').exists()).toBe(false)
     })
 
     /*

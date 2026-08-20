@@ -96,7 +96,11 @@ describe('OwnerQrView 재발급', () => {
     await flushPromises()
 
     expect(reissueWorkplaceQr).toHaveBeenCalledWith(7)
-    expect(wrapper.text()).toContain('v1.k1.7.new.mac')
+    expect(QRCode.toCanvas).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'v1.k1.7.new.mac',
+      expect.anything()
+    )
   })
 
   it('전송이 끝나기 전 다시 눌러도 한 번만 보낸다', async () => {

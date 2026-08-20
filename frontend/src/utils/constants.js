@@ -9,10 +9,25 @@
  *
  * 근무(work_case) 7단계 상태 매핑은 여기가 아니라 `@/constants/workCaseStatus` 단일 소스에 있다.
  */
+import bankBusan from '@/assets/images/banks/busan.png'
+import bankCity from '@/assets/images/banks/city.png'
+import bankCu from '@/assets/images/banks/cu.png'
+import bankDgb from '@/assets/images/banks/dgb.png'
+import bankGwangju from '@/assets/images/banks/gwangju.png'
 import bankHana from '@/assets/images/banks/hana.png'
+import bankIbk from '@/assets/images/banks/ibk.png'
+import bankIm from '@/assets/images/banks/im.png'
+import bankK from '@/assets/images/banks/k.png'
+import bankKakao from '@/assets/images/banks/kakao.png'
 import bankKb from '@/assets/images/banks/kb.png'
+import bankKdb from '@/assets/images/banks/kdb.png'
+import bankMg from '@/assets/images/banks/mg.png'
 import bankNh from '@/assets/images/banks/nh.png'
+import bankPost from '@/assets/images/banks/post.png'
+import bankSc from '@/assets/images/banks/sc.png'
+import bankSh from '@/assets/images/banks/sh.png'
 import bankShinhan from '@/assets/images/banks/shinhan.png'
+import bankToss from '@/assets/images/banks/toss.png'
 import bankWoori from '@/assets/images/banks/woori.png'
 
 /* ---- 정산·에스크로 상태 ---- */
@@ -102,19 +117,40 @@ export const DOC_SHARE_STATUS = {
 /* ---- 신뢰 뱃지(GET /api/users/me/badge) ----
  *
  * `role` 은 응답 `badgeType` 을 화면 역할로 옮기는 유일한 표이고, 여기 있는 타입만 그린다.
- * `definition` 은 "무엇이 정상인가"를 설명하는 FE 소유 정의문이다 — 서버 응답의
- * `criterionDesc`(누적·정상 건수와 다음 등급 조건을 안내하는 진행 설명문)와 다른 문장이며
- * 서로 대체하지 않는다. `criterionLabel` 은 승인 계약상 서버 값을 그대로 쓰므로 여기 두지
- * 않는다 — 화면이 지어낸 라벨이 응답을 덮어쓰는 경로를 만들지 않기 위함이다.
+ * `definitionTitle`/`definitionDesc` 는 "무엇이 정상인가"를 설명하는 FE 소유 정의문이다 —
+ * 서버 응답의 `criterionDesc`(누적·정상 건수와 다음 등급 조건을 안내하는 진행 설명문)와
+ * 다른 문장이며 서로 대체하지 않는다. `criterionLabel` 은 승인 계약상 서버 값을 그대로
+ * 쓰므로 여기 두지 않는다 — 화면이 지어낸 라벨이 응답을 덮어쓰는 경로를 만들지 않기 위함이다.
  */
 export const BADGE_TYPE = {
   TRUST_WORKER: {
     role: 'worker',
-    definition: '*성실근로란? 지각·결근 없이 정상 출퇴근 완료'
+    // 프로필 카드 타이틀("성실알바 Lv.N")·본문 라벨. criterionLabel(서버 값 "성실근로")과
+    // 값이 같지만 별개 소유다 — 여기 문구를 바꿔도 API 계약은 그대로다.
+    title: '성실알바',
+    totalLabel: '근로',
+    normalLabel: '성실근로',
+    remainingLabel: '근무',
+    definitionTitle: '👷 성실근로란?',
+    definitionDesc: '지각이나 결근 없이 정시에 출퇴근을 마친 근무 내역이에요.',
+    // 신뢰 뱃지 등급 설명 모달(TrustBadgeLevelModal)의 기준 설명 두 줄.
+    criteriaDesc: [
+      '누적 근무 건수와 성실근로 비율로 계산되는 알바생 신뢰 지표예요.',
+      '지원할 때 사장님에게 나의 신뢰 뱃지로 노출돼요.'
+    ]
   },
   TRUST_OWNER: {
     role: 'owner',
-    definition: '*안심거래란? 임금분쟁 신고 없이 정상 정산 완료'
+    title: '안심사장',
+    totalLabel: '정산',
+    normalLabel: '안심정산',
+    remainingLabel: '정산',
+    definitionTitle: '💵 안심정산이란?',
+    definitionDesc: '임금 분쟁 없이 깔끔하게 완료된 정산 내역이에요.',
+    criteriaDesc: [
+      '사장님의 정산 건수와 안심정산 비율로 계산되는 매장 신뢰 지표예요.',
+      '알바생에게 근무 초대를 보낼 때 사장님의 신뢰 뱃지로 노출돼요.'
+    ]
   }
 }
 
@@ -136,7 +172,8 @@ export const SCAN_TYPE = {
 
 /**
  * 은행 목록(충전·출금 은행 선택).
- * `logo`: assets/images/banks/*.png 로고(없으면 BankSelect가 `chip` 색 점으로 대체 표시).
+ * `logo`: assets/images/banks/*.png 로고(없거나 로드에 실패하면 BankSelect가 공통 은행
+ * 아이콘으로 대체 표시. `chip`은 그 아이콘 배경색으로 쓰인다).
  *
  * SPEC 4.1.0 기준 승인된 canonical bankCode 20종(docs/specs/API_SPEC.md '지갑과 거래').
  * 화면 라벨과 API 전송값을 분리하고, `KB`나 `SHINHAN` 같은 별칭을 전송값으로 다시
@@ -149,21 +186,21 @@ export const BANKS = [
   { code: '020', name: '우리은행', logo: bankWoori, chip: '#0067AC' },
   { code: '081', name: '하나은행', logo: bankHana, chip: '#008485' },
   { code: '011', name: 'NH농협은행', logo: bankNh, chip: '#19A94B' },
-  { code: '003', name: '기업은행', logo: null, chip: '#004EA2' },
-  { code: '090', name: '카카오뱅크', logo: null, chip: '#FEE500' },
-  { code: '092', name: '토스뱅크', logo: null, chip: '#0064FF' },
-  { code: '089', name: '케이뱅크', logo: null, chip: '#FF4D4D' },
-  { code: '032', name: '부산은행', logo: null, chip: '#00519E' },
-  { code: '031', name: 'DGB대구은행', logo: null, chip: '#0F4C9A' },
-  { code: '131', name: 'iM뱅크', logo: null, chip: '#5B3EBB' },
-  { code: '034', name: '광주은행', logo: null, chip: '#E4032E' },
-  { code: '023', name: 'SC제일은행', logo: null, chip: '#003057' },
-  { code: '027', name: '씨티은행', logo: null, chip: '#003882' },
-  { code: '002', name: 'KDB산업은행', logo: null, chip: '#00478A' },
-  { code: '007', name: '수협은행', logo: null, chip: '#0067AC' },
-  { code: '045', name: '새마을금고', logo: null, chip: '#00954E' },
-  { code: '048', name: '신협', logo: null, chip: '#0068B7' },
-  { code: '071', name: '우체국', logo: null, chip: '#D0021B' }
+  { code: '003', name: '기업은행', logo: bankIbk, chip: '#004EA2' },
+  { code: '090', name: '카카오뱅크', logo: bankKakao, chip: '#FEE500' },
+  { code: '092', name: '토스뱅크', logo: bankToss, chip: '#0064FF' },
+  { code: '089', name: '케이뱅크', logo: bankK, chip: '#FF4D4D' },
+  { code: '032', name: '부산은행', logo: bankBusan, chip: '#00519E' },
+  { code: '031', name: 'DGB대구은행', logo: bankDgb, chip: '#0F4C9A' },
+  { code: '131', name: 'iM뱅크', logo: bankIm, chip: '#5B3EBB' },
+  { code: '034', name: '광주은행', logo: bankGwangju, chip: '#E4032E' },
+  { code: '023', name: 'SC제일은행', logo: bankSc, chip: '#003057' },
+  { code: '027', name: '씨티은행', logo: bankCity, chip: '#003882' },
+  { code: '002', name: 'KDB산업은행', logo: bankKdb, chip: '#00478A' },
+  { code: '007', name: '수협은행', logo: bankSh, chip: '#0067AC' },
+  { code: '045', name: '새마을금고', logo: bankMg, chip: '#00954E' },
+  { code: '048', name: '신협', logo: bankCu, chip: '#0068B7' },
+  { code: '071', name: '우체국', logo: bankPost, chip: '#D0021B' }
 ]
 
 export const BANKS_ALL = BANKS

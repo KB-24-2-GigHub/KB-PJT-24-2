@@ -1,5 +1,6 @@
 package com.gighub.work.service.impl;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.EnumMap;
@@ -59,8 +60,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         requireOwner(principal);
 
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
-        LocalDateTime endsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getEndTime());
-        requireEndsAfterStart(startsAt, endsAt);
+        LocalDateTime endsAt = WorkCaseTimes.combineEnd(
+                command.getWorkDate(), command.getStartTime(), command.getEndTime());
+        requireValidWorkPeriod(startsAt, endsAt, command.getBreakMinutes());
 
         // 소유권·ACTIVE 확인과 Snapshot 원본 조회를 한 쿼리로 처리합니다. 없으면 사업장이
         // 없거나 다른 OWNER 소유이거나 INACTIVE인 것이며, 세 경우를 구분해 노출하지 않습니다.
@@ -101,8 +103,9 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         requireDraft(lock);
 
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
-        LocalDateTime endsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getEndTime());
-        requireEndsAfterStart(startsAt, endsAt);
+        LocalDateTime endsAt = WorkCaseTimes.combineEnd(
+                command.getWorkDate(), command.getStartTime(), command.getEndTime());
+        requireValidWorkPeriod(startsAt, endsAt, command.getBreakMinutes());
 
         WorkCaseTermsUpdateParam param = WorkCaseTermsUpdateParam.builder()
                 .workCaseId(command.getWorkCaseId())
@@ -397,9 +400,42 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
     }
 
-    private void requireEndsAfterStart(LocalDateTime startsAt, LocalDateTime endsAt) {
+    /**
+     * 결합된 근무 구간이 저장 가능한지 확인합니다(SPEC-413-01).
+     *
+     * <p>순서 조건은 {@link WorkCaseTimes#combineEnd} 결과에서는 구조적으로 참이지만,
+     * {@code ck_work_cases_time}의 애플리케이션 쪽 짝이라 그대로 둡니다. 사용자가 실제로
+     * 마주치는 거절은 길이 상한 쪽입니다 — 자정 넘김을 허용하면서 순서 검증이 잡아 주던
+     * 오타를 이 상한이 대신 잡습니다.</p>
+     *
+     * <p>거절은 {@code fieldErrors}를 함께 실어 보냅니다. 지금은 화면이 같은 경계를 먼저
+     * 걸러 주지만, 두 상한이 어긋나는 순간 사용자가 마주치는 것이 정확히 이 경로입니다.
+     * 필드가 비어 있으면 화면은 어느 입력이 문제인지 알려주지 못하고 실패 Toast만 띄웁니다.</p>
+     *
+     * <p>휴게 시간도 여기서 함께 봅니다. {@code breakMinutes}의 Bean Validation 상한은
+     * {@code SMALLINT UNSIGNED} 표현 범위(65535)뿐이라 근무 시간보다 긴 값이 통과합니다.
+     * 그 값은 등록 시점에는 조용히 저장됐다가 초대 수락 트랜잭션에서
+     * {@code ContractSnapshot}이 거절해 500이 됩니다 — 계약·에스크로가 함께 도는 자리라
+     * 여기서 400으로 앞당깁니다.</p>
+     */
+    private void requireValidWorkPeriod(
+            LocalDateTime startsAt, LocalDateTime endsAt, Integer breakMinutes) {
         if (!WorkCaseTimes.endsAfterStart(startsAt, endsAt)) {
-            throw new ValidationException("종료 시각은 시작 시각보다 뒤여야 합니다.");
+            throw new IllegalStateException("결합한 종료 시각이 시작 시각보다 뒤가 아닙니다.");
+        }
+        long maxHours = WorkCaseTimes.MAX_WORK_DURATION.toHours();
+        if (!WorkCaseTimes.withinMaxDuration(startsAt, endsAt)) {
+            throw new ValidationException(
+                    String.format("근무 시간은 최대 %d시간까지 등록할 수 있습니다.", maxHours),
+                    "endTime",
+                    String.format("근무 시간은 최대 %d시간까지 등록할 수 있습니다.", maxHours));
+        }
+
+        long workMinutes = Duration.between(startsAt, endsAt).toMinutes();
+        if (breakMinutes != null && breakMinutes > workMinutes) {
+            String reason = String.format(
+                    "휴게 시간은 근무 시간(%d분)을 넘을 수 없습니다.", workMinutes);
+            throw new ValidationException(reason, "breakMinutes", reason);
         }
     }
 }

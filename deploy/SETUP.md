@@ -71,6 +71,34 @@ nslookup api.gighub.store
 > 죽으면 회수되지 않은 `/32` 규칙이 남을 수 있다. `gh-actions run <id>` 설명이 붙은
 > 오래된 규칙이 보이면 지운다.
 
+### 2.1 GitHub Actions 자격증명 — OIDC
+
+`/32` 규칙을 넣고 빼는 것이 워크플로가 AWS에 하는 유일한 일이다. 여기에 만료되지
+않는 IAM User Access Key를 쓰면 그 키가 저장소 Secret에 영구히 남는다. 대신 실행마다
+만료되는 임시 세션을 받는다.
+
+AWS 콘솔에서 한 번만 준비한다.
+
+1. **IAM → Identity providers**에 GitHub OIDC Provider를 등록한다.
+   Provider URL은 `https://token.actions.githubusercontent.com`,
+   Audience는 `sts.amazonaws.com`이다.
+2. **Role**을 만들고 신뢰 정책의 `sub`를 이 저장소로 제한한다.
+   기본 통합 브랜치만 배포하므로 `repo:KB-24-2-GigHub/KB-PJT-24-2:ref:refs/heads/dev`
+   형태로 좁힌다. 다른 브랜치에서 실행하면 AssumeRole 단계에서 거부된다.
+3. **권한 정책**은 대상 보안그룹에 대한 `ec2:AuthorizeSecurityGroupIngress`와
+   `ec2:RevokeSecurityGroupIngress` 둘만 준다. 그 이상은 필요 없다.
+4. Role ARN을 저장소 Secret `AWS_ROLE_ARN`에 넣는다.
+
+> **Role의 `MaxSessionDuration`이 워크플로 `timeout-minutes`보다 길어야 한다.**
+> `Close SSH`는 job 마지막에 `if: always()`로 `/32` 규칙을 회수하는데, 세션이 job보다
+> 먼저 만료되면 그 회수가 실패해 22번이 열린 채 남는다. 워크플로가
+> `role-duration-seconds`를 지정하지 않고 Role 값을 따르는 이유가 이것이다.
+> 현재 최장은 `deploy-api.yml`의 25분이므로 기본값 1시간으로 충분하다.
+
+확인은 `Verify AWS OIDC` 워크플로를 수동 실행한다. AssumeRole과 위 두 권한을
+`--dry-run`으로 확인만 하고 보안그룹은 바꾸지 않는다. 배포가 `Open SSH`에서 멈췄을 때
+원인이 자격증명인지 아닌지를 여기서 먼저 가른다.
+
 ## 3. SSH 접속과 잠금
 
 기본 환경 확인:
@@ -267,14 +295,15 @@ chmod 700 /opt/gighub /opt/gighub/config
 ```
 /opt/gighub/
   compose.prod.yaml           운영 Compose 정의
-  .env                        Compose 가 자동으로 읽는 Flyway 접속값
+  .env                        Compose 가 자동으로 읽는 API_TAG 와 Flyway 접속값
+  set-api-tag.sh              .env 의 API_TAG 갱신 — 배포가 매번 올린다
   config/database.properties  애플리케이션 설정 전체
   documents/                  계약 PDF 영속 볼륨 — 삭제 금지
   migrations/                 Flyway SQL
   drivers/                    MySQL Connector/J
 ```
 
-로컬에서 템플릿과 Compose를 복사한다:
+로컬에서 템플릿과 Compose, 배포 스크립트를 복사한다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
@@ -284,7 +313,15 @@ scp -i ~/.ssh/my-keypair.pem \
 scp -i ~/.ssh/my-keypair.pem \
   deploy/compose.prod.yaml \
   ec2-user@13.125.191.199:/opt/gighub/compose.prod.yaml
+
+scp -i ~/.ssh/my-keypair.pem \
+  deploy/set-api-tag.sh \
+  ec2-user@13.125.191.199:/opt/gighub/set-api-tag.sh
 ```
+
+뒤의 두 파일은 **배포가 매번 다시 올린다**(`deploy-api.yml` 의 `Upload deploy artifacts`).
+여기서 한 번 올려 두는 것은 첫 배포 전에도 9.2절 수동 교체와 아래 Compose 문법 확인이
+동작하게 하기 위해서다.
 
 EC2에서 값을 채우고 권한을 잠근다:
 
@@ -314,6 +351,8 @@ openssl rand -base64 32     # qr.hmac.key.k1
 
 ```bash
 cat > /opt/gighub/.env <<'EOF'
+# 첫 배포 전의 부트스트랩 값이다. 이후로는 deploy-api.yml 이 배포마다
+# set-api-tag.sh 로 방금 띄운 커밋 SHA 를 써 넣는다. 손으로 맞추지 않는다.
 API_TAG=dev
 FLYWAY_URL=jdbc:mysql://<rds-endpoint>:3306/kb_pjt?useSSL=true&requireSSL=true&serverTimezone=Asia%2FSeoul
 FLYWAY_USER=<rds-user>
@@ -323,6 +362,13 @@ vi /opt/gighub/.env
 chmod 600 /opt/gighub/.env
 ```
 
+> **`.env` 의 `API_TAG` 는 서버에 남는 유일한 태그 값이다.** `compose.prod.yaml` 의
+> `app` 이미지는 `${API_TAG}` 로 보간되고, Compose 는 셸 환경변수를 `.env` 보다
+> 우선한다. 그래서 배포 중에는 `export API_TAG=<sha>` 가 이기지만 그 값은 SSH 세션과
+> 함께 사라진다. 배포가 `.env` 까지 갱신하지 않으면 뒤에 누가 `API_TAG` 없이
+> `docker compose up -d app` 을 하는 순간 옛 태그가 조용히 다시 뜬다. 2026-08-19 에
+> 실제로 그렇게 구버전 WAR 가 올라와 `POST /api/documents` 가 사라졌다 (#450, #452).
+
 Compose 문법 확인:
 
 ```bash
@@ -330,6 +376,30 @@ cd /opt/gighub && docker compose -f compose.prod.yaml config >/dev/null && echo 
 ```
 
 기대: `OK`. 이미지가 아직 없어도 통과한다.
+
+`config` 는 `API_TAG` 가 비어 있어도 경고만 내고 통과한다(실측 exit 0). 값이 실제로
+들어갔는지는 이미지 참조로 확인한다:
+
+```bash
+docker compose -f compose.prod.yaml config --images | grep kb-pjt-24-2-api
+```
+
+기대: `ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:<태그>`. **콜론 뒤가 비어 있으면** `.env` 에
+`API_TAG` 가 없는 것이다. `app` 이미지 태그에는 기본값을 두지 않았으므로 그 상태의
+`up -d app` 은 `invalid reference format` 으로 멈춘다 — 구버전이 조용히 뜨지 않는다.
+
+> **`compose.prod.yaml` 과 `set-api-tag.sh` 는 배포가 매번 덮어쓴다.** 예전에는 사람이
+> scp 하도록 남겨 뒀는데, 그 수동 단계를 놓치면 서버 파일이 저장소와 조용히 어긋난다.
+> 14.1절의 `seed` 서비스 추가가 그 형태였다. 지금은 `deploy-api.yml` 의
+> `Upload deploy artifacts` 가 배포마다 두 파일을 올리므로 별도 조치가 필요 없다.
+>
+> 서버 파일이 저장소와 같은지 확인하려면:
+>
+> ```bash
+> ssh ... "grep -n 'kb-pjt-24-2-api:' /opt/gighub/compose.prod.yaml"
+> ```
+>
+> 기대: `${API_TAG}` — `${API_TAG:-dev}` 가 보이면 첫 배포 전이거나 배포가 실패한 것이다.
 
 ## 8. 최초 Flyway 적용
 
@@ -417,10 +487,14 @@ echo $CR_PAT | docker login ghcr.io -u <github-사용자명> --password-stdin
 cd /opt/gighub
 API_TAG=<tag> docker compose -f compose.prod.yaml pull app
 API_TAG=<tag> docker compose -f compose.prod.yaml up -d app
+sh set-api-tag.sh <tag>
 docker compose -f compose.prod.yaml ps
 ```
 
-셸 환경변수가 `.env` 의 `API_TAG` 보다 우선하므로 `.env` 를 고칠 필요는 없다.
+셸 환경변수가 `.env` 의 `API_TAG` 보다 우선하므로 **이 명령 자체는** 의도한 이미지로 뜬다.
+그러나 그 값은 이 셸에서만 살아 있고 `.env` 는 그대로라, 여기서 멈추면 서버에 남는 값이
+거짓이 된다. 다음에 누가 `API_TAG` 없이 `up -d app` 을 하면 옛 태그로 되돌아간다. 그래서
+`set-api-tag.sh` 로 `.env` 를 함께 맞춘다. 배포 워크플로도 같은 스크립트를 쓴다.
 
 ### 9.3 배포 검증 — 상태 코드만으로는 부족하다
 
@@ -477,6 +551,10 @@ docker compose -f compose.prod.yaml images app
 
 # 이전 커밋으로 되돌린다
 API_TAG=<이전-커밋-SHA> docker compose -f compose.prod.yaml up -d app
+
+# 되돌린 버전을 .env 에도 남긴다. 하지 않으면 서버의 .env 는 롤백 전 태그를 가리킨
+# 채로 남고, 이후 누군가의 맨손 up -d 가 방금 물린 그 버전을 다시 올린다.
+sh set-api-tag.sh <이전-커밋-SHA>
 
 # 확인은 health 가 아니라 DB 경유 엔드포인트로 한다
 sleep 20
@@ -938,10 +1016,27 @@ kill %1 %2 ...      # 또는  pkill yes
 Migration 은 한 번만 되돌릴 수 없이 적용되고 seed 는 반복 실행이 목적이라 성질이 반대다.
 한 버튼에 묶으면 seed 를 다시 넣으려다 DDL 까지 나간다.
 
+**seed 는 성질이 다른 두 계열이다. 누르기 전에 어느 쪽인지부터 확인한다.**
+
+| 계열 | 파일 | `confirm` | 하는 일 |
+| ---- | ---- | --------- | ------- |
+| 고정 Fixture | `test-*.sql` | `seed` | 자기 fixture 범위만 바꾸고 나머지 데이터는 **보존**한다 |
+| 시연용 데모 | `demo-*.sql` | `reset-all-data` | 앱을 정지하고 **모든 애플리케이션 데이터와 문서 저장소를 지운 뒤** 실행 시각 기준으로 다시 만들고 재기동한다 |
+
+`test-*.sql` 은 멱등이라 실패해도 그냥 다시 돌리면 된다. `demo-*.sql` 은 그렇지 않다.
+운영 데이터를 지우고 앱을 잠시 내리므로, **살려 둘 데이터가 있으면 눌러선 안 된다.**
+데모 계정은 공개된 고정 비밀번호를 쓰는 합성 계정이므로 통제된 시연 시간에만 적용하고
+끝나면 즉시 정리한다. 시나리오별로 무엇이 만들어지는지는
+[`backend/src/test/resources/db/seed/README.md`](../backend/src/test/resources/db/seed/README.md)
+에 있다. 이 절은 **운영에서 어떻게 실행하는가**만 다룬다.
+
 ### 14.1 최초 1회 준비
 
-`compose.prod.yaml` 에 `seed` 서비스가 추가됐다. 배포 워크플로는 이 파일을 덮어쓰지 않으므로
-사람이 한 번 올려야 한다.
+`compose.prod.yaml` 에 `seed` 서비스가 필요하다. **`Deploy API` 가 배포마다 이 파일을 올리므로
+보통은 배포 한 번이면 끝난다.** 예전에는 사람이 올려야 했고, 그 수동 단계를 놓쳐 서버 파일이
+저장소와 어긋나는 일이 반복돼 배포에 넣었다(7절).
+
+배포를 기다릴 수 없으면 직접 올린다:
 
 ```bash
 scp -i ~/.ssh/my-keypair.pem \
@@ -966,21 +1061,41 @@ ssh ... "docker compose -f /opt/gighub/compose.prod.yaml --profile tools config 
 
 Actions → **Seed DB** → Run workflow.
 
-| 입력      | 값                                                 |
-| --------- | -------------------------------------------------- |
-| `confirm` | `seed` — 다른 값이면 job 이 아예 돌지 않는다        |
-| `file`    | 적용할 파일명 (예: `test-contract-escrow.sql`)      |
+| 입력                 | 값                                                                    |
+| -------------------- | --------------------------------------------------------------------- |
+| `Use workflow from`  | **`dev`** — 다른 브랜치는 자격증명 단계에서 거부된다                   |
+| `confirm`            | `test-*.sql` 이면 `seed`, `demo-*.sql` 이면 `reset-all-data`           |
+| `file`               | 적용할 파일명 (예: `test-contract-escrow.sql`, `demo-functional.sql`)  |
 
-`backend/src/test/resources/db/seed/` 의 `.sql` 을 전부 서버로 올린 뒤 `file` 로 고른 하나만
-실행한다.
+터미널에서 누를 때도 같다.
+
+```bash
+gh workflow run seed-db.yml --ref dev \
+  -f file=demo-functional.sql \
+  -f confirm=reset-all-data
+
+gh run list --workflow=seed-db.yml --limit 1
+```
+
+**브랜치가 `dev` 여야 하는 이유는 AWS 쪽 제약이다.** 배포용 Role 의 신뢰 정책이
+`refs/heads/dev` 로 좁혀져 있어, 다른 ref 로 실행하면 보안그룹을 열기도 전에
+`Configure AWS credentials` 에서 AssumeRole 이 거부된다. 2.1 절을 참고할 것.
+
+선택 가능한 파일은 `backend/src/test/resources/db/seed/` 의 `.sql` 7개다. 워크플로는 그
+디렉터리의 `.sql` 과 `.inc` 를 전부 서버로 올린 뒤 `file` 로 고른 하나만 실행한다.
+`.inc` 는 다른 SQL 이 포함해 쓰는 조각이므로 `file` 로 고를 수 없다.
 
 `file` 은 **그 디렉터리에 실제로 있는 `.sql` 파일 이름과 정확히 일치해야 한다.** 경로 표기,
 `../`, 다른 확장자는 모두 거부된다. 워크플로가 임의 문자열을 받아 셸로 넘기지 않게 하려는
 것이므로, 목록에 없는 이름이면 보안그룹을 열기 전에 멈추고 사용 가능한 이름을 찍어 준다.
 
+`confirm` 은 두 군데서 검사한다. 값이 `seed` 도 `reset-all-data` 도 아니면 **job 자체가
+돌지 않고 `skipped` 로 끝난다.** 실패가 아니라 건너뛴 것으로 표시되므로 오타를 눈치채기
+어렵다. 값은 맞지만 파일 계열과 어긋나면 `Resolve seed file` 이 기대값을 알려 주고 멈춘다.
+
 ### 14.3 seed 를 새로 만들 때 지킬 것
 
-기존 두 seed 가 이미 지키고 있는 성질이며, 이게 깨지면 반복 적용이 안전하지 않다.
+**`test-*.sql` 계열**은 아래 두 성질을 지킨다. 이게 깨지면 반복 적용이 안전하지 않다.
 
 - **멱등**: 모든 `INSERT` 에 `ON DUPLICATE KEY UPDATE` 를 붙인다. 몇 번을 돌려도 결과가 같아야 한다.
 - **범위 한정**: `DELETE` 는 반드시 자기 fixture 의 owner/workplace 로 좁힌다. 화면에서 손으로
@@ -991,7 +1106,20 @@ Actions → **Seed DB** → Run workflow.
   는 fixture 마다 고정값을 쓰되 서로 겹치지 않게 식별자 대역으로 나눈다 — 두 유일 제약이 같은
   행으로 모여야 반복 적용해도 사업장당 ACTIVE 가 한 건으로 유지된다.
 
-이 두 가지는 현재 사람이 지키는 규칙이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
+**`demo-*.sql` 계열은 이 두 규칙을 의도적으로 지키지 않는다.** 시연을 매번 같은 출발점에서
+시작하려면 이전 상태가 남아 있으면 안 되기 때문이다. 대신 다른 성질을 지킨다.
+
+- **전체 초기화**: Flyway Schema 는 보존하고 애플리케이션 데이터를 모두 지운 뒤 다시 만든다.
+  공통 조각은 `demo-reset.inc` 에 있다.
+- **상대 시간**: 날짜와 시각을 박아 두지 않고 실행 시점의 `Asia/Seoul` 기준으로 만든다.
+  그래서 같은 시나리오를 다음 날 다시 돌려도 일정이 어긋나지 않는다.
+- **확인값 분리**: `confirm=reset-all-data` 없이는 실행되지 않는다. `test-*.sql` 의 `seed` 와
+  값을 다르게 둔 것은 버튼을 잘못 눌러 운영 데이터가 통째로 날아가는 것을 막기 위해서다.
+
+두 계열을 섞지 않는다. 새 파일을 만들 때 이름 접두사(`test-` / `demo-`)가 곧 계열 선언이고,
+워크플로가 그 접두사로 요구 확인값을 정한다.
+
+이 규칙들은 현재 사람이 지키는 것이고 코드로 강제되지 않는다. seed 가 늘거나 규칙을 어긴
 파일이 실제로 들어오면 정적 검사 도입을 다시 판단한다.
 
 ### 14.4 실패했을 때
@@ -1002,8 +1130,40 @@ Actions → **Seed DB** → Run workflow.
 | `seed 서비스가 없다`                          | 14.1 을 하지 않음                                              |
 | `could not parse host/database`               | `.env` 의 `FLYWAY_URL` 형식이 `jdbc:mysql://host/db` 가 아님   |
 | `SEED_FILE must be a bare file name`          | 컨테이너 쪽 심층 방어가 걸린 경우. 정상 경로에서는 보이지 않는다 |
+| job 이 `skipped` 로 끝남                      | `confirm` 이 `seed` 도 `reset-all-data` 도 아님. 오타를 의심한다 |
+| `Not authorized to perform sts:AssumeRoleWithWebIdentity` | `dev` 가 아닌 브랜치로 실행함. 2.1 절 참고 |
+| `실행 확인값은 ... 이어야 한다`               | `confirm` 과 파일 계열이 어긋남. 14.2 의 표를 볼 것            |
 
-seed 는 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구 절차가 없다.
+`test-*.sql` 은 멱등이므로 **실패해도 그냥 다시 돌리면 된다.** 중간에 끊겼을 때 별도 복구
+절차가 없다.
+
+`demo-*.sql` 은 앱을 정지하고 파일을 지우므로 그렇게 단순하지 않다. 다만 SQL 이 실패하면
+Transaction 이 Rollback 되고 문서 삭제는 SQL 성공 뒤에만 일어나며, 재기동 Step 은
+`if: always()` 라 중간에 죽어도 **재기동을 시도한다.** 그래서 **부분 실패의 결과는 "데이터가
+반쯤 지워진 상태"가 아니라 "시연 준비가 덜 끝난 상태"다.** 원인을 고치고 다시 돌리면 된다.
+
+**다만 `always()` 는 그 Step 이 실행된다는 보장이지 성공한다는 보장이 아니다.** SSH 나
+`docker compose start` 자체가 실패하면 앱이 내려간 채로 남는다. 이어지는
+`Wait for application after full demo reset` 은 앞 Step 이 실패하면 건너뛰므로 기동을 대신
+확인해 주지도 않는다. 그래서 **demo 시드가 빨간 X 로 끝나면 run 로그에서
+`Restart application after full demo reset` 의 결과부터 본다.** 그 Step 이 실패했거나
+`https://api.gighub.store/api/health` 가 응답하지 않으면 서버에서 직접 올린다.
+
+```bash
+ssh -i ~/.ssh/my-keypair.pem ec2-user@13.125.191.199 \
+  "docker compose -f /opt/gighub/compose.prod.yaml start app"
+```
+
+아래 두 가지는 2026-08-19 에 실제로 겪은 것이다. 워크플로는 고쳤지만 증상을 남겨 둔다.
+
+| 증상                                                        | 확인할 것                                                                 |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------- |
+| `rm: cannot remove '/opt/gighub/documents/...': Permission denied` | 문서는 컨테이너가 자기 UID 로 쓴다. 삭제에 `sudo` 가 붙어 있는지 (#448) |
+| 시드 뒤 배포했던 API 가 사라짐 (`HttpRequestMethodNotSupportedException`) | 재기동이 `up -d` 가 아니라 `start` 인지. `up -d` 는 이미지 태그를 `.env` 의 `API_TAG` 로 다시 해석하므로, 그 값이 실제로 떠 있던 버전과 어긋나 있으면 다른 버전이 올라온다 (#450, 근본 원인 #452) |
+
+두 번째는 시드가 **운영 애플리케이션 버전을 되돌려 놓는** 증상이라 시연 준비뿐 아니라 실제
+사용자에게도 영향이 간다. 시드 실행 뒤 앱이 이상하면 10절의 `images app` 으로 태그와
+IMAGE ID 부터 확인한다.
 
 ## 15. SSE 실시간 알림 — 배포에서만 실패하는 3건
 

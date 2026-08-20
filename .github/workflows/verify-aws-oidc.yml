@@ -1,0 +1,164 @@
+name: Verify AWS OIDC
+
+# 수동 전용. 배포용 AWS 자격증명이 살아 있는지만 확인한다. 어떤 리소스도 바꾸지 않는다.
+#
+# OIDC 는 절반이 저장소 밖에 있다. Role 의 신뢰 정책과 권한 정책, 계정의 OIDC
+# Provider 등록은 AWS 콘솔에 있어서 저장소 안의 어떤 검사로도 확인할 수 없다.
+# 그래서 배포가 실패했을 때 "자격증명이 문제인가"를 먼저 가르는 버튼을 따로 둔다.
+# 이걸 모르면 deploy-api 를 다시 돌려 보는 것 말고는 확인할 방법이 없는데, 그건
+# 실제 배포를 한 번 더 하는 일이다.
+#
+# 이 파일도 기본 브랜치에 있어야 버튼이 생긴다. workflow_dispatch 전용이라 스스로
+# 실행될 방법이 없고, 기본 브랜치가 유일한 Actions 등록 경로다. 자세한 설명은
+# migrate-db.yml 헤더에 있다.
+#
+# Role 신뢰 정책이 특정 브랜치로 제한돼 있으면 다른 ref 로 실행할 때 AssumeRole
+# 자체가 거부된다. 그 거부도 이 워크플로가 알려주는 정보다.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: verify-aws-oidc
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    # checkout 을 하지 않으므로 contents 는 필요 없지만, permissions 블록을 두는
+    # 순간 기본값이 대체되므로 의도를 드러내는 최소 집합을 명시한다.
+    permissions:
+      contents: read
+      id-token: write
+
+    env:
+      AWS_DEFAULT_REGION: ap-northeast-2
+
+    steps:
+      # AWS 는 신뢰 정책이 거부한 이유를 알려주지 않는다. Provider 미등록, sub 나 aud
+      # 불일치, AWS_ROLE_ARN 에 Role 이 아닌 ARN 이 들어간 경우가 전부 같은 메시지
+      # "Not authorized to perform sts:AssumeRoleWithWebIdentity" 로 돌아온다. 그래서
+      # AssumeRole 보다 먼저, GitHub 쪽에서 확인할 수 있는 값을 남겨 후보를 줄인다.
+      #
+      # Secret 값 자체는 출력하지 않는다. 형태만 판정한다.
+      - name: Inspect role ARN shape
+        env:
+          ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+        run: |
+          set -uo pipefail
+          case "${ROLE_ARN}" in
+            '')
+              echo "::error::AWS_ROLE_ARN 이 비어 있다."
+              exit 1
+              ;;
+            *':oidc-provider/'*)
+              echo "::error::AWS_ROLE_ARN 에 Role 이 아니라 OIDC Provider 의 ARN 이 들어 있다."
+              echo "::error::arn:aws:iam::<계정>:role/<역할이름> 형태여야 한다."
+              exit 1
+              ;;
+            *':role/'*)
+              echo "OK   ARN 이 :role/ 을 포함한다"
+              ;;
+            *)
+              echo "::error::AWS_ROLE_ARN 이 Role ARN 형태가 아니다."
+              exit 1
+              ;;
+          esac
+
+          # 콘솔에서 붙여넣을 때 끝에 줄바꿈이 딸려오는 경우가 있다. 값을 드러내지 않고
+          # 공백 제거 전후 길이만 비교한다.
+          stripped="$(printf '%s' "${ROLE_ARN}" | tr -d '[:space:]')"
+          if [ "${#stripped}" -ne "${#ROLE_ARN}" ]; then
+            echo "::error::AWS_ROLE_ARN 에 공백이나 줄바꿈이 섞여 있다. 다시 저장할 것."
+            exit 1
+          fi
+          echo "OK   공백 없음 (길이 ${#ROLE_ARN})"
+
+      # 신뢰 정책의 sub 조건과 문자 단위로 대조할 수 있게, GitHub 이 실제로 발급한
+      # 값을 그대로 남긴다. ID 토큰 원문은 즉시 마스킹하고 Claim 만 꺼낸다.
+      - name: Show OIDC claims
+        run: |
+          set -euo pipefail
+          token="$(curl -sS \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=sts.amazonaws.com" \
+            | jq -r '.value')"
+          echo "::add-mask::${token}"
+
+          # JWT Payload 는 base64url 이다. jq 에 넘기기 전에 표준 base64 로 되돌리고
+          # 잘려 나간 padding 을 채운다.
+          payload="$(printf '%s' "${token}" | cut -d. -f2)"
+          case $(( ${#payload} % 4 )) in
+            2) payload="${payload}==" ;;
+            3) payload="${payload}=" ;;
+          esac
+
+          printf '%s' "${payload}" | tr '_-' '/+' | base64 -d \
+            | jq '{sub, aud, repository, repository_owner, ref}'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_DEFAULT_REGION }}
+
+      # 여기까지 왔다면 신뢰 정책은 통과한 것이다. 어떤 Role 을 받았는지 남긴다.
+      #
+      # 이 저장소는 Public 이고 Public 저장소의 Actions 로그는 누구나 볼 수 있다.
+      # get-caller-identity 를 그대로 찍으면 AWS 계정 ID 가 공개된다. 자격증명은
+      # 아니지만 굳이 내보낼 이유도 없으므로, 출력 전에 마스크로 등록한다. Arn 에도
+      # 같은 숫자가 들어 있어 함께 가려진다.
+      #
+      # 마스크 등록이 출력보다 먼저여야 한다. 순서를 바꾸면 이미 찍힌 줄은 가려지지 않는다.
+      - name: Show assumed identity
+        run: |
+          set -euo pipefail
+          identity="$(aws sts get-caller-identity --output json)"
+          echo "::add-mask::$(printf '%s' "${identity}" | jq -r '.Account')"
+          printf '%s' "${identity}" | jq '{UserId, Arn}'
+
+      # 신뢰 정책과 권한 정책은 다른 문제다. AssumeRole 이 되어도 보안그룹을 못
+      # 바꾸면 배포는 Open SSH 에서 멈춘다. 배포가 실제로 쓰는 두 API 를 확인한다.
+      #
+      # --dry-run 은 권한만 평가하고 요청을 처리하지 않으므로 보안그룹이 바뀌지
+      # 않는다. revoke 는 규칙이 실제로 없어도 마찬가지다. 평가가 요청 처리보다
+      # 먼저이기 때문이다.
+      #
+      # 판정은 종료 코드가 아니라 메시지로 한다. 권한이 있든 없든 CLI 는 오류로
+      # 끝나고(255), 둘을 가르는 것은 DryRunOperation 과 UnauthorizedOperation 이다.
+      #
+      # 대상 CIDR 은 RFC 5737 의 문서용 주소다. 실수로 dry-run 이 빠져도 실제 접근
+      # 경로가 열리지 않는 값을 쓴다.
+      - name: Check security group permissions
+        run: |
+          set -uo pipefail
+          failed=0
+          for action in authorize revoke; do
+            out="$(aws ec2 "${action}-security-group-ingress" \
+              --group-id "${{ secrets.EC2_SG_ID }}" \
+              --protocol tcp --port 22 --cidr 192.0.2.1/32 \
+              --dry-run 2>&1)" || true
+            case "${out}" in
+              *DryRunOperation*)
+                echo "OK   ec2:${action}SecurityGroupIngress"
+                ;;
+              *UnauthorizedOperation*)
+                echo "::error::Role 에 ec2:${action}SecurityGroupIngress 권한이 없다. 배포는 Open SSH 에서 멈춘다."
+                failed=1
+                ;;
+              *)
+                echo "::error::ec2:${action}SecurityGroupIngress 확인 실패: ${out}"
+                failed=1
+                ;;
+            esac
+          done
+          exit "${failed}"
+
+      - name: Report
+        if: success()
+        run: |
+          echo "### 배포 자격증명 정상" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- OIDC AssumeRole 성공" >> "$GITHUB_STEP_SUMMARY"
+          echo "- 보안그룹 22번 개방·회수 권한 확인 (dry-run, 실제 변경 없음)" >> "$GITHUB_STEP_SUMMARY"

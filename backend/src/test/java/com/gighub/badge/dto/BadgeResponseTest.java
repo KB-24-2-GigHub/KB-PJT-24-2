@@ -13,6 +13,7 @@ class BadgeResponseTest {
                 "TRUST_WORKER", 3, 30, 30, 30, 100, 0, 0, 0));
 
         assertEquals("성실근로", response.getCriterionLabel());
+        assertEquals(30, response.getNormalCount());
         assertEquals("누적 30건 중 정상 30건으로 최고 등급입니다.", response.getCriterionDesc());
     }
 
@@ -22,6 +23,7 @@ class BadgeResponseTest {
                 "TRUST_OWNER", 1, 12, 10, 10, 80, 8, 90, 20));
 
         assertEquals("안심거래", response.getCriterionLabel());
+        assertEquals(10, response.getNormalCount());
         assertEquals(8, response.getRemainingToNextLevel());
         assertEquals(
                 "누적 12건 중 정상 10건입니다. 다음 등급은 누적 20건 이상과 정상 비율 90% 이상이 "
@@ -50,5 +52,6 @@ class BadgeResponseTest {
         assertEquals("TRUST_WORKER", response.getBadgeType());
         assertEquals(0, response.getLevel());
         assertEquals(0, response.getRecentCount());
+        assertEquals(0, response.getNormalCount());
     }
 }

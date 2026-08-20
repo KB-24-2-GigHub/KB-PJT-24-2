@@ -126,6 +126,10 @@ async function openContact() {
 function openDispute() {
   router.push(`/worker/work/work-cases/${workCaseId.value}/report`)
 }
+
+function goHome() {
+  router.push('/worker/home')
+}
 </script>
 
 <template>
@@ -197,6 +201,7 @@ function openDispute() {
           <BaseButton variant="secondary" size="lg" block @click="openDispute">
             임금분쟁 신고·조회
           </BaseButton>
+          <BaseButton variant="worker" size="lg" block @click="goHome"> 홈으로 </BaseButton>
         </div>
       </template>
     </main>

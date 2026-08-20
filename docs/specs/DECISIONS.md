@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `8.0.0`         |
-| 승인일      | 2026-08-12      |
+| 명세 릴리스 | `8.1.0`         |
+| 승인일      | 2026-08-17      |
 | 소유자      | PM/Admin Master |
 
 이 문서는 제품 계약에 영향을 주는 승인 결정, 아직 답이 필요한 결정과 폐기된 방향만
@@ -87,6 +87,7 @@
 | DEC-DOCUMENT-ACCESS-AUDIT           | 보건증·계약서 file view/download와 문서 detail은 문서 식별 뒤 허용·거부마다 정확히 한 감사 행을 Commit한다. ALLOWED는 응답 Version ID와 null 사유, DENIED는 식별 가능한 Version ID와 닫힌 사유를 저장한다. SHARED 상세의 누락·불일치 문맥은 `PARTY_ACCESS_DENIED`, 철회·만료·근무 종료는 `DOCUMENT_UNAVAILABLE`이며 외부에는 모두 404다. 감사 Commit 뒤에만 Metadata·Header·Bytes를 반환하며 실패 시 500이다. 목록·공유 변경·미인증·미존재 문서는 DB 감사 대상이 아니고 최소 trace 보안 로그만 남기며 일반 로그에 사용자·파일·Key·Checksum·문서 개인정보를 남기지 않는다. | DOC-003, DOC-009, DOC-011                                                      |
 | DEC-TRUST-BADGE-CRITERIA            | OWNER와 WORKER는 누적 10·20·30건과 정상 비율 80·90·100%를 AND로 높은 단계부터 판정한다. OWNER는 COMPLETED Settlement 중 같은 Work Case에 `CANCELED`·`REJECTED`가 아닌 분쟁 행이 없는 건, WORKER는 COMPLETED·NO_SHOW·CHECK_OUT_MISSING과 정시 CHECK_IN을 원천으로 계산한다. 조회마다 사용자 행을 잠근 뒤 Commit된 이력을 재계산해 Member/Auth가 `user_badges`를 Upsert하며 별도 Backfill은 없다. `recentCount`는 누적 건수이고 내 0단계는 객체, 초대 OWNER 0단계는 null이다. evidence에는 `ruleVersion=trust-badge-cumulative-10-20-30-v1`, badgeType·level·totalCount·normalCount·적용 thresholdCount/Percent·calculatedAt만 저장하고 원천 ID와 개인정보는 저장하지 않는다. | BADGE-001, BADGE-002, BADGE-003                                                |
 | DEC-DISPUTE-SETTLEMENT              | Work Case OWNER와 배정 WORKER만 1~100자 제목·1~2000자 경위의 `WAGE` 분쟁을 생성·조회하며 열린 분쟁은 한 건만 허용한다. `OPEN`, `UNDER_REVIEW`는 정상 지급과 NO_SHOW 환불을 막고 정상 `SCHEDULED`를 `due_at` 보존 `ON_HOLD`로 바꾼다. 마지막 열린 분쟁이 `RESOLVED`, `REJECTED`, `CANCELED`로 닫히면 정상 정산을 기존 `due_at`의 `SCHEDULED`로 복구하고 NO_SHOW 환불을 다시 허용한다. 분쟁과 지급은 `work_cases→settlements→disputes` 순서로 직렬화하고 지급이 먼저 Commit됐으면 후속 신고가 완료 자금 이동을 되돌리지 않는다. 관리자 상태 변경 권한은 별도 Open 결정으로 남긴다. | DISPUTE-001, DISPUTE-002, DISPUTE-003, SETTLE-002, SETTLE-003, SETTLE-005    |
+| DEC-NOTIFICATION-CONTRACT           | 인앱 알림은 `WORK_CASE_CONFIRMED`, `ESCROW_HELD`, `SETTLED`, `REFUNDED`, `DOC_SHARED`, `WAGE_REPORTED` 6종뿐이며 수신자마다 별도 행을 만든다. 이벤트 식별자(`sourceType`+`sourceId`)와 이동 대상(`workCaseId`)은 서로 다른 값이고 중복은 `(수신자, notiType, sourceType, sourceId)` 유일성으로만 막는다. `title`·`content`는 서버가 완성 문구로 만들어 저장하며 클라이언트가 조립하지 않는다. 목록은 공통 `{content,page}` Envelope로 최신순 반환하고 안읽음 개수는 별도 Operation이며 읽음 처리는 단건뿐이다. 전달은 목록 조회가 단독으로 성립하고 SSE 스트림은 재조회 신호만 전달하는 보조 수단이다. 알림 적재는 원인 도메인 Commit을 되돌리지 않는다.                                                                                                                                                                                                                                    | ALERT-001, ALERT-002                                                           |
 | DEC-PASSWORD-RESET                  | 비밀번호 재설정은 이메일 식별, Hash 저장, 만료와 1회 사용 Token 방식으로 제공한다.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | AUTH-011                                                                       |
 
 ## Open
@@ -98,7 +99,6 @@ Open 항목은 승인된 경계 밖의 선택지입니다. 결론이 나기 전�
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
 | DEC-OPEN-PASSWORD-RESET-DELIVERY  | 비밀번호 재설정 Token 원문을 이메일, 개발용 별도 채널 등 어떤 방식으로 전달할지                                        | API 응답과 일반 로그에는 Token 원문을 노출하지 않고 DB에는 Hash만 저장한다.                                  |
 | DEC-OPEN-DASHBOARD-BREAK          | 시간 경과 확보 안심금액을 도입할지, 도입한다면 무급 휴게와 경과 시간을 어떤 공식으로 반영할지                          | 현재 MVP는 경과 금액 공식을 제공하지 않고 클라이언트가 약정 일급으로 값을 추정하지 않는다.                  |
-| DEC-OPEN-NOTIFICATION-CONTRACT    | 알림 유형, 이벤트 식별자, 목록·읽음 처리 Payload와 전달 방식을 어떻게 정의할지                                         | 수신자만 자신의 알림을 조회하고 읽음 처리하며 동일 이벤트 중복을 막는다.                                     |
 | DEC-OPEN-ADMIN-DISPUTE            | 분쟁을 처리할 관리자 역할, 권한과 상태 변경 절차는 무엇인지                                                            | 당사자 생성·조회와 열린 분쟁의 지급·환불 보류, 마지막 열린 분쟁 종료 뒤 정산 재개 계약은 승인됐다.           |
 | DEC-OPEN-PAYMENT-PROVIDER         | 외부 결제 Provider, 주문·거래·Webhook 계약과 취소 범위를 어떻게 정할지                                                 | 서버 검증 전에는 지갑을 증가시키지 않고 중복 Webhook을 한 번만 반영한다.                                     |
 

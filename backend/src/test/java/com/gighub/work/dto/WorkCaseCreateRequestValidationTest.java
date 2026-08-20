@@ -73,6 +73,28 @@ class WorkCaseCreateRequestValidationTest {
         assertHasViolation(withDailyWage(null));
     }
 
+    /**
+     * {@code workDate}는 {@code DATETIME(6)}에 담기고, 자정 넘김 근무는 그 다음 날까지
+     * 씁니다(SPEC-413-01). {@code LocalDate}가 받아들이는 극단값을 그대로 통과시키면
+     * {@code plusDays(1)}이 {@code DateTimeException}으로 터져 400이 아니라 500이 됩니다.
+     */
+    @Test
+    void rejectsWorkDateOutsideTheStorableRange() {
+        assertThrows(IllegalArgumentException.class, () -> withWorkDate(LocalDate.MAX));
+        assertThrows(IllegalArgumentException.class, () -> withWorkDate(LocalDate.MIN));
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> withWorkDate(LocalDate.of(9999, 12, 31)),
+                "종료가 다음 날로 결합되므로 마지막 날은 저장할 수 없습니다."
+        );
+    }
+
+    @Test
+    void acceptsWorkDateAtTheStorableBoundary() {
+        assertTrue(validator.validate(withWorkDate(LocalDate.of(9999, 12, 30))).isEmpty());
+        assertTrue(validator.validate(withWorkDate(LocalDate.of(1000, 1, 1))).isEmpty());
+    }
+
     @Test
     void rejectsServerOwnedFields() {
         assertThrows(

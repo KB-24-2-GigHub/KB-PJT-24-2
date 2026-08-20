@@ -36,9 +36,7 @@ const isLate = computed(() => !!props.workCase?.attendance?.isLate)
         </span>
       </div>
       <p class="work-case-title">{{ workCase.title }}</p>
-      <p class="work-case-info">
-        {{ workCase.workplaceName }} · {{ workCase.startTime }}–{{ workCase.endTime }}
-      </p>
+      <p class="work-case-info">{{ workCase.workplaceName }} · {{ workCase.timeRange }}</p>
     </div>
   </section>
 </template>
