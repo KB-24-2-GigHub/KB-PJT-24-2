@@ -614,7 +614,8 @@ async function onApproveSettlement() {
           <section v-if="hasProgressInfo" class="progress-section">
             <h3 class="section-title">진행 현황</h3>
             <dl class="detail">
-              <div v-if="workCase.latestInvitation" class="detail-row">
+              <!-- 근로계약이 이미 체결됐으면(계약 확정 행이 대신 보여준다) 연결 링크는 감춘다. -->
+              <div v-if="workCase.latestInvitation && !workCase.contract" class="detail-row">
                 <dt>연결 링크</dt>
                 <dd>
                   {{ invitationText }}
@@ -647,11 +648,11 @@ async function onApproveSettlement() {
                 </dd>
               </div>
               <div v-if="workCase.attendance?.checkedInAt" class="detail-row">
-                <dt>출근</dt>
+                <dt>출근 시각</dt>
                 <dd>{{ formatSeoulDateTime(workCase.attendance.checkedInAt) }}</dd>
               </div>
               <div v-if="workCase.attendance?.checkedOutAt" class="detail-row">
-                <dt>퇴근</dt>
+                <dt>퇴근 시각</dt>
                 <dd>{{ formatSeoulDateTime(workCase.attendance.checkedOutAt) }}</dd>
               </div>
               <!-- settlement은 근거 행(정산 예약)이 있을 때만 온다 — 계약 확정 전에는 null. -->
@@ -659,7 +660,11 @@ async function onApproveSettlement() {
                 <dt>정산 상태</dt>
                 <dd><StatusChip :status="workCase.settlement.status" kind="settle" /></dd>
               </div>
-              <div v-if="workCase.settlement?.dueAt" class="detail-row">
+              <!-- 자동(24시간 경과)이든 수동이든 지급·환불이 끝나면(completedAt) 더는 보여줄 예정이 없다. -->
+              <div
+                v-if="workCase.settlement?.dueAt && !workCase.settlement?.completedAt"
+                class="detail-row"
+              >
                 <dt>자동 지급 예정</dt>
                 <dd>{{ formatSeoulDateTime(workCase.settlement.dueAt) }}</dd>
               </div>
@@ -725,8 +730,15 @@ async function onApproveSettlement() {
 
           <SettlementBreakdown v-if="workCase.settlement" :settlement="workCase.settlement" />
 
+          <!--
+            canViewDisputes 만으로는 상태만 맞으면 항상 그려져, 분쟁이 한 번도 없던 근무에도
+            빈 카드가 떴다. 로딩 중·조회 실패 때도 (안내 문구를 보여줘야 하니) 그대로 두고,
+            "조회에 성공했는데 0건"으로 확정된 경우에만 감춘다.
+          -->
           <DisputeTimeline
-            v-if="canViewDisputes"
+            v-if="
+              canViewDisputes && (disputeLoading || disputeLoadError || disputeReports.length > 0)
+            "
             class="disputes"
             :reports="disputeReports"
             :loading="disputeLoading"

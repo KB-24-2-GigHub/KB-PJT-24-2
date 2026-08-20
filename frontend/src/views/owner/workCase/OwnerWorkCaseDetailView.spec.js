@@ -331,13 +331,69 @@ describe('OwnerWorkCaseDetailView', () => {
     await flushPromises()
 
     const text = wrapper.text()
-    expect(text).toContain('수락됨')
+    // 근로계약이 이미 체결됐으면 연결 링크 행은 감춘다(계약 확정 행이 대신 보여준다) — (#470 3-2).
+    expect(text).not.toContain('연결 링크')
+    expect(text).not.toContain('수락됨')
     expect(text).toContain('2026.07.25 10:00') // 계약 확정(KST)
     expect(text).toContain('예치중')
+    expect(text).toContain('출근 시각')
     expect(text).toContain('09:05') // 출근(KST)
     expect(text).toContain('정산대기') // settlements.status=WAITING 이 한글로 매핑돼야 한다
     expect(text).not.toContain('WAITING')
     expect(wrapper.get('.contract-link').attributes('href')).toBe('/api/documents/9/file?mode=view')
+  })
+
+  it('근로계약 체결 전에는 연결 링크를 그대로 보여준다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...DRAFT_DETAIL,
+      status: 'ACCEPTED',
+      latestInvitation: { status: 'ACCEPTED', termsVersion: 3, expiresAt: null },
+      contract: null
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('연결 링크')
+    expect(wrapper.text()).toContain('수락됨')
+  })
+
+  it('퇴근 시각도 완료 라벨로 표시한다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...DRAFT_DETAIL,
+      status: 'COMPLETED',
+      attendance: { checkedInAt: '2026-08-01T00:05:00Z', checkedOutAt: '2026-08-01T09:00:00Z' }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('퇴근 시각')
+  })
+
+  it('자동/수동 지급이 끝나면(completedAt) 자동 지급 예정을 더는 보여주지 않는다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...PAYOUT_READY_DETAIL,
+      settlement: {
+        ...PAYOUT_READY_DETAIL.settlement,
+        status: 'COMPLETED',
+        completedAt: PAYOUT_RESULT.completedAt
+      }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('자동 지급 예정')
+  })
+
+  it('분쟁이 발생하지 않았으면 분쟁 처리 현황 블록이 보이지 않는다', async () => {
+    getWorkCase.mockResolvedValue({ ...PAYOUT_READY_DETAIL })
+    listReports.mockResolvedValue({
+      content: [],
+      page: { number: 0, size: 20, totalElements: 0, totalPages: 0 }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.disputes').exists()).toBe(false)
   })
 
   it.each([
