@@ -50,6 +50,19 @@ public class WalletQueryServiceImpl implements WalletQueryService {
     }
 
     @Override
+    public WalletBalanceResponse getBalanceSnapshot(Long userId) {
+        WalletSummaryRow summary = walletQueryMapper.findWalletSummaryByUserId(userId);
+        if (summary == null) {
+            // 지갑을 한 번도 만들지 않은 사용자입니다. 남은 돈이 없다는 사실 자체가 답입니다.
+            return WalletBalanceResponse.of(CURRENCY_KRW, 0L, 0L);
+        }
+        return WalletBalanceResponse.of(
+                CURRENCY_KRW,
+                summary.getAvailableBalance(),
+                summary.getLockedBalance());
+    }
+
+    @Override
     public PageResponse<WalletTransactionItem> getTransactions(
             Long userId,
             WalletTransactionCriteria criteria) {

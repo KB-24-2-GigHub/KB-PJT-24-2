@@ -263,6 +263,11 @@
       "kind": "command-participant"
     },
     {
+      "consumer": "member-auth",
+      "provider": "work",
+      "kind": "query"
+    },
+    {
       "consumer": "workplace",
       "provider": "attendance",
       "kind": "command-participant"

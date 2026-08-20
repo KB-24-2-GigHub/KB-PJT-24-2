@@ -79,6 +79,22 @@
           AND role IN ('OWNER', 'WORKER')
     </update>
 
+    <!--
+        ck_users_deleted_at 이 WITHDRAWN 과 deleted_at 을 함께 요구합니다. 둘을 나눠 쓰면
+        중간 상태가 제약에 걸립니다.
+
+        status = 'ACTIVE' 조건이 동시 탈퇴의 유일한 방어선입니다. 이 조건이 없으면 두
+        요청이 모두 1행을 갱신해 deleted_at 만 뒤 요청 시각으로 덮입니다.
+    -->
+    <update id="withdraw">
+        UPDATE users
+        SET status = 'WITHDRAWN',
+            deleted_at = CURRENT_TIMESTAMP(6)
+        WHERE id = #{userId}
+          AND status = 'ACTIVE'
+          AND role IN ('OWNER', 'WORKER')
+    </update>
+
     <insert id="insert"
             parameterType="com.gighub.member.domain.User"
             useGeneratedKeys="true"

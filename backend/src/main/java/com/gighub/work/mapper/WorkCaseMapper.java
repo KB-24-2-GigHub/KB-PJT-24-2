@@ -168,6 +168,16 @@ public interface WorkCaseMapper {
     long countByFilters(WorkCaseListQuery query);
 
     /**
+     * 아직 끝나지 않은 근무를 사장·근로자 양쪽 참여 관계로 셉니다(AUTH-010 탈퇴 판정).
+     *
+     * <p>탈퇴 판정은 한 사람이 어느 쪽으로 묶여 있든 막아야 하므로 {@code employer_id}와
+     * {@code worker_id}를 함께 봅니다. 종료 상태({@code COMPLETED}, {@code NO_SHOW},
+     * {@code CANCELED})는 세지 않습니다 — 그 상태에 남아 있는 돈은 근무가 아니라 예치금
+     * 잔액으로 드러나며, 탈퇴 판정은 그 값을 따로 확인합니다.</p>
+     */
+    int countUnfinishedByParticipant(@Param("userId") Long userId);
+
+    /**
      * 근무 상세 본문과 매칭 WORKER를 함께 읽습니다.
      *
      * <p>좌표·인증 반경·전화번호는 API_SPEC 4.0.0이 상세 응답에서 제외했으므로 SELECT 자체에

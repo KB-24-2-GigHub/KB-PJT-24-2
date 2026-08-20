@@ -19,7 +19,6 @@ import TrustBadge from '@/components/common/TrustBadge.vue'
 import TrustBadgeCard from '@/components/common/TrustBadgeCard.vue'
 import TrustBadgeLevelModal from '@/components/common/TrustBadgeLevelModal.vue'
 import { BADGE_STATE, useTrustBadge } from '@/composables/useTrustBadge'
-import { PENDING_FEATURES } from '@/constants/pendingFeatures'
 import { fieldErrorMap } from '@/services/http'
 import { deleteMe, getMe } from '@/services/users'
 import { useAuthStore } from '@/stores/auth'
@@ -41,10 +40,6 @@ const menuItems = [
   { label: '회원정보 변경', to: '/worker/mypage/profile', icon: UserRound },
   { label: '비밀번호 변경', to: '/worker/mypage/password', icon: KeyRound }
 ]
-
-// #188 구현 전까지 실 Endpoint 는 404 다 — 확인을 막고 준비 중 안내를 보여준다.
-// #188 이 머지되면 PENDING_FEATURES 에서 이 항목만 지우면 이 화면은 그대로 복구된다.
-const withdrawalPending = PENDING_FEATURES.WITHDRAWAL
 
 const withdrawOpen = ref(false)
 const withdrawPassword = ref('')
@@ -194,7 +189,6 @@ async function confirmWithdraw() {
     </main>
 
     <BaseModal :open="withdrawOpen" title="회원 탈퇴" @close="withdrawOpen = false">
-      <p v-if="withdrawalPending" class="pending-notice">회원 탈퇴는 준비 중입니다.</p>
       <p class="withdraw-desc">
         탈퇴하면 되돌릴 수 없어요. 잔액·예치금이 있거나 진행 중인 근무가 있으면 탈퇴할 수 없어요.
       </p>
@@ -209,12 +203,7 @@ async function confirmWithdraw() {
         <BaseButton variant="secondary" block :disabled="withdrawing" @click="withdrawOpen = false">
           취소
         </BaseButton>
-        <BaseButton
-          variant="danger"
-          block
-          :disabled="withdrawing || !!withdrawalPending"
-          @click="confirmWithdraw"
-        >
+        <BaseButton variant="danger" block :disabled="withdrawing" @click="confirmWithdraw">
           탈퇴하기
         </BaseButton>
       </template>
@@ -329,15 +318,5 @@ async function confirmWithdraw() {
   margin-bottom: var(--space-lg);
   font-size: var(--text-sm);
   color: var(--color-text-sub);
-}
-
-.pending-notice {
-  padding: var(--space-md);
-  margin-bottom: var(--space-lg);
-  border-radius: var(--radius-sm);
-  background: var(--color-warning-bg);
-  color: var(--color-warning);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
 }
 </style>

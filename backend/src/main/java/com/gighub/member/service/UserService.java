@@ -10,4 +10,6 @@ public interface UserService {
     UserProfileResponse updatePhone(Long userId, String phone);
 
     void changePassword(Long userId, String currentPassword, String newPassword);
+
+    void withdraw(Long userId, String password);
 }

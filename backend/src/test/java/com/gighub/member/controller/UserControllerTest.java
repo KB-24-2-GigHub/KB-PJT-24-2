@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.auth.security.AuthSessionManager;
 import com.gighub.common.exception.CommonExceptionHandler;
+import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.User;
 import com.gighub.member.domain.UserRole;
@@ -29,7 +30,9 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -40,6 +43,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -289,6 +293,123 @@ class UserControllerTest {
     private String passwordBody(String currentPassword, String newPassword) throws Exception {
         return new ObjectMapper().writeValueAsString(
                 java.util.Map.of("currentPassword", currentPassword, "newPassword", newPassword));
+    }
+
+    @Test
+    void withdrawsFromAuthenticatedPrincipalAndInvalidatesSession() throws Exception {
+        MockHttpSession session = new MockHttpSession();
+
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("current-pw1")))
+                .andExpect(status().isNoContent());
+
+        verify(userService).withdraw(USER_ID, "current-pw1");
+        // 탈퇴한 계정의 Session이 살아 있으면 보호 API를 계속 호출할 수 있다.
+        assertTrue(session.isInvalid());
+    }
+
+    @Test
+    void rejectsWithdrawalWithoutAuthentication() throws Exception {
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("current-pw1")))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+
+        verify(userService, never()).withdraw(anyLong(), anyString());
+    }
+
+    @Test
+    void rejectsWithdrawalBodyCarryingUserId() throws Exception {
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"password\":\"current-pw1\",\"userId\":9}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(userService, never()).withdraw(anyLong(), anyString());
+    }
+
+    @Test
+    void rejectsBlankPassword() throws Exception {
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("   ")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"));
+
+        verify(userService, never()).withdraw(anyLong(), anyString());
+    }
+
+    /** 비밀번호는 trim·대소문자 변환 없이 원문 그대로 전달돼야 한다(DEC-AUTH-INPUT). */
+    @Test
+    void deliversPasswordWithoutTrimmingOrCaseChange() throws Exception {
+        String padded = "  Mixed Case PW  ";
+
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .session(new MockHttpSession())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody(padded)))
+                .andExpect(status().isNoContent());
+
+        verify(userService).withdraw(USER_ID, padded);
+    }
+
+    @Test
+    void reportsWrongPasswordAsFieldErrorAndKeepsSession() throws Exception {
+        doThrow(new ValidationException(
+                "입력값을 확인해 주세요.", "password", "비밀번호가 일치하지 않습니다."))
+                .when(userService).withdraw(USER_ID, "wrong-pw1");
+        MockHttpSession session = new MockHttpSession();
+
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("wrong-pw1")))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION_ERROR"))
+                .andExpect(jsonPath("$.fieldErrors[0].field").value("password"))
+                .andExpect(jsonPath("$.fieldErrors[0].reason")
+                        .value("비밀번호가 일치하지 않습니다."));
+
+        // 탈퇴가 실패했으면 로그인 상태도 그대로여야 한다.
+        assertFalse(session.isInvalid());
+    }
+
+    /**
+     * 남은 근무·잔액으로 인한 거부는 비밀번호 입력값의 문제가 아닙니다.
+     *
+     * <p>{@code fieldErrors} 로 내보내면 화면이 그 사유를 비밀번호 칸 아래에 붙여, 비밀번호를
+     * 고치면 될 것처럼 보입니다. 409 본문 메시지로 내보내 Toast 로 뜨게 합니다.</p>
+     */
+    @Test
+    void reportsLeftoverConflictWithoutFieldErrorAndKeepsSession() throws Exception {
+        doThrow(new ConflictException("진행 중인 근무가 남아 있어 탈퇴할 수 없습니다."))
+                .when(userService).withdraw(USER_ID, "current-pw1");
+        MockHttpSession session = new MockHttpSession();
+
+        mockMvc.perform(post("/api/users/me/withdrawal")
+                        .principal(authentication)
+                        .session(session)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(withdrawalBody("current-pw1")))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("CONFLICT"))
+                .andExpect(jsonPath("$.message").value("진행 중인 근무가 남아 있어 탈퇴할 수 없습니다."))
+                .andExpect(jsonPath("$.fieldErrors").doesNotExist());
+
+        assertFalse(session.isInvalid());
+    }
+
+    private String withdrawalBody(String password) throws Exception {
+        return new ObjectMapper().writeValueAsString(java.util.Map.of("password", password));
     }
 
     private UserProfileResponse profile(String phone) {

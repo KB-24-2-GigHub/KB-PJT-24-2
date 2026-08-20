@@ -6,6 +6,6 @@
  * 항목만 지우면 화면은 다시 정상 동작한다 — 화면은 이 값의 존재 여부만 참조하므로
  * (v-if 로 안내를, :disabled 로 제출을 이 값에 직접 묶는다) 항목 삭제만으로 복구된다.
  */
-export const PENDING_FEATURES = {
-  WITHDRAWAL: 188 // POST /api/users/me/withdrawal — 서버 미구현
-}
+// #187(비밀번호 변경)과 #188(회원 탈퇴)이 모두 구현돼 현재 대기 중인 기능이 없다.
+// 서버보다 화면이 먼저 나가는 기능이 생기면 여기에 다시 등록한다.
+export const PENDING_FEATURES = {}

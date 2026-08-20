@@ -1,5 +1,6 @@
 package com.gighub.member.service;
 
+import com.gighub.common.exception.ConflictException;
 import com.gighub.common.exception.ForbiddenException;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.ValidationException;
@@ -9,6 +10,9 @@ import com.gighub.member.domain.UserStatus;
 import com.gighub.member.dto.UserProfileResponse;
 import com.gighub.member.mapper.UserMapper;
 import com.gighub.member.service.impl.UserServiceImpl;
+import com.gighub.wallet.dto.WalletBalanceResponse;
+import com.gighub.wallet.service.WalletQueryService;
+import com.gighub.work.service.WorkParticipationQueryService;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
@@ -36,7 +40,11 @@ class UserServiceImplTest {
     private final UserMapper userMapper = mock(UserMapper.class);
     // 실제 BCrypt로 검증한다. Stub은 "Hash로 저장했는지"를 증명하지 못한다.
     private final PasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-    private final UserServiceImpl service = new UserServiceImpl(userMapper, passwordEncoder);
+    private final WalletQueryService walletQueryService = mock(WalletQueryService.class);
+    private final WorkParticipationQueryService workParticipationQueryService =
+            mock(WorkParticipationQueryService.class);
+    private final UserServiceImpl service = new UserServiceImpl(
+            userMapper, passwordEncoder, walletQueryService, workParticipationQueryService);
 
     @Test
     void returnsApprovedProfileFieldsForOwner() {
@@ -166,6 +174,147 @@ class UserServiceImplTest {
                 ResourceNotFoundException.class,
                 () -> service.changePassword(99L, CURRENT_PASSWORD, NEW_PASSWORD));
         verify(userMapper, never()).updatePassword(anyLong(), anyString());
+    }
+
+    @Test
+    void withdrawsActiveUserWhenPasswordMatchesAndNothingIsLeftBehind() {
+        givenWithdrawableOwner();
+        when(userMapper.withdraw(42L)).thenReturn(1);
+
+        service.withdraw(42L, CURRENT_PASSWORD);
+
+        verify(userMapper).withdraw(42L);
+    }
+
+    @Test
+    void rejectsWrongPasswordWithPasswordFieldError() {
+        givenWithdrawableOwner();
+
+        ValidationException exception = assertThrows(
+                ValidationException.class,
+                () -> service.withdraw(42L, "wrong-password1"));
+
+        // 화면이 이 필드명으로 오류를 귀속시키므로 정확히 이 값이어야 한다.
+        assertEquals(1, exception.getFieldErrors().size());
+        assertEquals("password", exception.getFieldErrors().get(0).getField());
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    @Test
+    void keepsPasswordOutOfFailureMessages() {
+        givenWithdrawableOwner();
+
+        ValidationException exception = assertThrows(
+                ValidationException.class,
+                () -> service.withdraw(42L, "wrong-password1"));
+
+        String exposed = exception.getMessage()
+                + exception.getFieldErrors().get(0).getReason();
+        assertFalse(exposed.contains("wrong-password1"));
+    }
+
+    /**
+     * 비밀번호가 틀리면 남은 근무·잔액을 조회하지 않아야 합니다.
+     *
+     * <p>조회하면 남의 Session을 쥔 호출자가 비밀번호를 모르는 채로 응답 차이만 보고
+     * 그 사람의 진행 근무·잔액 유무를 알아낼 수 있습니다.</p>
+     */
+    @Test
+    void doesNotProbeLeftoversBeforePasswordMatches() {
+        givenWithdrawableOwner();
+
+        assertThrows(
+                ValidationException.class,
+                () -> service.withdraw(42L, "wrong-password1"));
+
+        verify(workParticipationQueryService, never()).countUnfinished(anyLong());
+        verify(walletQueryService, never()).getBalanceSnapshot(anyLong());
+    }
+
+    @Test
+    void rejectsWithdrawalWhileUnfinishedWorkCaseRemains() {
+        givenWithdrawableOwner();
+        when(workParticipationQueryService.countUnfinished(42L)).thenReturn(1);
+
+        assertThrows(ConflictException.class, () -> service.withdraw(42L, CURRENT_PASSWORD));
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    @Test
+    void rejectsWithdrawalWhileEscrowRemains() {
+        givenWithdrawableOwner();
+        when(walletQueryService.getBalanceSnapshot(42L)).thenReturn(balance(0L, 300_000L));
+
+        assertThrows(ConflictException.class, () -> service.withdraw(42L, CURRENT_PASSWORD));
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    @Test
+    void rejectsWithdrawalWhileWalletBalanceRemains() {
+        givenWithdrawableOwner();
+        when(walletQueryService.getBalanceSnapshot(42L)).thenReturn(balance(1_000L, 0L));
+
+        assertThrows(ConflictException.class, () -> service.withdraw(42L, CURRENT_PASSWORD));
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    /** 지갑이 없는 사용자는 잔액도 예치금도 없다 — null을 0으로 읽어 탈퇴를 막지 않는다. */
+    @Test
+    void withdrawsUserWhoNeverHadWallet() {
+        when(userMapper.findById(42L)).thenReturn(authenticatedOwner(CURRENT_PASSWORD));
+        when(workParticipationQueryService.countUnfinished(42L)).thenReturn(0);
+        // 지갑이 없으면 wallet 경계가 0을 담아 돌려준다(getBalanceSnapshot 계약).
+        when(walletQueryService.getBalanceSnapshot(42L)).thenReturn(balance(0L, 0L));
+        when(userMapper.withdraw(42L)).thenReturn(1);
+
+        service.withdraw(42L, CURRENT_PASSWORD);
+
+        verify(userMapper).withdraw(42L);
+    }
+
+    @Test
+    void rejectsWithdrawalWhenAccountIsNoLongerActive() {
+        User withdrawn = authenticatedOwner(CURRENT_PASSWORD);
+        withdrawn.setStatus(UserStatus.WITHDRAWN);
+        when(userMapper.findById(42L)).thenReturn(withdrawn);
+
+        assertThrows(ForbiddenException.class, () -> service.withdraw(42L, CURRENT_PASSWORD));
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    /**
+     * 확인과 갱신 사이에 다른 요청이 먼저 탈퇴시킨 경우입니다.
+     *
+     * <p>Mapper가 0행을 돌려주는데 204로 응답하면, 두 번째 요청은 자기가 탈퇴시킨 것으로
+     * 오해합니다. 갱신 건수를 그대로 믿고 충돌로 끝냅니다.</p>
+     */
+    @Test
+    void rejectsWithdrawalLosingConcurrentRace() {
+        givenWithdrawableOwner();
+        when(userMapper.withdraw(42L)).thenReturn(0);
+
+        assertThrows(ConflictException.class, () -> service.withdraw(42L, CURRENT_PASSWORD));
+    }
+
+    @Test
+    void rejectsWithdrawalForMissingUser() {
+        when(userMapper.findById(99L)).thenReturn(null);
+
+        assertThrows(
+                ResourceNotFoundException.class,
+                () -> service.withdraw(99L, CURRENT_PASSWORD));
+        verify(userMapper, never()).withdraw(anyLong());
+    }
+
+    /** 비밀번호가 맞고 남은 것도 없는 기본 상태. 각 테스트는 막고 싶은 조건만 덮어쓴다. */
+    private void givenWithdrawableOwner() {
+        when(userMapper.findById(42L)).thenReturn(authenticatedOwner(CURRENT_PASSWORD));
+        when(workParticipationQueryService.countUnfinished(42L)).thenReturn(0);
+        when(walletQueryService.getBalanceSnapshot(42L)).thenReturn(balance(0L, 0L));
+    }
+
+    private WalletBalanceResponse balance(long available, long locked) {
+        return WalletBalanceResponse.of("KRW", available, locked);
     }
 
     private User authenticatedOwner(String rawPassword) {

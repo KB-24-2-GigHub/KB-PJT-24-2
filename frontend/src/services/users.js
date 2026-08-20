@@ -47,7 +47,6 @@ export async function changePassword({ currentPassword, newPassword }) {
 /** 회원 탈퇴 (USER-004). 잔액·예치금·진행 근무 존재 시 409 */
 export async function deleteMe({ password }) {
   if (USE_MOCK) return
-  // TODO(#188): USER-004 구현 전까지 실 경로는 404 다.
   await http.post('/users/me/withdrawal', { password })
 }
 
