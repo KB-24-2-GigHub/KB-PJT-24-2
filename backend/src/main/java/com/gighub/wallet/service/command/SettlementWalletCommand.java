@@ -11,7 +11,11 @@ public class SettlementWalletCommand {
     private final long workCaseId;
     private final long employerId;
     private final long workerId;
+    /** 최초 약정·예치액입니다. */
     private final long amount;
+    private final long workerPaidAmount;
+    private final long ownerRefundAmount;
     private final String employerLedgerKey;
     private final String workerLedgerKey;
+    private final String employerRefundLedgerKey;
 }

@@ -46,6 +46,9 @@ class WorkLifecycleCommandServiceImplTest {
                 .termsVersion(2)
                 .startsAt(STARTS_AT)
                 .endsAt(ENDS_AT)
+                .agreedWage(100_000L)
+                .breakMinutes(30)
+                .breakPaid(false)
                 .build());
 
         WorkLifecycleSnapshot snapshot = service.lock(WORK_CASE_ID);
@@ -54,6 +57,9 @@ class WorkLifecycleCommandServiceImplTest {
         assertEquals(WorkCaseStatus.READY, snapshot.status());
         assertEquals(STARTS_AT, snapshot.startsAt());
         assertEquals(ENDS_AT, snapshot.endsAt());
+        assertEquals(100_000L, snapshot.agreedWage());
+        assertEquals(30, snapshot.breakMinutes());
+        assertFalse(snapshot.breakPaid());
     }
 
     @Test

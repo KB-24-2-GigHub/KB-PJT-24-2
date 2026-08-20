@@ -6,6 +6,7 @@ import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.exception.SettlementAlreadyProcessedException;
 import com.gighub.settlement.exception.SettlementNotReadyException;
 import com.gighub.settlement.exception.SettlementOnHoldException;
+import com.gighub.settlement.service.command.CheckOutMissingRefundApproveCommand;
 import com.gighub.settlement.service.command.NoShowRefundApproveCommand;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.command.SettlementPayoutCommand;
@@ -45,6 +46,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SettlementIntegrityDatabaseIntegrationTest {
 
     private static final Long WAGE = 300_000L;
+    private static final Long PARTIAL_WORKER_PAID = 270_000L;
+    private static final Long PARTIAL_OWNER_REFUND = 30_000L;
 
     @Test
     @Timeout(20)
@@ -81,6 +84,124 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
     @Test
     @Timeout(20)
+    void partialSnapshotPaysWorkerAndRefundsOwnerWithThreePositiveLegsAndReplay() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+            SettlementApproveCommand command = command(
+                    fixture,
+                    fixture.approvalKey() + "-PARTIAL"
+            );
+
+            try {
+                // D=480, L+E=48이면 300,000 * 432 / 480 = 270,000원입니다.
+                jdbcTemplate.update(
+                        "UPDATE settlements SET worker_paid_amount = ?,"
+                                + " owner_refund_amount = ?, late_minutes = 31,"
+                                + " early_leave_minutes = 17 WHERE id = ?",
+                        PARTIAL_WORKER_PAID,
+                        PARTIAL_OWNER_REFUND,
+                        fixture.settlementId()
+                );
+
+                SettlementResult first = settlementService.approve(command);
+                SettlementResult replay = settlementService.approve(command);
+
+                assertEquals("COMPLETED", first.getStatus());
+                assertEquals(WAGE, first.getOriginalEscrowAmount());
+                assertEquals(PARTIAL_WORKER_PAID, first.getWorkerPaidAmount());
+                assertEquals(PARTIAL_OWNER_REFUND, first.getOwnerRefundAmount());
+                assertFalse(first.isReplayed());
+                assertTrue(replay.isReplayed());
+                assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertEquals(PARTIAL_WORKER_PAID, replay.getWorkerPaidAmount());
+                assertEquals(PARTIAL_OWNER_REFUND, replay.getOwnerRefundAmount());
+
+                assertEquals(0L, value(
+                        jdbcTemplate,
+                        "SELECT locked_balance FROM wallets WHERE id = ?",
+                        fixture.employerWalletId()
+                ));
+                assertEquals(PARTIAL_OWNER_REFUND.longValue(), value(
+                        jdbcTemplate,
+                        "SELECT available_balance FROM wallets WHERE id = ?",
+                        fixture.employerWalletId()
+                ));
+                assertEquals(PARTIAL_WORKER_PAID.longValue(), value(
+                        jdbcTemplate,
+                        "SELECT available_balance FROM wallets WHERE id = ?",
+                        fixture.workerWalletId()
+                ));
+                assertEquals("RELEASED", text(
+                        jdbcTemplate,
+                        "SELECT status FROM escrows WHERE id = ?",
+                        fixture.escrowId()
+                ));
+                assertEquals(3, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ?"
+                                + " AND transaction_type IN"
+                                + " ('ESCROW_RELEASE', 'ESCROW_REFUND')"
+                                + " AND amount > 0",
+                        fixture.workCaseId()
+                ));
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ? AND wallet_id = ?"
+                                + " AND transaction_type = 'ESCROW_RELEASE'"
+                                + " AND amount = ? AND available_before = 0"
+                                + " AND available_after = 0 AND locked_before = ?"
+                                + " AND locked_after = ?",
+                        fixture.workCaseId(),
+                        fixture.employerWalletId(),
+                        PARTIAL_WORKER_PAID,
+                        WAGE,
+                        PARTIAL_OWNER_REFUND
+                ));
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ? AND wallet_id = ?"
+                                + " AND transaction_type = 'ESCROW_RELEASE'"
+                                + " AND amount = ? AND available_before = 0"
+                                + " AND available_after = ? AND locked_before = 0"
+                                + " AND locked_after = 0",
+                        fixture.workCaseId(),
+                        fixture.workerWalletId(),
+                        PARTIAL_WORKER_PAID,
+                        PARTIAL_WORKER_PAID
+                ));
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ? AND wallet_id = ?"
+                                + " AND transaction_type = 'ESCROW_REFUND'"
+                                + " AND amount = ? AND available_before = 0"
+                                + " AND available_after = ? AND locked_before = ?"
+                                + " AND locked_after = 0",
+                        fixture.workCaseId(),
+                        fixture.employerWalletId(),
+                        PARTIAL_OWNER_REFUND,
+                        PARTIAL_OWNER_REFUND,
+                        PARTIAL_OWNER_REFUND
+                ));
+                // 최초 HOLD 한 건과 분할 지급 세 Leg뿐이며 Replay는 원장을 늘리지 않습니다.
+                assertEquals(4, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions WHERE work_case_id = ?",
+                        fixture.workCaseId()
+                ));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
     void noShowRefundRestoresOnlyTheOwnerAndReplaysTheStoredResult() {
         try (AnnotationConfigApplicationContext context = applicationContext()) {
             JdbcTemplate jdbcTemplate = jdbcTemplate(context);
@@ -99,7 +220,153 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 assertFalse(first.isReplayed());
                 assertEquals(first.getCompletedAt(), replay.getCompletedAt());
                 assertTrue(replay.isReplayed());
-                assertNoShowRefundedState(jdbcTemplate, fixture);
+                assertRefundedState(jdbcTemplate, fixture, "NO_SHOW");
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void zeroPayoutCheckoutCompletesWithOnlyThePositiveOwnerRefundLeg() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createFixture(jdbcTemplate);
+            SettlementApproveCommand command = command(
+                    fixture,
+                    fixture.approvalKey() + "-ZERO"
+            );
+
+            try {
+                jdbcTemplate.update(
+                        "UPDATE settlements SET worker_paid_amount = 0,"
+                                + " owner_refund_amount = amount, late_minutes = 480,"
+                                + " early_leave_minutes = 0 WHERE id = ?",
+                        fixture.settlementId()
+                );
+
+                SettlementResult first = settlementService.approve(command);
+                SettlementResult replay = settlementService.approve(command);
+
+                assertEquals("COMPLETED", first.getStatus());
+                assertEquals(0L, first.getWorkerPaidAmount());
+                assertEquals(WAGE, first.getOwnerRefundAmount());
+                assertFalse(first.isReplayed());
+                assertTrue(replay.isReplayed());
+                assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertEquals("RELEASED", text(
+                        jdbcTemplate,
+                        "SELECT status FROM escrows WHERE id = ?",
+                        fixture.escrowId()
+                ));
+                assertEquals(WAGE.longValue(), value(
+                        jdbcTemplate,
+                        "SELECT available_balance FROM wallets WHERE id = ?",
+                        fixture.employerWalletId()
+                ));
+                assertEquals(0L, value(
+                        jdbcTemplate,
+                        "SELECT locked_balance FROM wallets WHERE id = ?",
+                        fixture.employerWalletId()
+                ));
+                assertEquals(0L, value(
+                        jdbcTemplate,
+                        "SELECT available_balance FROM wallets WHERE id = ?",
+                        fixture.workerWalletId()
+                ));
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ?"
+                                + " AND transaction_type = 'ESCROW_RELEASE'",
+                        fixture.workCaseId()
+                ));
+                assertEquals(1, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions"
+                                + " WHERE work_case_id = ? AND wallet_id = ?"
+                                + " AND transaction_type = 'ESCROW_REFUND' AND amount = ?",
+                        fixture.workCaseId(),
+                        fixture.employerWalletId(),
+                        WAGE
+                ));
+                // 최초 HOLD와 양수인 OWNER 환불만 남고 Replay는 원장을 늘리지 않습니다.
+                assertEquals(2, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM wallet_transactions WHERE work_case_id = ?",
+                        fixture.workCaseId()
+                ));
+            } finally {
+                deleteFixture(jdbcTemplate, fixture);
+            }
+        }
+    }
+
+    @Test
+    @Timeout(20)
+    void checkOutMissingRefundBlocksOpenDisputeThenRefundsOwnerAndReplays() {
+        try (AnnotationConfigApplicationContext context = applicationContext()) {
+            JdbcTemplate jdbcTemplate = jdbcTemplate(context);
+            SettlementService settlementService = context.getBean(SettlementService.class);
+            SettlementFixture fixture = createCheckOutMissingFixture(jdbcTemplate);
+            CheckOutMissingRefundApproveCommand command =
+                    checkOutMissingRefundCommand(fixture);
+
+            try {
+                jdbcTemplate.update(
+                        "INSERT INTO disputes"
+                                + " (work_case_id, requester_id, dispute_type,"
+                                + " title, content, status)"
+                                + " VALUES (?, ?, 'WAGE', '퇴근 누락 확인 요청',"
+                                + " '환불 전 확인이 필요합니다.', 'OPEN')",
+                        fixture.workCaseId(),
+                        fixture.workerId()
+                );
+
+                assertThrows(
+                        SettlementOnHoldException.class,
+                        () -> settlementService.approveCheckOutMissingRefund(command)
+                );
+                assertNoShowFundsUnchanged(jdbcTemplate, fixture);
+                assertEquals(0, count(
+                        jdbcTemplate,
+                        "SELECT COUNT(*) FROM idempotency_requests"
+                                + " WHERE user_id = ?"
+                                + " AND operation_code ="
+                                + " 'SETTLEMENT_CHECK_OUT_MISSING_REFUND_APPROVE'",
+                        fixture.employerId()
+                ));
+
+                jdbcTemplate.update(
+                        "DELETE FROM disputes WHERE work_case_id = ?",
+                        fixture.workCaseId()
+                );
+                SettlementResult first =
+                        settlementService.approveCheckOutMissingRefund(command);
+                SettlementResult replay =
+                        settlementService.approveCheckOutMissingRefund(command);
+
+                assertEquals("REFUNDED", first.getStatus());
+                assertEquals(WAGE, first.getOriginalEscrowAmount());
+                assertEquals(0L, first.getWorkerPaidAmount());
+                assertEquals(WAGE, first.getOwnerRefundAmount());
+                assertFalse(first.isReplayed());
+                assertTrue(replay.isReplayed());
+                assertEquals(first.getCompletedAt(), replay.getCompletedAt());
+                assertRefundedState(
+                        jdbcTemplate, fixture, "CHECK_OUT_MISSING");
+                assertEquals("CHECK_OUT_MISSING", text(
+                        jdbcTemplate,
+                        "SELECT status FROM work_cases WHERE id = ?",
+                        fixture.workCaseId()
+                ));
+                assertEquals("CHECK_OUT_MISSING", text(
+                        jdbcTemplate,
+                        "SELECT calculation_reason FROM settlements WHERE id = ?",
+                        fixture.settlementId()
+                ));
             } finally {
                 deleteFixture(jdbcTemplate, fixture);
             }
@@ -217,7 +484,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
 
                 assertEquals(1, successes);
                 assertEquals(1, conflicts);
-                assertNoShowRefundedState(jdbcTemplate, fixture);
+                assertRefundedState(jdbcTemplate, fixture, "NO_SHOW");
                 assertEquals(1, count(
                         jdbcTemplate,
                         "SELECT COUNT(*) FROM idempotency_requests"
@@ -808,6 +1075,16 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 .build();
     }
 
+    private CheckOutMissingRefundApproveCommand checkOutMissingRefundCommand(
+            SettlementFixture fixture) {
+        return CheckOutMissingRefundApproveCommand.builder()
+                .workCaseId(fixture.workCaseId())
+                .approverUserId(fixture.employerId())
+                .approverRole(UserRole.OWNER)
+                .idempotencyKey(fixture.approvalKey() + "-CHECK-OUT-MISSING")
+                .build();
+    }
+
     private Callable<SettlementResult> concurrentRefundRequest(
             SettlementService settlementService,
             NoShowRefundApproveCommand command,
@@ -1102,9 +1379,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 fixture.workCaseId()));
     }
 
-    private void assertNoShowRefundedState(
+    private void assertRefundedState(
             JdbcTemplate jdbcTemplate,
-            SettlementFixture fixture) {
+            SettlementFixture fixture,
+            String expectedWorkCaseStatus) {
         assertEquals(WAGE.longValue(), value(
                 jdbcTemplate,
                 "SELECT available_balance FROM wallets WHERE id = ?",
@@ -1129,7 +1407,7 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 jdbcTemplate,
                 "SELECT status FROM settlements WHERE id = ?",
                 fixture.settlementId()));
-        assertEquals("NO_SHOW", text(
+        assertEquals(expectedWorkCaseStatus, text(
                 jdbcTemplate,
                 "SELECT status FROM work_cases WHERE id = ?",
                 fixture.workCaseId()));
@@ -1169,9 +1447,42 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 "UPDATE work_cases SET status = 'NO_SHOW' WHERE id = ?",
                 fixture.workCaseId());
         jdbcTemplate.update(
-                "UPDATE settlements SET status = 'WAITING', due_at = NULL"
+                "UPDATE settlements SET status = 'WAITING', due_at = NULL,"
+                        + " worker_paid_amount = 0, owner_refund_amount = amount,"
+                        + " deduction_base_minutes = 480, late_minutes = 0,"
+                        + " early_leave_minutes = 0, calculation_reason = 'NO_SHOW',"
+                        + " calculation_version = 'ATTENDANCE_V1', calculated_at = NOW(6)"
                         + " WHERE id = ?",
                 fixture.settlementId());
+        return fixture;
+    }
+
+    private SettlementFixture createCheckOutMissingFixture(
+            JdbcTemplate jdbcTemplate) {
+        SettlementFixture fixture = createFixture(jdbcTemplate);
+        jdbcTemplate.update(
+                "UPDATE work_cases SET status = 'CHECK_OUT_MISSING' WHERE id = ?",
+                fixture.workCaseId()
+        );
+        jdbcTemplate.update(
+                "INSERT INTO attendance_records"
+                        + " (work_case_id, worker_id, attendance_type, captured_at,"
+                        + " attempted_at, result)"
+                        + " VALUES (?, ?, 'CHECK_IN', '2030-01-01 09:05:00',"
+                        + " '2030-01-01 09:05:00', 'SUCCESS')",
+                fixture.workCaseId(),
+                fixture.workerId()
+        );
+        jdbcTemplate.update(
+                "UPDATE settlements SET status = 'WAITING', due_at = NULL,"
+                        + " worker_paid_amount = 0, owner_refund_amount = amount,"
+                        + " deduction_base_minutes = 480, late_minutes = 5,"
+                        + " early_leave_minutes = 0,"
+                        + " calculation_reason = 'CHECK_OUT_MISSING',"
+                        + " calculation_version = 'ATTENDANCE_V1', calculated_at = NOW(6)"
+                        + " WHERE id = ?",
+                fixture.settlementId()
+        );
         return fixture;
     }
 
@@ -1268,9 +1579,16 @@ class SettlementIntegrityDatabaseIntegrationTest {
                 idBy(jdbcTemplate, "escrows", "work_case_id", workCaseId);
 
         jdbcTemplate.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at)"
-                        + " VALUES (?, ?, 'SCHEDULED', DATE_ADD(NOW(6), INTERVAL 1 DAY))",
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, status, due_at,"
+                        + " worker_paid_amount, owner_refund_amount,"
+                        + " deduction_base_minutes, late_minutes, early_leave_minutes,"
+                        + " calculation_reason, calculation_version, calculated_at)"
+                        + " VALUES (?, ?, 'SCHEDULED',"
+                        + " DATE_ADD(NOW(6), INTERVAL 1 DAY), ?, 0, 480, 0, 0,"
+                        + " 'CHECKED_OUT', 'ATTENDANCE_V1', NOW(6))",
                 workCaseId,
+                WAGE,
                 WAGE
         );
         Long settlementId =
@@ -1361,6 +1679,10 @@ class SettlementIntegrityDatabaseIntegrationTest {
         );
         jdbcTemplate.update(
                 "DELETE FROM attendance_records WHERE work_case_id = ?",
+                fixture.workCaseId()
+        );
+        jdbcTemplate.update(
+                "DELETE FROM notifications WHERE work_case_id = ?",
                 fixture.workCaseId()
         );
         jdbcTemplate.update(

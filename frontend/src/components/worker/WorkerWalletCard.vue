@@ -31,7 +31,7 @@ defineEmits(['withdraw'])
 }
 
 .label {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   color: var(--color-text-sub);
 }
 

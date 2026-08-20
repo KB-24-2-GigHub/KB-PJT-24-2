@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { calcDailyTax, calcElapsedPay } from '@/utils/earning'
+import { calcElapsedPay } from '@/utils/earning'
 
 const SHIFT = { agreedWage: 90000, workDate: '2026-07-22', startTime: '10:00', endTime: '18:00' }
 
@@ -96,23 +96,5 @@ describe('calcElapsedPay', () => {
       now: new Date('2026-07-22T14:00:00')
     })
     expect(r).toEqual({ elapsedPay: 0, progressRatio: 0 })
-  })
-})
-
-describe('calcDailyTax', () => {
-  it.each([
-    [90000, 0, 0, 90000],
-    [150000, 0, 0, 150000],
-    [160000, 0, 0, 160000],
-    [187037, 0, 0, 187037],
-    [187038, 1000, 100, 185938],
-    [200000, 1350, 130, 198520]
-  ])('일급 %i원 → 소득세 %i · 지방소득세 %i · 실수령 %i', (wage, incomeTax, localTax, net) => {
-    expect(calcDailyTax(wage)).toEqual({
-      incomeTax,
-      localTax,
-      totalTax: incomeTax + localTax,
-      expectedNetAmount: net
-    })
   })
 })

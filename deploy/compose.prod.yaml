@@ -6,7 +6,21 @@
 
 services:
   app:
-    image: ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:${API_TAG:-dev}
+    # 기본값을 두지 않는다. `${API_TAG:-dev}` 였을 때 낡은 :dev 이미지가 조용히
+    # 올라왔다(#450, 경위는 SETUP.md 7절). 값이 없으면 구버전이 뜨는 대신 즉시
+    # 실패해야 한다.
+    #
+    # API_TAG 가 비었을 때 각 명령이 어떻게 되는지 실측했다. 이 파일을 쓰는 워크플로
+    # (deploy-api, migrate-db, seed-db)의 명령을 전수로 넣었다.
+    #
+    #   up / pull            exit 1  unable to get image 'ghcr.io/...:'  <- 의도한 지점
+    #   stop / start         exit 0  기존 컨테이너만 다루고 태그를 해석하지 않는다
+    #   --profile tools run  exit 0  app 의 보간이 비어도 다른 서비스를 막지 않는다
+    #   config               exit 0  경고만 낸다
+    #
+    # 즉 migrate-db 와 seed-db 는 이 변경으로 깨지지 않는다. `config` 가 통과하므로
+    # 값이 들어갔는지 확인할 때는 `config --images` 를 쓴다(SETUP.md 7절).
+    image: ghcr.io/kb-24-2-gighub/kb-pjt-24-2-api:${API_TAG}
 
     # 호스트 nginx 만 접근한다. 외부에서 Tomcat 에 직접 도달할 수 없으므로
     # 모든 트래픽이 반드시 HTTPS 를 거친다.
@@ -16,6 +30,7 @@ services:
     environment:
       CATALINA_OPTS: >-
         -Dgighub.database.config=/config/database.properties
+        -Dgighub.log.dir=/var/gighub/logs
         -Duser.timezone=Asia/Seoul
       TZ: Asia/Seoul
 
@@ -25,6 +40,9 @@ services:
       # 계약 PDF 는 LocalFileDocumentStorageAdapter 가 실제 파일로 쓴다.
       # 볼륨이 아니면 재배포마다 발급된 계약서가 사라진다.
       - /opt/gighub/documents:/var/gighub/documents
+      # WARN 이상 애플리케이션 로그. 볼륨이 아니면 장애를 조사하려는 시점에는
+      # 이미 컨테이너를 교체한 뒤라 정작 필요한 로그가 사라진다.
+      - /opt/gighub/logs:/var/gighub/logs
 
     restart: unless-stopped
 

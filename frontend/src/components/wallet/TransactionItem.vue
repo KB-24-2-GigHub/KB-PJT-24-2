@@ -48,11 +48,14 @@ const statusMeta = computed(() => STATUS_META[props.tx.displayStatus] ?? STATUS_
 // 거래 Type으로 부호를 추정하면 WORKER의 ESCROW_RELEASE와 ADJUSTMENT를 오표시한다.
 const isCredit = computed(() => props.tx.direction === 'CREDIT')
 const amountText = computed(() => formatSignedKRW(props.tx.amount, props.tx.direction))
-const description = computed(() => {
-  if (props.tx.workTitle && props.tx.workplaceName) {
-    return `${props.tx.workTitle} · ${props.tx.workplaceName}`
+const typeLabel = computed(() => {
+  if (props.tx.type === 'ESCROW_RELEASE') {
+    return props.tx.direction === 'DEBIT' ? '알바생 지급' : '정산 지급'
   }
-  return props.tx.workTitle || props.tx.workplaceName || TYPE_LABELS[props.tx.type] || '지갑 거래'
+  return TYPE_LABELS[props.tx.type] || '지갑 거래'
+})
+const description = computed(() => {
+  return [typeLabel.value, props.tx.workTitle, props.tx.workplaceName].filter(Boolean).join(' · ')
 })
 </script>
 

@@ -1,8 +1,11 @@
 package com.gighub.attendance.service;
 
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
+import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow;
 import com.gighub.document.service.SignedContractArtifactQueryService;
+import com.gighub.settlement.service.SettlementReservationService;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -29,10 +32,16 @@ class AttendanceLifecycleTransitionExecutorTest {
     private AttendanceLifecycleMapper lifecycleMapper;
 
     @Mock
+    private AttendanceRecordMapper attendanceRecordMapper;
+
+    @Mock
     private SignedContractArtifactQueryService artifactQueryService;
 
     @Mock
     private WorkLifecycleCommandService workLifecycleCommandService;
+
+    @Mock
+    private SettlementReservationService settlementReservationService;
 
     @Test
     void advancesAcceptedWorkAtReadyBoundaryWhenAggregateAndArtifactAreComplete() {
@@ -166,6 +175,10 @@ class AttendanceLifecycleTransitionExecutorTest {
                         NOW.minusHours(2)));
         when(lifecycleMapper.hasSuccessfulAttendance(WORK_CASE_ID, "CHECK_IN"))
                 .thenReturn(true);
+        when(attendanceRecordMapper.findSuccessTimestamps(WORK_CASE_ID))
+                .thenReturn(AttendanceSuccessTimestampsRow.builder()
+                        .checkedInAt(NOW.minusHours(10))
+                        .build());
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID,
                 WorkCaseStatus.IN_PROGRESS,
@@ -197,14 +210,19 @@ class AttendanceLifecycleTransitionExecutorTest {
 
     private AttendanceLifecycleTransitionExecutor executor() {
         return new AttendanceLifecycleTransitionExecutor(
-                lifecycleMapper, artifactQueryService, workLifecycleCommandService);
+                lifecycleMapper,
+                attendanceRecordMapper,
+                artifactQueryService,
+                workLifecycleCommandService,
+                settlementReservationService);
     }
 
     private WorkLifecycleSnapshot row(
             WorkCaseStatus status,
             LocalDateTime startsAt,
             LocalDateTime endsAt) {
-        return new WorkLifecycleSnapshot(WORK_CASE_ID, status, startsAt, endsAt);
+        return new WorkLifecycleSnapshot(
+                WORK_CASE_ID, status, startsAt, endsAt, 100_000L, 0, false);
     }
 
     private AttendanceReadinessCheckRow completeReadiness() {

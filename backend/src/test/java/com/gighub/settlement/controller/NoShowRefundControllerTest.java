@@ -67,6 +67,14 @@ class NoShowRefundControllerTest {
                 .andExpect(jsonPath("$.data.originalEscrowAmount").value(WAGE))
                 .andExpect(jsonPath("$.data.workerPaidAmount").value(0))
                 .andExpect(jsonPath("$.data.ownerRefundAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.deductionAmount").value(WAGE))
+                .andExpect(jsonPath("$.data.deductionBaseMinutes").value(480))
+                .andExpect(jsonPath("$.data.lateMinutes").value(0))
+                .andExpect(jsonPath("$.data.earlyLeaveMinutes").value(0))
+                .andExpect(jsonPath("$.data.calculationReason").value("NO_SHOW"))
+                .andExpect(jsonPath("$.data.calculationVersion").value("ATTENDANCE_V1"))
+                .andExpect(jsonPath("$.data.calculatedAt")
+                        .value("2026-08-13T04:00:00Z"))
                 .andExpect(jsonPath("$.data.completedAt")
                         .value("2026-08-13T05:00:00Z"));
 
@@ -100,6 +108,13 @@ class NoShowRefundControllerTest {
                 .originalEscrowAmount(WAGE)
                 .workerPaidAmount(0L)
                 .ownerRefundAmount(WAGE)
+                .deductionAmount(WAGE)
+                .deductionBaseMinutes(480L)
+                .lateMinutes(0L)
+                .earlyLeaveMinutes(0L)
+                .calculationReason("NO_SHOW")
+                .calculationVersion("ATTENDANCE_V1")
+                .calculatedAt(LocalDateTime.of(2026, 8, 13, 13, 0))
                 .completedAt(LocalDateTime.of(2026, 8, 13, 14, 0))
                 .replayed(replayed)
                 .build();

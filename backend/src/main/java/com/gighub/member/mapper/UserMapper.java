@@ -21,5 +21,7 @@ public interface UserMapper {
 
     int updatePhone(@Param("userId") Long userId, @Param("phone") String phone);
 
+    int updatePassword(@Param("userId") Long userId, @Param("passwordHash") String passwordHash);
+
     int insert(User user);
 }

@@ -65,6 +65,10 @@ export function approveNoShowRefund(workCaseId, options = {}) {
   return invokeLive('approveNoShowRefund', [workCaseId, options])
 }
 
+export function approveCheckOutMissingRefund(workCaseId, options = {}) {
+  return invokeLive('approveCheckOutMissingRefund', [workCaseId, options])
+}
+
 export function getOwnerContact(workCaseId) {
   return invokeUnavailable('getOwnerContact', [workCaseId], '#163-#169')
 }

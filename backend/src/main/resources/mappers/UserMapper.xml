@@ -72,6 +72,13 @@
           AND role IN ('OWNER', 'WORKER')
     </update>
 
+    <update id="updatePassword">
+        UPDATE users
+        SET password_hash = #{passwordHash}
+        WHERE id = #{userId}
+          AND role IN ('OWNER', 'WORKER')
+    </update>
+
     <insert id="insert"
             parameterType="com.gighub.member.domain.User"
             useGeneratedKeys="true"

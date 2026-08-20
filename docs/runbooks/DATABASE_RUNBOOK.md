@@ -7,9 +7,9 @@
 | 항목                | 현재 기준                           |
 | ------------------- | ----------------------------------- |
 | 문서 상태           | 현재 기준                           |
-| Migration Head      | `202608121403`                      |
-| Versioned Migration | 19개                                |
-| 도메인 테이블       | 24개 (`flyway_schema_history` 제외) |
+| Migration Head      | `202608201125`                      |
+| Versioned Migration | 22개                                |
+| 도메인 테이블       | 26개 (`flyway_schema_history` 제외) |
 | MySQL               | `mysql:8.4.10`                      |
 | Flyway CLI          | `flyway/flyway:12.9.0`              |
 | MySQL Connector/J   | `9.7.0`                             |
@@ -23,9 +23,9 @@
 | JDBC·MyBatis·트랜잭션 설정          | `backend/src/main/java/com/gighub/config/DatabaseConfig.java`                                          |
 | DB 라이브러리 버전과 검증 작업      | `backend/build.gradle`                                                                                 |
 | 스키마의 작업용 요약                | [`../agent/SCHEMA_OVERVIEW.md`](../agent/SCHEMA_OVERVIEW.md)                                           |
-| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608121403.sql`](../database/schema-snapshot-202608121403.sql), 참고용 |
+| 사람이 읽는 통합 DDL                | [`../database/schema-snapshot-202608201125.sql`](../database/schema-snapshot-202608201125.sql), 참고용 |
 
-`V202607311427`부터 `V202608121403`까지는 PM·관리자 승인을 거친 현재 정식
+`V202607311427`부터 `V202608201125`까지는 PM·관리자 승인을 거친 현재 정식
 Migration입니다. 통합 DDL은 같은 Head를 빈 DB에서 검토하기 위한 읽기용 Snapshot이며 기존
 DB 업그레이드에는 반드시 Flyway Migration을 사용합니다.
 
@@ -172,7 +172,7 @@ docker compose --profile tools run --rm flyway info
 npm.cmd run db:migrate
 ```
 
-현재 다음 열아홉 개 Migration이 순서대로 적용되어야 합니다.
+현재 다음 스물두 개 Migration이 순서대로 적용되어야 합니다.
 
 | Version        | 파일                                                         |
 | -------------- | ------------------------------------------------------------ |
@@ -195,8 +195,121 @@ npm.cmd run db:migrate
 | `202608121401` | `V202608121401__add_withdrawal_request_lifecycle_check.sql`  |
 | `202608121402` | `V202608121402__add_escrow_lifecycle_check.sql`              |
 | `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`        |
+| `202608152345` | `V202608152345__create_dispute_ai_review_history.sql`        |
+| `202608162210` | `V202608162210__create_notifications.sql`                    |
+| `202608201125` | `V202608201125__add_settlement_calculation_snapshot.sql`     |
 
 같은 명령을 다시 실행했을 때 `Schema ... is up to date. No migration necessary.`가 나오면 반복 실행도 정상입니다.
+
+#### `202608201125` 정산 계산 Snapshot 적용 전 확인과 Cutover
+
+이 Migration은 `settlements`에 계산 결과 여덟 필드를 추가하고, 승인된 기존 행을 백필한 뒤
+계산 Snapshot CHECK 네 개와 `work_cases`의 양수 분모 CHECK를 추가합니다. 지급·환불 원장을
+새로 만들거나 Wallet·Escrow·Settlement 상태를 전이하지 않습니다. 다음 빠른 Audit 결과는
+모두 0이어야 합니다.
+
+```sql
+SELECT COUNT(*) AS invalid_work_case_deduction_base
+FROM work_cases
+WHERE TIMESTAMPDIFF(MINUTE, starts_at, ends_at) <= 0
+   OR (break_paid = 0
+       AND break_minutes >= TIMESTAMPDIFF(MINUTE, starts_at, ends_at));
+
+SELECT COUNT(*) AS processing_settlements
+FROM settlements
+WHERE status = 'PROCESSING';
+
+SELECT COUNT(*) AS settlement_escrow_amount_integrity
+FROM settlements s
+JOIN work_cases wc ON wc.id = s.work_case_id
+LEFT JOIN escrows e ON e.work_case_id = s.work_case_id
+WHERE wc.employer_id = wc.worker_id
+   OR s.amount <> wc.agreed_wage
+   OR e.id IS NULL
+   OR e.amount <> s.amount;
+
+SELECT s.status, wc.status AS work_case_status, COUNT(*) AS row_count
+FROM settlements s
+JOIN work_cases wc ON wc.id = s.work_case_id
+GROUP BY s.status, wc.status
+ORDER BY s.status, wc.status;
+```
+
+Migration 자체의 강제 Preflight는 위 빠른 Audit 외에도 Settlement별 정확히 한 건의
+`ESCROW_HOLD` 원장, 미이동 상태의 `HELD` Escrow와 Release/Refund 부재, 성공 출퇴근 한 쌍,
+No-show의 성공 근태 부재, 퇴근 누락의 성공 출근 한 건·성공 퇴근 부재, 이미 종료된
+`COMPLETED/REFUNDED`의 실제 원장 Leg를 검증합니다. 하나라도 불명확하면 임시 CHECK 테이블의
+`invalid_count = 0`에서 실패합니다. 운영자가 추정 UPDATE를 만들지 말고 해당 범주와 행을
+소유자에게 보고해 대사한 뒤 다시 적용합니다.
+
+백필 규칙은 다음과 같습니다.
+
+| 기존 자금·근무 상태                     | 계산 Snapshot                                                                                         |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------- |
+| `COMPLETED`                             | 실제 전액 지급 원장을 확인한 뒤 `worker_paid_amount=amount`, `owner_refund_amount=0`, `LEGACY/LEGACY` |
+| `REFUNDED`                              | 실제 전액 환불 원장을 확인한 뒤 `0/amount`, `LEGACY/LEGACY`                                          |
+| `SCHEDULED`, `ON_HOLD`, `FAILED`        | 성공 출퇴근 한 쌍에서 `CHECKED_OUT/ATTENDANCE_V1` 공식을 계산                                        |
+| `WAITING` + `NO_SHOW`                   | `0/amount`, 지각·조기퇴근 0분, `NO_SHOW/ATTENDANCE_V1`                                                |
+| `WAITING` + `CHECK_OUT_MISSING`         | `0/amount`, 성공 출근에서 지각분만 계산, `CHECK_OUT_MISSING/ATTENDANCE_V1`                            |
+| 진행 중인 `WAITING`                     | 여덟 필드를 모두 `NULL`로 유지하고 최초 계산 시점에 애플리케이션이 한 번만 기록                       |
+
+`CHECKED_OUT` 지급액은 `M=min(D,L+E)`일 때 지각·조기퇴근이 모두 0분이면 약정액 전액,
+그 외에는 `floor((A * (D - M) / D) / 10) * 10`입니다. `D`는 유급 휴게면 전체 예정 분,
+무급 휴게면 전체 예정 분에서 휴게분을 뺀 값입니다. 기존 `updated_at`은 백필 시각으로
+덮어쓰지 않습니다.
+
+운영 Cutover는 다음 순서를 사용합니다.
+
+1. 근무 생성·계약 수락·출퇴근·정산 Scheduler·수동 지급·환불 쓰기를 함께 중지하고 열린
+   Transaction과 Metadata Lock 대기를 비웁니다.
+2. 위 Audit과 Migration에 포함된 전체 Preflight를 운영 Snapshot 또는 복제본에서 먼저 실행해
+   위반이 없음을 확인하고 복구 지점을 확보합니다.
+3. 구 애플리케이션이 새 CHECK와 충돌하는 `SCHEDULED`·`REFUNDED` 행을 만들지 못하도록 쓰기
+   중지를 유지한 채 `flyway migrate`를 실행합니다.
+4. 아래 열·제약·백필 검증과 `flyway validate`, `flyway info`를 완료합니다.
+5. `ATTENDANCE_V1` Snapshot을 함께 쓰는 호환 애플리케이션을 올린 뒤 쓰기를 재개합니다.
+
+```sql
+SELECT column_name, column_type, is_nullable, character_set_name, collation_name
+FROM information_schema.columns
+WHERE table_schema = DATABASE()
+  AND table_name = 'settlements'
+  AND column_name IN (
+      'worker_paid_amount', 'owner_refund_amount', 'deduction_base_minutes',
+      'late_minutes', 'early_leave_minutes', 'calculation_reason',
+      'calculation_version', 'calculated_at'
+  )
+ORDER BY ordinal_position;
+
+SELECT COUNT(*) AS incomplete_snapshot
+FROM settlements
+WHERE NOT (
+    (worker_paid_amount IS NULL AND owner_refund_amount IS NULL
+     AND deduction_base_minutes IS NULL AND late_minutes IS NULL
+     AND early_leave_minutes IS NULL AND calculation_reason IS NULL
+     AND calculation_version IS NULL AND calculated_at IS NULL)
+    OR
+    (worker_paid_amount IS NOT NULL AND owner_refund_amount IS NOT NULL
+     AND calculation_reason IS NOT NULL AND calculation_version IS NOT NULL
+     AND calculated_at IS NOT NULL)
+);
+```
+
+MySQL DDL은 외부 Transaction으로 전체 롤백되지 않습니다. 실패 뒤 재실행은 여덟 개 열의 정확한
+형태와 CHECK의 이름·유형·`ENFORCED=YES`·정규화 Clause Hash가 아래 값과 모두 일치할 때만
+허용됩니다.
+
+| 테이블        | 제약명                                             | CHECK clause SHA-256                                            |
+| ------------- | -------------------------------------------------- | ---------------------------------------------------------------- |
+| `settlements` | `ck_settlements_calculation_snapshot_shape`        | `a2d0f80ff51043febf23cf440a4cd571011cf0d2823e1a17b77fb1fb5ce54b74` |
+| `settlements` | `ck_settlements_calculation_amounts`               | `be50ec04f5b9b84d82ef0b3a77515f77bd9d19e793f3b160730743f86d9144d1` |
+| `settlements` | `ck_settlements_calculation_formula`               | `408d843f6e3c5bb2361e7bffec0f38317aa8e817530c46c60b54fe99a012e7b5` |
+| `settlements` | `ck_settlements_calculation_lifecycle`             | `f7ab879779932f365d423dcabf1bbe616c5243acca136ad5dbc1d8ed48a94148` |
+| `work_cases`  | `ck_work_cases_deduction_base_minutes`             | `005007f724952ccb2a5a8cf0ee783d9b0594442ca48063a1eeb294ac2b9116d6` |
+
+부분 열, 다른 CHECK, 불완전한 백필이 보이면 제약을 DROP하거나 History만 repair하지 않습니다.
+정확히 일치하는 부분 적용만 확인한 뒤 실패 이력을 `flyway repair`하고 재실행하면 Migration이
+완료된 단계는 건너뛰고 나머지 검증을 다시 수행합니다.
 
 #### `202607311427` 적용 전 확인
 
@@ -637,28 +750,29 @@ Flyway가 성공 이력을 기록하기 전에 DDL이 반영된 복구 상황은
    필요한 repair 뒤 Migration이 `DO 0`으로 DDL을 건너뛰고 성공 이력을 기록합니다. 같은 이름의
    다른 유형·Clause이거나 설명할 수 없는 부분 구조이면 제약을 임의로 DROP하거나 History만
    repair하지 말고 소유자에게 보고해 후속 immutable Migration 범위를 결정합니다.
-5. `migrate`, `validate`, `info`를 실행해 네 Version이 모두 `Success`이고 Head가
-   `202608121403`인지 확인합니다.
+5. `migrate`, `validate`, `info`를 실행해 네 Version이 모두 `Success`이고 현재 Head가
+   `202608201125`인지 확인합니다.
 
 #### 현재 DDL과 제품 Workflow 경계
 
-Head `202608121403`은 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록,
+Head `202608201125`는 문서 접근 감사의 Version·거부 사유와 그 승인 목록, 뱃지 유형 목록,
 정산 환불·재시도 생명주기와 분쟁 제목, 충전·출금의 확정된 결과 형태, 에스크로의 확정된 네
-상태 시각 형태와 근무 취소 시각 결합을
-고정하며, 사용자 귀속 없는 Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소,
+상태 시각 형태와 근무 취소 시각 결합, 분쟁 AI 검토 이력, 인앱 알림, 정산 계산 Snapshot과
+양수 분모를 고정하며, 사용자 귀속 없는 Mock 계좌와 Demo PIN 구조, 독립된 멱등 요청 Claim 저장소,
 `employer_profiles` 제거와 `CHECK_OUT_MISSING` 상태·근로자 필수 제약도 유지합니다. 이는 구조를
 저장할 수 있다는 DDL 사실이며 각 Workflow의 Runtime 구현 완료를 뜻하지 않습니다.
 
 | 기능                 | 현재 DDL                                                                                      | 승인된 제품 Workflow·후속 사항                                                                        |
 | -------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| 퇴근 누락 상태       | `CHECK_OUT_MISSING` 허용, 해당 상태의 `worker_id` 필수. `attendance_records.result` 변경 없음 | 서버 Scheduler가 종료 2시간 뒤 `IN_PROGRESS`·성공 출근·성공 퇴근 없음 조건을 재검증해 전이. 늦은 QR·수동 보정 없음, Settlement는 `WAITING/due_at=null`, 자금 불변 |
+| 퇴근 누락 상태       | `CHECK_OUT_MISSING` 허용, `worker_id` 필수, 계산 Snapshot은 0원 지급·전액 환불               | 서버 Scheduler가 상태와 근태를 재검증해 전이하며 자금은 열린 분쟁을 확인하는 별도 승인 환불 Operation만 이동               |
 | 100m 고정 반경       | 반경 기본값은 100이지만 두 반경 CHECK는 모든 양수를 허용                                      | 애플리케이션 강제로 충분한지, DB CHECK도 정확히 100으로 바꿀지 결정                                    |
 | 시스템 생성 계약서   | `EMPLOYMENT_CONTRACT`도 `work_case_id=NULL` 허용                                              | 근무 건 필수 연결을 DB에서도 강제할지 결정                                                             |
 | 계약서 3년 자동 삭제 | `documents.status=DELETED`는 있으나 전용 보존·완료·재시도 컬럼과 Index 없음                    | 7.0.0은 `ends_at` 서울 날짜+3년, 02:00 Keyset Job, DB 선삭제, Object 멱등 삭제와 Metadata·감사 무기한 보존을 확정. #131이 추가 DDL 없이 Runtime 구현 |
 | 문서 접근 감사       | 문서와 선택적 Version, 승인 목록으로 제한된 행위·결과·거부 사유 저장. 기존 행의 신규 상세는 NULL | 호환 Backend가 새 접근마다 Version과 거부 사유를 빠짐없이 기록하고 보관·조회 정책을 적용               |
 | 신뢰 뱃지            | `badge_type`은 두 종류만 허용하고 등급·건수·문턱은 `evidence` JSON에만 존재                   | 7.0.0은 누적 문턱, 사용자 잠금 뒤 재계산·Upsert, 닫힌 evidence와 별도 Backfill 없음을 확정. #182가 신규 Column·History 없이 Runtime 구현 |
 | 멱등 요청 Claim      | 사용자·Operation·Key 복합 UNIQUE, Fingerprint와 성공 응답 Snapshot 저장                       | Claim 선점·Replay·즉시 409·중단 복구·만료 정리는 후속 애플리케이션 구현                                |
-| 정산 재시도·환불     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index     | #172·#174·#175와 RF-09가 Scheduler·환불·분쟁 Runtime을 구현; Schema만으로 기능 완료 아님                 |
+| 정산 계산 Snapshot   | 지급·환불·분모·지각·조기퇴근·이유·버전·시각의 완결성, 금액 합과 10원 절삭 공식 CHECK          | 실제 근태 분 계산과 한 번만 기록하는 잠금, Scheduler 호출은 애플리케이션 책임                             |
+| 정산 재시도·환불     | `REFUNDED`, 재시도 감사 필드와 상태별 시각·승인자 결합 CHECK, 기존 `(status,due_at)` Index     | 열린 분쟁 차단과 Wallet·Escrow·Settlement 원자 전이, 재시도는 애플리케이션 책임                            |
 | 핵심 lifecycle 형태  | 충전·출금 `READY/COMPLETED`, 에스크로의 확정된 네 상태, 근무 취소 시각을 이름 있는 CHECK로 제한 | 허용 전이·권한·금액 대사와 실패·대사·`ON_HOLD` 의미는 애플리케이션이 유지하고 후속 DDL을 추정하지 않음   |
 | 비귀속 Mock 계좌     | 사용자 FK 없이 숫자 네 자리 PIN 저장, 기존 주문·출금·은행 원장 계좌 참조 유지                 | 호환 Backend가 은행·계좌번호로 ACTIVE 계좌를 찾고 충전에만 PIN을 검증하도록 전환                       |
 
@@ -666,8 +780,9 @@ Head `202608121403`은 문서 접근 감사의 Version·거부 사유와 그 승
 Transaction에서 Work owner Command를 호출합니다. 경계 시각은 `ends_at + 2시간`을 포함하며,
 스캔과 같은 Work Case 잠금·조건부 전이로 경쟁 승자를 하나로 만듭니다. 현재 DDL 자체는 성공
 출근·퇴근 사실이나 실행 시점을 증명하지 않으며, Scheduler 전용 Index는 운영 `EXPLAIN`에서
-필요성이 확인될 때만 별도 관리자 승인 Migration으로 검토합니다. `CHECK_OUT_MISSING`의 해소·
-지급 정책은 후속 계약 범위이며 현재 상태에서 임의 지급·환불하지 않습니다. 계약서 자동 삭제는
+필요성이 확인될 때만 별도 관리자 승인 Migration으로 검토합니다. `CHECK_OUT_MISSING`은 상태를
+유지한 채 0원 지급·전액 환불 Snapshot을 저장하고, 열린 분쟁이 없을 때 별도 승인 Operation만
+실제 환불합니다. Migration은 자금을 이동하지 않습니다. 계약서 자동 삭제는
 기준일과 삭제 범위를 확정한 뒤 Schema 보강 여부를 판단합니다.
 
 소유자가 후속 Migration을 만든 뒤 이 Runbook의 Head·개수·파일 목록, `SCHEMA_OVERVIEW.md`,
@@ -681,7 +796,7 @@ docker compose --profile tools run --rm flyway validate
 docker compose --profile tools run --rm flyway info
 ```
 
-현재 기준의 정상 결과는 열아홉 개 Migration의 검증 성공, Schema version `202608121403`, 모든
+현재 기준의 정상 결과는 스물두 개 Migration의 검증 성공, Schema version `202608201125`, 모든
 항목의 `Success`입니다.
 
 ## Spring·MyBatis 연결 검증
@@ -696,6 +811,7 @@ docker compose --profile tools run --rm flyway info
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentAccessAuditSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.badge.UserBadgeTypeSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.document.DocumentShareUniquenessSchemaDatabaseIntegrationTest"
+.\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.settlement.SettlementCalculationSnapshotSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.settlement.SettlementLifecycleSchemaDatabaseIntegrationTest"
 .\backend\gradlew.bat -p backend "-Dgighub.database.config=C:/absolute/path/to/KB PJT/backend/config/database-local.properties" databaseTest --tests "com.gighub.database.CoreLifecycleConstraintDatabaseIntegrationTest"
 ```

@@ -4,13 +4,15 @@
  * 제목·날짜·시작/종료시간·휴게시간(유급/무급)·일급 입력 → status=DRAFT 생성.
  * 지점 컨텍스트: useWorkplaceStore().selectedId.
  * 연계 API: POST /workplaces/{id}/work-cases  →  @/services/workCases (createWorkCase)
- * 공통: AppField · BaseButton · @/utils/validators
+ * 공통: AppField · AppTimeField · BaseButton · @/utils/validators
  */
 import { onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import AppBackHeader from '@/components/common/AppBackHeader.vue'
+import AppDateFieldCalendar from '@/components/common/AppDateFieldCalendar.vue'
 import AppField from '@/components/common/AppField.vue'
+import AppTimeField from '@/components/common/AppTimeField.vue'
 import BaseButton from '@/components/common/BaseButton.vue'
 import { fieldErrorMap } from '@/services/http'
 import { createWorkCase } from '@/services/workCases'
@@ -53,7 +55,12 @@ function validate() {
   // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 순서 대신 길이 상한으로 거른다.
   errors.endTime = workPeriodRule(form.startTime, form.endTime).message
   // 휴게가 근무 길이를 넘는 것도 서버가 400 으로 거절한다 — 같은 경계를 여기서 먼저 본다.
-  errors.breakMinutes = breakMinutesRule(form.startTime, form.endTime, form.breakMinutes).message
+  errors.breakMinutes = breakMinutesRule(
+    form.startTime,
+    form.endTime,
+    form.breakMinutes,
+    form.breakPaid
+  ).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')
@@ -112,29 +119,21 @@ async function onSubmit() {
           :error="errors.title"
         />
 
-        <AppField
+        <AppDateFieldCalendar
           v-model="form.workDate"
-          type="date"
           label="근무 날짜"
           required
           :error="errors.workDate"
         />
 
         <div class="field-row">
-          <AppField
+          <AppTimeField
             v-model="form.startTime"
-            type="time"
             label="시작시간"
             required
             :error="errors.startTime"
           />
-          <AppField
-            v-model="form.endTime"
-            type="time"
-            label="종료시간"
-            required
-            :error="errors.endTime"
-          />
+          <AppTimeField v-model="form.endTime" label="종료시간" required :error="errors.endTime" />
         </div>
 
         <AppField

@@ -7,6 +7,5 @@
  * (v-if 로 안내를, :disabled 로 제출을 이 값에 직접 묶는다) 항목 삭제만으로 복구된다.
  */
 export const PENDING_FEATURES = {
-  PASSWORD_CHANGE: 187, // PATCH /api/users/me/password — 서버 미구현
   WITHDRAWAL: 188 // POST /api/users/me/withdrawal — 서버 미구현
 }

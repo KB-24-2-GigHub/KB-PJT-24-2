@@ -32,7 +32,7 @@ public interface SettlementWalletService {
             long escrowId,
             SettlementWalletLock walletLock);
 
-    /** 지급 뒤 저장된 양측 원장과 RELEASED Escrow가 완전한지 대사합니다. */
+    /** 지급 뒤 저장된 양수 지급·환불 원장과 RELEASED Escrow가 완전한지 대사합니다. */
     void verifyCompletedPayout(
             SettlementWalletCommand command, SettlementWalletLock walletLock);
 
@@ -57,8 +57,8 @@ public interface SettlementWalletService {
     /**
      * 실제 자금 실행이 확정한 정산 금액입니다.
      *
-     * <p>현재 #72 경로는 정상 근무 전액 지급만 담당합니다. 지각 분할 계산은 별도 기능 이슈가
-     * 소유하므로 여기에서 추정하지 않습니다.</p>
+     * <p>계산은 Settlement Snapshot에서 이미 끝났습니다. Wallet은 세 금액의 보존식만
+     * 검증하고 저장된 분할을 그대로 실행합니다.</p>
      */
     record SettlementAmounts(
             long originalEscrowAmount,
@@ -71,6 +71,10 @@ public interface SettlementWalletService {
 
         public static SettlementAmounts fullRefund(long amount) {
             return new SettlementAmounts(amount, 0L, amount);
+        }
+
+        public static SettlementAmounts split(long original, long paid, long refunded) {
+            return new SettlementAmounts(original, paid, refunded);
         }
     }
 }

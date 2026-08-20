@@ -112,9 +112,9 @@ jobs:
             --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=${RUNNER_IP}/32,Description='gh-seed run ${{ github.run_id }}'}]"
           ssh-keyscan -H "${{ secrets.EC2_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      # compose.prod.yaml 은 SETUP.md 7장대로 사람이 배치한다. 배포 워크플로도
-      # 덮어쓰지 않으므로 여기서도 덮어쓰지 않는다. 대신 seed 서비스가 반영돼
-      # 있는지 먼저 보고, 없으면 무엇을 해야 하는지 알려주고 끊는다.
+      # compose.prod.yaml 은 Deploy API 가 배포마다 올린다(#452). 이 워크플로는
+      # 덮어쓰지 않는다. 대신 seed 서비스가 반영돼 있는지 먼저 보고, 없으면 무엇을
+      # 해야 하는지 알려주고 끊는다.
       - name: Check seed service is present on server
         run: |
           set -euo pipefail
@@ -122,8 +122,8 @@ jobs:
             "docker compose -f /opt/gighub/compose.prod.yaml --profile tools config --services" \
             | grep -qx seed; then
             echo "::error::/opt/gighub/compose.prod.yaml 에 seed 서비스가 없다."
-            echo "::error::로컬에서 아래를 먼저 실행할 것:"
-            echo "::error::  scp deploy/compose.prod.yaml <user>@<host>:/opt/gighub/compose.prod.yaml"
+            echo "::error::서버 파일이 저장소보다 낡았다. Deploy API 를 한 번 돌리면 갱신된다."
+            echo "::error::기다릴 수 없으면: scp deploy/compose.prod.yaml <user>@<host>:/opt/gighub/compose.prod.yaml"
             exit 1
           fi
 
@@ -178,16 +178,37 @@ jobs:
               echo "unexpected document storage path: $resolved" >&2
               exit 1
             fi
-            find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+            # 문서는 Tomcat 컨테이너가 자기 UID 로 쓴다. SSH 사용자 권한으로는 지울 수
+            # 없어서 2026-08-19 실행(run 32234708454)이 여기서 Permission denied 로 멈췄다.
+            # 지우지 못한 대상은 컨테이너가 만든 documents/contracts 디렉터리였다.
+            #
+            # 그 실패가 이 Step 에서 끝나지 않는 것이 진짜 문제였다. 뒤따르는 앱 기동 확인과
+            # Complete functional demo through public API 가 전부 건너뛰어져, SQL 은 적용됐는데
+            # 초대 수락·계약서 PDF·보건증이 없는 반쪽 시연 상태로 끝난다.
+            #
+            # 권한 상승은 위 경로 검증을 통과한 뒤에만 한다. 순서를 바꾸면 sudo 가 검증되지
+            # 않은 경로를 지우게 된다.
+            sudo find "$resolved" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
           '
 
+      # start 를 쓴다. start 는 위 stop 이 남겨 둔 그 컨테이너를 그대로 다시 켜므로
+      # 이미지 태그를 아예 해석하지 않는다. up -d 는 태그를 다시 해석하고 그 값은
+      # 서버 /opt/gighub/.env 에서 오므로, 이 워크플로가 확인할 수 없는 파일의 상태에
+      # 재기동 결과가 달리게 된다. 시드가 하려는 일은 "정지한 것을 되살리기" 이지
+      # "지금 옳은 버전을 고르기" 가 아니다.
+      #
+      # 2026-08-19 에 여기서 up -d 를 써서 구버전 WAR 가 올라왔다(#450,
+      # run 32236069569). 경위는 deploy/SETUP.md 7절.
+      #
+      # 이 Step 은 stop 이 성공했을 때만 실행되므로 되살릴 컨테이너가 있다는 것도
+      # 보장된다.
       - name: Restart application after full demo reset
         id: restart_app
         if: always() && steps.seed.outputs.is_demo == 'true' && steps.stop_app.outcome == 'success'
         run: |
           set -euo pipefail
           ssh -i ~/.ssh/deploy.pem "${REMOTE}" \
-            "docker compose -f /opt/gighub/compose.prod.yaml up -d app"
+            "docker compose -f /opt/gighub/compose.prod.yaml start app"
 
       - name: Wait for application after full demo reset
         if: steps.seed.outputs.is_demo == 'true'

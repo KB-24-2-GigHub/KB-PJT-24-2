@@ -6,6 +6,7 @@ import com.gighub.common.api.ApiResponse;
 import com.gighub.common.api.RequestBodies;
 import com.gighub.settlement.dto.SettlementApproveResponse;
 import com.gighub.settlement.service.SettlementService;
+import com.gighub.settlement.service.command.CheckOutMissingRefundApproveCommand;
 import com.gighub.settlement.service.command.NoShowRefundApproveCommand;
 import com.gighub.settlement.service.command.SettlementApproveCommand;
 import com.gighub.settlement.service.result.SettlementResult;
@@ -68,6 +69,27 @@ public class SettlementController {
 
         SettlementResult result = settlementService.approveNoShowRefund(
                 NoShowRefundApproveCommand.builder()
+                        .workCaseId(workCaseId)
+                        .approverUserId(principal.getUserId())
+                        .approverRole(principal.getRole())
+                        .idempotencyKey(idempotencyKey)
+                        .build());
+        return response(result);
+    }
+
+    /** 성공 출근 뒤 퇴근 기록이 누락된 근무의 예치금을 해당 OWNER에게 전액 환불합니다. */
+    @PostMapping("/api/work-cases/{workCaseId}/settlement/check-out-missing-refund/approve")
+    public ResponseEntity<ApiResponse<SettlementApproveResponse>> approveCheckOutMissingRefund(
+            @PathVariable Long workCaseId,
+            @RequestHeader("Idempotency-Key") String idempotencyKey,
+            HttpServletRequest request,
+            Authentication authentication) {
+
+        AuthPrincipal principal = AuthPrincipals.resolve(authentication);
+        RequestBodies.requireEmpty(request);
+
+        SettlementResult result = settlementService.approveCheckOutMissingRefund(
+                CheckOutMissingRefundApproveCommand.builder()
                         .workCaseId(workCaseId)
                         .approverUserId(principal.getUserId())
                         .approverRole(principal.getRole())

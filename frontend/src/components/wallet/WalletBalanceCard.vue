@@ -12,7 +12,7 @@ defineEmits(['charge', 'withdraw'])
 
 <template>
   <section class="wallet-card">
-    <p class="label">가용 잔액</p>
+    <p class="label">안심지갑 잔액</p>
     <p class="balance">{{ formatKRW(availableBalance) }}</p>
 
     <div class="actions">
@@ -37,7 +37,7 @@ defineEmits(['charge', 'withdraw'])
 }
 
 .label {
-  font-size: var(--text-md);
+  font-size: var(--text-lg);
   color: var(--color-text-sub);
 }
 

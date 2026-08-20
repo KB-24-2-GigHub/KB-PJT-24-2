@@ -7,6 +7,7 @@ import java.time.LocalTime;
 import java.util.List;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.common.api.ApiTimes;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
@@ -25,6 +26,7 @@ import com.gighub.work.mapper.param.WorkCaseTermsUpdateParam;
 import com.gighub.work.mapper.result.AttendanceSummaryRow;
 import com.gighub.work.mapper.result.ContractDetailRow;
 import com.gighub.work.mapper.result.OwnedWorkplaceSnapshotRow;
+import com.gighub.work.mapper.result.SettlementSummaryRow;
 import com.gighub.work.mapper.result.WorkCaseDetailRow;
 import com.gighub.work.mapper.result.WorkCaseListRow;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
@@ -168,9 +170,31 @@ class WorkCaseServiceImplTest {
         verify(workCaseMapper, never()).insert(any());
     }
 
-    /** 휴게 시간이 근무 시간과 같은 경계는 저장된다 — ContractSnapshot 도 같은 경계를 쓴다. */
+    /** 무급 휴게가 근무 전체와 같으면 차감 분모가 0이므로 저장 전에 거절한다. */
     @Test
-    void createAcceptsBreakEqualToTheWorkPeriod() {
+    void createRejectsUnpaidBreakEqualToTheWorkPeriod() {
+        WorkCaseCreateCommand command = WorkCaseCreateCommand.builder()
+                .workplaceId(WORKPLACE_ID)
+                .title("야간 마감")
+                .workDate(LocalDate.of(2026, 8, 10))
+                .startTime(LocalTime.of(23, 0))
+                .endTime(LocalTime.of(1, 0))
+                .breakMinutes(120)
+                .breakPaid(false)
+                .dailyWage(120_000L)
+                .build();
+
+        ValidationException thrown =
+                assertThrows(ValidationException.class, () -> service.create(owner(), command));
+
+        assertEquals("breakMinutes", thrown.getFieldErrors().get(0).getField());
+        assertTrue(thrown.getMessage().contains("보다 짧아야"), thrown.getMessage());
+        verify(workCaseMapper, never()).insert(any());
+    }
+
+    /** 유급 휴게는 차감 분모에서 빼지 않으므로 근무 전체와 같은 경계도 허용한다. */
+    @Test
+    void createAcceptsPaidBreakEqualToTheWorkPeriod() {
         when(workCaseMapper.findOwnedActiveWorkplace(WORKPLACE_ID, OWNER_ID))
                 .thenReturn(snapshot());
         doAnswer(invocation -> {
@@ -185,7 +209,7 @@ class WorkCaseServiceImplTest {
                 .startTime(LocalTime.of(23, 0))
                 .endTime(LocalTime.of(1, 0))
                 .breakMinutes(120)
-                .breakPaid(false)
+                .breakPaid(true)
                 .dailyWage(120_000L)
                 .build();
 
@@ -592,6 +616,42 @@ class WorkCaseServiceImplTest {
         assertNull(response.getSettlement());
         assertNotNull(response.getAttendance(), "attendance는 항상 객체여야 합니다.");
         assertNull(response.getAttendance().getCheckedInAt());
+    }
+
+    @Test
+    void detailReturnsTheStoredSettlementCalculationSnapshot() {
+        LocalDateTime calculatedAt = LocalDateTime.of(2026, 8, 20, 18, 5);
+        when(workCaseMapper.findDetailRow(WORK_CASE_ID)).thenReturn(detailRow(OWNER_ID, null));
+        when(workCaseMapper.findAttendanceTimestamps(WORK_CASE_ID)).thenReturn(emptyAttendance());
+        when(workCaseMapper.findSettlement(WORK_CASE_ID)).thenReturn(SettlementSummaryRow.builder()
+                .status("COMPLETED")
+                .amount(120_000L)
+                .workerPaidAmount(90_000L)
+                .ownerRefundAmount(30_000L)
+                .deductionBaseMinutes(420L)
+                .lateMinutes(105L)
+                .earlyLeaveMinutes(0L)
+                .calculationReason("CHECKED_OUT")
+                .calculationVersion("ATTENDANCE_V1")
+                .calculatedAt(calculatedAt)
+                .completedAt(calculatedAt.plusMinutes(1))
+                .build());
+
+        WorkCaseDetailResponse.SettlementSummary settlement =
+                service.detail(owner(), WORK_CASE_ID).getSettlement();
+
+        assertNotNull(settlement);
+        assertEquals(120_000L, settlement.getAmount());
+        assertEquals(120_000L, settlement.getOriginalEscrowAmount());
+        assertEquals(90_000L, settlement.getWorkerPaidAmount());
+        assertEquals(30_000L, settlement.getOwnerRefundAmount());
+        assertEquals(30_000L, settlement.getDeductionAmount());
+        assertEquals(420L, settlement.getDeductionBaseMinutes());
+        assertEquals(105L, settlement.getLateMinutes());
+        assertEquals(0L, settlement.getEarlyLeaveMinutes());
+        assertEquals("CHECKED_OUT", settlement.getCalculationReason());
+        assertEquals("ATTENDANCE_V1", settlement.getCalculationVersion());
+        assertEquals(ApiTimes.toInstant(calculatedAt), settlement.getCalculatedAt());
     }
 
     @Test
