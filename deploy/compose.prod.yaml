@@ -30,6 +30,7 @@ services:
     environment:
       CATALINA_OPTS: >-
         -Dgighub.database.config=/config/database.properties
+        -Dgighub.log.dir=/var/gighub/logs
         -Duser.timezone=Asia/Seoul
       TZ: Asia/Seoul
 
@@ -39,6 +40,9 @@ services:
       # 계약 PDF 는 LocalFileDocumentStorageAdapter 가 실제 파일로 쓴다.
       # 볼륨이 아니면 재배포마다 발급된 계약서가 사라진다.
       - /opt/gighub/documents:/var/gighub/documents
+      # WARN 이상 애플리케이션 로그. 볼륨이 아니면 장애를 조사하려는 시점에는
+      # 이미 컨테이너를 교체한 뒤라 정작 필요한 로그가 사라진다.
+      - /opt/gighub/logs:/var/gighub/logs
 
     restart: unless-stopped
 
