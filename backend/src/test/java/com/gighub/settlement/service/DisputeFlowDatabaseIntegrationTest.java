@@ -613,9 +613,15 @@ class DisputeFlowDatabaseIntegrationTest {
         );
         long escrowId = idBy(jdbc, "escrows", "work_case_id", workCaseId);
         jdbc.update(
-                "INSERT INTO settlements (work_case_id, amount, status, due_at)"
-                        + " VALUES (?, ?, 'SCHEDULED', DATE_ADD(NOW(6), INTERVAL 1 HOUR))",
-                workCaseId, WAGE
+                "INSERT INTO settlements"
+                        + " (work_case_id, amount, status, due_at,"
+                        + " worker_paid_amount, owner_refund_amount,"
+                        + " deduction_base_minutes, late_minutes, early_leave_minutes,"
+                        + " calculation_reason, calculation_version, calculated_at)"
+                        + " VALUES (?, ?, 'SCHEDULED',"
+                        + " DATE_ADD(NOW(6), INTERVAL 1 HOUR), ?, 0, 480, 0, 0,"
+                        + " 'CHECKED_OUT', 'ATTENDANCE_V1', NOW(6))",
+                workCaseId, WAGE, WAGE
         );
         long ownerWalletId = idBy(jdbc, "wallets", "user_id", ownerId);
         jdbc.update(
@@ -642,7 +648,11 @@ class DisputeFlowDatabaseIntegrationTest {
                 "UPDATE work_cases SET status = 'NO_SHOW' WHERE id = ?",
                 fixture.workCaseId());
         jdbc.update(
-                "UPDATE settlements SET status = 'WAITING', due_at = NULL"
+                "UPDATE settlements SET status = 'WAITING', due_at = NULL,"
+                        + " worker_paid_amount = 0, owner_refund_amount = amount,"
+                        + " deduction_base_minutes = 480, late_minutes = 0,"
+                        + " early_leave_minutes = 0, calculation_reason = 'NO_SHOW',"
+                        + " calculation_version = 'ATTENDANCE_V1', calculated_at = NOW(6)"
                         + " WHERE work_case_id = ?",
                 fixture.workCaseId());
         return fixture;
@@ -663,6 +673,8 @@ class DisputeFlowDatabaseIntegrationTest {
     }
 
     private static void deleteFixture(JdbcTemplate jdbc, Fixture fixture) {
+        jdbc.update(
+                "DELETE FROM notifications WHERE work_case_id = ?", fixture.workCaseId());
         jdbc.update("DELETE FROM idempotency_requests WHERE user_id IN (?, ?)",
                 fixture.ownerId(), fixture.workerId());
         jdbc.update(

@@ -218,6 +218,50 @@ class DisputeReviewQueueServiceTest {
     }
 
     @Test
+    void ownerRefundDecisionCanCloseCheckoutMissingDisputeBeforeManualRefund() {
+        DisputeReviewInput missingInput = new DisputeReviewInput(
+                input().getTitle(),
+                input().getContent(),
+                WorkCaseStatus.CHECK_OUT_MISSING,
+                SettlementStatus.WAITING,
+                input().getAgreedWage(),
+                1L);
+        String inputHash = DisputeReviewInputs.sha256(missingInput);
+        givenLockedAggregate(
+                DisputeReviewExecutionStatus.PROCESSING,
+                DisputeStatus.OPEN,
+                inputHash,
+                NOW.plusMinutes(1));
+        when(workSettlementService.lockEscrowContext(WORK_CASE_ID))
+                .thenReturn(workCase().toBuilder()
+                        .status(WorkCaseStatus.CHECK_OUT_MISSING)
+                        .successfulCheckInCount(1L)
+                        .successfulCheckOutCount(0L)
+                        .build());
+        when(settlementMapper.findByWorkCaseIdForUpdate(WORK_CASE_ID))
+                .thenReturn(settlement().toBuilder()
+                        .status(SettlementStatus.WAITING)
+                        .dueAt(null)
+                        .build());
+        when(reviewMapper.currentDatabaseTime()).thenReturn(NOW);
+        when(reviewMapper.complete(any())).thenReturn(1);
+        when(disputeMapper.transitionToClosed(
+                DISPUTE_ID, DisputeStatus.REJECTED, "사장님 환불 승인을 재개합니다."))
+                .thenReturn(1);
+        when(disputeMapper.findOpenIdsForUpdate(WORK_CASE_ID)).thenReturn(List.of());
+
+        assertTrue(queueService.complete(
+                execution(inputHash, missingInput),
+                providerResponse(
+                        DisputeReviewDecision.REJECT,
+                        "사장님 환불 승인을 재개합니다.")));
+
+        verify(disputeMapper).transitionToClosed(
+                DISPUTE_ID, DisputeStatus.REJECTED, "사장님 환불 승인을 재개합니다.");
+        verify(settlementMapper, never()).transitionOnHoldToScheduled(any());
+    }
+
+    @Test
     void invalidProviderOutputAlsoRetriesWithinConfiguredLimitAndKeepsHold() {
         String inputHash = DisputeReviewInputs.sha256(input());
         givenLockedAggregate(
@@ -525,6 +569,7 @@ class DisputeReviewQueueServiceTest {
                 .agreedWage(120_000L)
                 .status(WorkCaseStatus.COMPLETED)
                 .successfulCheckInCount(1L)
+                .successfulCheckOutCount(1L)
                 .build();
     }
 

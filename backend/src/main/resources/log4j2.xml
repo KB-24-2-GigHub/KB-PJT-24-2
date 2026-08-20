@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Log4j2 설정이 없으면 Log4j2 는 기본값(ERROR 등급, 콘솔 전용)으로 동작한다. 그 상태에서는
+  코드의 log.warn·log.info 가 어디에도 남지 않고 사라진다. SPEC-178-04 가 정한 "존재하지 않는
+  documentId 요청은 DB 감사 행 대신 traceId 보안 로그로만 남긴다" 와 SPEC-384-01 이 정한
+  "알림 적재 실패를 WARN 으로 남겨 어떤 이벤트가 빠졌는지 사후에 특정한다" 는 둘 다 이 파일이
+  있어야 실제로 성립한다.
+
+  출력 경로를 둘로 나눈다.
+  - Console: INFO 이상. docker compose logs 로 지금 무슨 일이 일어나는지 본다.
+  - RollingFile: WARN 이상. 컨테이너를 재시작해도 남아야 하는 것만 파일로 적는다.
+
+  파일 위치는 gighub.log.dir 로 주입한다. 기본값을 Tomcat 의 catalina.base/logs 로 두어
+  로컬에서는 Tomcat 자체 로그 옆에 쌓이고, 배포에서는 compose 가 영속 볼륨 경로를 넘긴다.
+-->
+<Configuration status="WARN">
+
+  <Properties>
+    <Property name="logDir">${sys:gighub.log.dir:-${sys:catalina.base}/logs}</Property>
+    <!--
+      traceId 는 TraceIdFilter 가 요청마다 MDC 에 넣는다. 응답 오류 Envelope 의 traceId 와
+      같은 값이라, 사용자가 신고한 오류를 로그에서 바로 찾을 수 있다. Scheduler 처럼 요청
+      밖에서 도는 로그에는 값이 없으므로 notEmpty 로 빈 대괄호를 남기지 않는다.
+    -->
+    <Property name="pattern">%d{yyyy-MM-dd HH:mm:ss.SSS} %-5level [%t] %notEmpty{[%X{traceId}] }%logger{36} - %msg%n</Property>
+  </Properties>
+
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="${pattern}"/>
+    </Console>
+
+    <RollingFile name="File"
+                 fileName="${logDir}/gighub.log"
+                 filePattern="${logDir}/gighub-%d{yyyy-MM-dd}-%i.log.gz">
+      <PatternLayout pattern="${pattern}"/>
+      <!-- Console 이 INFO 를 이미 받으므로 파일에는 조치가 필요한 등급만 남긴다. -->
+      <ThresholdFilter level="WARN" onMatch="ACCEPT" onMismatch="DENY"/>
+      <Policies>
+        <TimeBasedTriggeringPolicy/>
+        <SizeBasedTriggeringPolicy size="10 MB"/>
+      </Policies>
+      <!--
+        단일 EC2 인스턴스의 디스크를 로그가 채우면 애플리케이션과 MySQL 이 함께 죽는다.
+        30일 또는 100 MB 중 먼저 걸리는 쪽에서 오래된 파일을 지운다.
+
+        IfFileName 아래에 조건을 그냥 나열하면 Log4j2 는 전부 만족할 때만 삭제한다(AND).
+        그러면 최근 30일치가 100 MB 를 넘겨도 아무것도 지워지지 않으므로, IfAny 로 감싸
+        둘 중 하나만 걸려도 지우게 한다. 파일은 최신순으로 평가되므로 IfAccumulatedFileSize
+        는 누적 100 MB 를 넘긴 시점부터의 오래된 파일에만 걸린다.
+      -->
+      <DefaultRolloverStrategy max="20">
+        <Delete basePath="${logDir}" maxDepth="1">
+          <IfFileName glob="gighub-*.log.gz">
+            <IfAny>
+              <IfLastModified age="30d"/>
+              <IfAccumulatedFileSize exceeds="100 MB"/>
+            </IfAny>
+          </IfFileName>
+        </Delete>
+      </DefaultRolloverStrategy>
+    </RollingFile>
+  </Appenders>
+
+  <Loggers>
+    <!--
+      애플리케이션 로그는 INFO 까지 본다. DEBUG 는 켜지 않는다 — SSE 연결 정리처럼 정상
+      운영에서 반복되는 흐름이 DEBUG 로 기록돼 있어 켜면 파일이 의미 없이 커진다.
+    -->
+    <Logger name="com.gighub" level="INFO"/>
+
+    <!-- 프레임워크 기동 로그가 애플리케이션 로그를 덮지 않게 한 단계 올린다. -->
+    <Logger name="org.springframework" level="WARN"/>
+    <Logger name="org.mybatis" level="WARN"/>
+    <Logger name="com.zaxxer.hikari" level="WARN"/>
+
+    <Root level="INFO">
+      <AppenderRef ref="Console"/>
+      <AppenderRef ref="File"/>
+    </Root>
+  </Loggers>
+</Configuration>

@@ -7,18 +7,18 @@ This is the compact database context for repository agents. Read it before chang
 | Item                   | Current baseline                                                                                               |
 | ---------------------- | -------------------------------------------------------------------------------------------------------------- |
 | Status                 | Current                                                                                                        |
-| Last verified          | 2026-08-16                                                                                                     |
+| Last verified          | 2026-08-20                                                                                                     |
 | Schema and DDL editor  | PM or Repository Administrator controlled; ordinary implementation agents have read-only access                |
 | Schema source of truth | Owner-authored or owner-adopted tracked `backend/src/main/resources/db/migration/V*.sql`                       |
-| Migration head         | `202608162210`                                                                                                 |
-| Versioned migrations   | 21                                                                                                             |
+| Migration head         | `202608201125`                                                                                                 |
+| Versioned migrations   | 22                                                                                                             |
 | Domain tables          | 26, excluding Flyway's `flyway_schema_history`                                                                 |
 | Runtime                | MySQL 8.4.10, InnoDB                                                                                           |
-| Readable DDL snapshot  | [`schema-snapshot-202608162210.sql`](../database/schema-snapshot-202608162210.sql), owner-maintained reference |
+| Readable DDL snapshot  | [`schema-snapshot-202608201125.sql`](../database/schema-snapshot-202608201125.sql), owner-maintained reference |
 
 When this summary and executable configuration disagree, inspect the owner-authored or
 owner-adopted migrations, Git tracking, `compose.yaml`, `DatabaseConfig.java`, and
-`backend/build.gradle`. Versions `202607311427` through `202608162210` are approved parts of the
+`backend/build.gradle`. Versions `202607311427` through `202608201125` are approved parts of the
 current schema. Version `202608041614` adds the independent idempotency Claim store, and version
 `202608051337` replaces Mock bank-account user ownership with a four-digit Demo PIN while preserving
 account IDs and finance references. Version `202608061428` adds document-Version and structured
@@ -32,7 +32,10 @@ and version `202608162210` adds the in-app notification store. Notifications sep
 identifier (`source_type`, `source_id`) from the navigation target (`work_case_id`) so a second
 legitimate event on the same work case is not rejected as a duplicate. Recovery accepts an already
 present constraint only when its name, type, enforced state,
-and normalized MySQL CHECK-clause SHA-256 exactly match the migration. Update this document when those authoritative
+and normalized MySQL CHECK-clause SHA-256 exactly match the migration. Version `202608201125` adds
+the immutable settlement-calculation Snapshot, backfills only approved historical and unmoved
+financial states, and requires every work case to have a positive minute-level deduction base.
+Update this document when those authoritative
 sources prove the summary is stale.
 If the executable schema itself needs correction, report the required change to the owner and do
 not edit or regenerate SQL.
@@ -73,6 +76,7 @@ not edit or regenerate SQL.
 | `202608121403` | `V202608121403__add_work_case_cancellation_check.sql`        | Require `canceled_at` exactly for `CANCELED` work cases                                               |
 | `202608152345` | `V202608152345__create_dispute_ai_review_history.sql`        | Add DEMO dispute-review execution history, active-work uniqueness, and lifecycle audit constraints    |
 | `202608162210` | `V202608162210__create_notifications.sql`                    | Add in-app notifications with per-event uniqueness, type pairing, and read-state consistency          |
+| `202608201125` | `V202608201125__add_settlement_calculation_snapshot.sql`     | Add attendance-based settlement snapshots, guarded backfill, and positive deduction-base checks       |
 
 Applied or shared versioned migrations are immutable. A newer `V*.sql` file or another DDL artifact may be created only in a scoped administrative release explicitly authorized by the human Project Manager or Repository Administrator.
 
@@ -110,6 +114,9 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - Invitation delivery and response states belong to `work_invitations`; an unaccepted work case remains `DRAFT`.
 - `ACCEPTED`, `READY`, `IN_PROGRESS`, `CHECK_OUT_MISSING`, `COMPLETED`, and `NO_SHOW` work-case states require a worker.
 - `CANCELED` requires `canceled_at`, while every other work-case state requires `canceled_at` to be null.
+- `ck_work_cases_deduction_base_minutes` requires `TIMESTAMPDIFF(MINUTE, starts_at, ends_at) > 0`.
+  Paid breaks do not reduce that base; an unpaid break must be strictly shorter than the scheduled
+  whole-minute duration.
 - The database permits `CHECK_OUT_MISSING` and requires its worker, but it does not prove that the work case has a successful check-in and no successful check-out or decide when that state transition occurs.
 - Generated active-slot uniqueness permits at most one pending `work_invitation` per work case while preserving terminal invitation history.
 - `work_contracts.work_case_id` is unique. A composite foreign key proves that contract parties and agreed wage match the work case.
@@ -145,6 +152,20 @@ Inspect the ordered migrations before relying on an exact column, key, index, ge
 - `settlements` accepts `WAITING`, `SCHEDULED`, `ON_HOLD`, `PROCESSING`, `COMPLETED`, `REFUNDED`,
   and `FAILED` only in approved column shapes. `retry_count`, `last_failure_at`, and
   `next_retry_at` preserve Scheduler failure evidence; `(status, due_at)` remains the candidate index.
+- A calculation Snapshot stores `worker_paid_amount`, `owner_refund_amount`, the deduction base,
+  late and early-leave minutes, reason, version, and calculation time together or leaves all eight
+  fields null. Minute values use `BIGINT UNSIGNED`; reasons are `CHECKED_OUT`, `NO_SHOW`,
+  `CHECK_OUT_MISSING`, or `LEGACY`, and versions are `ATTENDANCE_V1` or `LEGACY`.
+- `ATTENDANCE_V1` checked-out amounts are constrained to the approved 10-won floor formula.
+  `NO_SHOW` and `CHECK_OUT_MISSING` require zero worker pay and a full owner refund. `LEGACY` is
+  restricted to pre-existing `COMPLETED` or `REFUNDED` rows and intentionally has null minute fields.
+  Every non-`WAITING` settlement requires a Snapshot; `WAITING` remains nullable until its first
+  calculation event.
+- Migration `202608201125` performs no release or refund. It backfills already terminal money rows as
+  `LEGACY`, applies `ATTENDANCE_V1` only to unmoved checked-out/no-show/missing rows with unambiguous
+  attendance and escrow evidence, and leaves ongoing `WAITING` rows uncalculated. Existing
+  `PROCESSING`, invalid denominator, party/amount mismatch, ambiguous attendance, or inconsistent
+  ledger evidence aborts the cutover instead of being guessed.
 - `PROCESSING` must not be committed independently from its money transaction. A pre-existing stuck
   `PROCESSING`, legacy `FAILED`, or ambiguous completed row is rejected by migration preflight rather
   than guessed into the new lifecycle.

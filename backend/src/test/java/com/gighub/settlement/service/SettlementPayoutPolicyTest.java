@@ -187,7 +187,20 @@ class SettlementPayoutPolicyTest {
     private SettlementFacts settlement(
             SettlementStatus status, LocalDateTime nextRetryAt) {
         return new SettlementFacts(
-                12L, WORK_CASE_ID, WAGE, status, DUE_AT, nextRetryAt);
+                12L,
+                WORK_CASE_ID,
+                WAGE,
+                WAGE,
+                0L,
+                480L,
+                0L,
+                0L,
+                "CHECKED_OUT",
+                "ATTENDANCE_V1",
+                DUE_AT.minusHours(24),
+                status,
+                DUE_AT,
+                nextRetryAt);
     }
 
     private SettlementEscrowSnapshot escrow(EscrowStatus status) {

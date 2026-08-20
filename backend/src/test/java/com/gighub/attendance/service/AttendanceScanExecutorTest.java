@@ -19,6 +19,7 @@ import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.QrTokenMapper;
 import com.gighub.attendance.mapper.param.AttendanceRecordInsertParam;
 import com.gighub.attendance.mapper.result.AttendanceScanCandidateRow;
+import com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow;
 import com.gighub.attendance.mapper.result.QrTokenRow;
 import com.gighub.attendance.qr.QrHmacKeys;
 import com.gighub.attendance.qr.QrTokenCodec;
@@ -27,6 +28,7 @@ import com.gighub.auth.security.AuthPrincipal;
 import com.gighub.idempotency.IdempotencyClaimService;
 import com.gighub.member.domain.UserRole;
 import com.gighub.settlement.service.SettlementReservationService;
+import com.gighub.settlement.service.command.SettlementCalculationCommand;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -114,7 +116,7 @@ class AttendanceScanExecutorTest {
         assertTrue(response.getIsLate());
         assertEquals(5, response.getLateMinutes());
         assertNull(response.getSettlementDueAt());
-        verify(settlementReservationService, never()).schedulePayout(anyLong(), any());
+        verify(settlementReservationService, never()).schedulePayout(any(), any());
         // 멱등 Claim은 근태 판정과 같은 Transaction에서 완료되어야 합니다.
         verify(claimService).complete(eq(CLAIM_ID), eq(200), any());
     }
@@ -128,6 +130,7 @@ class AttendanceScanExecutorTest {
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
                 .thenReturn(true);
+        givenAttendanceTimes(STARTS_AT, ENDS_AT.plusMinutes(10));
 
         AttendanceScanOutcome outcome = executor().execute(
                 principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt);
@@ -139,7 +142,8 @@ class AttendanceScanExecutorTest {
         assertNull(response.getEarlyCheckoutConfirmedAt());
         assertEquals(ENDS_AT.plusMinutes(10).plusHours(24), toLocalDateTime(response.getSettlementDueAt()));
         verify(settlementReservationService).schedulePayout(
-                eq(WORK_CASE_ID), eq(ENDS_AT.plusMinutes(10).plusHours(24)));
+                any(SettlementCalculationCommand.class),
+                eq(ENDS_AT.plusMinutes(10).plusHours(24)));
         verify(claimService).complete(eq(CLAIM_ID), eq(200), any());
     }
 
@@ -172,6 +176,7 @@ class AttendanceScanExecutorTest {
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
                 .thenReturn(true);
+        givenAttendanceTimes(STARTS_AT, ENDS_AT.minusHours(1));
 
         AttendanceScanOutcome outcome = executor().execute(
                 principal,
@@ -289,9 +294,10 @@ class AttendanceScanExecutorTest {
         when(workLifecycleCommandService.transition(
                 WORK_CASE_ID, WorkCaseStatus.IN_PROGRESS, WorkCaseStatus.COMPLETED))
                 .thenReturn(true);
+        givenAttendanceTimes(STARTS_AT, ENDS_AT.plusMinutes(10));
         // 정산 행이 없거나 WAITING이 아닌 이상 상태를 흉내 냅니다.
         org.mockito.Mockito.doThrow(new IllegalStateException("정산 지급 예약을 반영하지 못했습니다."))
-                .when(settlementReservationService).schedulePayout(anyLong(), any());
+                .when(settlementReservationService).schedulePayout(any(), any());
 
         org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> executor().execute(
                 principal, onSite(receivedAt), payload(), CLAIM_ID, receivedAt));
@@ -360,7 +366,17 @@ class AttendanceScanExecutorTest {
             LocalDateTime startsAt,
             LocalDateTime endsAt) {
         when(workLifecycleCommandService.lock(WORK_CASE_ID))
-                .thenReturn(new WorkLifecycleSnapshot(WORK_CASE_ID, status, startsAt, endsAt));
+                .thenReturn(new WorkLifecycleSnapshot(
+                        WORK_CASE_ID, status, startsAt, endsAt, 100_000L, 0, false));
+    }
+
+    private void givenAttendanceTimes(
+            LocalDateTime checkedInAt, LocalDateTime checkedOutAt) {
+        when(attendanceRecordMapper.findSuccessTimestamps(WORK_CASE_ID))
+                .thenReturn(AttendanceSuccessTimestampsRow.builder()
+                        .checkedInAt(checkedInAt)
+                        .checkedOutAt(checkedOutAt)
+                        .build());
     }
 
     private static QrTokenRow activeQr() {

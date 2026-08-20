@@ -98,8 +98,10 @@ final class SettlementWalletIntegrityValidator {
             WalletTransactionSnapshot snapshot,
             long expectedWalletId,
             long expectedUserId,
-            SettlementWalletCommand command) {
-        if (snapshot.getId() == null
+            SettlementWalletCommand command,
+            long expectedAmount) {
+        if (snapshot == null
+                || snapshot.getId() == null
                 || snapshot.getId() <= 0
                 || snapshot.getWalletId() == null
                 || snapshot.getWalletId() != expectedWalletId
@@ -108,13 +110,37 @@ final class SettlementWalletIntegrityValidator {
                 || snapshot.getWorkCaseId() == null
                 || snapshot.getWorkCaseId() != command.getWorkCaseId()
                 || snapshot.getAmount() == null
-                || snapshot.getAmount() != command.getAmount()
+                || snapshot.getAmount() != expectedAmount
                 || !TX_ESCROW_RELEASE.equals(snapshot.getTransactionType())
                 || !REF_ESCROW.equals(snapshot.getReferenceType())
                 || snapshot.getReferenceId() == null
                 || snapshot.getReferenceId() <= 0) {
             throw new EscrowIntegrityException(
                     "정산 식별자 기반 원장이 현재 지급 결과와 일치하지 않습니다.");
+        }
+    }
+
+    static void validatePayoutRefundLedger(
+            WalletTransactionSnapshot snapshot,
+            long expectedWalletId,
+            SettlementWalletCommand command) {
+        if (snapshot == null
+                || snapshot.getId() == null
+                || snapshot.getId() <= 0
+                || snapshot.getWalletId() == null
+                || snapshot.getWalletId() != expectedWalletId
+                || snapshot.getWalletUserId() == null
+                || snapshot.getWalletUserId() != command.getEmployerId()
+                || snapshot.getWorkCaseId() == null
+                || snapshot.getWorkCaseId() != command.getWorkCaseId()
+                || snapshot.getAmount() == null
+                || snapshot.getAmount() != command.getOwnerRefundAmount()
+                || !TX_ESCROW_REFUND.equals(snapshot.getTransactionType())
+                || !REF_ESCROW.equals(snapshot.getReferenceType())
+                || snapshot.getReferenceId() == null
+                || snapshot.getReferenceId() <= 0) {
+            throw new EscrowIntegrityException(
+                    "정산 환불 원장이 현재 분할 지급 결과와 일치하지 않습니다.");
         }
     }
 

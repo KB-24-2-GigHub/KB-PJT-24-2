@@ -103,7 +103,10 @@ describe('OwnerWorkCaseNewView 휴게시간', () => {
     await useWorkplaceStore().load()
   })
 
-  async function submitWith(breakMinutes, { startTime = '09:00', endTime = '18:00' } = {}) {
+  async function submitWith(
+    breakMinutes,
+    { startTime = '09:00', endTime = '18:00', breakPaid = false } = {}
+  ) {
     const wrapper = mount(OwnerWorkCaseNewView)
     await flushPromises()
 
@@ -113,6 +116,12 @@ describe('OwnerWorkCaseNewView 휴게시간', () => {
     await f.startTime.setValue(startTime)
     await f.endTime.setValue(endTime)
     await f.breakMinutes.setValue(breakMinutes)
+    if (breakPaid) {
+      await wrapper
+        .findAll('button')
+        .find((button) => button.text() === '유급')
+        .trigger('click')
+    }
     await f.dailyWage.setValue('90000')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
@@ -127,12 +136,22 @@ describe('OwnerWorkCaseNewView 휴게시간', () => {
     expect(wrapper.text()).toContain('540분')
   })
 
-  it('근무 시간과 정확히 같은 휴게는 서버와 같이 통과시킨다', async () => {
+  it('무급 휴게가 근무 시간과 정확히 같으면 제출하지 않는다', async () => {
+    const wrapper = await submitWith('540')
+
+    expect(createWorkCase).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('무급 휴게시간')
+  })
+
+  it('유급 휴게가 근무 시간과 정확히 같으면 통과시킨다', async () => {
     createWorkCase.mockResolvedValue({ workCaseId: 1 })
 
-    await submitWith('540')
+    await submitWith('540', { breakPaid: true })
 
-    expect(createWorkCase).toHaveBeenCalledWith(7, expect.objectContaining({ breakMinutes: 540 }))
+    expect(createWorkCase).toHaveBeenCalledWith(
+      7,
+      expect.objectContaining({ breakMinutes: 540, breakPaid: true })
+    )
   })
 
   it('자정을 넘기는 근무는 실제 길이를 기준으로 본다', async () => {

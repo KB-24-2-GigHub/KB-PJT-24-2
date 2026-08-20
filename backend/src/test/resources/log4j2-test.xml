@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  테스트 전용 설정. Log4j2 는 classpath 에 log4j2-test.xml 이 있으면 log4j2.xml 보다 먼저
+  사용한다.
+
+  이 파일이 필요한 이유는 하나다. 운영 설정의 파일 경로는 ${sys:catalina.base} 를 기본값으로
+  쓰는데, Tomcat 밖에서 도는 테스트에는 그 시스템 속성이 없다. 그대로 두면 Log4j2 가 치환되지
+  않은 문자열을 디렉터리 이름으로 삼아 저장소 안에 쓰레기 폴더를 만든다.
+
+  등급을 WARN 으로 올려 테스트 출력에 기동 로그가 섞이지 않게 하고, 정작 봐야 할 경고와
+  오류만 남긴다.
+-->
+<Configuration status="WARN">
+  <Appenders>
+    <Console name="Console" target="SYSTEM_OUT">
+      <PatternLayout pattern="%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n"/>
+    </Console>
+  </Appenders>
+
+  <Loggers>
+    <Root level="WARN">
+      <AppenderRef ref="Console"/>
+    </Root>
+  </Loggers>
+</Configuration>

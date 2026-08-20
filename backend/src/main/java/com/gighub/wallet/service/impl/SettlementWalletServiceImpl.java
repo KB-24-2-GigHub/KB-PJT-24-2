@@ -31,6 +31,7 @@ import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateRefundedEscrow;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEmployerReleaseLedgerInvariant;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateEscrowReference;
+import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validatePayoutRefundLedger;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateRefundLedger;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateHeldEscrowOwnership;
 import static com.gighub.wallet.service.impl.SettlementWalletIntegrityValidator.validateReleaseLedger;
@@ -98,23 +99,42 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
         WalletTransactionSnapshot worker =
                 walletMapper.findSettlementTransactionByIdempotencyKeyForShare(
                         command.getWorkerLedgerKey());
-        if (employer == null || worker == null) {
-            throw new EscrowIntegrityException("정산 원장 쌍이 완전하지 않습니다.");
-        }
-        validateReleaseLedger(
-                employer, lock.employerWalletId(), command.getEmployerId(), command);
-        validateReleaseLedger(
-                worker, lock.workerWalletId(), command.getWorkerId(), command);
-        if (!employer.getReferenceId().equals(worker.getReferenceId())) {
-            throw new EscrowIntegrityException("정산 원장 쌍의 에스크로 참조가 일치하지 않습니다.");
-        }
+        WalletTransactionSnapshot refund =
+                walletMapper.findSettlementTransactionByIdempotencyKeyForShare(
+                        command.getEmployerRefundLedgerKey());
+        requireConditionalLedger(employer, command.getWorkerPaidAmount(), "고용주 지급");
+        requireConditionalLedger(worker, command.getWorkerPaidAmount(), "근로자 지급");
+        requireConditionalLedger(refund, command.getOwnerRefundAmount(), "고용주 환불");
         SettlementEscrowSnapshot escrow = toSnapshot(
                 walletMapper.findSettlementEscrowForUpdate(command.getWorkCaseId()));
         long escrowId = validateCompletedEscrow(escrow, command, lock.escrowId());
-        validateEscrowReference(employer, escrowId);
-        validateEscrowReference(worker, escrowId);
-        validateEmployerReleaseLedgerInvariant(employer, command.getAmount());
-        validateWorkerReleaseLedgerInvariant(worker, command.getAmount());
+        if (employer != null) {
+            validateReleaseLedger(
+                    employer,
+                    lock.employerWalletId(),
+                    command.getEmployerId(),
+                    command,
+                    command.getWorkerPaidAmount());
+            validateEscrowReference(employer, escrowId);
+            validateEmployerReleaseLedgerInvariant(
+                    employer, command.getWorkerPaidAmount());
+        }
+        if (worker != null) {
+            validateReleaseLedger(
+                    worker,
+                    lock.workerWalletId(),
+                    command.getWorkerId(),
+                    command,
+                    command.getWorkerPaidAmount());
+            validateEscrowReference(worker, escrowId);
+            validateWorkerReleaseLedgerInvariant(worker, command.getWorkerPaidAmount());
+        }
+        if (refund != null) {
+            validatePayoutRefundLedger(refund, lock.employerWalletId(), command);
+            validateEscrowReference(refund, escrowId);
+            validateOwnerRefundLedgerInvariant(refund, command.getOwnerRefundAmount());
+        }
+        validatePayoutLedgerChain(employer, worker, refund, lock);
     }
 
     @Override
@@ -158,8 +178,11 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 command.getEmployerId(),
                 command.getWorkerId(),
                 command.getAmount(),
+                command.getWorkerPaidAmount(),
+                command.getOwnerRefundAmount(),
                 command.getEmployerLedgerKey(),
                 command.getWorkerLedgerKey(),
+                command.getEmployerRefundLedgerKey(),
                 escrowId,
                 employerWalletId,
                 employer.getAvailableBalance(),
@@ -205,12 +228,21 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 lock.employerAvailable(), lock.employerLocked());
         WalletBalance workerBefore = WalletBalance.krw(
                 lock.workerAvailable(), lock.workerLocked());
-        Money amount = Money.krw(command.getAmount());
-        WalletBalance employerAfter;
+        validateSplit(command);
+        WalletBalance employerAfterRelease = employerBefore;
+        WalletBalance employerAfter = employerBefore;
         WalletBalance workerAfter;
         try {
-            employerAfter = employerBefore.release(amount);
-            workerAfter = workerBefore.credit(amount);
+            if (command.getWorkerPaidAmount() > 0) {
+                Money payout = Money.krw(command.getWorkerPaidAmount());
+                employerAfterRelease = employerBefore.release(payout);
+                workerAfter = workerBefore.credit(payout);
+            } else {
+                workerAfter = workerBefore;
+            }
+            employerAfter = command.getOwnerRefundAmount() > 0
+                    ? employerAfterRelease.refund(Money.krw(command.getOwnerRefundAmount()))
+                    : employerAfterRelease;
         } catch (WalletBalance.InsufficientBalanceException insufficient) {
             throw new EscrowIntegrityException(
                     "고용주의 잠금 금액이 정산 금액보다 적습니다.", insufficient);
@@ -225,40 +257,60 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 lock.employerWalletId(), employerBefore, employerAfter)) != 1) {
             throw new EscrowIntegrityException("고용주 잠금 금액을 차감하지 못했습니다.");
         }
-        if (walletMapper.updateWalletBalanceByWalletId(WalletBalanceUpdateParam.of(
-                lock.workerWalletId(), workerBefore, workerAfter)) != 1) {
+        if (command.getWorkerPaidAmount() > 0
+                && walletMapper.updateWalletBalanceByWalletId(WalletBalanceUpdateParam.of(
+                        lock.workerWalletId(), workerBefore, workerAfter)) != 1) {
             throw new EscrowIntegrityException("근로자 지갑에 정산금을 반영하지 못했습니다.");
         }
 
-        insertLedger(WalletTransactionParam.builder()
-                .walletId(lock.employerWalletId())
-                .workCaseId(command.getWorkCaseId())
-                .transactionType(TX_ESCROW_RELEASE)
-                .amount(command.getAmount())
-                .availableBefore(employerBefore.available())
-                .availableAfter(employerAfter.available())
-                .lockedBefore(employerBefore.locked())
-                .lockedAfter(employerAfter.locked())
-                .referenceType(REF_ESCROW)
-                .referenceId(escrowId)
-                .idempotencyKey(command.getEmployerLedgerKey())
-                .build(), "고용주 정산 원장을 기록하지 못했습니다.");
-        insertLedger(WalletTransactionParam.builder()
-                .walletId(lock.workerWalletId())
-                .workCaseId(command.getWorkCaseId())
-                .transactionType(TX_ESCROW_RELEASE)
-                .amount(command.getAmount())
-                .availableBefore(workerBefore.available())
-                .availableAfter(workerAfter.available())
-                .lockedBefore(workerBefore.locked())
-                .lockedAfter(workerAfter.locked())
-                .referenceType(REF_ESCROW)
-                .referenceId(escrowId)
-                .idempotencyKey(command.getWorkerLedgerKey())
-                .build(), "근로자 정산 원장을 기록하지 못했습니다.");
+        if (command.getWorkerPaidAmount() > 0) {
+            insertLedger(WalletTransactionParam.builder()
+                    .walletId(lock.employerWalletId())
+                    .workCaseId(command.getWorkCaseId())
+                    .transactionType(TX_ESCROW_RELEASE)
+                    .amount(command.getWorkerPaidAmount())
+                    .availableBefore(employerBefore.available())
+                    .availableAfter(employerAfterRelease.available())
+                    .lockedBefore(employerBefore.locked())
+                    .lockedAfter(employerAfterRelease.locked())
+                    .referenceType(REF_ESCROW)
+                    .referenceId(escrowId)
+                    .idempotencyKey(command.getEmployerLedgerKey())
+                    .build(), "고용주 정산 지급 원장을 기록하지 못했습니다.");
+            insertLedger(WalletTransactionParam.builder()
+                    .walletId(lock.workerWalletId())
+                    .workCaseId(command.getWorkCaseId())
+                    .transactionType(TX_ESCROW_RELEASE)
+                    .amount(command.getWorkerPaidAmount())
+                    .availableBefore(workerBefore.available())
+                    .availableAfter(workerAfter.available())
+                    .lockedBefore(workerBefore.locked())
+                    .lockedAfter(workerAfter.locked())
+                    .referenceType(REF_ESCROW)
+                    .referenceId(escrowId)
+                    .idempotencyKey(command.getWorkerLedgerKey())
+                    .build(), "근로자 정산 지급 원장을 기록하지 못했습니다.");
+        }
+        if (command.getOwnerRefundAmount() > 0) {
+            insertLedger(WalletTransactionParam.builder()
+                    .walletId(lock.employerWalletId())
+                    .workCaseId(command.getWorkCaseId())
+                    .transactionType(TX_ESCROW_REFUND)
+                    .amount(command.getOwnerRefundAmount())
+                    .availableBefore(employerAfterRelease.available())
+                    .availableAfter(employerAfter.available())
+                    .lockedBefore(employerAfterRelease.locked())
+                    .lockedAfter(employerAfter.locked())
+                    .referenceType(REF_ESCROW)
+                    .referenceId(escrowId)
+                    .idempotencyKey(command.getEmployerRefundLedgerKey())
+                    .build(), "고용주 정산 환불 원장을 기록하지 못했습니다.");
+        }
 
-        // 응답 금액은 요청을 다시 계산하지 않고, 방금 검증·반영한 전액 지급 결과에서 만듭니다.
-        return SettlementAmounts.fullPayout(command.getAmount());
+        return SettlementAmounts.split(
+                command.getAmount(),
+                command.getWorkerPaidAmount(),
+                command.getOwnerRefundAmount());
     }
 
     @Override
@@ -340,8 +392,12 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
                 || lock.employerUserId() != command.getEmployerId()
                 || lock.workerUserId() != command.getWorkerId()
                 || lock.amount() != command.getAmount()
+                || lock.workerPaidAmount() != command.getWorkerPaidAmount()
+                || lock.ownerRefundAmount() != command.getOwnerRefundAmount()
                 || !Objects.equals(lock.employerLedgerKey(), command.getEmployerLedgerKey())
                 || !Objects.equals(lock.workerLedgerKey(), command.getWorkerLedgerKey())
+                || !Objects.equals(
+                        lock.employerRefundLedgerKey(), command.getEmployerRefundLedgerKey())
                 || (expectedEscrowId != null && lock.escrowId() != expectedEscrowId)
                 || lock.employerWalletId() <= 0
                 || lock.workerWalletId() <= 0
@@ -378,8 +434,11 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
             long employerUserId,
             long workerUserId,
             long amount,
+            long workerPaidAmount,
+            long ownerRefundAmount,
             String employerLedgerKey,
             String workerLedgerKey,
+            String employerRefundLedgerKey,
             long escrowId,
             long employerWalletId,
             long employerAvailable,
@@ -387,6 +446,69 @@ public class SettlementWalletServiceImpl implements SettlementWalletService {
             long workerWalletId,
             long workerAvailable,
             long workerLocked) implements SettlementWalletLock {
+    }
+
+    private static void validateSplit(SettlementWalletCommand command) {
+        if (command.getAmount() <= 0
+                || command.getWorkerPaidAmount() < 0
+                || command.getOwnerRefundAmount() < 0
+                || command.getWorkerPaidAmount() > command.getAmount()
+                || command.getOwnerRefundAmount() > command.getAmount()) {
+            throw new EscrowIntegrityException("정산 분할 금액이 올바르지 않습니다.");
+        }
+        try {
+            if (Math.addExact(
+                    command.getWorkerPaidAmount(),
+                    command.getOwnerRefundAmount()) != command.getAmount()) {
+                throw new EscrowIntegrityException("정산 분할 금액이 예치액을 보존하지 않습니다.");
+            }
+        } catch (ArithmeticException overflow) {
+            throw new EscrowIntegrityException("정산 분할 금액 합산이 허용 범위를 벗어납니다.", overflow);
+        }
+        if (command.getWorkerPaidAmount() > 0
+                && (command.getEmployerLedgerKey() == null
+                || command.getWorkerLedgerKey() == null)) {
+            throw new EscrowIntegrityException("정산 지급 원장 키가 없습니다.");
+        }
+        if (command.getOwnerRefundAmount() > 0
+                && command.getEmployerRefundLedgerKey() == null) {
+            throw new EscrowIntegrityException("정산 환불 원장 키가 없습니다.");
+        }
+    }
+
+    private static void requireConditionalLedger(
+            WalletTransactionSnapshot snapshot, long expectedAmount, String legName) {
+        if ((expectedAmount > 0) != (snapshot != null)) {
+            throw new EscrowIntegrityException(legName + " 원장의 존재 여부가 분할 금액과 일치하지 않습니다.");
+        }
+    }
+
+    private static void validatePayoutLedgerChain(
+            WalletTransactionSnapshot employer,
+            WalletTransactionSnapshot worker,
+            WalletTransactionSnapshot refund,
+            PayoutWalletLock lock) {
+        WalletTransactionSnapshot firstOwner = employer != null ? employer : refund;
+        if (firstOwner == null
+                || firstOwner.getAvailableBefore() != lock.employerAvailable()
+                || firstOwner.getLockedBefore() != lock.employerLocked()) {
+            throw new EscrowIntegrityException("고용주 정산 원장의 시작 잔액이 잠금 Snapshot과 다릅니다.");
+        }
+        if (worker != null
+                && (worker.getAvailableBefore() != lock.workerAvailable()
+                || worker.getLockedBefore() != lock.workerLocked())) {
+            throw new EscrowIntegrityException("근로자 정산 원장의 시작 잔액이 잠금 Snapshot과 다릅니다.");
+        }
+        if (employer != null && refund != null
+                && (!employer.getAvailableAfter().equals(refund.getAvailableBefore())
+                || !employer.getLockedAfter().equals(refund.getLockedBefore()))) {
+            throw new EscrowIntegrityException("고용주 지급·환불 원장 잔액 연결이 끊겼습니다.");
+        }
+        Long referenceId = firstOwner.getReferenceId();
+        if ((worker != null && !referenceId.equals(worker.getReferenceId()))
+                || (refund != null && !referenceId.equals(refund.getReferenceId()))) {
+            throw new EscrowIntegrityException("정산 원장들의 에스크로 참조가 일치하지 않습니다.");
+        }
     }
 
     private record RefundWalletLock(

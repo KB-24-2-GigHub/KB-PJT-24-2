@@ -23,6 +23,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -111,6 +112,9 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 assertEquals(
                         "CHECK_OUT_MISSING",
                         workCaseStatus(jdbcTemplate, checkoutMissing));
+                assertTerminalSnapshot(jdbcTemplate, noShow, "NO_SHOW", 0L);
+                assertTerminalSnapshot(
+                        jdbcTemplate, checkoutMissing, "CHECK_OUT_MISSING", 420L);
                 assertEquals(noShowBefore, fundsSnapshot(jdbcTemplate, noShow));
                 assertEquals(checkoutBefore, fundsSnapshot(jdbcTemplate, checkoutMissing));
             } finally {
@@ -402,6 +406,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
         String ownerLogin = "att163_owner_" + token;
         String workerLogin = "att163_worker_" + token;
         String businessNumber = String.format("%010d", Integer.toUnsignedLong(token.hashCode()));
+        int breakMinutes = Duration.between(startsAt, endsAt).toMinutes() > 60 ? 60 : 0;
 
         jdbcTemplate.update(
                 "INSERT INTO users"
@@ -455,7 +460,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " workplace_latitude, workplace_longitude, allowed_radius_meters,"
                         + " agreed_wage, terms_version, status)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, 60, 0, '테스트 사업장',"
+                        + " VALUES (?, ?, ?, ?, ?, ?, ?, 0, '테스트 사업장',"
                         + " '서울시 테스트로 1', 37.5000000, 127.0000000, 100, ?, 1, ?)",
                 ownerId,
                 workerId,
@@ -463,6 +468,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 title,
                 startsAt,
                 endsAt,
+                breakMinutes,
                 WAGE,
                 status);
         long workCaseId = idBy(jdbcTemplate, "work_cases", "title", title);
@@ -476,7 +482,8 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 ownerWalletId,
                 workCaseId,
                 startsAt,
-                endsAt);
+                endsAt,
+                breakMinutes);
 
         return new Fixture(
                 ownerId,
@@ -496,7 +503,8 @@ class AttendanceLifecycleDatabaseIntegrationTest {
             long ownerWalletId,
             long workCaseId,
             LocalDateTime startsAt,
-            LocalDateTime endsAt) {
+            LocalDateTime endsAt,
+            int breakMinutes) {
         jdbcTemplate.update(
                 "INSERT INTO work_invitations"
                         + " (work_case_id, token_hash, status, expected_terms_version,"
@@ -513,7 +521,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " workplace_latitude, workplace_longitude, allowed_radius_meters,"
                         + " agreed_wage, source_terms_version, terms_snapshot, accepted_at)"
-                        + " VALUES (?, ?, ?, '테스트 근로계약', ?, ?, 60, 0, '테스트 사업장',"
+                        + " VALUES (?, ?, ?, '테스트 근로계약', ?, ?, ?, 0, '테스트 사업장',"
                         + " '서울시 테스트로 1', 37.5000000, 127.0000000, 100, ?, 1,"
                         + " JSON_OBJECT('test', TRUE), ?)",
                 workCaseId,
@@ -521,6 +529,7 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 workerId,
                 startsAt,
                 endsAt,
+                breakMinutes,
                 WAGE,
                 NOW.minusDays(1));
         jdbcTemplate.update(
@@ -679,6 +688,25 @@ class AttendanceLifecycleDatabaseIntegrationTest {
                 fixture.workCaseId());
     }
 
+    private void assertTerminalSnapshot(
+            JdbcTemplate jdbcTemplate,
+            Fixture fixture,
+            String reason,
+            long expectedLateMinutes) {
+        assertEquals(1L, number(
+                jdbcTemplate,
+                "SELECT COUNT(*) FROM settlements"
+                        + " WHERE work_case_id = ? AND status = 'WAITING'"
+                        + " AND worker_paid_amount = 0 AND owner_refund_amount = amount"
+                        + " AND deduction_base_minutes = 420 AND late_minutes = ?"
+                        + " AND early_leave_minutes = 0 AND calculation_reason = ?"
+                        + " AND calculation_version = 'ATTENDANCE_V1'"
+                        + " AND calculated_at IS NOT NULL",
+                fixture.workCaseId(),
+                expectedLateMinutes,
+                reason));
+    }
+
     private void deleteFixture(
             AnnotationConfigApplicationContext context,
             JdbcTemplate jdbcTemplate,
@@ -769,8 +797,8 @@ class AttendanceLifecycleDatabaseIntegrationTest {
         return id;
     }
 
-    private long number(JdbcTemplate jdbcTemplate, String sql, Object value) {
-        Long result = jdbcTemplate.queryForObject(sql, Long.class, value);
+    private long number(JdbcTemplate jdbcTemplate, String sql, Object... values) {
+        Long result = jdbcTemplate.queryForObject(sql, Long.class, values);
         return result == null ? 0L : result;
     }
 

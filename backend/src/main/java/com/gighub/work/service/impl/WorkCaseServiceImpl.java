@@ -62,7 +62,8 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
         LocalDateTime endsAt = WorkCaseTimes.combineEnd(
                 command.getWorkDate(), command.getStartTime(), command.getEndTime());
-        requireValidWorkPeriod(startsAt, endsAt, command.getBreakMinutes());
+        requireValidWorkPeriod(
+                startsAt, endsAt, command.getBreakMinutes(), command.getBreakPaid());
 
         // 소유권·ACTIVE 확인과 Snapshot 원본 조회를 한 쿼리로 처리합니다. 없으면 사업장이
         // 없거나 다른 OWNER 소유이거나 INACTIVE인 것이며, 세 경우를 구분해 노출하지 않습니다.
@@ -105,7 +106,8 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         LocalDateTime startsAt = WorkCaseTimes.combine(command.getWorkDate(), command.getStartTime());
         LocalDateTime endsAt = WorkCaseTimes.combineEnd(
                 command.getWorkDate(), command.getStartTime(), command.getEndTime());
-        requireValidWorkPeriod(startsAt, endsAt, command.getBreakMinutes());
+        requireValidWorkPeriod(
+                startsAt, endsAt, command.getBreakMinutes(), command.getBreakPaid());
 
         WorkCaseTermsUpdateParam param = WorkCaseTermsUpdateParam.builder()
                 .workCaseId(command.getWorkCaseId())
@@ -283,6 +285,14 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                         : WorkCaseDetailResponse.SettlementSummary.of(
                                 settlement.getStatus(),
                                 settlement.getAmount(),
+                                settlement.getWorkerPaidAmount(),
+                                settlement.getOwnerRefundAmount(),
+                                settlement.getDeductionBaseMinutes(),
+                                settlement.getLateMinutes(),
+                                settlement.getEarlyLeaveMinutes(),
+                                settlement.getCalculationReason(),
+                                settlement.getCalculationVersion(),
+                                settlement.getCalculatedAt(),
                                 settlement.getDueAt(),
                                 settlement.getCompletedAt()));
     }
@@ -419,7 +429,10 @@ public class WorkCaseServiceImpl implements WorkCaseService {
      * 여기서 400으로 앞당깁니다.</p>
      */
     private void requireValidWorkPeriod(
-            LocalDateTime startsAt, LocalDateTime endsAt, Integer breakMinutes) {
+            LocalDateTime startsAt,
+            LocalDateTime endsAt,
+            Integer breakMinutes,
+            Boolean breakPaid) {
         if (!WorkCaseTimes.endsAfterStart(startsAt, endsAt)) {
             throw new IllegalStateException("결합한 종료 시각이 시작 시각보다 뒤가 아닙니다.");
         }
@@ -432,9 +445,14 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         }
 
         long workMinutes = Duration.between(startsAt, endsAt).toMinutes();
-        if (breakMinutes != null && breakMinutes > workMinutes) {
-            String reason = String.format(
-                    "휴게 시간은 근무 시간(%d분)을 넘을 수 없습니다.", workMinutes);
+        boolean invalidBreak = breakMinutes != null
+                && (breakMinutes > workMinutes
+                || (!Boolean.TRUE.equals(breakPaid) && breakMinutes >= workMinutes));
+        if (invalidBreak) {
+            String reason = Boolean.TRUE.equals(breakPaid)
+                    ? String.format("휴게 시간은 근무 시간(%d분)을 넘을 수 없습니다.", workMinutes)
+                    : String.format(
+                            "무급 휴게 시간은 근무 시간(%d분)보다 짧아야 합니다.", workMinutes);
             throw new ValidationException(reason, "breakMinutes", reason);
         }
     }

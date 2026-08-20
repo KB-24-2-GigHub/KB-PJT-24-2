@@ -11,6 +11,7 @@ vi.mock('@/services/http', () => ({
 
 import http, { idempotentPost } from '@/services/http'
 import {
+  approveCheckOutMissingRefund,
   approveNoShowRefund,
   approveSettlement,
   createInvite,
@@ -136,8 +137,15 @@ describe('workCases service', () => {
       settlementId: 1,
       status: 'COMPLETED',
       originalEscrowAmount: 90000,
-      workerPaidAmount: 90000,
-      ownerRefundAmount: 0,
+      workerPaidAmount: 80000,
+      ownerRefundAmount: 10000,
+      deductionAmount: 10000,
+      deductionBaseMinutes: 480,
+      lateMinutes: 30,
+      earlyLeaveMinutes: 15,
+      calculationReason: 'CHECKED_OUT',
+      calculationVersion: 'ATTENDANCE_V1',
+      calculatedAt: '2026-08-13T01:00:00Z',
       completedAt: '2026-08-13T01:00:00Z'
     }
     idempotentPost.mockResolvedValue({ data: response })
@@ -158,6 +166,13 @@ describe('workCases service', () => {
       originalEscrowAmount: 90000,
       workerPaidAmount: 0,
       ownerRefundAmount: 90000,
+      deductionAmount: 90000,
+      deductionBaseMinutes: 480,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      calculationReason: 'NO_SHOW',
+      calculationVersion: 'ATTENDANCE_V1',
+      calculatedAt: '2026-08-13T01:00:00Z',
       completedAt: '2026-08-13T01:00:00Z'
     }
     idempotentPost.mockResolvedValue({ data: response })
@@ -170,6 +185,35 @@ describe('workCases service', () => {
       '/work-cases/42/settlement/no-show-refund/approve',
       undefined,
       { idempotencyKey: 'same-refund-intent' }
+    )
+  })
+
+  it('CHECK_OUT_MISSING 환불 승인은 NO_SHOW와 구분한 별도 경로를 호출한다', async () => {
+    const response = {
+      settlementId: 3,
+      status: 'REFUNDED',
+      originalEscrowAmount: 90000,
+      workerPaidAmount: 0,
+      ownerRefundAmount: 90000,
+      deductionAmount: 90000,
+      deductionBaseMinutes: 480,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      calculationReason: 'CHECK_OUT_MISSING',
+      calculationVersion: 'ATTENDANCE_V1',
+      calculatedAt: '2026-08-13T01:00:00Z',
+      completedAt: '2026-08-13T01:00:00Z'
+    }
+    idempotentPost.mockResolvedValue({ data: response })
+
+    await expect(
+      approveCheckOutMissingRefund(42, { idempotencyKey: 'same-missing-refund-intent' })
+    ).resolves.toEqual(response)
+
+    expect(idempotentPost).toHaveBeenCalledWith(
+      '/work-cases/42/settlement/check-out-missing-refund/approve',
+      undefined,
+      { idempotencyKey: 'same-missing-refund-intent' }
     )
   })
 })

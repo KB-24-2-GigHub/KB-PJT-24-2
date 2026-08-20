@@ -446,7 +446,7 @@ class AttendanceScanDatabaseIntegrationTest {
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " workplace_latitude, workplace_longitude, allowed_radius_meters,"
                         + " agreed_wage, terms_version, status)"
-                        + " VALUES (?, ?, ?, ?, ?, ?, 60, 0, '테스트 사업장',"
+                        + " VALUES (?, ?, ?, ?, ?, ?, 0, 0, '테스트 사업장',"
                         + " '서울시 테스트로 1', ?, ?, 100, ?, 1, ?)",
                 ownerId,
                 workerId,

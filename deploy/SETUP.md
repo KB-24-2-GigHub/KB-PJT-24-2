@@ -285,7 +285,7 @@ mysql -h <rds-endpoint> -u <rds-user> -p \
 ## 7. /opt/gighub 디렉터리와 설정 파일
 
 ```bash
-sudo mkdir -p /opt/gighub/{config,documents,migrations,drivers}
+sudo mkdir -p /opt/gighub/{config,documents,migrations,drivers,logs}
 sudo chown -R ec2-user:ec2-user /opt/gighub
 chmod 700 /opt/gighub /opt/gighub/config
 ```
@@ -301,7 +301,12 @@ chmod 700 /opt/gighub /opt/gighub/config
   documents/                  계약 PDF 영속 볼륨 — 삭제 금지
   migrations/                 Flyway SQL
   drivers/                    MySQL Connector/J
+  logs/                       WARN 이상 애플리케이션 로그 (30일·100 MB 자동 정리)
 ```
+
+`logs/` 는 컨테이너를 교체해도 남아야 하는 로그만 받는다. INFO 이하와 Tomcat 자체 로그는
+`docker compose -f compose.prod.yaml logs app` 으로 본다. 파일 정리는 Log4j2 가 하므로
+logrotate 를 따로 걸지 않는다.
 
 로컬에서 템플릿과 Compose, 배포 스크립트를 복사한다:
 
@@ -1100,6 +1105,14 @@ gh run list --workflow=seed-db.yml --limit 1
 - **멱등**: 모든 `INSERT` 에 `ON DUPLICATE KEY UPDATE` 를 붙인다. 몇 번을 돌려도 결과가 같아야 한다.
 - **범위 한정**: `DELETE` 는 반드시 자기 fixture 의 owner/workplace 로 좁힌다. 화면에서 손으로
   만들어 둔 다른 데이터를 지우면 안 된다.
+- **사업장을 만들면 고정 QR 도 함께 만든다**: 앱으로 등록하면 사업장 생성 트랜잭션이 QR 을
+  같이 발급하지만, `workplaces` 를 직접 `INSERT` 하는 seed 는 그 경로를 타지 않는다. 빠뜨리면
+  깨끗한 Database 에서 OWNER QR 화면이 막히고 WORKER 스캔도 시작할 수 없다(#381). `token_nonce`
+  는 fixture 마다 고정값을 쓰되 서로 겹치지 않게 식별자 대역으로 나눈다 — 두 유일 제약이 같은
+  행으로 모여야 반복 적용해도 사업장당 ACTIVE 가 한 건으로 유지된다. 그리고 **QR `INSERT` 앞에
+  그 사업장의 기존 `ACTIVE` 를 `REVOKED` 로 내리는 `UPDATE` 를 둔다.** OWNER 가 화면에서 QR 을
+  재발급하면 임의 nonce 행이 ACTIVE 가 되는데, 그대로 재적용하면 고정 nonce 행을 되살리는
+  과정에서 `uk_qr_tokens_workplace_active` 로 `ERROR 1062` 가 난다.
 
 **`demo-*.sql` 계열은 이 두 규칙을 의도적으로 지키지 않는다.** 시연을 매번 같은 출발점에서
 시작하려면 이전 상태가 남아 있으면 안 되기 때문이다. 대신 다른 성질을 지킨다.
@@ -1265,4 +1278,5 @@ SSE 는 전달 수단이다. 연결이 실패한 동안에도 알림 모달을 �
 | 배포할 때마다 알림이 울림     | 임계치가 낮거나 평가 기간이 짧다. 13.2절로 재관측, 3/3 유지 |
 | 알림 시각이 9시간 어긋남      | 옛 코드가 배포돼 있다. 13.5절 코드 배포 후 Deploy 버튼 |
 | 알림 배지가 새로고침해야 갱신됨 | SSE 스트림이 끊겼다. 15.1절 `curl -N` 으로 **끊기는 초 단위**를 먼저 본다 |
+| `/opt/gighub/logs` 가 비어 있음 | WARN 이상만 파일로 간다. INFO 는 `docker compose logs app` 이다. 그래도 비면 `-Dgighub.log.dir` 과 볼륨 마운트를 확인한다 |
 | SSE 가 로컬은 되는데 배포만 안 됨 | 로컬은 nginx 를 거치지 않는다. 15절 3건이 모두 배포된 이미지인지 확인 |

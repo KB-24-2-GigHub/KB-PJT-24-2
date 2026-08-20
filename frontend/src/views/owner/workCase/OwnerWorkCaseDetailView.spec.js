@@ -18,7 +18,8 @@ vi.mock('@/services/workCases', () => ({
   createInvite: vi.fn(),
   reissueInvite: vi.fn(),
   approveSettlement: vi.fn(),
-  approveNoShowRefund: vi.fn()
+  approveNoShowRefund: vi.fn(),
+  approveCheckOutMissingRefund: vi.fn()
 }))
 vi.mock('@/services/http', async (importOriginal) => {
   const actual = await importOriginal()
@@ -33,6 +34,7 @@ vi.mock('@/utils/clipboard', () => ({ copyText: vi.fn().mockResolvedValue(true) 
 import { newIdempotencyKey } from '@/services/http'
 import { fetchTransactions, fetchWallet } from '@/services/wallet'
 import {
+  approveCheckOutMissingRefund,
   approveNoShowRefund,
   approveSettlement,
   createInvite,
@@ -96,12 +98,31 @@ const NO_SHOW_REFUND_READY_DETAIL = {
   settlement: { status: 'WAITING', amount: 90000, dueAt: null, completedAt: null }
 }
 
+const CHECK_OUT_MISSING_REFUND_READY_DETAIL = {
+  ...DRAFT_DETAIL,
+  status: 'CHECK_OUT_MISSING',
+  worker: { workerId: 4, name: '이알바' },
+  escrow: { status: 'HELD', amount: 90000 },
+  settlement: { status: 'WAITING', amount: 90000, dueAt: null, completedAt: null }
+}
+
+const CALCULATION_SNAPSHOT = {
+  deductionBaseMinutes: 480,
+  lateMinutes: 30,
+  earlyLeaveMinutes: 15,
+  calculationVersion: 'ATTENDANCE_V1',
+  calculatedAt: '2026-08-13T01:00:00Z'
+}
+
 const PAYOUT_RESULT = {
   settlementId: 1,
   status: 'COMPLETED',
   originalEscrowAmount: 90000,
-  workerPaidAmount: 90000,
-  ownerRefundAmount: 0,
+  workerPaidAmount: 80000,
+  ownerRefundAmount: 10000,
+  deductionAmount: 10000,
+  ...CALCULATION_SNAPSHOT,
+  calculationReason: 'CHECKED_OUT',
   completedAt: '2026-08-13T01:00:00Z'
 }
 
@@ -111,7 +132,18 @@ const REFUND_RESULT = {
   originalEscrowAmount: 90000,
   workerPaidAmount: 0,
   ownerRefundAmount: 90000,
+  deductionAmount: 90000,
+  ...CALCULATION_SNAPSHOT,
+  lateMinutes: 0,
+  earlyLeaveMinutes: 0,
+  calculationReason: 'NO_SHOW',
   completedAt: '2026-08-13T01:00:00Z'
+}
+
+const CHECK_OUT_MISSING_REFUND_RESULT = {
+  ...REFUND_RESULT,
+  settlementId: 3,
+  calculationReason: 'CHECK_OUT_MISSING'
 }
 
 function mountView() {
@@ -146,6 +178,9 @@ describe('OwnerWorkCaseDetailView', () => {
     })
     approveSettlement.mockReset().mockResolvedValue(PAYOUT_RESULT)
     approveNoShowRefund.mockReset().mockResolvedValue(REFUND_RESULT)
+    approveCheckOutMissingRefund
+      .mockReset()
+      .mockResolvedValue(CHECK_OUT_MISSING_REFUND_RESULT)
     newIdempotencyKey.mockClear()
     fetchWallet.mockReset().mockResolvedValue({
       currency: 'KRW',
@@ -242,7 +277,7 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).toContain('540분')
   })
 
-  it('근무 시간과 정확히 같은 휴게는 서버와 같이 통과시킨다', async () => {
+  it('무급 휴게가 근무 시간과 정확히 같으면 저장하지 않는다', async () => {
     const wrapper = mountView()
     await flushPromises()
 
@@ -251,7 +286,24 @@ describe('OwnerWorkCaseDetailView', () => {
     await wrapper.find('form').trigger('submit')
     await flushPromises()
 
-    expect(updateWorkCase).toHaveBeenCalled()
+    expect(updateWorkCase).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('무급 휴게시간')
+  })
+
+  it('유급 휴게가 근무 시간과 정확히 같으면 저장한다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    await startEditing(wrapper)
+    await wrapper.find('input[placeholder="0"]').setValue('540')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '유급')
+      .trigger('click')
+    await wrapper.find('form').trigger('submit')
+    await flushPromises()
+
+    expect(updateWorkCase).toHaveBeenCalledWith(42, expect.objectContaining({ breakPaid: true }))
   })
 
   it('초대·계약·예치·근태 근거가 없으면 진행 현황을 감춘다', async () => {
@@ -318,6 +370,7 @@ describe('OwnerWorkCaseDetailView', () => {
       escrow: { status: 'RELEASED', amount: 90000 },
       settlement: {
         ...PAYOUT_READY_DETAIL.settlement,
+        ...PAYOUT_RESULT,
         status: 'COMPLETED',
         completedAt: PAYOUT_RESULT.completedAt
       }
@@ -333,10 +386,10 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.text()).not.toContain('승인 만료')
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
 
-    expect(wrapper.text()).toContain('일급 전액을 지급할까요?')
+    expect(wrapper.text()).toContain('정산 금액을 지급할까요?')
     expect(wrapper.text()).toContain('90,000원')
     await wrapper
       .findAll('button')
@@ -353,7 +406,10 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(fetchWallet).toHaveBeenCalledTimes(1)
     expect(fetchTransactions).toHaveBeenCalledTimes(1)
     expect(wrapper.text()).toContain('정산완료')
-    expect(toastMessages().join(' ')).toContain('90,000원이 알바생에게 지급됐어요')
+    expect(wrapper.text()).toContain('알바생 지급액80,000원')
+    expect(wrapper.text()).toContain('사장님 환불액10,000원')
+    expect(toastMessages().join(' ')).toContain('80,000원이 알바생에게 지급됐어요')
+    expect(toastMessages().join(' ')).toContain('10,000원은 사장님 지갑으로 환불됐어요')
   })
 
   it('NO_SHOW 환불을 지급과 다른 확인 문구로 승인하고 세 원천을 재조회한다', async () => {
@@ -397,6 +453,45 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(toastMessages().join(' ')).toContain('90,000원이 사장님 지갑으로 반환됐어요')
   })
 
+  it('CHECK_OUT_MISSING 환불은 NO_SHOW와 구분한 별도 Operation으로 승인한다', async () => {
+    const refundedDetail = {
+      ...CHECK_OUT_MISSING_REFUND_READY_DETAIL,
+      escrow: { status: 'REFUNDED', amount: 90000 },
+      settlement: {
+        ...CHECK_OUT_MISSING_REFUND_READY_DETAIL.settlement,
+        ...CHECK_OUT_MISSING_REFUND_RESULT,
+        status: 'REFUNDED'
+      }
+    }
+    getWorkCase
+      .mockReset()
+      .mockResolvedValueOnce(CHECK_OUT_MISSING_REFUND_READY_DETAIL)
+      .mockResolvedValue(refundedDetail)
+    const wrapper = mountView()
+    await flushPromises()
+
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text().includes('퇴근 누락 예치금 전액 환불'))
+      .trigger('click')
+
+    expect(wrapper.text()).toContain('퇴근 누락 예치금을 환불할까요?')
+    expect(wrapper.text()).toContain('퇴근 기록이 누락된 근무')
+    await wrapper
+      .findAll('button')
+      .find((button) => button.text() === '승인하기')
+      .trigger('click')
+    await flushPromises()
+
+    expect(approveCheckOutMissingRefund).toHaveBeenCalledWith(42, {
+      idempotencyKey: 'settlement-intent-key'
+    })
+    expect(approveNoShowRefund).not.toHaveBeenCalled()
+    expect(approveSettlement).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('환불완료')
+    expect(toastMessages().join(' ')).toContain('퇴근 누락 환불을 승인했어요')
+  })
+
   it('CONFLICT 뒤 같은 지급 의도를 다시 확인할 때 멱등 Key를 바꾸지 않는다', async () => {
     const completedDetail = {
       ...PAYOUT_READY_DETAIL,
@@ -415,7 +510,7 @@ describe('OwnerWorkCaseDetailView', () => {
     const open = () =>
       wrapper
         .findAll('button')
-        .find((button) => button.text().includes('일급 전액 지급'))
+        .find((button) => button.text().includes('정산 금액 지급'))
         .trigger('click')
     const confirm = () =>
       wrapper
@@ -449,7 +544,7 @@ describe('OwnerWorkCaseDetailView', () => {
     await flushPromises()
     await firstWrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await firstWrapper
       .findAll('button')
@@ -462,7 +557,7 @@ describe('OwnerWorkCaseDetailView', () => {
     await flushPromises()
     await secondWrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await secondWrapper
       .findAll('button')
@@ -501,7 +596,7 @@ describe('OwnerWorkCaseDetailView', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     const confirm = wrapper.findAll('button').find((button) => button.text() === '승인하기')
     await confirm.trigger('click')
@@ -530,7 +625,7 @@ describe('OwnerWorkCaseDetailView', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await wrapper
       .findAll('button')
@@ -554,7 +649,7 @@ describe('OwnerWorkCaseDetailView', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await wrapper
       .findAll('button')
@@ -581,7 +676,7 @@ describe('OwnerWorkCaseDetailView', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await wrapper
       .findAll('button')
@@ -597,7 +692,7 @@ describe('OwnerWorkCaseDetailView', () => {
 
     await wrapper
       .findAll('button')
-      .find((button) => button.text().includes('일급 전액 지급'))
+      .find((button) => button.text().includes('정산 금액 지급'))
       .trigger('click')
     await wrapper
       .findAll('button')

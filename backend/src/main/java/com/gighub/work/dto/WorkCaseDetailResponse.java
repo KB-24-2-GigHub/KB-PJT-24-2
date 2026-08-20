@@ -226,16 +226,44 @@ public final class WorkCaseDetailResponse {
 
         private final String status;
         private final Long amount;
+        private final Long originalEscrowAmount;
+        private final Long workerPaidAmount;
+        private final Long ownerRefundAmount;
+        private final Long deductionAmount;
+        private final Long deductionBaseMinutes;
+        private final Long lateMinutes;
+        private final Long earlyLeaveMinutes;
+        private final String calculationReason;
+        private final String calculationVersion;
+        private final Instant calculatedAt;
         private final Instant dueAt;
         private final Instant completedAt;
 
         private SettlementSummary(
                 String status,
                 Long amount,
+                Long workerPaidAmount,
+                Long ownerRefundAmount,
+                Long deductionBaseMinutes,
+                Long lateMinutes,
+                Long earlyLeaveMinutes,
+                String calculationReason,
+                String calculationVersion,
+                LocalDateTime calculatedAt,
                 LocalDateTime dueAt,
                 LocalDateTime completedAt) {
             this.status = status;
             this.amount = amount;
+            this.originalEscrowAmount = amount;
+            this.workerPaidAmount = workerPaidAmount;
+            this.ownerRefundAmount = ownerRefundAmount;
+            this.deductionAmount = ownerRefundAmount;
+            this.deductionBaseMinutes = deductionBaseMinutes;
+            this.lateMinutes = lateMinutes;
+            this.earlyLeaveMinutes = earlyLeaveMinutes;
+            this.calculationReason = calculationReason;
+            this.calculationVersion = calculationVersion;
+            this.calculatedAt = ApiTimes.toInstant(calculatedAt);
             this.dueAt = ApiTimes.toInstant(dueAt);
             this.completedAt = ApiTimes.toInstant(completedAt);
         }
@@ -243,9 +271,29 @@ public final class WorkCaseDetailResponse {
         public static SettlementSummary of(
                 String status,
                 Long amount,
+                Long workerPaidAmount,
+                Long ownerRefundAmount,
+                Long deductionBaseMinutes,
+                Long lateMinutes,
+                Long earlyLeaveMinutes,
+                String calculationReason,
+                String calculationVersion,
+                LocalDateTime calculatedAt,
                 LocalDateTime dueAt,
                 LocalDateTime completedAt) {
-            return new SettlementSummary(status, amount, dueAt, completedAt);
+            return new SettlementSummary(
+                    status,
+                    amount,
+                    workerPaidAmount,
+                    ownerRefundAmount,
+                    deductionBaseMinutes,
+                    lateMinutes,
+                    earlyLeaveMinutes,
+                    calculationReason,
+                    calculationVersion,
+                    calculatedAt,
+                    dueAt,
+                    completedAt);
         }
     }
 }

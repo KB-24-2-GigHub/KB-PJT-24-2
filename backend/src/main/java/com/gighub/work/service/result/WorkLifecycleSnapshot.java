@@ -9,5 +9,8 @@ public record WorkLifecycleSnapshot(
         long workCaseId,
         WorkCaseStatus status,
         LocalDateTime startsAt,
-        LocalDateTime endsAt) {
+        LocalDateTime endsAt,
+        long agreedWage,
+        int breakMinutes,
+        boolean breakPaid) {
 }

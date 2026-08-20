@@ -346,7 +346,15 @@ class InvitationAcceptDatabaseIntegrationTest {
             }
 
             @Override
-            public void schedulePayout(long workCaseId, java.time.LocalDateTime dueAt) {
+            public void schedulePayout(
+                    com.gighub.settlement.service.command.SettlementCalculationCommand command,
+                    java.time.LocalDateTime dueAt) {
+                throw new UnsupportedOperationException();
+            }
+
+            @Override
+            public void recordTerminalSnapshot(
+                    com.gighub.settlement.service.command.SettlementCalculationCommand command) {
                 throw new UnsupportedOperationException();
             }
         };

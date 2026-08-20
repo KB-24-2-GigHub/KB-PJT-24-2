@@ -114,9 +114,13 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
                 .employerId(work.getEmployerId())
                 .workerId(work.getWorkerId())
                 .amount(work.getAgreedWage())
+                .workerPaidAmount(settlement.getWorkerPaidAmount())
+                .ownerRefundAmount(settlement.getOwnerRefundAmount())
                 .employerLedgerKey(WalletIdempotencyKeys.settlementReleaseOwner(
                         settlement.getSettlementId()))
                 .workerLedgerKey(WalletIdempotencyKeys.settlementReleaseWorker(
+                        settlement.getSettlementId()))
+                .employerRefundLedgerKey(WalletIdempotencyKeys.settlementRefundOwner(
                         settlement.getSettlementId()))
                 .build();
     }
@@ -129,6 +133,14 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
                 settlement.getSettlementId(),
                 settlement.getWorkCaseId(),
                 settlement.getAmount(),
+                settlement.getWorkerPaidAmount(),
+                settlement.getOwnerRefundAmount(),
+                settlement.getDeductionBaseMinutes(),
+                settlement.getLateMinutes(),
+                settlement.getEarlyLeaveMinutes(),
+                settlement.getCalculationReason(),
+                settlement.getCalculationVersion(),
+                settlement.getCalculatedAt(),
                 settlement.getStatus(),
                 settlement.getDueAt(),
                 settlement.getNextRetryAt());
@@ -142,6 +154,14 @@ public class SettlementPayoutExecutorImpl implements SettlementPayoutExecutor {
                 settlement.getSettlementId(),
                 settlement.getWorkCaseId(),
                 settlement.getAmount(),
+                settlement.getWorkerPaidAmount(),
+                settlement.getOwnerRefundAmount(),
+                settlement.getDeductionBaseMinutes(),
+                settlement.getLateMinutes(),
+                settlement.getEarlyLeaveMinutes(),
+                settlement.getCalculationReason(),
+                settlement.getCalculationVersion(),
+                settlement.getCalculatedAt(),
                 settlement.getStatus(),
                 settlement.getApprovedByUserId(),
                 settlement.getCompletedAt());
