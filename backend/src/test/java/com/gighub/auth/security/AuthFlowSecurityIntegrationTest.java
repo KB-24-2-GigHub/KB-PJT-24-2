@@ -11,7 +11,9 @@ import com.gighub.auth.service.LoginResult;
 import com.gighub.common.exception.AuthRequiredException;
 import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.common.exception.RoleMismatchException;
+import com.gighub.member.controller.UserController;
 import com.gighub.member.domain.UserRole;
+import com.gighub.member.service.UserService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,6 +41,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.http.MediaType.APPLICATION_JSON;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.cookie;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -234,6 +237,88 @@ class AuthFlowSecurityIntegrationTest {
         assertNull(loginSession(81L).getAttribute("LOGIN_USER"));
     }
 
+    /**
+     * 비밀번호 변경이 CSRF Token 없이는 승인 Envelope의 403으로 거절되는지 검증합니다.
+     *
+     * @throws Exception MockMvc 요청 실행에 실패한 경우
+     */
+    @Test
+    void passwordChangeWithoutCsrfTokenIsRejected() throws Exception {
+        MockHttpSession authenticatedSession = loginSession(81L);
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .session(authenticatedSession)
+                        .contentType(APPLICATION_JSON)
+                        .content(passwordChangeBody()))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    /**
+     * 비밀번호 변경이 Session 없이는 승인 Envelope의 401로 거절되는지 검증합니다.
+     *
+     * @throws Exception MockMvc 요청 실행에 실패한 경우
+     */
+    @Test
+    void passwordChangeWithoutSessionIsRejected() throws Exception {
+        Cookie csrfCookie = prepareCsrfCookie();
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .cookie(csrfCookie)
+                        .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                        .contentType(APPLICATION_JSON)
+                        .content(passwordChangeBody()))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("AUTH_REQUIRED"));
+    }
+
+    /**
+     * 비밀번호 변경 성공이 실제 Filter Chain에서 인증을 유지한 채 Session ID만 바꾸는지 검증합니다.
+     *
+     * <p>여기서 {@code UserService}는 Mock입니다. 이 테스트가 증명하는 것은 Filter Chain 경계
+     * (CSRF 통과, 인증 유지, Session ID 회전)뿐이고 비밀번호 대조·저장은 검증하지 않습니다.
+     * 그쪽은 {@code UserServiceImplTest}와 {@code PasswordChangeDatabaseIntegrationTest}가
+     * 담당합니다.</p>
+     *
+     * <p>회전 뒤에도 CSRF Token은 유효합니다. {@code CookieCsrfTokenRepository}는 Token을
+     * Session이 아니라 Cookie에 두므로 Session ID가 바뀌어도 깨지지 않습니다.</p>
+     *
+     * @throws Exception MockMvc 요청 실행에 실패한 경우
+     */
+    @Test
+    void passwordChangeRotatesSessionIdAndKeepsAuthentication() throws Exception {
+        MockHttpSession authenticatedSession = loginSession(81L);
+        String sessionIdBeforeChange = authenticatedSession.getId();
+        Cookie csrfCookie = refreshedCsrfCookie(authenticatedSession);
+
+        mockMvc.perform(patch("/api/users/me/password")
+                        .session(authenticatedSession)
+                        .cookie(csrfCookie)
+                        .header("X-XSRF-TOKEN", csrfCookie.getValue())
+                        .contentType(APPLICATION_JSON)
+                        .content(passwordChangeBody()))
+                .andExpect(status().isNoContent());
+
+        assertNotEquals(sessionIdBeforeChange, authenticatedSession.getId());
+        assertTrue(!authenticatedSession.isInvalid());
+        mockMvc.perform(get("/api/test-protected").session(authenticatedSession))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.userId").value(81));
+    }
+
+    private String passwordChangeBody() {
+        return "{"
+                + "\"currentPassword\":\"current-pw1\","
+                + "\"newPassword\":\"new-password1\"}";
+    }
+
+    private Cookie refreshedCsrfCookie(MockHttpSession session) throws Exception {
+        MvcResult result = mockMvc.perform(get("/api/auth/csrf").session(session))
+                .andExpect(status().isNoContent())
+                .andReturn();
+        return result.getResponse().getCookie("XSRF-TOKEN");
+    }
+
     private MockHttpSession loginSession(long userId) throws Exception {
         AuthPrincipal principal = new AuthPrincipal(userId, UserRole.OWNER, "김사장");
         when(authService.login(any())).thenReturn(new LoginResult(principal, false));
@@ -297,6 +382,11 @@ class AuthFlowSecurityIntegrationTest {
                 AuthService authService,
                 AuthSessionManager authSessionManager) {
             return new AuthController(authService, authSessionManager);
+        }
+
+        @Bean
+        UserController userController(AuthSessionManager authSessionManager) {
+            return new UserController(mock(UserService.class), authSessionManager);
         }
 
         @Bean

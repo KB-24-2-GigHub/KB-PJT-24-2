@@ -1,8 +1,7 @@
 /**
  * 사장 비밀번호 변경 화면 — 오류 귀속 계약 테스트.
- * PATCH /api/users/me/password 는 아직 서버에 없다(#187). 이전에는 원인과 무관하게
- * 모든 실패를 '현재 비밀번호가 일치하지 않아요' 로 단정했다 — 서버가 실제로 그 필드를
- * 지목했을 때만 그 문구를 보여줘야 한다.
+ * 이전에는 원인과 무관하게 모든 실패를 '현재 비밀번호가 일치하지 않아요' 로 단정했다 —
+ * 서버가 실제로 그 필드를 지목했을 때만 그 문구를 보여줘야 한다.
  */
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -110,21 +109,22 @@ describe('OwnerPasswordEditView 오류 귀속', () => {
   })
 })
 
-describe('OwnerPasswordEditView 준비 중 안내', () => {
+// #187 로 PATCH /api/users/me/password 가 살아나 준비 중 게이트를 제거했다.
+// 게이트가 되돌아오면(제출 비활성화·안내 문구) 이 테스트가 잡는다.
+describe('OwnerPasswordEditView 게이트 해제', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
   })
 
-  it('폼 상단에 준비 중 안내를 보여주고 제출 버튼을 비활성화한다', () => {
+  it('준비 중 안내 없이 제출할 수 있다', () => {
     const wrapper = mount(OwnerPasswordEditView)
 
-    expect(wrapper.text()).toContain('비밀번호 변경은 준비 중입니다')
-    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.text()).not.toContain('비밀번호 변경은 준비 중입니다')
+    expect(wrapper.find('button[type="submit"]').attributes('disabled')).toBeUndefined()
   })
 })
 
-// 실시간 검증(#238): 제출 버튼은 #187 이 아직 안 끝나 비활성화돼 있지만, 배선 자체는
-// AuthSignupForm 과 같은 패턴으로 살아 있어야 한다 — Endpoint 가 열리는 순간 바로 맞아야 한다.
+// 실시간 검증(#238): 배선은 AuthSignupForm 과 같은 패턴이어야 한다.
 describe('OwnerPasswordEditView 실시간 검증(#238)', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

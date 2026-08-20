@@ -41,7 +41,6 @@ export async function updateMe({ phone }) {
 /** 비밀번호 변경 (명세 8). 현재 비밀번호 불일치 시 400 */
 export async function changePassword({ currentPassword, newPassword }) {
   if (USE_MOCK) return
-  // TODO(#187): AUTH-009 구현 전까지 실 경로는 404 다.
   await http.patch('/users/me/password', { currentPassword, newPassword })
 }
 
