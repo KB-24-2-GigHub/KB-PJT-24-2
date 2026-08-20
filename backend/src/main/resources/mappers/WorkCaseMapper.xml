@@ -312,6 +312,21 @@
         <include refid="workCaseListScope"/>
     </select>
 
+    <!--
+        AUTH-010 탈퇴 판정용입니다. 한 사람이 사장으로 묶였든 근로자로 묶였든 끝나지 않은
+        근무가 남아 있으면 탈퇴를 막아야 하므로 두 컬럼을 함께 봅니다.
+
+        OR 조건이라 idx_work_cases_employer_status_start 와 idx_work_cases_worker_status_start
+        중 하나만으로는 좁혀지지 않지만, 탈퇴는 사용자당 한 번뿐인 요청이라 index_merge 로
+        충분합니다. 목록 조회 경로가 아니므로 전용 인덱스를 새로 만들지 않습니다.
+    -->
+    <select id="countUnfinishedByParticipant" resultType="int">
+        SELECT COUNT(*)
+        FROM work_cases
+        WHERE (employer_id = #{userId} OR worker_id = #{userId})
+          AND status IN ('DRAFT', 'ACCEPTED', 'READY', 'IN_PROGRESS', 'CHECK_OUT_MISSING')
+    </select>
+
     <resultMap id="workCaseDetailResult" type="com.gighub.work.mapper.result.WorkCaseDetailRow">
         <constructor>
             <idArg column="workCaseId" javaType="java.lang.Long"/>

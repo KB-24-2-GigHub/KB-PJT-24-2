@@ -79,6 +79,27 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
+   * 서버 Session 이 이미 끝난 뒤 클라이언트 상태만 정리한다.
+   *
+   * 회원 탈퇴(#188)가 이 경로다. 탈퇴 응답이 서버 Session 을 무효화하면서 CSRF Token 도 함께
+   * 지우므로, 여기서 logout() 을 부르면 Token 없는 상태변경 요청이 되어 403 이 돌아온다 —
+   * 사용자에게는 탈퇴 성공 알림 바로 뒤에 권한 오류가 겹쳐 보인다. 이미 끝난 Session 을
+   * 한 번 더 끝내달라고 요청할 이유가 없으므로 로컬 상태만 비운다.
+   *
+   * CSRF 는 다시 준비한다. 탈퇴 뒤 사용자는 로그인·회원가입 화면으로 가는데, Token 이 없으면
+   * 그 화면의 첫 제출이 403 이 된다.
+   */
+  async function clearSession() {
+    user.value = null
+    useWorkplaceStore().reset()
+    try {
+      await fetchCsrf()
+    } catch {
+      // 재준비 실패는 정리 실패가 아니다 — 삼키되, 실패한 요청을 자동으로 재시도하지 않는다.
+    }
+  }
+
+  /**
    * 로그아웃. 서버 Session 무효화가 성공한 뒤에만 CSRF 를 재준비한다 — 실패 경로에서는
    * Session 이 아직 살아 있으므로 재준비하지 않는다(login()과 대칭).
    * 클라이언트 상태(user, 사업장 Context)는 서버 호출 성공·실패와 무관하게 항상 비운다.
@@ -112,6 +133,7 @@ export const useAuthStore = defineStore('auth', () => {
     bootstrap,
     login,
     setUser,
-    logout
+    logout,
+    clearSession
   }
 })
