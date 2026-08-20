@@ -72,6 +72,14 @@ SET @workplace_id = (
 
 -- 사업장 고정 QR(#381). 상세한 근거는 test-invitation-accept.sql 의 같은 블록에 있다.
 -- 두 Fixture 는 같은 Database 에 공존하므로 nonce 도 식별자 대역(17 / 267)으로 나눈다.
+-- 재발급으로 임의 nonce 행이 ACTIVE 인 상태에서도 재적용이 되도록, 앱의 재발급과 같은
+-- 순서로 이 사업장의 기존 ACTIVE 를 먼저 내린다.
+UPDATE qr_tokens
+SET status = 'REVOKED',
+    revoked_at = CURRENT_TIMESTAMP(6)
+WHERE workplace_id = @workplace_id
+  AND status = 'ACTIVE';
+
 INSERT INTO qr_tokens (
     workplace_id, issued_by_user_id, token_nonce, status
 ) VALUES (

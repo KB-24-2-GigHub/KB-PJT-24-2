@@ -89,6 +89,20 @@ SET @workplace_id = (
 --
 -- 두 유일 제약(uk_qr_tokens_workplace_active, uk_qr_tokens_token_nonce)이 반복 적용 시 같은
 -- 행으로 모이도록 nonce 를 고정한다. 그래서 시드를 몇 번 돌려도 사업장당 ACTIVE 는 한 건이다.
+--
+-- 다만 nonce 고정만으로는 부족하다. OWNER 가 화면에서 QR 을 재발급하면 고정 nonce 행은
+-- REVOKED 가 되고 임의 nonce 행이 새로 ACTIVE 가 된다. 그 상태에서 아래 INSERT 를 그대로
+-- 돌리면 uk_qr_tokens_token_nonce 로 고정 nonce 행을 찾아 다시 ACTIVE 로 되돌리는데, 이미
+-- 다른 ACTIVE 행이 있어 uk_qr_tokens_workplace_active 가 걸린다(ERROR 1062).
+-- 그래서 앱의 재발급과 같은 순서로, 이 fixture 사업장의 기존 ACTIVE 를 먼저 REVOKED 로
+-- 내린 뒤 고정 nonce 행을 올린다(QrTokenMapper.revokeActiveByWorkplaceId 와 같은 문장이다).
+-- ck_qr_tokens_revoked_at 이 REVOKED 와 revoked_at 을 함께 요구하므로 둘을 한 번에 쓴다.
+UPDATE qr_tokens
+SET status = 'REVOKED',
+    revoked_at = CURRENT_TIMESTAMP(6)
+WHERE workplace_id = @workplace_id
+  AND status = 'ACTIVE';
+
 INSERT INTO qr_tokens (
     workplace_id, issued_by_user_id, token_nonce, status
 ) VALUES (
