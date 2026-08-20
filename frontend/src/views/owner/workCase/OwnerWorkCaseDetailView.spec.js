@@ -925,6 +925,7 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(true)
     expect(wrapper.find('.worker-cell .badge-placeholder').exists()).toBe(false)
     expect(wrapper.find('.worker-cell img').attributes('alt')).toBe('worker 뱃지 0단계')
+    expect(wrapper.find('.badge-level').text()).toBe('Lv.0')
   })
 
   it('알바생 뱃지가 있으면(1단계 이상) 자리표시자 대신 등급 그림을 보여준다', async () => {
@@ -938,6 +939,7 @@ describe('OwnerWorkCaseDetailView', () => {
     expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(true)
     expect(wrapper.find('.worker-cell .badge-placeholder').exists()).toBe(false)
     expect(wrapper.find('.worker-cell img').attributes('alt')).toBe('worker 뱃지 2단계')
+    expect(wrapper.find('.badge-level').text()).toBe('Lv.2')
   })
 
   it('예상 밖으로 badge 자체가 없으면(방어적 폴백) 자리표시자를 보여준다', async () => {

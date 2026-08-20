@@ -592,12 +592,10 @@ async function onApproveSettlement() {
             <div v-if="workCase.worker" class="detail-row">
               <dt>알바생</dt>
               <dd class="worker-cell">
-                <TrustBadge
-                  v-if="workCase.worker.badge"
-                  role="worker"
-                  :level="workCase.worker.badge.level"
-                  :size="20"
-                />
+                <template v-if="workCase.worker.badge">
+                  <span class="badge-level">Lv.{{ workCase.worker.badge.level }}</span>
+                  <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="20" />
+                </template>
                 <span v-else class="badge-placeholder">등급 정보 없음</span>
                 {{ workCase.worker.name }}
               </dd>
@@ -1053,6 +1051,12 @@ async function onApproveSettlement() {
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
+}
+/* 뱃지 그림만으로는 등급 숫자가 바로 안 읽혀 "Lv.N" 글자를 함께 둔다(마이페이지와 같은 표기). */
+.badge-level {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-sub);
 }
 /* 뱃지 자리표시자. 등급 그림과 혼동되지 않게 아이콘 없이 약한 텍스트로만 둔다. */
 .badge-placeholder {
