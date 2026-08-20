@@ -18,6 +18,10 @@ RUN apt-get update \
 # 볼륨이 없으면 재배포마다 발급된 계약서가 사라진다.
 RUN mkdir -p /var/gighub/documents
 
+# 애플리케이션 로그 경로. compose 가 -Dgighub.log.dir 로 이 경로를 지정하고
+# 호스트 /opt/gighub/logs 를 연결한다. 볼륨 없이 떠도 기동은 되며 로그만 휘발한다.
+RUN mkdir -p /var/gighub/logs
+
 COPY build/libs/gig-hub.war /usr/local/tomcat/webapps/ROOT.war
 
 # DB 접속정보와 배포 설정은 이미지에 굽지 않는다.

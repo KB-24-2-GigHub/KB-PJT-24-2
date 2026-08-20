@@ -24,4 +24,10 @@ class ExpectedNetAmountTest {
         long dailyWage = 150_000L + 50_000L;
         assertEquals(dailyWage - 1350L - 130L, ExpectedNetAmount.calculate(dailyWage));
     }
+
+    @Test
+    void calculatesTheReferenceWithoutOverflowAtTheLongBoundary() {
+        assertEquals(8_949_437_887_360_193_437L,
+                ExpectedNetAmount.calculate(Long.MAX_VALUE));
+    }
 }

@@ -55,7 +55,12 @@ function validate() {
   // 종료가 시작보다 이르면 자정 넘김 근무다(SPEC-413-01). 순서 대신 길이 상한으로 거른다.
   errors.endTime = workPeriodRule(form.startTime, form.endTime).message
   // 휴게가 근무 길이를 넘는 것도 서버가 400 으로 거절한다 — 같은 경계를 여기서 먼저 본다.
-  errors.breakMinutes = breakMinutesRule(form.startTime, form.endTime, form.breakMinutes).message
+  errors.breakMinutes = breakMinutesRule(
+    form.startTime,
+    form.endTime,
+    form.breakMinutes,
+    form.breakPaid
+  ).message
   errors.dailyWage = isPositiveAmount(form.dailyWage).message
 
   return Object.values(errors).every((message) => message === '')

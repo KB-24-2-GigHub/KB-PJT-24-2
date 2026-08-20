@@ -3,7 +3,6 @@ import { Info } from 'lucide-vue-next'
 import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
 
 import { useEarningTick } from '@/composables/useEarningTick'
-import { calcDailyTax } from '@/utils/earning'
 import { formatKRW } from '@/utils/format'
 
 const props = defineProps({
@@ -17,25 +16,7 @@ const { elapsedPay, progressRatio } = useEarningTick(
   computed(() => props.workCase)
 )
 
-// 예상 실수령액은 일급 전액 기준이라 경과 시간과 무관하게 고정이다 — 서버 값이 있으면 그것을 쓰고,
-// 없을 때만 calcDailyTax 로 폴백한다(참조 구현). elapsedPay/progressRatio 와 달리 서버 폴백이 있는 이유는
-// 이 값이 시간에 따라 변하지 않는 순수 계산값이라 "stale" 문제가 없기 때문이다.
-const tax = computed(() => calcDailyTax(props.earning.agreedWage))
-
-const expectedNet = computed(() =>
-  Number.isFinite(props.earning.expectedNetAmount)
-    ? props.earning.expectedNetAmount
-    : tax.value.expectedNetAmount
-)
-
-// 공제액은 화면에 실제로 보여주는 실수령액에서 역산한다 — 서버 값을 쓸 때도 두 줄이 어긋나지 않는다.
-const deducted = computed(() => Math.max(0, props.earning.agreedWage - expectedNet.value))
-
 const progress = computed(() => Math.min(1, Math.max(0, progressRatio.value)))
-
-const taxNote = computed(() =>
-  deducted.value > 0 ? `(세금 ${formatKRW(deducted.value)} 공제)` : '(세금 공제 없음)'
-)
 
 /* ---- 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
 const rootEl = ref(null)
@@ -90,20 +71,11 @@ onUnmounted(() => {
         </p>
         <p>지갑 잔액·예치금·실제 지급액과는 무관하며, 이 값이 실제 정산 금액을 결정하지 않아요.</p>
         <p>휴게시간·지각 등 특이사항이 있으면 실제 지급액은 달라질 수 있어요.</p>
-        <p>
-          예상 실수령액은 일용직 원천징수 기준(일당 15만원 초과분에 소득세 2.7%, 지방소득세
-          0.27%)으로 계산한 값입니다.
-        </p>
       </div>
     </div>
 
     <p class="amount">{{ formatKRW(elapsedPay) }}</p>
     <p class="sub">일급 {{ formatKRW(earning.agreedWage) }} 기준 근무 경과 참고값</p>
-
-    <p class="net">
-      예상 실수령액 <strong>{{ formatKRW(expectedNet) }}</strong>
-      <span class="net-tax">{{ taxNote }}</span>
-    </p>
 
     <div
       class="bar"
@@ -115,7 +87,7 @@ onUnmounted(() => {
       <div class="seg" :style="{ width: progress * 100 + '%' }"></div>
     </div>
 
-    <!-- 지각은 표시(뱃지)로만 — 임금 차감 없음 -->
+    <!-- 지각 시간은 참고 표시이며 실제 차감액은 서버 Snapshot이 확정한다. -->
     <p v-if="earning.isLate" class="late-note">지각 {{ earning.lateMinutes }}분</p>
   </section>
 </template>
@@ -198,21 +170,6 @@ onUnmounted(() => {
   margin-top: var(--space-xs);
   font-size: var(--text-sm);
   color: var(--color-text-sub);
-}
-
-.net {
-  margin-top: var(--space-xs);
-  font-size: var(--text-sm);
-  color: var(--color-text-sub);
-}
-
-.net strong {
-  font-weight: var(--weight-bold);
-  color: var(--color-text);
-}
-
-.net-tax {
-  margin-left: var(--space-xs);
 }
 
 .bar {

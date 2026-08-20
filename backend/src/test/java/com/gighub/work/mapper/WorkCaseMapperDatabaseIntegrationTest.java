@@ -18,6 +18,7 @@ import com.gighub.work.mapper.param.WorkCaseInsertParam;
 import com.gighub.work.mapper.param.WorkCaseListQuery;
 import com.gighub.work.mapper.param.WorkCaseTermsUpdateParam;
 import com.gighub.work.mapper.result.OwnedWorkplaceSnapshotRow;
+import com.gighub.work.mapper.result.SettlementSummaryRow;
 import com.gighub.work.mapper.result.WorkCaseListRow;
 import com.gighub.work.mapper.result.WorkCaseLockRow;
 import com.gighub.work.mapper.result.WorkCaseStatusCountRow;
@@ -291,6 +292,9 @@ class WorkCaseMapperDatabaseIntegrationTest {
         String marker = "IT" + suffix;
         Long workerUserId = insertWorker(jdbc, "qa154c" + suffix);
 
+        verifySettlementSnapshotMapping(
+                jdbc, mapper, ownerUserId, workplaceId, workerUserId, marker);
+
         Long olderId = insertListFixture(
                 jdbc, ownerUserId, workplaceId, marker + " 저녁 근무",
                 LocalDateTime.of(2026, 8, 9, 9, 0), "DRAFT", null);
@@ -358,6 +362,54 @@ class WorkCaseMapperDatabaseIntegrationTest {
             jdbc.update(
                     "DELETE FROM work_cases WHERE id IN (?, ?, ?)", olderId, matchedId, newerId);
             jdbc.update("DELETE FROM users WHERE id = ?", workerUserId);
+        }
+    }
+
+    /** 상세 조회가 금액과 계산 근거를 같은 Settlement Snapshot에서 읽는지 확인합니다. */
+    private void verifySettlementSnapshotMapping(
+            JdbcTemplate jdbc,
+            WorkCaseMapper mapper,
+            Long ownerUserId,
+            Long workplaceId,
+            Long workerUserId,
+            String marker) {
+        LocalDateTime calculatedAt = LocalDateTime.of(2026, 8, 8, 17, 5);
+        Long workCaseId = insertListFixture(
+                jdbc,
+                ownerUserId,
+                workplaceId,
+                marker + " 정산 조회",
+                LocalDateTime.of(2026, 8, 8, 9, 0),
+                "COMPLETED",
+                workerUserId);
+        try {
+            jdbc.update(
+                    "INSERT INTO settlements"
+                            + " (work_case_id, amount, worker_paid_amount, owner_refund_amount,"
+                            + " deduction_base_minutes, late_minutes, early_leave_minutes,"
+                            + " calculation_reason, calculation_version, calculated_at, status, due_at)"
+                            + " VALUES (?, 100000, 90000, 10000, 420, 42, 0,"
+                            + " 'CHECKED_OUT', 'ATTENDANCE_V1', ?, 'SCHEDULED', ?)",
+                    workCaseId,
+                    calculatedAt,
+                    calculatedAt.plusDays(1));
+
+            SettlementSummaryRow row = mapper.findSettlement(workCaseId);
+
+            assertNotNull(row);
+            assertEquals("SCHEDULED", row.getStatus());
+            assertEquals(100_000L, row.getAmount());
+            assertEquals(90_000L, row.getWorkerPaidAmount());
+            assertEquals(10_000L, row.getOwnerRefundAmount());
+            assertEquals(420L, row.getDeductionBaseMinutes());
+            assertEquals(42L, row.getLateMinutes());
+            assertEquals(0L, row.getEarlyLeaveMinutes());
+            assertEquals("CHECKED_OUT", row.getCalculationReason());
+            assertEquals("ATTENDANCE_V1", row.getCalculationVersion());
+            assertEquals(calculatedAt, row.getCalculatedAt());
+        } finally {
+            jdbc.update("DELETE FROM settlements WHERE work_case_id = ?", workCaseId);
+            jdbc.update("DELETE FROM work_cases WHERE id = ?", workCaseId);
         }
     }
 

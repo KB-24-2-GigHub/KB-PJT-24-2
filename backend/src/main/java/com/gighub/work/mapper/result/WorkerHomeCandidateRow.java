@@ -38,4 +38,5 @@ public class WorkerHomeCandidateRow {
     private final String escrowStatus;
     private final String settlementStatus;
     private final LocalDateTime settlementDueAt;
+    private final Long workerPaidAmount;
 }

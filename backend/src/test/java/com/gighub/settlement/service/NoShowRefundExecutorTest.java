@@ -173,6 +173,7 @@ class NoShowRefundExecutorTest {
                 .agreedWage(WAGE)
                 .status(WorkCaseStatus.NO_SHOW)
                 .successfulCheckInCount(checkInCount)
+                .successfulCheckOutCount(0L)
                 .build();
     }
 
@@ -181,6 +182,14 @@ class NoShowRefundExecutorTest {
                 .settlementId(SETTLEMENT_ID)
                 .workCaseId(WORK_CASE_ID)
                 .amount(WAGE)
+                .workerPaidAmount(0L)
+                .ownerRefundAmount(WAGE)
+                .deductionBaseMinutes(480L)
+                .lateMinutes(0L)
+                .earlyLeaveMinutes(0L)
+                .calculationReason("NO_SHOW")
+                .calculationVersion("ATTENDANCE_V1")
+                .calculatedAt(COMPLETED_AT.minusHours(1))
                 .status(status)
                 .retryCount(0);
         if (status == SettlementStatus.REFUNDED) {

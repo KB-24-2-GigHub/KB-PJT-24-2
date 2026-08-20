@@ -9,6 +9,7 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.ValidationException;
 import com.gighub.member.domain.UserRole;
+import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.dto.ShareableWorkplaceListItemResponse;
 import com.gighub.work.dto.WorkerHomeResponse;
 import com.gighub.work.dto.WorkerWorkCaseListItemResponse;
@@ -16,11 +17,13 @@ import com.gighub.work.mapper.WorkerMapper;
 import com.gighub.work.mapper.param.ShareableWorkplaceListQuery;
 import com.gighub.work.mapper.param.WorkerWorkCaseListQuery;
 import com.gighub.work.mapper.result.ShareableWorkplaceRow;
+import com.gighub.work.mapper.result.WorkerHomeCandidateRow;
 import com.gighub.work.service.impl.WorkerQueryServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -62,6 +65,36 @@ class WorkerQueryServiceImplTest {
         WorkerHomeResponse response = service.home(worker());
 
         assertNull(response.getTodayWorkCase());
+    }
+
+    @Test
+    void homeBuildsTheTaxReferenceFromTheStoredWorkerPayout() {
+        LocalDateTime startsAt = LocalDateTime.of(2026, 8, 20, 9, 0);
+        when(workerMapper.findTodayCandidate(
+                anyLong(),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class),
+                any(LocalDateTime.class))).thenReturn(WorkerHomeCandidateRow.builder()
+                        .workCaseId(11L)
+                        .title("홀 서빙")
+                        .workplaceName("강남점")
+                        .startsAt(startsAt)
+                        .endsAt(startsAt.plusHours(8))
+                        .breakMinutes(60)
+                        .breakPaid(false)
+                        .dailyWage(300_000L)
+                        .status(WorkCaseStatus.ACCEPTED)
+                        .workerPaidAmount(200_000L)
+                        .build());
+
+        WorkerHomeResponse.TaxReference taxReference = service.home(worker())
+                .getTodayWorkCase()
+                .getTaxReference();
+
+        assertNotNull(taxReference);
+        assertEquals(200_000L, taxReference.getBasisAmount());
+        assertEquals(1_480L, taxReference.getEstimatedTaxAmount());
+        assertEquals(198_520L, taxReference.getEstimatedAfterTaxAmount());
     }
 
     @Test

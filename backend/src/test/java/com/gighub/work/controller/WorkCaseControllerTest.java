@@ -10,6 +10,7 @@ import com.gighub.common.exception.CommonExceptionHandler;
 import com.gighub.common.exception.ResourceNotFoundException;
 import com.gighub.common.exception.RoleMismatchException;
 import com.gighub.common.exception.WorkCaseLockedException;
+import com.gighub.config.ApiJsonMapper;
 import com.gighub.member.domain.UserRole;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.dto.WorkCaseDetailResponse;
@@ -17,6 +18,7 @@ import com.gighub.work.dto.WorkCaseSummaryResponse;
 import com.gighub.work.service.WorkCaseService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.test.web.servlet.MockMvc;
@@ -48,6 +50,8 @@ class WorkCaseControllerTest {
         workCaseService = mock(WorkCaseService.class);
         mockMvc = MockMvcBuilders.standaloneSetup(new WorkCaseController(workCaseService))
                 .setControllerAdvice(new CommonExceptionHandler())
+                .setMessageConverters(
+                        new MappingJackson2HttpMessageConverter(ApiJsonMapper.create()))
                 .build();
     }
 
@@ -301,14 +305,38 @@ class WorkCaseControllerTest {
                 null,
                 WorkCaseDetailResponse.AttendanceSummary.of(null, null),
                 null,
-                null));
+                WorkCaseDetailResponse.SettlementSummary.of(
+                        "COMPLETED",
+                        120_000L,
+                        90_000L,
+                        30_000L,
+                        420L,
+                        105L,
+                        0L,
+                        "CHECKED_OUT",
+                        "ATTENDANCE_V1",
+                        LocalDateTime.of(2026, 8, 20, 18, 5),
+                        null,
+                        LocalDateTime.of(2026, 8, 20, 18, 6))));
 
         mockMvc.perform(get("/api/work-cases/101").principal(ownerAuthentication()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data.workCaseId").value(101))
                 .andExpect(jsonPath("$.data.worker").doesNotExist())
                 .andExpect(jsonPath("$.data.attendance").exists())
-                .andExpect(jsonPath("$.data.attendance.checkedInAt").doesNotExist());
+                .andExpect(jsonPath("$.data.attendance.checkedInAt").doesNotExist())
+                .andExpect(jsonPath("$.data.settlement.originalEscrowAmount").value(120_000))
+                .andExpect(jsonPath("$.data.settlement.workerPaidAmount").value(90_000))
+                .andExpect(jsonPath("$.data.settlement.ownerRefundAmount").value(30_000))
+                .andExpect(jsonPath("$.data.settlement.deductionAmount").value(30_000))
+                .andExpect(jsonPath("$.data.settlement.deductionBaseMinutes").value(420))
+                .andExpect(jsonPath("$.data.settlement.lateMinutes").value(105))
+                .andExpect(jsonPath("$.data.settlement.earlyLeaveMinutes").value(0))
+                .andExpect(jsonPath("$.data.settlement.calculationReason").value("CHECKED_OUT"))
+                .andExpect(jsonPath("$.data.settlement.calculationVersion")
+                        .value("ATTENDANCE_V1"))
+                .andExpect(jsonPath("$.data.settlement.calculatedAt")
+                        .value("2026-08-20T09:05:00Z"));
     }
 
     @Test

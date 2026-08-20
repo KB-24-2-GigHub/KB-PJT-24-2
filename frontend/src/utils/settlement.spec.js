@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  canApproveCheckOutMissingRefund,
   canApproveNoShowRefund,
   canApprovePayout,
   clearSettlementIntent,
@@ -26,6 +27,24 @@ const REFUND_READY = {
   status: 'NO_SHOW',
   escrow: { status: 'HELD', amount: 90000 },
   settlement: { status: 'WAITING', amount: 90000, dueAt: null }
+}
+
+const CHECK_OUT_MISSING_REFUND_READY = {
+  ...REFUND_READY,
+  status: 'CHECK_OUT_MISSING'
+}
+
+const SNAPSHOT = {
+  originalEscrowAmount: 90000,
+  workerPaidAmount: 80000,
+  ownerRefundAmount: 10000,
+  deductionAmount: 10000,
+  deductionBaseMinutes: 480,
+  lateMinutes: 30,
+  earlyLeaveMinutes: 15,
+  calculationReason: 'CHECKED_OUT',
+  calculationVersion: 'ATTENDANCE_V1',
+  calculatedAt: '2026-08-13T01:00:00Z'
 }
 
 describe('settlement approval state', () => {
@@ -58,6 +77,12 @@ describe('settlement approval state', () => {
       expect(canApproveNoShowRefund(candidate)).toBe(false)
     }
   })
+
+  it('CHECK_OUT_MISSING은 NO_SHOW와 구분한 별도 환불 동작만 노출한다', () => {
+    expect(canApproveCheckOutMissingRefund(CHECK_OUT_MISSING_REFUND_READY)).toBe(true)
+    expect(canApproveNoShowRefund(CHECK_OUT_MISSING_REFUND_READY)).toBe(false)
+    expect(canApproveCheckOutMissingRefund(REFUND_READY)).toBe(false)
+  })
 })
 
 describe('settlement result conservation', () => {
@@ -70,61 +95,65 @@ describe('settlement result conservation', () => {
     }
   })
 
-  it('정상 지급은 WORKER 전액·OWNER 0원만 승인한다', () => {
+  it('정상 정산은 부분 지급·부분 환불 보존식을 승인한다', () => {
     expect(
       isSettlementResultConsistent(SETTLEMENT_ACTION.PAYOUT, {
+        ...SNAPSHOT,
         status: 'COMPLETED',
-        originalEscrowAmount: 90000,
-        workerPaidAmount: 90000,
-        ownerRefundAmount: 0
+        settlementId: 1
       })
     ).toBe(true)
 
     expect(
       isSettlementResultConsistent(SETTLEMENT_ACTION.PAYOUT, {
+        ...SNAPSHOT,
         status: 'COMPLETED',
-        originalEscrowAmount: 90000,
         workerPaidAmount: 80000,
-        ownerRefundAmount: 10000
+        ownerRefundAmount: 0
       })
     ).toBe(false)
   })
 
-  it('NO_SHOW는 WORKER 0원·OWNER 전액만 승인한다', () => {
+  it.each([
+    [SETTLEMENT_ACTION.NO_SHOW_REFUND, 'NO_SHOW'],
+    [SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND, 'CHECK_OUT_MISSING']
+  ])('%s는 WORKER 0원·OWNER 전액만 승인한다', (action, calculationReason) => {
+    const refundSnapshot = {
+      ...SNAPSHOT,
+      workerPaidAmount: 0,
+      ownerRefundAmount: 90000,
+      deductionAmount: 90000,
+      lateMinutes: 0,
+      earlyLeaveMinutes: 0,
+      calculationReason
+    }
     expect(
-      isSettlementResultConsistent(SETTLEMENT_ACTION.NO_SHOW_REFUND, {
+      isSettlementResultConsistent(action, {
+        ...refundSnapshot,
         status: 'REFUNDED',
-        originalEscrowAmount: 90000,
-        workerPaidAmount: 0,
-        ownerRefundAmount: 90000
+        settlementId: 2
       })
     ).toBe(true)
 
     expect(
-      isSettlementResultConsistent(SETTLEMENT_ACTION.NO_SHOW_REFUND, {
+      isSettlementResultConsistent(action, {
+        ...refundSnapshot,
         status: 'REFUNDED',
-        originalEscrowAmount: 90000,
         workerPaidAmount: 1,
         ownerRefundAmount: 89999
       })
     ).toBe(false)
   })
 
-  it('음수·소수·보존식 불일치 결과를 거절한다', () => {
+  it('음수·소수·보존식·Snapshot 불일치 결과를 거절한다', () => {
     for (const result of [
-      { status: 'COMPLETED', originalEscrowAmount: -1, workerPaidAmount: -1, ownerRefundAmount: 0 },
-      {
-        status: 'COMPLETED',
-        originalEscrowAmount: 1.5,
-        workerPaidAmount: 1.5,
-        ownerRefundAmount: 0
-      },
-      {
-        status: 'COMPLETED',
-        originalEscrowAmount: 90000,
-        workerPaidAmount: 89999,
-        ownerRefundAmount: 0
-      }
+      { ...SNAPSHOT, status: 'COMPLETED', originalEscrowAmount: -1 },
+      { ...SNAPSHOT, status: 'COMPLETED', workerPaidAmount: 1.5 },
+      { ...SNAPSHOT, status: 'COMPLETED', ownerRefundAmount: 0 },
+      { ...SNAPSHOT, status: 'COMPLETED', deductionAmount: 9999 },
+      { ...SNAPSHOT, status: 'COMPLETED', calculationVersion: null },
+      { ...SNAPSHOT, status: 'COMPLETED', calculationVersion: 'ATTENDANCE_V2' },
+      { ...SNAPSHOT, status: 'COMPLETED', calculationReason: 'NO_SHOW' }
     ]) {
       expect(isSettlementResultConsistent(SETTLEMENT_ACTION.PAYOUT, result)).toBe(false)
     }
@@ -141,6 +170,12 @@ describe('settlement source convergence', () => {
     ).toBe(true)
     expect(
       hasSettlementTerminalState(SETTLEMENT_ACTION.NO_SHOW_REFUND, {
+        settlement: { status: 'REFUNDED' },
+        escrow: { status: 'REFUNDED' }
+      })
+    ).toBe(true)
+    expect(
+      hasSettlementTerminalState(SETTLEMENT_ACTION.CHECK_OUT_MISSING_REFUND, {
         settlement: { status: 'REFUNDED' },
         escrow: { status: 'REFUNDED' }
       })

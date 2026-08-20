@@ -2,8 +2,13 @@ package com.gighub.attendance.service;
 
 import com.gighub.attendance.domain.AttendanceWindowPolicy;
 import com.gighub.attendance.mapper.AttendanceLifecycleMapper;
+import com.gighub.attendance.mapper.AttendanceRecordMapper;
 import com.gighub.attendance.mapper.result.AttendanceReadinessCheckRow;
+import com.gighub.attendance.mapper.result.AttendanceSuccessTimestampsRow;
 import com.gighub.document.service.SignedContractArtifactQueryService;
+import com.gighub.settlement.domain.SettlementCalculationReason;
+import com.gighub.settlement.service.SettlementReservationService;
+import com.gighub.settlement.service.command.SettlementCalculationCommand;
 import com.gighub.work.domain.WorkCaseStatus;
 import com.gighub.work.service.WorkLifecycleCommandService;
 import com.gighub.work.service.result.WorkLifecycleSnapshot;
@@ -27,8 +32,10 @@ public class AttendanceLifecycleTransitionExecutor {
     private static final String CHECK_OUT = "CHECK_OUT";
 
     private final AttendanceLifecycleMapper lifecycleMapper;
+    private final AttendanceRecordMapper attendanceRecordMapper;
     private final SignedContractArtifactQueryService artifactQueryService;
     private final WorkLifecycleCommandService workLifecycleCommandService;
+    private final SettlementReservationService settlementReservationService;
 
     @Transactional
     public boolean advanceToReady(long workCaseId, LocalDateTime now) {
@@ -63,7 +70,12 @@ public class AttendanceLifecycleTransitionExecutor {
         if (row.status() == WorkCaseStatus.ACCEPTED && !isAttendanceReady(workCaseId)) {
             return false;
         }
-        return transition(row, WorkCaseStatus.NO_SHOW);
+        if (!transition(row, WorkCaseStatus.NO_SHOW)) {
+            return false;
+        }
+        settlementReservationService.recordTerminalSnapshot(
+                terminalCommand(row, null, SettlementCalculationReason.NO_SHOW));
+        return true;
     }
 
     @Transactional
@@ -76,7 +88,37 @@ public class AttendanceLifecycleTransitionExecutor {
                 || lifecycleMapper.hasSuccessfulAttendance(workCaseId, CHECK_OUT)) {
             return false;
         }
-        return transition(row, WorkCaseStatus.CHECK_OUT_MISSING);
+        AttendanceSuccessTimestampsRow attendance =
+                attendanceRecordMapper.findSuccessTimestamps(workCaseId);
+        if (attendance == null
+                || attendance.getCheckedInAt() == null
+                || attendance.getCheckedOutAt() != null) {
+            throw new IllegalStateException("퇴근 누락 정산의 성공 근태 기록이 올바르지 않습니다.");
+        }
+        if (!transition(row, WorkCaseStatus.CHECK_OUT_MISSING)) {
+            return false;
+        }
+        settlementReservationService.recordTerminalSnapshot(terminalCommand(
+                row,
+                attendance.getCheckedInAt(),
+                SettlementCalculationReason.CHECK_OUT_MISSING));
+        return true;
+    }
+
+    private static SettlementCalculationCommand terminalCommand(
+            WorkLifecycleSnapshot work,
+            LocalDateTime checkedInAt,
+            SettlementCalculationReason reason) {
+        return SettlementCalculationCommand.builder()
+                .workCaseId(work.workCaseId())
+                .agreedWage(work.agreedWage())
+                .startsAt(work.startsAt())
+                .endsAt(work.endsAt())
+                .breakMinutes(work.breakMinutes())
+                .breakPaid(work.breakPaid())
+                .checkedInAt(checkedInAt)
+                .reason(reason)
+                .build();
     }
 
     private boolean transition(

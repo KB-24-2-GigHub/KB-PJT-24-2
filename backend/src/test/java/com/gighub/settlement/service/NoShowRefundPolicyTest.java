@@ -1,6 +1,7 @@
 package com.gighub.settlement.service;
 
 import com.gighub.settlement.domain.SettlementStatus;
+import com.gighub.settlement.domain.SettlementCalculationReason;
 import com.gighub.settlement.service.policy.NoShowRefundPolicy;
 import com.gighub.settlement.service.policy.NoShowRefundPolicy.RefundSettlementFacts;
 import com.gighub.settlement.service.policy.SettlementPayoutDecision;
@@ -46,6 +47,33 @@ class NoShowRefundPolicyTest {
                         WORK_CASE_ID,
                         OWNER_ID,
                         work(WorkCaseStatus.READY, 0L)));
+    }
+
+    @Test
+    void allowsCheckoutMissingOnlyWithOneCheckInAndNoCheckOut() {
+        WorkCaseEscrowSnapshot missing = work(
+                WorkCaseStatus.CHECK_OUT_MISSING, 1L, 0L);
+        RefundSettlementFacts settlement = settlement(
+                SettlementStatus.WAITING,
+                SettlementCalculationReason.CHECK_OUT_MISSING);
+
+        assertEquals(
+                SettlementPayoutDecision.ALLOWED,
+                policy.assessRefund(
+                        WORK_CASE_ID,
+                        OWNER_ID,
+                        missing,
+                        settlement,
+                        escrow(EscrowStatus.HELD),
+                        false,
+                        SettlementCalculationReason.CHECK_OUT_MISSING));
+        assertEquals(
+                SettlementPayoutDecision.NOT_READY,
+                policy.assessWork(
+                        WORK_CASE_ID,
+                        OWNER_ID,
+                        work(WorkCaseStatus.CHECK_OUT_MISSING, 1L, 1L),
+                        SettlementCalculationReason.CHECK_OUT_MISSING));
     }
 
     @Test
@@ -113,6 +141,11 @@ class NoShowRefundPolicyTest {
     }
 
     private WorkCaseEscrowSnapshot work(WorkCaseStatus status, long checkInCount) {
+        return work(status, checkInCount, 0L);
+    }
+
+    private WorkCaseEscrowSnapshot work(
+            WorkCaseStatus status, long checkInCount, long checkOutCount) {
         return WorkCaseEscrowSnapshot.builder()
                 .workCaseId(WORK_CASE_ID)
                 .employerId(OWNER_ID)
@@ -120,11 +153,30 @@ class NoShowRefundPolicyTest {
                 .agreedWage(WAGE)
                 .status(status)
                 .successfulCheckInCount(checkInCount)
+                .successfulCheckOutCount(checkOutCount)
                 .build();
     }
 
     private RefundSettlementFacts settlement(SettlementStatus status) {
-        return new RefundSettlementFacts(12L, WORK_CASE_ID, WAGE, status, null);
+        return settlement(status, SettlementCalculationReason.NO_SHOW);
+    }
+
+    private RefundSettlementFacts settlement(
+            SettlementStatus status, SettlementCalculationReason reason) {
+        return new RefundSettlementFacts(
+                12L,
+                WORK_CASE_ID,
+                WAGE,
+                0L,
+                WAGE,
+                480L,
+                0L,
+                0L,
+                reason.name(),
+                "ATTENDANCE_V1",
+                java.time.LocalDateTime.of(2026, 8, 20, 10, 0),
+                status,
+                null);
     }
 
     private SettlementEscrowSnapshot escrow(EscrowStatus status) {

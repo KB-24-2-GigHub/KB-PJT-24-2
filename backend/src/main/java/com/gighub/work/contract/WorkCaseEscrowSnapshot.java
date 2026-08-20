@@ -18,4 +18,5 @@ public class WorkCaseEscrowSnapshot {
     private final String title;
     private final WorkCaseStatus status;
     private final Long successfulCheckInCount;
+    private final Long successfulCheckOutCount;
 }

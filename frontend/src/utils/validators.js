@@ -194,11 +194,10 @@ export function workPeriodRule(startTime, endTime) {
 }
 
 /**
- * 휴게시간 규칙 — 0 이상 정수이면서 그 근무의 길이를 넘지 않아야 한다.
+ * 휴게시간 규칙 — 0 이상 정수이면서 근무 길이를 넘지 않아야 한다.
  *
- * 서버 `WorkCaseServiceImpl.requireValidWorkPeriod` 와 같은 경계다. `휴게 == 근무` 는
- * 통과하고 1분 초과부터 400 이므로 여기서도 같게 잡는다 — 한 칸 좁히면 서버가 받아 주는
- * 값을 화면이 막고, 넓히면 제출한 뒤에야 400 을 본다.
+ * 유급 휴게는 근무 길이와 같아도 되지만, 무급 휴게가 근무 전체와 같으면 차감 분모가
+ * 0분이 되므로 등록할 수 없다. 새 정산 규칙과 같은 경계를 등록·수정 화면에서 먼저 본다.
  *
  * 길이는 workPeriodRule 과 같은 방식으로 앞으로 흐른 거리로 잰다. 자정을 넘기는 근무를
  * 단순 뺄셈으로 재면 음수가 되어 어떤 휴게든 통과한다.
@@ -208,8 +207,9 @@ export function workPeriodRule(startTime, endTime) {
  * @param {string} startTime "HH:mm"
  * @param {string} endTime "HH:mm"
  * @param {number|string} breakMinutes 비우면 휴게 없음
+ * @param {boolean} breakPaid 유급 휴게 여부
  */
-export function breakMinutesRule(startTime, endTime, breakMinutes) {
+export function breakMinutesRule(startTime, endTime, breakMinutes, breakPaid = false) {
   if (breakMinutes === '' || breakMinutes == null) return ok
 
   const minutes = Number(breakMinutes)
@@ -223,9 +223,13 @@ export function breakMinutesRule(startTime, endTime, breakMinutes) {
   if (start === null || end === null) return ok
 
   const workMinutes = end > start ? end - start : end - start + MINUTES_PER_DAY
-  return minutes <= workMinutes
-    ? ok
-    : fail(`휴게시간은 근무 시간(${workMinutes}분)을 넘을 수 없어요.`)
+  if (minutes > workMinutes) {
+    return fail(`휴게시간은 근무 시간(${workMinutes}분)을 넘을 수 없어요.`)
+  }
+  if (!breakPaid && minutes === workMinutes) {
+    return fail(`무급 휴게시간은 근무 시간(${workMinutes}분)보다 짧아야 해요.`)
+  }
+  return ok
 }
 
 /** 지갑 충전·출금 금액: 1원 이상 1억원 이하의 원 단위 정수. */

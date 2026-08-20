@@ -280,8 +280,8 @@ public class DisputeReviewQueueService {
                 && (aggregate.settlement().getStatus() == SettlementStatus.ON_HOLD
                 || aggregate.settlement().getStatus() == SettlementStatus.SCHEDULED);
         boolean ownerRefund = result.getDecision() == DisputeReviewDecision.REJECT
-                && aggregate.workCase().getStatus()
-                == WorkCaseStatus.NO_SHOW
+                && (aggregate.workCase().getStatus() == WorkCaseStatus.NO_SHOW
+                || aggregate.workCase().getStatus() == WorkCaseStatus.CHECK_OUT_MISSING)
                 && aggregate.settlement().getStatus() == SettlementStatus.WAITING;
         if (result.getDecision() == DisputeReviewDecision.NEEDS_MORE_INFO
                 || workerRelease

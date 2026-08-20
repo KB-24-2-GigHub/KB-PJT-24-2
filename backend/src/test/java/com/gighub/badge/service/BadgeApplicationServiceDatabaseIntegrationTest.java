@@ -121,9 +121,13 @@ class BadgeApplicationServiceDatabaseIntegrationTest {
         LocalDateTime now = LocalDateTime.now();
         jdbc.update(
                 "INSERT INTO settlements"
-                        + " (work_case_id, amount, status, due_at, processing_at, completed_at)"
-                        + " VALUES (?, 10000, 'COMPLETED', ?, ?, ?)",
+                        + " (work_case_id, amount, worker_paid_amount, owner_refund_amount,"
+                        + " calculation_reason, calculation_version, calculated_at, status,"
+                        + " due_at, processing_at, completed_at)"
+                        + " VALUES (?, 10000, 10000, 0, 'LEGACY', 'LEGACY', ?,"
+                        + " 'COMPLETED', ?, ?, ?)",
                 workCaseId,
+                now,
                 now.minusMinutes(10),
                 now.minusMinutes(5),
                 now);

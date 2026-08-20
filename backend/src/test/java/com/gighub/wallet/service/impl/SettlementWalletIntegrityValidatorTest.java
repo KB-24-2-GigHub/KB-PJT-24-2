@@ -63,7 +63,7 @@ class SettlementWalletIntegrityValidatorTest {
 
         assertDoesNotThrow(() -> {
             SettlementWalletIntegrityValidator.validateReleaseLedger(
-                    employer, EMPLOYER_WALLET_ID, EMPLOYER_ID, command());
+                    employer, EMPLOYER_WALLET_ID, EMPLOYER_ID, command(), AMOUNT);
             SettlementWalletIntegrityValidator.validateEmployerReleaseLedgerInvariant(
                     employer, AMOUNT);
             SettlementWalletIntegrityValidator.validateWorkerReleaseLedgerInvariant(
@@ -100,8 +100,11 @@ class SettlementWalletIntegrityValidatorTest {
                 .employerId(EMPLOYER_ID)
                 .workerId(WORKER_ID)
                 .amount(AMOUNT)
+                .workerPaidAmount(AMOUNT)
+                .ownerRefundAmount(0L)
                 .employerLedgerKey("SETTLE:71:OWNER")
                 .workerLedgerKey("SETTLE:71:WORKER")
+                .employerRefundLedgerKey("SETTLE:71:REFUND")
                 .build();
     }
 
