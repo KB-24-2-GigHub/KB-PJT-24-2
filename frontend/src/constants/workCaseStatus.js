@@ -123,7 +123,10 @@ export function isInvitationUsable(invitation, now = new Date()) {
 
 /**
  * 근태관리 요약 카운트(7종). `key` = 서버 요약 응답 필드, `status` = 매핑 enum.
- * CANCELED는 운영 현황 요약에 집계하지 않는다.
+ * CANCELED는 운영 현황 요약이라 개별 버킷 카드로는 집계하지 않는다 — 다만
+ * WorkCaseSummaryResponse가 `canceled` 필드를 따로 내려주므로, "전체" 합계(화면의
+ * totalCount)는 이 7종 합에 그 값을 더해 "전체" pill을 눌렀을 때 나오는 목록(상태
+ * 필터 없음 = 취소 포함 전체)과 카운트를 일치시킨다.
  *
  * CHECK_OUT_MISSING은 NO_SHOW·COMPLETED와 상호 배타적인 별도 상태라(위 문서 참고)
  * 두 버킷 중 하나로 합산하지 않고 독립 카드로 노출한다(WorkCaseSummaryResponse에도
@@ -139,9 +142,9 @@ export const WORK_CASE_SUMMARY = [
   { key: 'noShow', status: 'NO_SHOW' }
 ]
 
-/** 요약 카운트 초기값(모든 버킷 0). */
+/** 요약 카운트 초기값(카드 7버킷 + canceled, 모두 0). */
 export function emptyWorkCaseSummary() {
-  return Object.fromEntries(WORK_CASE_SUMMARY.map((b) => [b.key, 0]))
+  return { ...Object.fromEntries(WORK_CASE_SUMMARY.map((b) => [b.key, 0])), canceled: 0 }
 }
 
 /**

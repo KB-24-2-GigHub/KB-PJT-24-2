@@ -186,20 +186,18 @@ const summaryInProgress = computed(() =>
 )
 const summaryPast = computed(() => ['completed', 'noShow', 'checkOutMissing'].map(bucketByKey))
 
-/** 요약 7종 전체 합계 — "전체" pill의 카운트이자, 눌렀을 때 돌아갈 상태 필터 없음을 뜻한다. */
-const totalCount = computed(() =>
-  WORK_CASE_SUMMARY.reduce((sum, bucket) => sum + (summary.value[bucket.key] ?? 0), 0)
+/**
+ * "전체" pill의 카운트 — 요약 카드 7종 합 + canceled(카드로는 안 보여주지만 서버 응답에
+ * 별도 필드로 내려온다). "전체"를 누르면 status 필터를 아예 지워(toggleStatus) 취소 건도
+ * 포함한 전체 목록을 보여주므로, 카운트도 취소를 포함해야 클릭 결과와 맞는다.
+ */
+const totalCount = computed(
+  () =>
+    WORK_CASE_SUMMARY.reduce((sum, bucket) => sum + (summary.value[bucket.key] ?? 0), 0) +
+    (summary.value.canceled ?? 0)
 )
-const isAllActive = computed(() => !appliedFilter.value.status)
-
-/** "전체" pill — 걸린 상태 필터를 지운다(이미 없으면 아무 것도 하지 않는다). */
-function clearStatusFilter() {
-  if (!appliedFilter.value.status) return
-  const next = { ...appliedFilter.value }
-  delete next.status
-  appliedFilter.value = next
-  load()
-}
+// 상태뿐 아니라 검색어·기간까지 하나도 안 걸려 있어야 "전체"가 실제로 맞다.
+const isAllActive = computed(() => !isFiltered.value)
 
 const listTitle = computed(() =>
   appliedFilter.value.status ? `${statusLabel(appliedFilter.value.status)} 근무` : '근무 목록'
@@ -322,13 +320,17 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
               {{ summary[bucket.key] ?? 0 }}
             </strong>
           </button>
-          <!-- 전체 합계 — 상태 필터를 지우고 전체를 본다. 색을 다르게 둬 상태 pill과 구분한다. -->
+          <!--
+            전체 합계 — 걸린 상태 필터를 지우고 전체를 본다(toggleStatus 가 이미 "같은 값이면
+            해제"를 하므로 지금 걸린 status 를 그대로 넘기면 지워진다). 색을 다르게 둬 상태
+            pill과 구분한다.
+          -->
           <button
             type="button"
             class="stat-pill stat-pill--total"
             :class="{ active: isAllActive }"
             :aria-pressed="isAllActive"
-            @click="clearStatusFilter"
+            @click="toggleStatus(appliedFilter.status)"
           >
             <span class="stat-label">전체</span>
             <strong class="stat-value">{{ totalCount }}</strong>
@@ -496,7 +498,7 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
      그러지 않으면 스크롤되는 내용이 양옆 16px 여백으로 비쳐 보이기 때문이고, 위쪽은
      위 주석의 sticky top 정렬 때문이다(아래는 그대로 padding-bottom 만 준다). */
   margin: calc(-1 * var(--space-lg)) calc(-1 * var(--space-lg)) 0;
-  padding: var(--space-lg) var(--space-lg) var(--space-lg);
+  padding: var(--space-lg);
   /* 스크롤되는 내용이 뒤로 비치지 않게 불투명 배경을 깐다.
      색은 .app 컨테이너와 같은 --color-surface — --color-bg(회색)를 쓰면 이 영역만 띠로 보인다. */
   background: var(--color-surface);
@@ -514,7 +516,9 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
  * 배경 + 흰 글자로 다르게 둬 다른 pill과 구분한다.
  * 크기는 전부 동일하게 맞춘다 — 가장 긴 라벨(퇴근 미확인)이 두 자릿수 값과 함께
  * 있어도 줄바꿈되지 않을 min-width를 기준으로 잡고, 짧은 라벨은 가운데 정렬로
- * 남는 공간을 채운다(폭이 좁은 화면에서는 pill 단위로 줄바꿈한다, flex-wrap). */
+ * 남는 공간을 채운다(폭이 좁은 화면에서는 pill 단위로 줄바꿈한다, flex-wrap).
+ * min-width 88px 기준 — 96px 이면 위 줄 4개 + gap 이 360px 뷰포트의 "2줄" 전제를
+ * 깨고 flex-wrap 으로 3줄이 됐다(갤럭시 다수 해상도). 88px 로 낮춰 여유를 둔다. */
 .summary {
   display: flex;
   flex-direction: column;
@@ -530,14 +534,15 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 96px;
+  min-width: 88px;
   padding: 6px var(--space-sm);
   background: var(--color-owner-weak);
-  border: 1px solid transparent;
+  /* 2px 고정 — active 시에만 색을 바꾸면 폭이 그대로라 선택 시 레이아웃이 밀리지 않는다. */
+  border: 2px solid transparent;
   border-radius: var(--radius-pill);
   white-space: nowrap;
 }
-/* 선택된 상태 pill — 지금 어떤 목록을 보고 있는지 표시 */
+/* 선택된 상태 pill — 옅은 배경 위 1px 테두리는 잘 안 보여 2px로 굵게 해 눈에 띄게 한다. */
 .stat-pill.active {
   border-color: var(--color-owner);
 }
@@ -597,8 +602,11 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   font-size: var(--text-sm);
   color: var(--color-owner);
 }
-/* 걸러진 상태 — 검색어·기간은 제목에 안 드러나므로 글자 굵기로 알린다(배경은 항상 동일). */
+/* 걸러진 상태 — 검색어·기간은 제목에 안 드러나므로 배경·글자색을 반전해 알린다(add-btn과
+   같은 진한 파랑 방식). 글자 굵기만으로는 옅은 배경 위에서 거의 안 보였다. */
 .filter-btn.is-active {
+  background: var(--color-owner);
+  color: var(--color-surface);
   font-weight: var(--weight-medium);
 }
 .add-btn {
