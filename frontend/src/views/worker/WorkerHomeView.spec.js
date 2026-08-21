@@ -117,6 +117,14 @@ describe('WorkerHomeView', () => {
     expect(push).toHaveBeenCalledWith('/worker/wallet/withdraw')
   })
 
+  it('오늘의 알바 카드를 클릭하면 근무 상세로 이동한다', async () => {
+    const wrapper = mount(WorkerHomeView)
+    await flushPromises()
+
+    await wrapper.get('.work-case').trigger('click')
+    expect(push).toHaveBeenCalledWith('/worker/work/work-cases/101')
+  })
+
   it('GET /wallet 실패는 미처리 예외 없이 오류 화면으로 표시한다', async () => {
     fetchWallet.mockReset().mockRejectedValue(new Error('network'))
     const unhandled = vi.fn()

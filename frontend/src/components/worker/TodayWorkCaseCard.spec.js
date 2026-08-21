@@ -37,6 +37,17 @@ describe('TodayWorkCaseCard', () => {
 
     expect(wrapper.text()).toContain('오늘은 예정된 알바가 없어요.')
     expect(wrapper.find('.work-case-info').exists()).toBe(false)
+    // 이동할 근무 상세가 없으니 클릭 가능한 버튼 자체가 없어야 한다.
+    expect(wrapper.find('.work-case').exists()).toBe(false)
+  })
+
+  it('카드를 클릭하면 select 이벤트로 workCase를 그대로 넘긴다', async () => {
+    const wrapper = mountCard()
+
+    await wrapper.get('.work-case').trigger('click')
+
+    expect(wrapper.emitted('select')).toHaveLength(1)
+    expect(wrapper.emitted('select')[0]).toEqual([WORK_CASE])
   })
 
   describe('체크인 전 지각 표시', () => {

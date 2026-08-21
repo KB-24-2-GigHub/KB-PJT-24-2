@@ -57,6 +57,7 @@ onMounted(() => {
 })
 
 const goWithdraw = () => router.push('/worker/wallet/withdraw')
+const goWorkCaseDetail = (workCase) => router.push(`/worker/work/work-cases/${workCase.workCaseId}`)
 </script>
 
 <template>
@@ -66,7 +67,7 @@ const goWithdraw = () => router.push('/worker/wallet/withdraw')
     <template v-else>
       <WorkerWalletCard :available-balance="availableBalance" @withdraw="goWithdraw" />
 
-      <TodayWorkCaseCard :work-case="todayWorkCase" />
+      <TodayWorkCaseCard :work-case="todayWorkCase" @select="goWorkCaseDetail" />
 
       <SecuredEarningCard v-if="showEarning" :earning="earning" :work-case="todayWorkCase" />
 

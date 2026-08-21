@@ -16,6 +16,8 @@ const props = defineProps({
   workCase: { type: Object, default: null }
 })
 
+const emit = defineEmits(['select'])
+
 // 오늘 근무 후보가 없으면 서버가 todayWorkCase 자체를 null로 준다(WorkerHomeResponse).
 const isEmpty = computed(() => !props.workCase)
 const isLate = computed(() => !!props.workCase?.attendance?.isLate)
@@ -31,7 +33,7 @@ const displayStatus = computed(() => displayWorkCaseStatus(props.workCase))
       <span>오늘은 예정된 알바가 없어요.</span>
     </div>
 
-    <div v-else class="work-case">
+    <button v-else type="button" class="work-case" @click="emit('select', workCase)">
       <div class="badges">
         <StatusChip :status="displayStatus" kind="workCase" />
         <span v-if="isLate" class="badge-late">
@@ -41,7 +43,7 @@ const displayStatus = computed(() => displayWorkCaseStatus(props.workCase))
       </div>
       <p class="work-case-title">{{ workCase.title }}</p>
       <p class="work-case-info">{{ workCase.workplaceName }} · {{ workCase.timeRange }}</p>
-    </div>
+    </button>
   </section>
 </template>
 
@@ -67,6 +69,18 @@ const displayStatus = computed(() => displayWorkCaseStatus(props.workCase))
   margin-top: var(--space-md);
   color: var(--color-text-sub);
   font-size: var(--text-md);
+}
+
+/* 클릭 가능한 근무 상세 이동 버튼 — 이전엔 div였던 자리라 텍스트 정렬·배경·폭을
+   부모 카드에 맞춰 되돌린다. */
+.work-case {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
 }
 
 .badges {
