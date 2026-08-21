@@ -52,7 +52,7 @@ public final class InvitationDetailResponse {
     }
 
     /**
-     * @param ownerBadge 활성 Badge가 없으면 {@code null}
+     * @param ownerBadge SPEC-484-01부터 0단계도 채워진 객체({@code level: 0})로 넘어온다
      */
     public static InvitationDetailResponse of(
             String title,

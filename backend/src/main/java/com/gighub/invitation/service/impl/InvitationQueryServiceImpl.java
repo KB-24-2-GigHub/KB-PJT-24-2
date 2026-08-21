@@ -126,14 +126,13 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
      * 초대를 발급한 OWNER의 같은 산정 결과를 재사용합니다.
      *
      * <p>Badge Application 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준
-     * 결과이며, 0단계는 활성 Badge 없음과 같은 {@code null}로 응답한다는 기존 계약을
-     * 유지합니다.</p>
+     * 결과를 그대로 담습니다(SPEC-484-01). WORKER가 초대를 확인하는 시점에도 매칭된
+     * WORKER가 근무 상세에서 OWNER를 보는 것과 같은 방식으로 "아직 이력 쌓는 중(0단계)"을
+     * 배지 그림으로 보여줍니다 — {@code worker.badge}({@code WorkCaseDetailResponse}, #472)와
+     * 같은 관례입니다.</p>
      */
     private OwnerBadgeResponse ownerBadge(Long employerId) {
         BadgeCalculationResult result = badgeApplicationService.recalculate(employerId);
-        if (result.getLevel() <= 0) {
-            return null;
-        }
         return OwnerBadgeResponse.of(result.getBadgeType(), result.getLevel());
     }
 

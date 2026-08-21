@@ -35,7 +35,6 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
@@ -81,8 +80,10 @@ class InvitationQueryServiceImplTest {
         assertEquals(120_000L, response.getDailyWage());
         assertEquals(1, response.getTermsVersion());
         assertEquals(STARTS_AT.atZone(SEOUL).toInstant(), response.getExpiresAt());
-        // 0단계는 활성 Badge 없음과 같은 null입니다.
-        assertNull(response.getOwnerBadge());
+        // SPEC-484-01: 0단계도 null로 감추지 않고 채워진 객체(level 0)로 노출합니다.
+        OwnerBadgeResponse ownerBadge = response.getOwnerBadge();
+        assertEquals("TRUST_OWNER", ownerBadge.getBadgeType());
+        assertEquals(0, ownerBadge.getLevel());
     }
 
     @Test
