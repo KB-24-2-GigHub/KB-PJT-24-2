@@ -110,7 +110,7 @@ describe('SecuredEarningCard', () => {
     await wrapper.find('button.info').trigger('click')
     expect(wrapper.find('.info-popover').exists()).toBe(true)
     expect(wrapper.text()).toContain('1분마다 갱신되는 참고용 예상치')
-    expect(wrapper.text()).toContain('지갑 잔액·예치금·실제 지급액과는 무관')
+    expect(wrapper.text()).toContain('실제 정산 금액과는 차이가 발생할 수 있으며')
     expect(wrapper.find('button.info').attributes('aria-expanded')).toBe('true')
 
     await wrapper.find('button.info').trigger('click')

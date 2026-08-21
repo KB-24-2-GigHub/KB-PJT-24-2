@@ -113,7 +113,7 @@ describe('WorkerHomeView', () => {
     const wrapper = mount(WorkerHomeView)
     await flushPromises()
 
-    await wrapper.get('.wallet-card button').trigger('click')
+    await wrapper.get('.wallet-card .btn').trigger('click')
     expect(push).toHaveBeenCalledWith('/worker/wallet/withdraw')
   })
 
@@ -123,6 +123,17 @@ describe('WorkerHomeView', () => {
 
     await wrapper.get('.work-case').trigger('click')
     expect(push).toHaveBeenCalledWith('/worker/work/work-cases/101')
+  })
+
+  it('안심지갑 잔액의 info 버튼을 누르면 잔액 박스 아래에 안내가 뜬다', async () => {
+    const wrapper = mount(WorkerHomeView)
+    await flushPromises()
+
+    expect(wrapper.find('.balance-info').exists()).toBe(false)
+
+    await wrapper.find('button.info-btn').trigger('click')
+    expect(wrapper.find('.balance-info').exists()).toBe(true)
+    expect(wrapper.find('.balance-info').text()).toContain('안심지갑 잔액이란?')
   })
 
   it('GET /wallet 실패는 미처리 예외 없이 오류 화면으로 표시한다', async () => {
