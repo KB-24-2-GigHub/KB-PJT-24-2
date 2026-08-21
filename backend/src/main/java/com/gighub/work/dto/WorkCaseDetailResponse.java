@@ -121,14 +121,40 @@ public final class WorkCaseDetailResponse {
 
         private final Long workerId;
         private final String name;
+        private final WorkerBadge badge;
 
-        private WorkerSummary(Long workerId, String name) {
+        private WorkerSummary(Long workerId, String name, WorkerBadge badge) {
             this.workerId = workerId;
             this.name = name;
+            this.badge = badge;
         }
 
-        public static WorkerSummary of(Long workerId, String name) {
-            return new WorkerSummary(workerId, name);
+        public static WorkerSummary of(Long workerId, String name, WorkerBadge badge) {
+            return new WorkerSummary(workerId, name, badge);
+        }
+    }
+
+    /**
+     * 매칭된 WORKER의 현재 신뢰 Badge 산정 결과입니다.
+     *
+     * <p>초대 응답의 {@code ownerBadge}(OwnerBadgeResponse)와 달리 0단계를 {@code null}로
+     * 감추지 않습니다 — OWNER가 매칭된 WORKER를 볼 때는 "아직 이력 쌓는 중(0단계)"도 뱃지
+     * 그림으로 보여준다는 화면 결정이라, {@code worker}가 있으면 {@code badge}는 항상 이
+     * 객체이고 {@code level}만 0~3으로 다릅니다.</p>
+     */
+    @Getter
+    public static final class WorkerBadge {
+
+        private final String badgeType;
+        private final Integer level;
+
+        private WorkerBadge(String badgeType, Integer level) {
+            this.badgeType = badgeType;
+            this.level = level;
+        }
+
+        public static WorkerBadge of(String badgeType, Integer level) {
+            return new WorkerBadge(badgeType, level);
         }
     }
 
