@@ -18,8 +18,7 @@
 }
 
 /* 하단 탭바에 가리지 않도록 본문 아래 여백.
- * 탭바 높이(64px) + 홈 인디케이터 safe-area 만큼 확보한다.
- * (탭 자체가 env(safe-area-inset-bottom) 만큼 더 높아지므로 고정 74px 로는 리스트 끝이 잘렸다) */
+ * 탭바 높이(약 80px)와 마지막 콘텐츠 여유(8px), 홈 인디케이터 safe-area를 함께 확보한다. */
 .with-tabbar {
-  padding-bottom: calc(74px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
 }
