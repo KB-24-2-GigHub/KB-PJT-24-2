@@ -268,7 +268,7 @@ function goHome() {
             타는 방어적 폴백이다.
           -->
           <div v-if="invite.ownerBadge" class="owner-badge">
-            <TrustBadge role="owner" :level="invite.ownerBadge.level" :size="44" />
+            <TrustBadge role="owner" :level="invite.ownerBadge.level" :size="36" />
             <span class="badge-label">{{ ownerBadgeTitle }} Lv.{{ invite.ownerBadge.level }}</span>
           </div>
           <span v-else class="badge-empty">등록된 배지 없음</span>
