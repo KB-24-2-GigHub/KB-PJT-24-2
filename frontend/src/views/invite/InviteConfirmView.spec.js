@@ -114,6 +114,7 @@ describe('InviteConfirmView', () => {
     expect(wrapper.text()).toContain('2026.08.20')
     expect(wrapper.text()).toContain('10:00 ~ 18:00')
     expect(wrapper.find('img[alt="owner 뱃지 0단계"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('안심사장 Lv.0')
     expect(wrapper.find('canvas').exists()).toBe(false)
   })
 
@@ -143,6 +144,7 @@ describe('InviteConfirmView', () => {
       await flushPromises()
 
       expect(wrapper.find(`img[alt="owner 뱃지 ${level}단계"]`).exists()).toBe(true)
+      expect(wrapper.text()).toContain(`안심사장 Lv.${level}`)
       expect(wrapper.text()).not.toContain('등록된 배지 없음')
     })
 

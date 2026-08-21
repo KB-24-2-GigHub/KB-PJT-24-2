@@ -27,6 +27,7 @@ import {
   formatSeoulDateTime,
   formatSeoulTimeRange
 } from '@/utils/format'
+import { BADGE_TYPE } from '@/utils/constants'
 import {
   invitationErrorMessage,
   isInvitationForbidden,
@@ -40,6 +41,8 @@ const walletStore = useWalletStore()
 
 const token = computed(() => String(route.params.token ?? ''))
 const invite = ref(null)
+// 마이페이지("안심사장 Lv.N")와 같은 문구 관례. BADGE_TYPE 은 이미 있는 상수라 새로 만들지 않는다.
+const ownerBadgeTitle = computed(() => BADGE_TYPE[invite.value?.ownerBadge?.badgeType]?.title ?? '')
 const loading = ref(true)
 const errorMsg = ref('')
 const agreed = ref(false)
@@ -264,12 +267,10 @@ function goHome() {
             (worker.badge, #472와 같은 관례) — 아래 v-else는 예상 밖 응답을 받았을 때만
             타는 방어적 폴백이다.
           -->
-          <TrustBadge
-            v-if="invite.ownerBadge"
-            role="owner"
-            :level="invite.ownerBadge.level"
-            :size="44"
-          />
+          <div v-if="invite.ownerBadge" class="owner-badge">
+            <TrustBadge role="owner" :level="invite.ownerBadge.level" :size="44" />
+            <span class="badge-label">{{ ownerBadgeTitle }} Lv.{{ invite.ownerBadge.level }}</span>
+          </div>
           <span v-else class="badge-empty">등록된 배지 없음</span>
         </section>
 
@@ -363,6 +364,19 @@ function goHome() {
 .badge-empty {
   flex-shrink: 0;
   font-size: var(--text-sm);
+  color: var(--color-text-sub);
+}
+.owner-badge {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-xs);
+}
+/* 마이페이지("{타이틀} Lv.N")와 같은 문구 관례. 아이콘만으로는 무슨 뱃지인지 안 읽힌다. */
+.badge-label {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
   color: var(--color-text-sub);
 }
 
