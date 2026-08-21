@@ -7,7 +7,7 @@
  */
 import { computed, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
-import { Backpack, ChevronLeft, FileText, QrCode, ShieldCheck, Store } from 'lucide-vue-next'
+import { ChevronLeft, FileText, QrCode, ShieldCheck } from 'lucide-vue-next'
 
 import AuthRoleToggle from '@/components/auth/AuthRoleToggle.vue'
 import logoGighubOwner from '@/assets/images/logo/logo-gighub-owner.png'
@@ -22,7 +22,6 @@ const step = ref(route.query.step === 'auth' ? 2 : 0) // 0: 사장님 소개, 1:
 const intros = [
   {
     role: 'owner',
-    icon: Store,
     title: '사장님, 급여 관리 걱정 끝',
     // 줄바꿈 위치를 고정한다(.tagline 의 white-space: pre-line).
     subtitle: '전자지갑 에스크로로 인건비를 미리 예치하고,\n정산까지 투명하게 관리하세요.',
@@ -38,7 +37,6 @@ const intros = [
   },
   {
     role: 'worker',
-    icon: Backpack,
     title: '알바생, 내 임금은 안전하게',
     subtitle: '일한 만큼 안심하고 받을 수 있는 전자지갑.',
     features: [
@@ -55,6 +53,9 @@ const intros = [
 
 const isIntroStep = computed(() => step.value < intros.length)
 const intro = computed(() => intros[step.value])
+const introLogo = computed(() =>
+  intro.value.role === 'owner' ? logoGighubOwner : logoGighubWorker
+)
 
 const role = ref(route.query.role === 'worker' ? 'worker' : 'owner') // 'owner' | 'worker' (역할 선택 단계에서 사용)
 // 온보딩 전용 로고 대신 owner/worker 로고를 그대로 쓴다 — 역할 선택 단계(③)에서 이미
@@ -90,7 +91,7 @@ const features = [
 
     <template v-if="isIntroStep">
       <div class="hero">
-        <component :is="intro.icon" class="hero-icon" :class="`is-${intro.role}`" :size="56" />
+        <img :src="introLogo" class="logo" alt="Gig Hub" />
         <h1 class="title">{{ intro.title }}</h1>
         <p class="tagline intro-tagline">{{ intro.subtitle }}</p>
       </div>
@@ -189,15 +190,6 @@ const features = [
   width: 180px;
   height: auto;
   margin: 0 auto;
-}
-.hero-icon {
-  margin: 0 auto;
-}
-.hero-icon.is-owner {
-  color: var(--color-owner);
-}
-.hero-icon.is-worker {
-  color: var(--color-worker);
 }
 .title {
   margin-top: var(--space-md);
