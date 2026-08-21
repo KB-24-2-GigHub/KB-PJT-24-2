@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-187-01
-status: draft
+status: accepted
 issue: 187
 base_spec_version: 8.1.0
 targets:

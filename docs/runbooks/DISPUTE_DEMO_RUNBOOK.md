@@ -33,13 +33,13 @@ dispute.review.fake-decision=RESOLVE
 `fake-decision`은 `RESOLVE`, `REJECT`, `NEEDS_MORE_INFO` 중 하나입니다. 결정을 바꾸면 Tomcat을
 재시작하고 새 Work Case로 시연합니다.
 
-1. `COMPLETED / SCHEDULED` 또는 `NO_SHOW / WAITING`인 근무를 준비합니다.
+1. `COMPLETED / SCHEDULED`, `NO_SHOW / WAITING` 또는 `CHECK_OUT_MISSING / WAITING`인 근무를 준비합니다.
 2. WORKER 근무 상세에서 **임금분쟁 신고·조회**로 들어가 제목과 경위를 제출합니다.
-3. 정상 정산은 `ON_HOLD`가 되고, NO_SHOW 정산은 `WAITING`을 유지하지만 환불 승인이
-   거절되는지 확인합니다.
+3. 정상 정산은 `ON_HOLD`가 되고, NO_SHOW·CHECK_OUT_MISSING 정산은 `WAITING`을 유지하지만
+   환불 승인이 거절되는지 확인합니다.
 4. 화면의 **새로고침**으로 결과를 다시 조회합니다.
 5. OWNER 근무 상세에서도 같은 상태·요약·사유 코드·처리 시각이 보이는지 확인합니다.
-6. `RESOLVE / REJECT`는 기존 지급·환불 절차를 다시 실행할 수 있고,
+6. `RESOLVE / REJECT`는 상태에 맞는 기존 지급·노쇼/퇴근 누락 환불 절차를 다시 실행할 수 있고,
    `NEEDS_MORE_INFO`는 `UNDER_REVIEW`와 보류를 유지해야 합니다.
 
 모든 결과 화면에 `DEMO 시뮬레이션이며 법적 판단이 아님`이라는 안내가 계속 보여야 합니다.

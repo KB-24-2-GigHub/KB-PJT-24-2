@@ -255,12 +255,12 @@ Database constraints do not replace application authorization or transaction rul
 - actor roles and ownership where no composite relationship proves them;
 - immutable profile identity fields (`login_id`, `email`, and `name`) and phone-only profile updates;
 - normalize `users.phone` and `workplaces.phone` to approved digit-only values and keep phone values out of request, response, and SQL binding logs;
-- a fixed 100m workplace radius and the workplace update allowlist that excludes representative, coordinates, and radius; address changes on coordinate-bearing workplaces wait for an approved geocoding/reverification or restriction policy;
+- a fixed 100m workplace radius, server-side Kakao Local road-address geocoding for registration and address changes, and the workplace update allowlist that excludes representative, client-supplied coordinates, and radius;
 - complete state-transition graphs;
 - wallet actor alignment, ACTIVE non-owned account resolution by bank/account, funding PIN verification without persistence or logging, PIN-free withdrawal destination checks, and consistent account/ledger locking;
 - attendance worker assignment;
 - fixed-QR HMAC verification, revoked-token rejection, first/second scan selection, one applicable work case per worker/workplace, location checks, and transactional QR reissue;
-- idempotent no-show handling and, after product approval, missing-checkout detection, race handling, resolution, and settlement behavior;
+- idempotent no-show and missing-checkout detection, one-time settlement Snapshot creation, race handling, and separate OWNER refund approval after an open-dispute recheck;
 - system-only employment-contract generation, work-case linkage, contract access control, and the approved three-year DB-first logical-deletion and idempotent object-purge policy;
 - per-request badge recalculation after locking the user row, followed by current-row upsert with the approved closed evidence fields and no separate backfill;
 - complete document-access audit writes: resolved version when available, action, result, and a

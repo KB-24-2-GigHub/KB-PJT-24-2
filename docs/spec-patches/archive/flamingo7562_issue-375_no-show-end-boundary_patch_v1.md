@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-375-01
-status: draft
+status: accepted
 issue: 375
 base_spec_version: 8.0.0
 targets:
