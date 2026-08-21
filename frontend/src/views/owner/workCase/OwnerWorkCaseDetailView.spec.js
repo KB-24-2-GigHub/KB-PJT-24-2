@@ -910,21 +910,49 @@ describe('OwnerWorkCaseDetailView', () => {
   })
 
   /**
-   * 승인 계약에 타인 뱃지를 읽을 수단이 없다 — GET /api/users/me/badge 는 본인만이고
-   * Work Case 응답에는 workerBadge 가 없다. 예전에는 level 을 넘기지 않은 TrustBadge 가
-   * 늘 0단계 회색 아이콘을 그려서, 3단계 알바생도 미부여로 보였다. 등급을 아는 척하는 대신
-   * "모른다"를 그대로 쓰고, 연동될 자리는 자리표시자로 남긴다(#184 제외 범위).
+   * worker.badge 는 초대의 ownerBadge 와 다르게 0단계도 null 로 감추지 않는다(#472) —
+   * OWNER가 매칭된 WORKER를 볼 때는 "이력 쌓는 중(0단계)"도 뱃지 그림으로 보여준다.
+   * 자리표시자는 badge 자체가 없는(예상 밖 응답) 방어적 폴백일 뿐이다.
    */
-  it('알바생 등급을 아는 척하지 않고 자리표시자만 보여준다', async () => {
-    getWorkCase.mockResolvedValue({ ...PAYOUT_READY_DETAIL })
+  it('알바생 뱃지가 0단계여도 자리표시자 대신 등급 그림을 보여준다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...PAYOUT_READY_DETAIL,
+      worker: { workerId: 4, name: '이알바', badge: { badgeType: 'TRUST_WORKER', level: 0 } }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(true)
+    expect(wrapper.find('.worker-cell .badge-placeholder').exists()).toBe(false)
+    expect(wrapper.find('.worker-cell img').attributes('alt')).toBe('worker 뱃지 0단계')
+    expect(wrapper.find('.badge-level').text()).toBe('Lv.0')
+  })
+
+  it('알바생 뱃지가 있으면(1단계 이상) 자리표시자 대신 등급 그림을 보여준다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...PAYOUT_READY_DETAIL,
+      worker: { workerId: 4, name: '이알바', badge: { badgeType: 'TRUST_WORKER', level: 2 } }
+    })
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(true)
+    expect(wrapper.find('.worker-cell .badge-placeholder').exists()).toBe(false)
+    expect(wrapper.find('.worker-cell img').attributes('alt')).toBe('worker 뱃지 2단계')
+    expect(wrapper.find('.badge-level').text()).toBe('Lv.2')
+  })
+
+  it('예상 밖으로 badge 자체가 없으면(방어적 폴백) 자리표시자를 보여준다', async () => {
+    getWorkCase.mockResolvedValue({
+      ...PAYOUT_READY_DETAIL,
+      worker: { workerId: 4, name: '이알바', badge: null }
+    })
     const wrapper = mountView()
     await flushPromises()
 
     expect(wrapper.find('.worker-cell').text()).toContain('이알바')
     expect(wrapper.find('.badge-placeholder').text()).toBe('등급 정보 없음')
-    // 등급 그림은 근거가 없으므로 0단계(미부여) 아이콘조차 그리지 않는다.
     expect(wrapper.find('.worker-cell .trust-badge').exists()).toBe(false)
-    expect(wrapper.find('.worker-cell .no-badge').exists()).toBe(false)
   })
 
   /**
