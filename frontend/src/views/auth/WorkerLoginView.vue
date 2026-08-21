@@ -109,9 +109,9 @@ async function onSubmit() {
   gap: var(--space-xl);
 }
 .logo {
-  width: 140px;
+  width: 180px;
   height: auto;
-  margin: var(--space-md) auto 0;
+  margin: var(--space-xs) auto 0;
 }
 .form {
   display: flex;
