@@ -63,3 +63,18 @@ describe('OwnerHomeView 예치중 안내', () => {
     expect(wrapper.find('.held-popover').exists()).toBe(false)
   })
 })
+
+describe('OwnerHomeView 안심지갑 잔액 안내', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('info 버튼을 누르면 잔액 박스 아래에 안내가 뜬다', async () => {
+    const wrapper = mount(OwnerHomeView)
+    await flushPromises()
+
+    expect(wrapper.find('.balance-info').exists()).toBe(false)
+
+    await wrapper.find('button.info-btn').trigger('click')
+    expect(wrapper.find('.balance-info').exists()).toBe(true)
+    expect(wrapper.find('.balance-info').text()).toContain('안심지갑 잔액이란?')
+  })
+})

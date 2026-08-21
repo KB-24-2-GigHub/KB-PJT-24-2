@@ -2,6 +2,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import TransactionItem from '@/components/wallet/TransactionItem.vue'
+import { formatDateTime } from '@/utils/format'
 
 const baseTransaction = {
   transactionId: 1,
@@ -18,30 +19,70 @@ const baseTransaction = {
 }
 
 describe('TransactionItem', () => {
-  it('WORKER ESCROW_RELEASE는 direction=CREDIT에 따라 양수로 표시한다', () => {
+  it('WORKER ESCROW_RELEASE는 direction=CREDIT에 따라 양수로 표시하고 배지는 "지급"·owner 톤이다', () => {
     const wrapper = mount(TransactionItem, { props: { tx: baseTransaction } })
 
     expect(wrapper.get('.amount').text()).toBe('+120,000원')
     expect(wrapper.get('.amount').classes()).toContain('is-credit')
     expect(wrapper.get('.status').text()).toContain('완료')
-    expect(wrapper.get('.desc').text()).toBe('정산 지급 · 주말 홀 서빙 · 기가 허브')
+    expect(wrapper.get('.type-badge').text()).toBe('지급')
+    expect(wrapper.get('.type-badge').classes()).toContain('type-badge--owner')
+    expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
+    expect(wrapper.get('.date').text()).toBe(
+      `${formatDateTime(baseTransaction.createdAt)} | 기가 허브`
+    )
   })
 
-  it('같은 Type이어도 direction=DEBIT이면 음수로 표시한다', () => {
+  it('같은 Type이어도 direction=DEBIT이면 음수로 표시하고 배지 라벨은 같지만(지급) 톤은 다르다', () => {
     const wrapper = mount(TransactionItem, {
       props: { tx: { ...baseTransaction, direction: 'DEBIT' } }
     })
 
     expect(wrapper.get('.amount').text()).toBe('-120,000원')
     expect(wrapper.get('.amount').classes()).not.toContain('is-credit')
-    expect(wrapper.get('.desc').text()).toBe('알바생 지급 · 주말 홀 서빙 · 기가 허브')
+    expect(wrapper.get('.type-badge').text()).toBe('지급')
+    expect(wrapper.get('.type-badge').classes()).toContain('type-badge--worker')
+    expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
   })
 
-  it('차감액 반환 거래는 근무 제목과 함께 예치 환불 유형을 표시한다', () => {
+  it('차감액 반환 거래는 근무 제목과 별도로 예치 환불 유형을 배지에 표시한다', () => {
     const wrapper = mount(TransactionItem, {
       props: { tx: { ...baseTransaction, type: 'ESCROW_REFUND', direction: 'CREDIT' } }
     })
 
-    expect(wrapper.get('.desc').text()).toBe('예치 환불 · 주말 홀 서빙 · 기가 허브')
+    expect(wrapper.get('.type-badge').text()).toBe('예치 환불')
+    expect(wrapper.get('.type-badge').classes()).toContain('type-badge--neutral')
+    expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
+  })
+
+  it('근무와 무관한 거래(충전 등)는 workTitle이 없어 1행을 숨기고 시각만 표시한다', () => {
+    const wrapper = mount(TransactionItem, {
+      props: {
+        tx: {
+          ...baseTransaction,
+          type: 'FUNDING',
+          direction: 'CREDIT',
+          workTitle: null,
+          workplaceName: null
+        }
+      }
+    })
+
+    expect(wrapper.get('.type-badge').text()).toBe('충전')
+    expect(wrapper.get('.type-badge').classes()).toContain('type-badge--success')
+    expect(wrapper.find('.desc').exists()).toBe(false)
+    expect(wrapper.get('.date').text()).toBe(formatDateTime(baseTransaction.createdAt))
+  })
+
+  it('예치는 알바생 지급(worker)과 혼동되지 않게 neutral, 출금은 danger 톤 배지로 표시한다', () => {
+    const holdWrapper = mount(TransactionItem, {
+      props: { tx: { ...baseTransaction, type: 'ESCROW_HOLD', direction: 'DEBIT' } }
+    })
+    const withdrawalWrapper = mount(TransactionItem, {
+      props: { tx: { ...baseTransaction, type: 'WITHDRAWAL', direction: 'DEBIT' } }
+    })
+
+    expect(holdWrapper.get('.type-badge').classes()).toContain('type-badge--neutral')
+    expect(withdrawalWrapper.get('.type-badge').classes()).toContain('type-badge--danger')
   })
 })

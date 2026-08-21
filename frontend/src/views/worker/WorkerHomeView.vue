@@ -2,7 +2,8 @@
 /**
  * [F] 알바생 홈(안심지갑)  ·  /worker/home  ·  WORKER  (탭 화면)
  * 안심지갑 잔액·출금(입금 없음) + 오늘의 알바 일정 카드(work_case 8종 상태 + 지각 파생 뱃지)
- * + 근무 경과 예상금액(진행바·i 팝오버) + 서버가 확정한 세금 참고값.
+ * + 근무 경과 예상금액(진행바·i 팝오버). 세금 참고값(TaxReferenceCard)은 #476 요청으로
+ * 화면에서 제거했다(컴포넌트·데이터 자체는 그대로 둔다).
  * 적립액·진행률은 서버가 준 기준값으로부터 화면에서 계산하는 표시 전용 참고 추정치다
  * (명세 DASH-001 "earning은 표시 계산값", DASH-002 Deferred — 지갑 잔액·
  * 예치금·실제 지급액·정산 금액을 결정하지 않음). 지갑 잔액·정산 금액은 서버 값 그대로.
@@ -16,7 +17,6 @@ import { useRouter } from 'vue-router'
 
 import EmptyState from '@/components/common/EmptyState.vue'
 import SecuredEarningCard from '@/components/worker/SecuredEarningCard.vue'
-import TaxReferenceCard from '@/components/worker/TaxReferenceCard.vue'
 import TodayWorkCaseCard from '@/components/worker/TodayWorkCaseCard.vue'
 import WorkerWalletCard from '@/components/worker/WorkerWalletCard.vue'
 import { useWalletStore } from '@/stores/wallet'
@@ -57,6 +57,7 @@ onMounted(() => {
 })
 
 const goWithdraw = () => router.push('/worker/wallet/withdraw')
+const goWorkCaseDetail = (workCase) => router.push(`/worker/work/work-cases/${workCase.workCaseId}`)
 </script>
 
 <template>
@@ -66,14 +67,9 @@ const goWithdraw = () => router.push('/worker/wallet/withdraw')
     <template v-else>
       <WorkerWalletCard :available-balance="availableBalance" @withdraw="goWithdraw" />
 
-      <TodayWorkCaseCard :work-case="todayWorkCase" />
+      <TodayWorkCaseCard :work-case="todayWorkCase" @select="goWorkCaseDetail" />
 
       <SecuredEarningCard v-if="showEarning" :earning="earning" :work-case="todayWorkCase" />
-
-      <TaxReferenceCard
-        v-if="todayWorkCase?.taxReference"
-        :tax-reference="todayWorkCase.taxReference"
-      />
 
       <p v-if="loading" class="loading">불러오는 중…</p>
     </template>

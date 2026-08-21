@@ -1,5 +1,5 @@
 <script setup>
-import { ArrowUpRight, CircleCheck, CircleX, Clock, Lock, Plus, RotateCcw } from 'lucide-vue-next'
+import { CircleCheck, CircleX, Clock, RotateCcw } from 'lucide-vue-next'
 import { computed } from 'vue'
 
 import { formatDateTime, formatSignedKRW } from '@/utils/format'
@@ -25,49 +25,50 @@ const STATUS_META = {
   REFUNDED: { label: '환불 완료', color: 'var(--color-text-sub)', icon: RotateCcw }
 }
 
-const typeIcon = computed(() => {
-  switch (props.tx.type) {
-    case 'FUNDING':
-      return Plus
-    case 'WITHDRAWAL':
-      return ArrowUpRight
-    case 'ESCROW_REFUND':
-    case 'WITHDRAWAL_REFUND':
-      return RotateCcw
-    case 'ESCROW_RELEASE':
-      return CircleCheck
-    case 'ESCROW_HOLD':
-      return Lock
-    default:
-      return CircleCheck
-  }
-})
-
 const statusMeta = computed(() => STATUS_META[props.tx.displayStatus] ?? STATUS_META.COMPLETED)
 
 // 거래 Type으로 부호를 추정하면 WORKER의 ESCROW_RELEASE와 ADJUSTMENT를 오표시한다.
 const isCredit = computed(() => props.tx.direction === 'CREDIT')
 const amountText = computed(() => formatSignedKRW(props.tx.amount, props.tx.direction))
-const typeLabel = computed(() => {
+// ESCROW_RELEASE는 "정산 지급"(CREDIT)/"알바생 지급"(DEBIT)으로 갈렸었지만, 실제로는
+// 사장님 화면엔 알바생에게 나간 지급만, 알바생 화면엔 자신이 받은 지급만 보여 한 화면에
+// 두 라벨이 같이 나올 일이 없다. 라벨을 "지급" 하나로 통일하고, 배지 색(owner/worker)으로만
+// 구분한다.
+const typeLabel = computed(() => TYPE_LABELS[props.tx.type] || '지갑 거래')
+// 배지 색은 문서함 type-badge(계약서=owner, 보건증=worker)와 같은 은은한 배경+글자색 톤을
+// 거래 유형별 의미에 맞춰 고른다: 충전=success(잔액 증가), 지급 2종=owner/worker(각각
+// 정산·알바생 몫), 출금=danger(잔액 유출). 예치는 warning(주황)이 worker(앰버)와
+// 색상환에서 너무 가까워 혼동되므로 "보류·잠금" 의미에 맞는 neutral(회색)로 대비를 준다.
+// 환불·조정도 잦지 않은 예외 처리라 같은 neutral(.type-badge 기본값)을 쓴다.
+const badgeTone = computed(() => {
   if (props.tx.type === 'ESCROW_RELEASE') {
-    return props.tx.direction === 'DEBIT' ? '알바생 지급' : '정산 지급'
+    return props.tx.direction === 'DEBIT' ? 'worker' : 'owner'
   }
-  return TYPE_LABELS[props.tx.type] || '지갑 거래'
+  switch (props.tx.type) {
+    case 'FUNDING':
+      return 'success'
+    case 'WITHDRAWAL':
+      return 'danger'
+    default:
+      return 'neutral'
+  }
 })
-const description = computed(() => {
-  return [typeLabel.value, props.tx.workTitle, props.tx.workplaceName].filter(Boolean).join(' · ')
+// 거래 유형은 왼쪽 pill(type-badge)로 이미 보여주므로 본문 1행은 근무명만 남긴다.
+// 근무와 무관한 거래(충전·출금 등)는 workTitle 이 없어 1행 자체를 비운다(v-if로 숨김).
+const topLine = computed(() => props.tx.workTitle ?? '')
+const bottomLine = computed(() => {
+  const time = formatDateTime(props.tx.createdAt)
+  return props.tx.workplaceName ? `${time} | ${props.tx.workplaceName}` : time
 })
 </script>
 
 <template>
   <li class="tx">
-    <span class="icon" :class="{ 'is-credit': isCredit }">
-      <component :is="typeIcon" :size="20" />
-    </span>
+    <span class="type-badge" :class="`type-badge--${badgeTone}`">{{ typeLabel }}</span>
 
     <div class="body">
-      <p class="desc">{{ description }}</p>
-      <p class="date">{{ formatDateTime(tx.createdAt) }}</p>
+      <p v-if="topLine" class="desc">{{ topLine }}</p>
+      <p class="date">{{ bottomLine }}</p>
     </div>
 
     <div class="right">
@@ -89,20 +90,49 @@ const description = computed(() => {
   border-bottom: 1px solid var(--color-border);
 }
 
-.icon {
+/* 문서함 type-badge(WorkerDocumentsView:610)와 같은 pill 모양·기준. width를 고정하면
+   "출금 환불"/"예치 환불"/"잔액 조정" 같은 4글자 라벨이 nowrap과 함께 pill 밖으로
+   삐져나올 수 있어(#487 리뷰) min-width로 바꿔 내용에 따라 늘어나게 한다. */
+.type-badge {
   display: inline-flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
+  min-width: 76px;
+  padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-pill);
   background: var(--color-bg);
   color: var(--color-text-sub);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  white-space: nowrap;
 }
 
-.icon.is-credit {
+.type-badge--success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+
+.type-badge--danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+
+.type-badge--owner {
+  background: var(--color-owner-weak);
   color: var(--color-owner);
+}
+
+.type-badge--worker {
+  background: var(--color-worker-weak);
+  color: var(--color-worker);
+}
+
+/* .type-badge 기본값과 같은 값이지만, 'neutral'이 실제 셀렉터로 존재해야 나중에 이
+   톤만 따로 조정하거나 기본값이 다른 이유로 바뀌어도 서로 영향을 주지 않는다(#487 리뷰). */
+.type-badge--neutral {
+  background: var(--color-bg);
+  color: var(--color-text-sub);
 }
 
 .body {
@@ -111,12 +141,10 @@ const description = computed(() => {
 }
 
 .desc {
-  overflow: hidden;
   font-size: var(--text-lg);
   font-weight: var(--weight-medium);
   color: var(--color-text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  word-break: break-word;
 }
 
 .date {

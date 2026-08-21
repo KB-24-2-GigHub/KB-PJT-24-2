@@ -309,7 +309,7 @@ function goHome() {
 
         <label class="consent">
           <input v-model="agreed" type="checkbox" />
-          <span>위 근무 조건과 서버가 최종 근로계약서를 자동 생성하는 것에 동의합니다.</span>
+          <span>위 근무 조건과 서버가 최종 근로계약서를 자동 생성하는 것에<br />동의합니다.</span>
         </label>
         <p class="consent-note">
           확정 버튼을 누르면 현재 로그인한 알바생의 이름으로 최종 동의가 기록됩니다. 서명 이미지나
@@ -317,7 +317,8 @@ function goHome() {
         </p>
 
         <p class="warn">
-          근무 확정 시점부터는 근무 조건 변경 및 취소가 불가합니다. 내용을 신중하게 확인해주세요.
+          근무 확정 시점부터는 근무 조건 변경 및 취소가 불가합니다.<br />내용을 신중하게
+          확인해주세요.
         </p>
 
         <BaseButton variant="worker" size="lg" block :disabled="confirming" @click="confirm">

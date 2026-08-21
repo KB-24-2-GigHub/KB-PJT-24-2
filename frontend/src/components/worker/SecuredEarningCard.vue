@@ -1,7 +1,8 @@
 <script setup>
 import { Info } from 'lucide-vue-next'
-import { computed, onMounted, onUnmounted, ref, useId } from 'vue'
+import { computed } from 'vue'
 
+import { useClickTogglePopover } from '@/composables/useClickTogglePopover'
 import { useEarningTick } from '@/composables/useEarningTick'
 import { formatKRW } from '@/utils/format'
 
@@ -25,33 +26,7 @@ const progressWidth = computed(() =>
 )
 const totalWidth = computed(() => lateWidth.value + progressWidth.value)
 
-/* ---- 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
-const rootEl = ref(null)
-const infoOpen = ref(false)
-const infoId = useId()
-
-function toggleInfo() {
-  infoOpen.value = !infoOpen.value
-}
-
-function onDocumentClick(e) {
-  if (!infoOpen.value) return
-  if (!rootEl.value?.contains(e.target)) infoOpen.value = false
-}
-
-function onKeydown(e) {
-  if (e.key === 'Escape') infoOpen.value = false
-}
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onKeydown)
-})
+const { rootEl, open: infoOpen, id: infoId, toggle: toggleInfo } = useClickTogglePopover()
 </script>
 
 <template>
@@ -74,10 +49,14 @@ onUnmounted(() => {
 
       <div v-if="infoOpen" :id="infoId" class="info-popover" role="note">
         <p>
-          표시 금액은 근무 시작 시각부터 경과한 시간에 비례해 1분마다 갱신되는 참고용 예상치예요.
+          예상 금액은 근무 시작 시각부터 경과한 시간에 비례해<br />
+          1분마다 갱신되는 참고용 예상치예요.
         </p>
-        <p>지갑 잔액·예치금·실제 지급액과는 무관하며, 이 값이 실제 정산 금액을 결정하지 않아요.</p>
-        <p>휴게시간·지각 등 특이사항이 있으면 실제 지급액은 달라질 수 있어요.</p>
+        <p>
+          근무 종료후 <strong>실제 정산 금액과는 차이가 발생할 수 있으며</strong>,
+          <strong>휴게시간·지각</strong> 등 특이사항이 있으면<br />
+          실제 지급액은 달라질 수 있어요.
+        </p>
       </div>
     </div>
 
@@ -125,14 +104,11 @@ onUnmounted(() => {
   color: var(--color-text);
 }
 
+/* 아이콘 자체가 이미 동그란 정보 기호라 별도 배경 원을 씌우지 않는다(원 밖으로 배경이
+   삐져나오는 것을 막는다) — held-info(OwnerHomeView)와 같은 방식. */
 .info {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: var(--radius-pill);
-  background: var(--color-worker-weak);
   color: var(--color-worker);
 }
 
@@ -158,7 +134,7 @@ onUnmounted(() => {
   flex-direction: column;
   gap: var(--space-sm);
   padding: var(--space-md);
-  background: var(--color-surface);
+  background: var(--color-worker-weak);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
