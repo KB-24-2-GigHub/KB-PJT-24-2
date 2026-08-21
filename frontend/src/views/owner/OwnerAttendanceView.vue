@@ -176,9 +176,9 @@ const statusColor = (status) => workCaseStatusColor(status)
 
 /* ---- 요약 7종 배치 -----------------------------------------------------
  * WORK_CASE_SUMMARY(단일 소스)의 순서는 상태 전이 순서(미배정→계약완료→근무예정→근무중
- * →퇴근 미확인→근무완료→노쇼)다. 화면에는 그 순서를 그대로 쓰지 않고 두 줄로 나눠
+ * →확인필요→근무완료→노쇼)다. 화면에는 그 순서를 그대로 쓰지 않고 두 줄로 나눠
  * 배치한다 — 위 줄은 "진행 중" 4종(미배정·계약완료·근무예정·근무중), 아래 줄은
- * "완료·이탈" 3종(근무완료·노쇼·퇴근 미확인) + 전체 합계. 카운트를 나누는 배치만이고
+ * "완료·이탈" 3종(근무완료·노쇼·확인필요) + 전체 합계. 카운트를 나누는 배치만이고
  * 기간 필터·API 계약은 그대로 둔다(#412가 다루는 영역). */
 const bucketByKey = (key) => WORK_CASE_SUMMARY.find((b) => b.key === key)
 const summaryInProgress = computed(() =>
@@ -506,27 +506,29 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   border-bottom: 1px solid var(--color-border);
 }
 
-/* ---- 근태 현황 요약(7종, 압축된 pill 2줄) ----
+/* ---- 근태 현황 요약(8종, 압축된 pill 2줄) ----
  * 이전엔 카드 7장이 그리드 두 줄을 꽉 채워 세로 공간을 많이 차지했다. 값(count)만
  * 확인하면 되는 요약이라 라벨+숫자를 한 pill에 묶어 가로로 늘어놓는다.
  * - 위 줄: 진행 중 4종(미배정·계약완료·근무예정·근무중).
- * - 아래 줄: 완료·이탈 3종(근무완료·노쇼·퇴근 미확인) + 맨 끝에 전체 합계 pill.
+ * - 아래 줄: 완료·이탈 3종(근무완료·노쇼·확인필요) + 맨 끝에 전체 합계 pill.
  * 상태 pill 배경은 안심지갑 잔액 카드(WalletBalanceCard)와 같은 옅은 하늘색
  * (--color-owner-weak)을 써 통일감을 주고, "전체" pill만 진한 파랑(--color-owner)
  * 배경 + 흰 글자로 다르게 둬 다른 pill과 구분한다.
- * 크기는 전부 동일하게 맞춘다 — 가장 긴 라벨(퇴근 미확인)이 두 자릿수 값과 함께
- * 있어도 줄바꿈되지 않을 min-width를 기준으로 잡고, 짧은 라벨은 가운데 정렬로
- * 남는 공간을 채운다(폭이 좁은 화면에서는 pill 단위로 줄바꿈한다, flex-wrap).
- * min-width 88px 기준 — 96px 이면 위 줄 4개 + gap 이 360px 뷰포트의 "2줄" 전제를
- * 깨고 flex-wrap 으로 3줄이 됐다(갤럭시 다수 해상도). 88px 로 낮춰 여유를 둔다. */
+ *
+ * 각 줄은 정확히 4개씩이라 flex-wrap 대신 grid-template-columns: repeat(4, 1fr)로 4칸을
+ * 고정한다 — 폭이 좁아져도 다음 줄로 밀리지 않고(#476) 칸 자체가 좁아지며, 폭이 넓어지면
+ * 4칸이 줄 전체를 나눠 가져 오른쪽에 빈 공간이 남지 않는다(가운데 정렬 효과를 겸함).
+ * min-width는 더 이상 기준값이 아니다 — 칸이 좁아질 때 내용이 넘치지 않도록 pill에
+ * min-width: 0을 주고, 가장 긴 라벨(확인필요)도 word-break: keep-all로 필요하면
+ * 공백 단위로만 줄바꿈되게 한다(가로 넘침 대신 pill 높이가 늘어난다). */
 .summary {
   display: flex;
   flex-direction: column;
   gap: var(--space-xs);
 }
 .summary-row {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
   gap: var(--space-xs);
 }
 .stat-pill {
@@ -534,13 +536,12 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
   align-items: center;
   justify-content: center;
   gap: 6px;
-  min-width: 88px;
+  min-width: 0;
   padding: 6px var(--space-sm);
   background: var(--color-owner-weak);
   /* 2px 고정 — active 시에만 색을 바꾸면 폭이 그대로라 선택 시 레이아웃이 밀리지 않는다. */
   border: 2px solid transparent;
   border-radius: var(--radius-pill);
-  white-space: nowrap;
 }
 /* 선택된 상태 pill — 옅은 배경 위 1px 테두리는 잘 안 보여 2px로 굵게 해 눈에 띄게 한다. */
 .stat-pill.active {
@@ -561,7 +562,7 @@ const goNew = () => router.push('/owner/attendance/work-cases/new')
 .stat-label {
   font-size: var(--text-sm);
   color: var(--color-text);
-  /* "퇴근 미확인"이 음절 단위로 잘려 줄바꿈되지 않게 공백 단위로만 줄바꿈한다. */
+  /* "확인필요"이 음절 단위로 잘려 줄바꿈되지 않게 공백 단위로만 줄바꿈한다. */
   word-break: keep-all;
 }
 /* 값 색은 상태색(상수)으로 인라인 바인딩한다 */

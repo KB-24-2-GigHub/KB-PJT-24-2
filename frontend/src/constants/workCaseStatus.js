@@ -10,7 +10,7 @@
  *   확정 계열에서 NO_SHOW(미출근) · DRAFT에서 CANCELED(취소).
  * 초대 발급·대기 상태는 work_case가 아니라 work_invitations가 담당한다.
  *
- * CHECK_OUT_MISSING(퇴근 미확인)은 성공 출근 뒤 성공 퇴근이 없는 근무이며 NO_SHOW와
+ * CHECK_OUT_MISSING(확인필요)은 성공 출근 뒤 성공 퇴근이 없는 근무이며 NO_SHOW와
  * 상호 배타적이다(REQUIREMENTS ATT-006 · WORK-007). 판정 시점·해소·정산 흐름은
  * DEC-OPEN-CHECK-OUT-MISSING-FLOW 미결이라 이 파일은 표기만 담당한다.
  *
@@ -22,7 +22,7 @@ export const WORK_CASE_STATUS = {
   ACCEPTED: { label: '계약완료', color: 'var(--color-owner)' },
   READY: { label: '근무예정', color: 'var(--color-owner)' },
   IN_PROGRESS: { label: '근무중', color: 'var(--color-primary)' },
-  CHECK_OUT_MISSING: { label: '퇴근 미확인', color: 'var(--color-warning)' },
+  CHECK_OUT_MISSING: { label: '확인필요', color: 'var(--color-warning)' },
   COMPLETED: { label: '근무완료', color: 'var(--color-success)' },
   NO_SHOW: { label: '노쇼', color: 'var(--color-danger)' },
   CANCELED: { label: '취소', color: 'var(--color-text-sub)' }
