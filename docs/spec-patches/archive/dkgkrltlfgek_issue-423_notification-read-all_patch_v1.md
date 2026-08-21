@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-423-01
-status: draft
+status: accepted
 issue: 423
 base_spec_version: 8.1.0
 targets:

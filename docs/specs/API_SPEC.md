@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `8.1.0`         |
-| 승인일      | 2026-08-17      |
+| 명세 릴리스 | `9.0.0`         |
+| 승인일      | 2026-08-21      |
 | 소유자      | PM/Admin Master |
 | Base Path   | `/api`          |
 
@@ -25,7 +25,7 @@
 | 시나리오 | Method·Path                                                               | 인증·리소스 권한        | Body·Header                        | 성공 Status·핵심 Response           | 대표 4xx                | 재시도·멱등                                 | 선행 → 후행       | Target 주석                       |
 | -------- | ------------------------------------------------------------------------- | ----------------------- | ---------------------------------- | ----------------------------------- | ----------------------- | ------------------------------------------- | ----------------- | --------------------------------- |
 | 1-2      | `POST /api/auth/login`, `GET /api/auth/session`                           | 비인증 → OWNER 본인     | 자격 증명·CSRF                     | 200 Session OWNER·Context           | 401, 403                | 로그인 자동 재시도 금지, Session GET 안전   | 가입 → 1-3        | 새로고침 복원                     |
-| 1-3      | `POST /api/workplaces`, `PUT /api/workplaces/{id}/coordinates`            | OWNER·해당 사업장       | 기준정보·좌표·CSRF                 | 201 사업장, 204 위치 확정           | 400, 403, 409           | POST 자동 재시도 금지, 같은 좌표 PUT은 멱등 | 1-2 → 1-4         | 좌표 미확정이면 READY 차단        |
+| 1-3      | `POST /api/workplaces`, `PUT /api/workplaces/{id}/coordinates`            | OWNER·해당 사업장       | 기준정보·CSRF, Legacy 좌표 PUT     | 201 지오코딩 사업장, 204 위치 확정  | 400, 403, 409, 422, 503 | POST 자동 재시도 금지, 같은 좌표 PUT은 멱등 | 1-2 → 1-4         | 신규 등록은 서버 주소 변환        |
 | 1-4      | `GET /api/wallet`, Client Routes                                          | OWNER 본인              | 없음                               | 200 가용·예치, 다섯 목적지          | 401, 403                | GET 안전                                    | 1-3 → 1-5         | 내비게이션은 Client 계약          |
 | 1-5      | `POST /api/wallet/funding-orders`                                         | OWNER 본인 지갑         | 은행·계좌·금액·PIN·CSRF·IK         | 200 충전 결과                       | 400, 403, 409           | 같은 IK Replay                              | 1-4 → 1-6         | PIN 실패 사유 통합                |
 | 1-6      | `GET /api/wallet/transactions`                                            | OWNER 본인 지갑         | Page·정렬 Query                    | 200 최신 거래 Page                  | 400, 401                | GET 안전                                    | 1-5 → 2-1         | 충전 즉시 재조회                  |
@@ -53,13 +53,13 @@
 | 5A-8     | `GET /api/wallet`, `GET .../transactions`, `POST .../withdrawal-requests` | WORKER A 본인           | 출금 계좌·금액·CSRF·IK             | 200 잔액·지급·출금 원장             | 403, 409                | 출금 같은 IK Replay                         | 5A-6 → 종료       | 지급 후 실제 지갑                 |
 | 5B-1     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 B 오늘 근무                     | 401, 404                | GET 안전                                    | 4-6 → 5B-2        | 실제 저장 근무                    |
 | 5B-2     | `POST /api/attendance/scans`                                              | WORKER B·현장 Work      | QR·위치·CSRF·IK                    | 200 CHECK_IN·`lateMinutes=30`       | 409, 422, 503           | 같은 IK Replay                              | 5B-1 → 5B-3       | 지각은 파생값                     |
-| 5B-3     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 `lateMinutes=30`·약정 일급      | 401, 409                | GET 안전                                    | 5B-2 → 5B-4       | 자동 공제액 없음                 |
-| 5B-4     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 약정 일급·현재 근무 상태        | 401, 409                | GET 안전                                    | 5B-3 → 5B-6       | 지각 금액 추정 금지              |
-| 5B-5     | CHECK_OUT Scan 후 `GET /api/wallet`                                       | WORKER B 본인           | QR·위치·CSRF·IK                    | 200 약정 일급 전액 지급 반영        | 409, 422                | Scan Replay, GET 안전                       | 5B-6 → 종료       | 지급 승인 뒤 조회                |
-| 5B-6     | `POST /api/work-cases/{id}/settlement/approve`                            | OWNER·해당 Work         | 0byte·CSRF·IK                      | 200 WORKER 전액 지급·OWNER 환불 0   | 403, 409                | 같은 IK Replay                              | 5B-4 → 5B-5·5B-7  | 지급액=원 예치액                 |
-| 5B-7     | `GET /api/wallet`, `GET .../transactions`                                 | OWNER 본인              | Page Query                         | 200 전액 지급 원장, 예치 0          | 401, 409                | GET 안전                                    | 5B-6 → 종료       | 보존식 검증                       |
+| 5B-3     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 `lateMinutes=30`·비금융 참고값  | 401, 409                | GET 안전                                    | 5B-2 → 5B-4       | 지급액은 Snapshot 뒤 확정         |
+| 5B-4     | `GET /api/worker/home`                                                    | WORKER B 본인           | 없음                               | 200 약정 일급·현재 근무 상태        | 401, 409                | GET 안전                                    | 5B-3 → 5B-6       | 클라이언트 권위 계산 금지         |
+| 5B-5     | CHECK_OUT Scan 후 `GET /api/wallet`                                       | WORKER B 본인           | QR·위치·CSRF·IK                    | 200 Snapshot 비례 지급 반영         | 409, 422                | Scan Replay, GET 안전                       | 5B-6 → 종료       | 지급 승인 뒤 조회                |
+| 5B-6     | `POST /api/work-cases/{id}/settlement/approve`                            | OWNER·해당 Work         | 0byte·CSRF·IK                      | 200 WORKER 지급·OWNER 차액 환불     | 403, 409                | 같은 IK Replay                              | 5B-4 → 5B-5·5B-7  | 지급+환불=원 예치액              |
+| 5B-7     | `GET /api/wallet`, `GET .../transactions`                                 | OWNER 본인              | Page Query                         | 200 차액 환불 원장, 예치 0          | 401, 409                | GET 안전                                    | 5B-6 → 종료       | 보존식 검증                       |
 | 5C-1     | `GET /api/worker/home`                                                    | WORKER C 본인           | 없음                               | 200 경계 전 READY                   | 401, 404                | GET 안전                                    | 4-6 → 5C-2        | 조기 NO_SHOW 금지                 |
-| 5C-2     | 시스템 Scheduler, 양측 GET                                                | 시스템·해당 당사자      | 제어 Clock/없음                    | 저장 `NO_SHOW`를 양측 200 조회      | 401, 403                | Scheduler 멱등                              | 5C-1 → 5C-3       | 시작+1시간 경계                   |
+| 5C-2     | 시스템 Scheduler, 양측 GET                                                | 시스템·해당 당사자      | 제어 Clock/없음                    | 저장 `NO_SHOW`를 양측 200 조회      | 401, 403                | Scheduler 멱등                              | 5C-1 → 5C-3       | `min(시작+1시간,종료)` 경계       |
 | 5C-3     | `POST /api/work-cases/{id}/settlement/no-show-refund/approve`             | OWNER·해당 NO_SHOW Work | 0byte·CSRF·IK                      | 200 OWNER 전액 환불·WORKER 0·예치 0 | 403, 409                | 같은 IK Replay                              | 5C-2 → 종료       | 자동 판정과 환불 승인 분리        |
 
 ## 공통 계약
@@ -198,6 +198,7 @@ API: 2026-07-31T09:00:00Z
 - `POST /api/invitations/{token}/accept`
 - `POST /api/work-cases/{workCaseId}/settlement/approve`
 - `POST /api/work-cases/{workCaseId}/settlement/no-show-refund/approve`
+- `POST /api/work-cases/{workCaseId}/settlement/check-out-missing-refund/approve`
 - `POST /api/attendance/scans`
 
 Key는 공백 없는 출력 가능한 ASCII 1~100자입니다. 저장 범위는
@@ -365,9 +366,30 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 72byte 이하 경계를 사용합니다. 비밀번호와 확인값은 변환하지 않은 원문이 같아야 하며,
 새 비밀번호를 72byte에서 절단하거나 문자 종류 조합을 추가로 강제하지 않습니다.
 
+`PATCH /api/users/me/password`는 ACTIVE 계정의 현재 비밀번호를 먼저 확인합니다. 현재
+비밀번호 불일치는 `400 VALIDATION_ERROR`의 `fieldErrors.currentPassword`, 새 비밀번호
+경계 오류는 `fieldErrors.newPassword`에 귀속합니다. 성공은 204이며 로그인 상태를 유지한 채
+그 요청의 Session ID만 회전합니다. 실패한 요청과 다른 기기의 Session은 바꾸지 않습니다.
+비활성 계정은 `403 FORBIDDEN`입니다. 응답과 일반 로그에 비밀번호 원문·Hash·Session ID를
+남기지 않고 현재 비밀번호 대조 실패 로그에도 대상 계정 식별자와 `traceId`만 기록합니다.
+
+`POST /api/users/me/withdrawal`은 비밀번호를 확인한 다음 다음 순서로 탈퇴 가능 여부를
+판정합니다.
+
+1. OWNER 또는 WORKER로 참여한 `DRAFT`, `ACCEPTED`, `READY`, `IN_PROGRESS`,
+   `CHECK_OUT_MISSING` 근무가 있으면 `409 CONFLICT`입니다.
+2. 예치 중 금액이 있으면 `409 CONFLICT`입니다.
+3. 가용 잔액이 있으면 먼저 출금하도록 안내하는 `409 CONFLICT`입니다.
+
+비밀번호 불일치는 `400 VALIDATION_ERROR`의 `fieldErrors.password`이고 위 미결 상태는
+`fieldErrors` 없이 서로 다른 본문 메시지로 응답합니다. 비밀번호 확인 전에 미결 상태를
+조회하지 않습니다. 성공은 사용자 행을 보존한 상태 변경과 204이며 Commit 뒤 요청 Session을
+무효화합니다. 아이디·이메일은 계속 점유되어 가용성 조회와 재가입에 사용할 수 없습니다.
+이미 비활성인 계정은 403, 동시 요청에서 상태 갱신에 실패한 요청은 409입니다.
+
 ### 최신 뱃지
 
-`GET /api/users/me/badge`는 `badgeType`, `level`, `recentCount`,
+`GET /api/users/me/badge`는 `badgeType`, `level`, `recentCount`, `normalCount`,
 `remainingToNextLevel`, `criterionLabel`, `criterionDesc`를 `data`에 반환합니다.
 
 - 역할에 따라 `badgeType`은 `TRUST_OWNER` 또는 `TRUST_WORKER`이고, 이력이 없어도
@@ -375,10 +397,11 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 - `recentCount`는 호환 필드명이며 최근 구간이 아니라 누적 건수입니다. 1·2·3단계는 각각
   누적 10·20·30건과 정상 비율 80·90·100%를 모두 만족해야 하며 높은 단계부터 판정합니다.
   비율은 반올림하지 않고 `normalCount * 100 >= totalCount * thresholdPercent`로 비교합니다.
+- `normalCount`는 누적 건수 중 정상 판정 건수이며 이력이 없으면 0이고 항상
+  `normalCount <= recentCount`입니다. Frontend의 반올림 표시 비율은 등급 판정에 사용하지
+  않습니다.
 - OWNER 누적 건수는 지급자인 `COMPLETED` Settlement 수이고, 정상 건수는 그중 같은
   Work Case에 `CANCELED`·`REJECTED`가 아닌 분쟁이 없는 수입니다.
-- 분쟁 기능이 아직 구현되지 않은 동안에는 완료 Settlement를 정상으로 세며, 기능 도입 뒤
-  분모·분자 정의를 바꾸지 않고 실제 분쟁 행만 반영합니다.
 - WORKER 누적 건수는 본인의 `COMPLETED`·`NO_SHOW`·`CHECK_OUT_MISSING` Work Case 수이고,
   정상 건수는 `COMPLETED`이면서 성공 CHECK_IN `attemptedAt <= startsAt`인 수입니다.
 - `remainingToNextLevel`은 다음 단계 건수 문턱까지 남은 수입니다. 건수는 충족했지만 정상
@@ -410,7 +433,7 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 | ------ | ------------------------------------------- | ---------- | ------------------- | -------------------------- |
 | POST   | `/api/workplaces`                           | OWNER      | 사업장 등록 Body    | `201 {data:{workplaceId}}` |
 | GET    | `/api/workplaces`                           | OWNER      | 공통 Page Query     | 사업장 목록                |
-| PATCH  | `/api/workplaces/{workplaceId}`             | 해당 OWNER | 허용 필드           | 변경된 사업장              |
+| PATCH  | `/api/workplaces/{workplaceId}`             | 해당 OWNER | 허용 필드           | `204`                      |
 | PUT    | `/api/workplaces/{workplaceId}/coordinates` | 해당 OWNER | 현장 위치 확정 Body | `204`                      |
 | DELETE | `/api/workplaces/{workplaceId}`             | 해당 OWNER | 없음                | `204`                      |
 
@@ -423,16 +446,18 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
   "representativeName": "김사장",
   "roadAddress": "서울 강남구 테헤란로 1",
   "detailAddress": "2층",
-  "phone": "0212345678",
-  "latitude": 37.123,
-  "longitude": 127.123
+  "phone": "0212345678"
 }
 ```
 
-- `detailAddress`, `latitude`, `longitude`는 선택값입니다.
-- 위도와 경도는 함께 보내거나 모두 생략합니다.
-- 현장 브라우저가 좌표를 공급하고 OWNER가 등록 동작으로 명시적으로 확인합니다. 서버는 주소를
-  지오코딩하거나 좌표를 추정하지 않습니다.
+- `detailAddress`만 선택값입니다. `latitude`, `longitude`는 허용하지 않으며 보내면
+  `400 VALIDATION_ERROR`입니다.
+- 서버는 Kakao Local REST API로 `roadAddress`를 좌표로 변환합니다. 후보가 정확히 한 건이고
+  좌표를 해석할 수 있을 때만 저장하며 후보 0건·복수는
+  `422 WORKPLACE_ADDRESS_NOT_RESOLVABLE`, Timeout·외부 오류·인증 실패·본문 또는 좌표 해석
+  실패는 `503 WORKPLACE_GEOCODING_TEMPORARILY_UNAVAILABLE`입니다.
+- 연결·읽기 Timeout을 명시하고 외부 호출 실패 시 사업장과 QR 생성을 모두 취소합니다. 외부
+  응답·상태·API Key는 사용자 응답과 일반 로그에 노출하지 않습니다.
 - `radiusMeters`, `radiusM`은 받지 않으며 서버가 100m를 적용합니다.
 - `phone`은 공통 전화번호 정규화 후 숫자 문자열로 저장·반환합니다.
 - 등록 성공 시 같은 트랜잭션에서 그 사업장의 활성 고정 QR 한 건을 발급합니다. 발급자는
@@ -466,14 +491,22 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 
 ### 사업장 수정
 
-허용 필드는 `name`, `roadAddress`, `detailAddress`, `phone`입니다.
-`businessRegistrationNumber`, `representativeName`, `latitude`, `longitude`,
-`radiusMeters`를 보내면 `400 VALIDATION_ERROR`입니다. 좌표가 확정된 사업장의 도로명·상세
-주소 변경은 `409 WORKPLACE_LOCATION_LOCKED`이고 상호·전화번호 변경은 유지합니다.
+`PATCH /api/workplaces/{workplaceId}`는 부분 수정이며 허용 필드는 `name`, `roadAddress`,
+`detailAddress`, `phone`입니다. 없는 필드는 유지하고 `detailAddress:null`은 값을 지웁니다.
+허용 필드가 없거나 필수 문자열이 비었거나 `businessRegistrationNumber`,
+`representativeName`, `latitude`, `longitude`, `radiusMeters`, `radiusM`, `status`가 오면
+`400 VALIDATION_ERROR`입니다. 없는·다른 OWNER·비 ACTIVE 사업장은 404입니다.
+
+저장값과 다른 `roadAddress`를 보내면 외부 호출을 DB Transaction 밖에서 완료하고 주소·좌표를
+같은 조건부 갱신으로 바꿉니다. 변환 실패는 등록과 같은 422·503이며 다른 허용 필드까지 전부
+변경 전 값으로 유지합니다. 같은 주소는 변환하거나 좌표를 다시 쓰지 않습니다. 변환 판단 뒤
+다른 요청이 주소를 먼저 바꾸면 `409 CONFLICT`입니다. 주소 변경은 더 이상
+`WORKPLACE_LOCATION_LOCKED`로 막지 않으며 이후 스캔만 새 좌표를 사용합니다.
 
 ### 사업장 출퇴근 위치 확정
 
-좌표가 없는 `ACTIVE` 소유 사업장은
+이 Operation은 서버 지오코딩 도입 전에 생성된 좌표 없는 사업장의 호환 경로입니다. 좌표가
+없는 `ACTIVE` 소유 사업장은
 `PUT /api/workplaces/{workplaceId}/coordinates`로 현장 위치를 한 번 확정합니다.
 
 ```json
@@ -507,36 +540,38 @@ PATCH Body는 `phone`만 허용합니다. `loginId`, `email`, `name`, `role`, `s
 반환합니다.
 
 - `workCaseId`, `title`, `workplaceName`, `startsAt`, `endsAt`
-- `breakMinutes`, `breakPaid`, `dailyWage`, `expectedNetAmount`, `status`
+- `breakMinutes`, `breakPaid`, `dailyWage`, nullable `taxReference`, `status`
 - `attendance:{checkedInAt,checkedOutAt,isLate,lateMinutes}`
 - `escrowStatus`, `settlementStatus`, `settlementDueAt`
 
 `GET /api/worker/home`과 `GET /api/worker/work-cases`의 금액 조건은 약정 일급
 `dailyWage`입니다. `hourlyWage`, `expectedDeductionAmount`, `expectedPaymentAmount`를 반환하지
-않고 `expectedNetAmount`는 저장 `dailyWage`만으로 계산합니다. 클라이언트는 일급에서 시급이나
-지각 공제액을 역산하거나 임의 필드로 대체하지 않습니다.
+않으며 기존 `expectedNetAmount`도 반환하지 않습니다. 클라이언트는 일급에서 권위 있는 시급·
+지각 공제액·정산액을 역산하지 않습니다.
 
 출퇴근 시점은 nullable이고 지각 여부와 분수는 성공 CHECK_IN에서 파생합니다. 오늘 후보는
 `Asia/Seoul` 시작일이 오늘인 배정 근무와 전날부터 남은 `IN_PROGRESS`,
 `CHECK_OUT_MISSING`입니다. 복수이면 `IN_PROGRESS`, `CHECK_OUT_MISSING`, `READY`, `ACCEPTED`,
 `COMPLETED`, `NO_SHOW` 순서, 같은 상태에서는 `startsAt ASC, workCaseId ASC`로 한 건을 고릅니다.
 
-`expectedNetAmount`는 다음 계약으로 계산합니다.
+최종 계산 Snapshot 전 `taxReference`는 `null`이고, 이후 저장된 실제 WORKER 지급액을
+`basisAmount`로 사용해 다음 참고값을 반환합니다.
 
 ```text
-taxableBase = max(dailyWage - 150000, 0)
+taxableBase = max(basisAmount - 150000, 0)
 incomeTax = taxableBase × 0.027, 10원 미만 절사
 localIncomeTax = taxableBase × 0.0027, 10원 미만 절사
 if incomeTax < 1000:
   incomeTax = 0
   localIncomeTax = 0
-expectedNetAmount = dailyWage - incomeTax - localIncomeTax
+estimatedTaxAmount = incomeTax + localIncomeTax
+estimatedAfterTaxAmount = basisAmount - estimatedTaxAmount
 ```
 
-시간 경과 확보 안심금액과 지각 공제·상한은 현재 MVP 계약에 없습니다. 클라이언트는 현재
-응답의 일급 기반 `expectedNetAmount`를 참고값으로 사용할 수 있지만 독자적인 시급·경과·
-공제식을 만들거나 API를 매분 재호출하지 않습니다. 해당 값을 도입하려면 별도 제품 결정과 새
-명세 Patch가 필요합니다.
+GigHub는 실제 Wallet 지급액에서 세금을 원천징수하지 않습니다. Frontend는 `dailyWage`와
+`startsAt`·`endsAt`만으로 비금융 근무 경과 참고값을 로컬 계산해 60초마다 갱신할 수 있지만
+지갑·예치·정산·`taxReference`를 바꾸거나 API를 매분 재호출하지 않습니다. NO_SHOW·CANCELED에는
+이 참고값을 숨기고 `확보`·`실시간 적립` 표현을 사용하지 않습니다.
 
 `GET /api/worker/work-cases`의 각 Page Item은 같은 기본 근무 필드와 근태·Escrow·Settlement
 상태를 반환합니다. 저장 상태를 `BEFORE_WORK`, `LATE`, `SETTLED` 같은 화면 별칭으로 바꾸지
@@ -839,11 +874,14 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
 `dailyWage`는 양의 KRW 원 단위 정수이며 서버는 입력값을 `work_cases.agreed_wage`에 그대로
 저장합니다. 시급을 저장·역산하거나 근무시간과 휴게조건으로 일급을 다시 계산하지 않습니다.
 
-1. 날짜와 시간을 `Asia/Seoul` 지역 시각으로 결합하고 `endsAt > startsAt`을 검증합니다.
-2. `workplaces.road_address`를 trim하고, trim한 `detail_address`가 비어 있지 않을 때만 한 칸을
+1. 날짜와 시간을 `Asia/Seoul` 지역 시각으로 결합합니다. `endTime > startTime`이면 같은 날,
+   아니면 다음 날 종료로 해석하고 결과 근무 길이는 정확히 16시간까지 허용합니다. 시작·종료가
+   같으면 24시간으로 해석되어 거부됩니다.
+2. `breakMinutes`는 근무 길이를 넘을 수 없고 무급 휴게이면 예정 유급 분모가 양수여야 합니다.
+3. `workplaces.road_address`를 trim하고, trim한 `detail_address`가 비어 있지 않을 때만 한 칸을
    사이에 두어 결합합니다.
-3. 사업장 이름, 결합 주소, 좌표와 100m 반경을 Work Case Snapshot으로 복사합니다.
-4. 조회의 `workDate`는 저장한 `startsAt`에서 파생하고 요청용 `startTime`, `endTime`은 응답하지
+4. 사업장 이름, 결합 주소, 좌표와 100m 반경을 Work Case Snapshot으로 복사합니다.
+5. 조회의 `workDate`는 저장한 `startsAt`에서 파생하고 요청용 `startTime`, `endTime`은 응답하지
    않습니다.
 
 ### `GET /api/work-cases/{workCaseId}`
@@ -873,7 +911,11 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
     "workplaceAddress": "서울특별시 강남구 테헤란로 1 2층",
     "worker": {
       "workerId": 42,
-      "name": "이알바"
+      "name": "이알바",
+      "badge": {
+        "badgeType": "TRUST_WORKER",
+        "level": 0
+      }
     },
     "latestInvitation": {
       "status": "ACCEPTED",
@@ -897,6 +939,16 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
     "settlement": {
       "status": "COMPLETED",
       "amount": 120000,
+      "originalEscrowAmount": 120000,
+      "workerPaidAmount": 120000,
+      "ownerRefundAmount": 0,
+      "deductionAmount": 0,
+      "deductionBaseMinutes": 420,
+      "lateMinutes": 0,
+      "earlyLeaveMinutes": 0,
+      "calculationReason": "CHECKED_OUT",
+      "calculationVersion": "ATTENDANCE_V1",
+      "calculatedAt": "2026-08-20T09:00:00Z",
       "dueAt": "2026-08-21T00:00:00Z",
       "completedAt": "2026-08-21T00:05:00Z"
     }
@@ -906,7 +958,8 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
 
 중첩 객체의 `null` 규칙은 다음과 같습니다.
 
-- `worker`: `work_cases.worker_id`가 없으면 `null`입니다.
+- `worker`: `work_cases.worker_id`가 없으면 `null`입니다. 있으면 `workerId`, `name`과 현재
+  `TRUST_WORKER` 뱃지의 `badgeType`, `level` 0~3을 항상 반환하며 0단계도 숨기지 않습니다.
 - `latestInvitation`: 초대 이력이 없으면 `null`이며, 있으면 `status`, 외부
   `termsVersion`, `expiresAt`을 반환합니다.
 - `contract`: `work_contracts`가 없으면 `null`입니다. 있으면 같은 Work Case의
@@ -916,8 +969,10 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
   부분 객체나 `null` 대신 `500 INTERNAL_ERROR`와 `traceId` 무결성 로그를 남깁니다.
 - `attendance`: 항상 객체이고 성공 출근·퇴근이 없으면 각 시점이 `null`입니다.
 - `escrow`: 행이 없으면 `null`, 있으면 `status`, `amount`를 반환합니다.
-- `settlement`: 행이 없으면 `null`, 있으면 `status`, `amount`, nullable `dueAt`, nullable
-  `completedAt`을 반환합니다.
+- `settlement`: 행이 없으면 `null`입니다. 있으면 `status`, 호환 `amount`,
+  `originalEscrowAmount`, nullable 계산 Snapshot 필드(`workerPaidAmount`, `ownerRefundAmount`,
+  `deductionAmount`, `deductionBaseMinutes`, `lateMinutes`, `earlyLeaveMinutes`,
+  `calculationReason`, `calculationVersion`, `calculatedAt`), `dueAt`, `completedAt`을 반환합니다.
 
 ### `PATCH /api/work-cases/{workCaseId}`
 
@@ -926,6 +981,7 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
   `400 VALIDATION_ERROR`입니다.
 - `dailyWage`는 양의 KRW 원 단위 정수이며 입력값을 약정 일급으로 그대로 저장합니다. 시급이나
   근무시간에서 다시 계산하지 않습니다.
+- 등록과 같은 자정 넘김·16시간 상한·휴게시간 검증을 적용합니다.
 - `DRAFT`가 아니면 `409 WORK_CASE_LOCKED`입니다.
 - 값이 같더라도 성공 요청마다 `terms_version`을 정확히 1 증가시킵니다.
 - 현재 조건 Version의 `PENDING` 초대를 같은 트랜잭션에서 `REVOKED`로 전이합니다.
@@ -1018,8 +1074,8 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
 }
 ```
 
-OWNER의 누적 이력을 같은 요청에서 재계산한 결과가 1~3단계이면 `ownerBadge`에
-`badgeType=TRUST_OWNER`와 `level`만 반환하고, 0단계이면 `"ownerBadge": null`을 반환합니다.
+OWNER의 누적 이력을 같은 요청에서 재계산해 `ownerBadge`에
+`badgeType=TRUST_OWNER`와 `level` 0~3을 항상 반환합니다. 0단계도 객체이며 숨기지 않습니다.
 내부 `termsVersion`, 초대 ID, Token Hash와 문서 Storage Key는 이 응답에 포함하지 않습니다.
 
 ### 초대 오류 응답
@@ -1176,28 +1232,46 @@ Aggregate Transaction은 다음 순서로 처리합니다. 검증 실패는 성�
 
 - 초대 수락 Aggregate는 합의 일급의 Settlement를 `WAITING`, `due_at=null`로 만듭니다.
 - 정상 또는 확인된 CHECK_OUT은 Work Case를 `COMPLETED`, Settlement를 `SCHEDULED`,
-  `due_at=recordedAt+24시간`으로 한 Transaction에서 바꿉니다. 정산 처리기는 이미 완료된
-  Work Case 상태를 만들거나 변경하지 않습니다.
+  `due_at=attemptedAt+24시간`으로 바꾸면서 최초 계산 Snapshot을 같은 Transaction에 저장합니다.
+  정산 처리기는 이미 완료된 Work Case 상태를 만들거나 계산을 다시 하지 않습니다.
 - `due_at`은 OWNER 승인의 만료 시각이 아니라 Scheduler가 추가로 지급 자격을 얻는 경계입니다.
   OWNER는 Scheduler가 선점하기 전까지 `due_at` 전후 모두 승인할 수 있습니다.
 - Scheduler의 시간 판정은 MySQL `NOW(6)`을 사용하고 `due_at <= NOW(6)`을 포함합니다. API
   시각은 UTC `Instant`, DB `DATETIME(6)`은 `Asia/Seoul` 벽시계입니다.
-- 정상 지급은 `PROCESSING`, Escrow 해제, OWNER locked 감소, WORKER available 증가, 양측
-  `ESCROW_RELEASE` 원장과 `COMPLETED`를 하나의 Transaction에서 확정합니다. 실패하면 모두
+- 실행은 `PROCESSING`, Escrow 해제, OWNER locked 감소, WORKER available 증가와 OWNER 차액
+  환불, 양수인 `ESCROW_RELEASE`·`ESCROW_REFUND` 원장과 종료 상태를 하나의 Transaction에서
+  확정합니다. 0원 원장은 만들지 않습니다. 실패하면 모두
   Rollback되어 `SCHEDULED`로 남고 `PROCESSING`은 별도 Commit하지 않습니다.
+
+약정 일급을 `A`, 전체 예정 분을 `S`, 무급 휴게 분을 `B`(유급이면 0),
+`D=S-B`로 둡니다. 성공 CHECK_IN의 서버 `attemptedAt` 기준 지각 분과 성공 CHECK_OUT의 예정
+종료 대비 조퇴 분은 각각 양의 차이를 분 단위로 올림합니다. `M=min(D,L+E)`이고 다음 공식을
+사용합니다.
+
+```text
+M = 0: P = A
+M > 0: P = floor10(A * (D - M) / D)
+R = A - P
+```
+
+`P`는 WORKER 지급액, `R`은 OWNER 환불액이며 항상 `A=P+R`입니다. 조기 출근·늦은 퇴근은
+추가 임금을 만들지 않습니다. Snapshot은 `originalEscrowAmount`, `workerPaidAmount`,
+`ownerRefundAmount`, `deductionAmount`, `deductionBaseMinutes`, `lateMinutes`,
+`earlyLeaveMinutes`, `calculationReason`, `calculationVersion`, `calculatedAt`을 한 번만 보존합니다.
+CHECK_OUT은 `CHECKED_OUT`, NO_SHOW와 CHECK_OUT_MISSING은 `P=0/R=A`와 각각의 사유를 저장합니다.
 
 | 현재 상태 | 허용 전이 | 의미 |
 | --- | --- | --- |
-| `WAITING` | `SCHEDULED`, `PROCESSING` | 정상 CHECK_OUT 예약 또는 NO_SHOW 환불 승인 대기 |
+| `WAITING` | `SCHEDULED`, `PROCESSING` | 정상 CHECK_OUT 예약 또는 NO_SHOW·CHECK_OUT_MISSING 환불 승인 대기 |
 | `SCHEDULED` | `ON_HOLD`, `PROCESSING` | OWNER 또는 due Scheduler가 지급할 수 있는 정상 정산 |
 | `ON_HOLD` | `SCHEDULED` | 열린 임금분쟁으로 정상 지급이 보류됨; `due_at` 보존 |
 | `PROCESSING` | `COMPLETED`, `REFUNDED` | 같은 자금 Transaction 안에서만 존재하는 중간 상태 |
-| `COMPLETED` | 없음 | 정상·지각 지급이 끝난 재처리 불가 상태 |
-| `REFUNDED` | 없음 | NO_SHOW 전액 환불이 끝난 재처리 불가 상태 |
+| `COMPLETED` | 없음 | CHECK_OUT Snapshot 지급·차액 환불이 끝난 재처리 불가 상태 |
+| `REFUNDED` | 없음 | NO_SHOW·CHECK_OUT_MISSING 전액 환불이 끝난 재처리 불가 상태 |
 | `FAILED` | 관리자 승인 복구만 | 자동 지급 재시도 소진 또는 무결성 실패로 자동 재처리 금지 |
 
-`CHECK_OUT_MISSING`은 추가 결정이 승인될 때까지 `WAITING/due_at=null`, Escrow `HELD`를
-유지하며 지급·환불하지 않습니다.
+`CHECK_OUT_MISSING`은 `WAITING/due_at=null`, Escrow `HELD`, `P=0/R=A` Snapshot으로 남고
+별도 OWNER Operation이 승인할 때만 환불합니다.
 
 ### `POST /api/work-cases/{workCaseId}/settlement/approve`
 
@@ -1216,17 +1290,23 @@ Aggregate Transaction은 다음 순서로 처리합니다. 검증 실패는 성�
     "settlementId": 1,
     "status": "COMPLETED",
     "originalEscrowAmount": 120000,
-    "workerPaidAmount": 120000,
-    "ownerRefundAmount": 0,
+    "workerPaidAmount": 94280,
+    "ownerRefundAmount": 25720,
+    "deductionAmount": 25720,
+    "deductionBaseMinutes": 420,
+    "lateMinutes": 30,
+    "earlyLeaveMinutes": 60,
+    "calculationReason": "CHECKED_OUT",
+    "calculationVersion": "ATTENDANCE_V1",
+    "calculatedAt": "2026-07-31T08:59:00Z",
     "completedAt": "2026-07-31T09:00:00Z"
   }
 }
 ```
 
-`completedAt`은 UTC `Instant`입니다. 최초 성공과 같은 Key·Fingerprint Replay 모두 200이며
-Replay에는 `Idempotency-Replayed: true`를 설정합니다. 정상·지각 근무 모두 WORKER에게 원
-예치액인 약정 일급 전액을 지급하고 OWNER 환불은 0원입니다. `lateMinutes`는 근태 정보이며 현재
-MVP의 지급액 입력으로 사용하지 않습니다. 다른 Key 또는
+모든 시각은 UTC `Instant`입니다. 최초 성공과 같은 Key·Fingerprint Replay 모두 200이며
+Replay에는 `Idempotency-Replayed: true`를 설정합니다. 승인과 Scheduler는 저장 Snapshot의
+지급·환불액을 그대로 실행하며 `lateMinutes`나 현재 시각으로 다시 계산하지 않습니다. 다른 Key 또는
 Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 SETTLEMENT_ALREADY_PROCESSED`로
 응답합니다.
 
@@ -1234,8 +1314,8 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
 
 - 해당 Work Case의 OWNER만 호출하며 Body는 0byte, CSRF와 `Idempotency-Key`가 필수입니다.
 - 성공 CHECK_IN이 없고 Work Case `NO_SHOW`, Settlement `WAITING/due_at=null`, Escrow `HELD`,
-  열린 분쟁 없음인 경우만 승인합니다. 시스템 NO_SHOW 판정은 상태만 바꾸며 자동 환불하지
-  않습니다.
+  저장 Snapshot `P=0/R=A`, 열린 분쟁 없음인 경우만 승인합니다. 시스템 NO_SHOW 판정은
+  상태와 Snapshot만 바꾸며 자동 환불하지 않습니다.
 - Operation은 `SETTLEMENT_NO_SHOW_REFUND_APPROVE`이고 Fingerprint는 공통 멱등 계약을
   따릅니다. 원장 Key는 Settlement ID 기반 `SETTLEMENT_REFUND_OWNER` Namespace의 SHA-256으로
   정합니다.
@@ -1251,6 +1331,13 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
     "originalEscrowAmount": 120000,
     "workerPaidAmount": 0,
     "ownerRefundAmount": 120000,
+    "deductionAmount": 120000,
+    "deductionBaseMinutes": 480,
+    "lateMinutes": 0,
+    "earlyLeaveMinutes": 0,
+    "calculationReason": "NO_SHOW",
+    "calculationVersion": "ATTENDANCE_V1",
+    "calculatedAt": "2026-08-20T02:00:00Z",
     "completedAt": "2026-08-20T02:05:00Z"
   }
 }
@@ -1260,11 +1347,21 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
 `409 SETTLEMENT_ON_HOLD`, 다른 Key로 이미 처리된 환불은
 `409 SETTLEMENT_ALREADY_PROCESSED`입니다.
 
+### `POST /api/work-cases/{workCaseId}/settlement/check-out-missing-refund/approve`
+
+- 해당 OWNER만 호출하며 Body는 0byte, CSRF와 `Idempotency-Key`가 필수입니다.
+- 성공 CHECK_IN이 있고 성공 CHECK_OUT이 없는 `CHECK_OUT_MISSING`, Settlement
+  `WAITING/due_at=null`, Escrow `HELD`, 저장 Snapshot `P=0/R=A`, 열린 분쟁 없음만 승인합니다.
+- Operation은 `SETTLEMENT_CHECK_OUT_MISSING_REFUND_APPROVE`이고 NO_SHOW와 별도 Claim을
+  사용합니다. 내부 OWNER 환불 실행기와 Settlement ID 기반 결정적 환불 원장 Key는 공유합니다.
+- 성공 응답 Shape는 NO_SHOW와 같고 `calculationReason=CHECK_OUT_MISSING`입니다. Settlement와
+  Escrow는 `REFUNDED`, OWNER는 전액 환불되며 WORKER Wallet·원장은 바뀌지 않습니다.
+
 ### 예정 자동 지급
 
 - 외부 실행 Endpoint나 임의 OWNER 승인자를 만들지 않습니다. 자동 지급의
   `approved_by_user_id`는 `null`, 내부 Operation 식별자는 Settlement ID 기반
-  `SETTLEMENT_SCHEDULED_PAYOUT`입니다.
+  `SETTLEMENT_SCHEDULED_PAYOUT`입니다. 자동 지급도 저장 Snapshot만 소비합니다.
 - 한 실행은 `SCHEDULED`, `due_at <= NOW(6)`, 열린 분쟁 없음,
   `next_retry_at IS NULL OR next_retry_at <= NOW(6)` 후보를 `due_at ASC, id ASC` 순서로 최대
   100건 처리합니다. 각 후보는 짧은 독립 Transaction에서 `FOR UPDATE SKIP LOCKED`와 조건부
@@ -1281,6 +1378,8 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
 
 - Work Case OWNER와 배정 WORKER만 호출하며 CSRF가 필수입니다. 서버는
   `dispute_type=WAGE`로 기록하고 Work Case당 `OPEN`·`UNDER_REVIEW` 분쟁을 하나만 허용합니다.
+- Work Case 상태가 `ACCEPTED`, `READY`, `IN_PROGRESS`, `CHECK_OUT_MISSING`, `COMPLETED`,
+  `NO_SHOW`일 때만 등록할 수 있으며 그 밖의 상태는 `409 CONFLICT`입니다.
 - Body의 `title`은 trim 후 1~100자, `content`는 trim 후 1~2000자입니다.
 
 ```json
@@ -1292,17 +1391,31 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
 
 성공은 `201 {"data":{"reportId":1}}`입니다. 정상 `SCHEDULED` 정산에 분쟁을 등록하면 같은
 Transaction에서 `ON_HOLD`로 바꾸되 `due_at`, Escrow, Wallet과 원장은 보존합니다. NO_SHOW의
-`WAITING` 상태는 그대로 두지만 열린 분쟁이 환불 승인을 막습니다. 분쟁 등록과 지급은
+`WAITING`과 CHECK_OUT_MISSING 상태는 그대로 두지만 열린 분쟁이 환불 승인을 막습니다. 분쟁 등록과 지급은
 `work_cases → settlements → disputes` 순서로 직렬화하며 지급이 먼저 Commit된 경우 후속
 신고가 이미 끝난 자금 이동을 되돌리지 않습니다.
+
+분쟁 Commit 뒤 `DISABLED`, `FAKE`, `DEMO_LLM` 중 설정된 DEMO Provider가 실행됩니다. 실자금
+모드에서는 `DEMO_LLM`을 활성화할 수 없습니다. 입력은 제목·경위, 근태, 약정 일급과 정산
+Snapshot 등 최소 사실만 포함하고 이름·전화·계좌·내부 ID는 제외합니다. 출력은
+`decision`, `reasonCodes`, `summary`, `confidence` 고정 JSON이며 LLM은 금액을 만들거나
+재계산하지 않습니다. `RELEASE_TO_WORKER`는 정상 `COMPLETED/SCHEDULED|ON_HOLD`,
+`REFUND_TO_OWNER`는 NO_SHOW·CHECK_OUT_MISSING `WAITING`에서만 기존 흐름을 재개하고 반대
+상태의 결과와 `NEEDS_MORE_INFO`는 `UNDER_REVIEW`로 보류합니다.
+
+Timeout, 429·5xx, 형식 오류, Lease 만료와 예상 밖 실패는 실행을 `FAILED`로 감사하고 새 요청
+Key로 제한 재시도합니다. 재시도 소진은 자동 보류를 풀지 않습니다. 늦거나 중복된 결과는 실행
+상태, 현재 분쟁 상태와 입력 Snapshot Hash가 모두 일치할 때 한 번만 반영합니다.
 
 ### `GET /api/work-cases/{workCaseId}/disputes`
 
 - Work Case OWNER와 배정 WORKER만 공통 Page Query로 조회합니다.
 - Item은 `reportId`, `title`, `content`, `status`, nullable `resolution`, `requesterRole`,
-  `createdAt`, nullable `resolvedAt`을 반환하고 내부 사용자 ID와 처리자 ID를 노출하지 않습니다.
+  `createdAt`, nullable `resolvedAt`과 nullable `demoReview`를 반환하고 내부 사용자 ID와 처리자
+  ID를 노출하지 않습니다. 검토가 있으면 `source=SIMULATED_LLM`, 실행 `status`를 제공하고
+  완료 결과에는 `decision`, `reasonCodes`, `summary`, `confidence`, `reviewedAt`을 포함합니다.
 
-`OPEN`, `UNDER_REVIEW`는 열린 분쟁이며 정상 지급과 NO_SHOW 환불을 모두 막습니다.
+`OPEN`, `UNDER_REVIEW`는 열린 분쟁이며 정상 지급과 NO_SHOW·CHECK_OUT_MISSING 환불을 막습니다.
 `RESOLVED`, `REJECTED`, `CANCELED`은 닫힌 분쟁입니다. 마지막 열린 분쟁을 닫는 Transaction은
 정상 Settlement를 `ON_HOLD → SCHEDULED`로 복구하고 기존 `due_at`을 보존하며, NO_SHOW 환불
 승인도 다시 허용합니다. 관리자 역할과 상태 변경 Endpoint는 `DEC-OPEN-ADMIN-DISPUTE`가
@@ -1320,6 +1433,7 @@ Transaction에서 `ON_HOLD`로 바꾸되 `due_at`, Escrow, Wallet과 원장은 �
 | 다른 Key 또는 Scheduler가 이미 처리함 | 409 | `SETTLEMENT_ALREADY_PROCESSED` |
 | 같은 Key가 같은 Fingerprint를 처리 중 | 409 | `CONFLICT` |
 | 같은 Key를 다른 Fingerprint에 재사용 | 409 | `IDEMPOTENCY_KEY_REUSED` |
+| 분쟁 등록이 허용되지 않는 Work Case 상태 | 409 | `CONFLICT` |
 | 열린 분쟁 중복 등록 | 409 | `DISPUTE_ALREADY_OPEN` |
 | 제한 재시도 뒤 일시 장애 지속 | 503 | `SETTLEMENT_TEMPORARILY_UNAVAILABLE` |
 | 상태·금액·원장 무결성 모순 | 500 | `INTERNAL_ERROR` |
@@ -1420,7 +1534,7 @@ Commit되면 구 nonce 스캔은 `410 QR_REVOKED`, 스캔이 현재 nonce 검증
 | 경계                       | 값                  | 포함 규칙                            |
 | -------------------------- | ------------------- | ------------------------------------ |
 | READY 시작                 | `starts_at - 30분`  | 해당 시각 포함                       |
-| CHECK_IN 종료·NO_SHOW 판정 | `starts_at + 1시간` | CHECK_IN은 미포함, NO_SHOW는 포함    |
+| CHECK_IN 종료·NO_SHOW 판정 | `min(starts_at + 1시간, ends_at)` | CHECK_IN은 미포함, NO_SHOW는 포함 |
 | CHECK_OUT 종료·누락 판정   | `ends_at + 2시간`   | CHECK_OUT은 미포함, 누락 판정은 포함 |
 
 `ACCEPTED`는 배정 WORKER·수락 초대·계약 조건 Version, 읽을 수 있고 Checksum이 일치하는
@@ -1429,11 +1543,12 @@ Commit되면 구 nonce 스캔은 `410 QR_REVOKED`, 스캔이 현재 nonce 검증
 다음 주기에 READY가 될 수 있고, 끝까지 불완전하면 시스템 준비 실패이므로 `ACCEPTED`에 남아
 WORKER의 NO_SHOW로 만들지 않습니다.
 
-성공 CHECK_IN이 없는 READY만 CHECK_IN 종료 경계에 `NO_SHOW`, 성공 CHECK_IN이 있고 성공
-CHECK_OUT이 없는 IN_PROGRESS만 CHECK_OUT 종료 경계에 `CHECK_OUT_MISSING`이 됩니다. 스캔과
-Scheduler는 Work Case 잠금과 조건부 상태 변경으로 한 결과만 Commit합니다. M5는 두 종료
-상태의 늦은 QR·수동 보정 API를 제공하지 않고 Settlement를 `WAITING/due_at=null`로 유지하며
-Wallet·Escrow 금액과 원장을 바꾸지 않습니다.
+성공 CHECK_IN이 없는 READY와 준비 Aggregate가 완전하지만 Scheduler 지연으로 READY 승격을
+놓친 ACCEPTED는 CHECK_IN 종료 경계에 `NO_SHOW`가 됩니다. 준비 불완전 ACCEPTED는 유지합니다.
+성공 CHECK_IN이 있고 성공 CHECK_OUT이 없는 IN_PROGRESS만 CHECK_OUT 종료 경계에
+`CHECK_OUT_MISSING`이 됩니다. 두 종료 전이는 최초 `P=0/R=A` 계산 Snapshot을 함께 저장하지만
+Wallet·Escrow·원장은 움직이지 않습니다. 스캔과 Scheduler는 Work Case 잠금과 조건부 상태
+변경으로 한 결과만 Commit하며 늦은 QR·수동 근태 보정 API는 제공하지 않습니다.
 
 ### `POST /api/attendance/scans`
 
@@ -1461,10 +1576,11 @@ Wallet·Escrow 금액과 원장을 바꾸지 않습니다.
 
 현재 QR 사업장과 인증 WORKER를 기준으로 다음 활성 후보를 함께 조회합니다.
 
-- `READY`이고 `starts_at - 30분 <= attemptedAt < starts_at + 1시간`이면 CHECK_IN
+- `READY`이고 `starts_at - 30분 <= attemptedAt < min(starts_at + 1시간, ends_at)`이면 CHECK_IN
 - 성공 CHECK_IN이 있는 `IN_PROGRESS`이고 `attemptedAt < ends_at + 2시간`이면 CHECK_OUT
 
-활성 후보가 0건이면 완료 후보를 같은 시간 범위에서 확인합니다. 완료 후보 한 건은
+경계 시각에는 Work Case를 식별한 뒤 `TIME_WINDOW_CLOSED`로 거절 감사하고 NO_SHOW 전이와
+같은 경계를 사용합니다. 활성 후보가 0건이면 완료 후보를 같은 시간 범위에서 확인합니다. 완료 후보 한 건은
 `409 ATTENDANCE_ALREADY_COMPLETED`, 두 건 이상 또는 활성 후보 복수는
 `409 ATTENDANCE_WORK_CASE_AMBIGUOUS`, 아무 후보도 없으면
 `404 ATTENDANCE_WORK_CASE_NOT_FOUND`입니다. 서버는 시각이나 ID로 임의 선택하지 않으며
@@ -1517,8 +1633,8 @@ CHECK_IN의 `attemptedAt > starts_at`이면 지각이며 `lateMinutes`는 양의
 
 확인은 같은 QR·위치 계약을 다시 검증하는 `confirmEarlyCheckout:true`의 새 의도입니다. 정상
 또는 확인된 CHECK_OUT은 성공 행, `IN_PROGRESS→COMPLETED`, Settlement
-`WAITING→SCHEDULED`, `due_at=recordedAt+24시간`을 한 트랜잭션에서 반영합니다. M6는 이
-예약을 소비해 실제 자금만 이동합니다.
+`WAITING→SCHEDULED`, `due_at=attemptedAt+24시간`과 `CHECKED_OUT/ATTENDANCE_V1` 계산
+Snapshot을 한 트랜잭션에서 반영합니다. 이후 자금 실행은 이 저장값만 소비합니다.
 
 정확히 하나의 Work Case와 출퇴근 유형을 정한 뒤 발생한 의미상 위치·시간·상태 거부는
 `attendance_records.result=REJECTED`와 `LOCATION_INACCURATE`, `LOCATION_STALE`,
@@ -1598,7 +1714,7 @@ SHARED 보건증에서 `workCaseId`가 없거나 관계가 틀리거나 비가�
   "documentId": 5,
   "docType": "HEALTH_CERTIFICATE",
   "status": "ACTIVE",
-  "fileName": "보건증_20260601_김알바.jpg",
+  "fileName": "보건증_김알바.jpg",
   "mimeType": "image/jpeg",
   "issuedDate": "2026-06-01",
   "expiresDate": "2027-06-01",
@@ -1629,8 +1745,8 @@ SHARED 보건증에서 `workCaseId`가 없거나 관계가 틀리거나 비가�
   Case가 필수이며 OWN의 `sharedByName`은 null, SHARED의 `sharedByName`은 문서 소유자
   이름입니다. `issuedDate`는 두 문서 유형 모두 필수입니다.
 - `fileName`은 정제한 이름으로 서버가 조립합니다. 보건증은
-  `보건증_{발급일}_{소유자이름}.{ext}`, 근로계약서는
-  `근로계약서_{사업장명}_{발급일}_{근로자이름}.pdf`이며 제어문자와 경로 구분자를 제거합니다.
+  `보건증_{소유자이름}.{ext}`, 근로계약서는 `근로계약서_{사업장명}_{근로자이름}.pdf`이며
+  카드에 별도 표시되는 발급일을 중복하지 않고 제어문자와 경로 구분자를 제거합니다.
 - `versions[]`는 최신순이며 보건증은 ORIGINAL Version 1, 근로계약서는 최신 SIGNED
   Version만 포함합니다. Version Item은 `versionNo`, `versionType`, `mimeType`,
   `sizeBytes`, `createdAt`만 반환합니다.
@@ -1668,9 +1784,12 @@ SHARED 보건증에서 `workCaseId`가 없거나 관계가 틀리거나 비가�
   보존하고 같은 소유자의 반복 삭제는 204입니다. 근로계약서 DELETE는
   `409 CONTRACT_RETENTION_REQUIRED`, 없는 문서와 비소유 문서는 404입니다.
 
-이미 만료되는 `issuedDate`의 POST·PATCH 성공 응답은 서버가 계산한 `expiresDate`와
-`status=EXPIRED`를 포함합니다. 정확한 HTTP Status와 그 밖의 Body 필드는 승인 Patch가
-값을 정하지 않았으므로 구현 이슈에서 별도 보호 계약으로 확정하기 전까지 추정하지 않습니다.
+POST 성공은 `201 Created`, PATCH 성공은 `200 OK`이며 모두 위 `DocumentListItem` Shape를
+`data`에 반환합니다. 이미 만료되는 `issuedDate`도 같은 Status와 계산한 `expiresDate`,
+`status=EXPIRED`를 사용합니다. 등록·수정 응답의 `capabilities.canShare=false`,
+`canDelete=true`, `latestVersion=1`, `source=OWN`입니다. PATCH는 `{"issuedDate":"YYYY-MM-DD"}`
+외 필드를 거부하고 수정 전 `mimeType`·`latestVersion`을 유지합니다. 정확한 공유 가능 여부는
+뒤이은 목록·상세 조회가 계산합니다.
 
 ### 보건증 공유
 
@@ -1733,6 +1852,23 @@ Disposition은 정제한 ASCII `filename`과 RFC 5987 `filename*`을 함께 사�
 문서 API의 외부 오류는 `VALIDATION_ERROR`, `AUTH_REQUIRED`, `FORBIDDEN`, `ROLE_MISMATCH`,
 `RESOURCE_NOT_FOUND`, `CONFLICT`, `CONTRACT_RETENTION_REQUIRED`, `INTERNAL_ERROR`로 제한합니다.
 
+### 근로계약서 내장 Template
+
+계약 PDF는 서버 내장 단일 HTML/CSS Template으로 렌더링합니다. 제목은
+`단시간·일용 근로계약서`이며 계약 당사자, 근로계약 기간·장소·업무, 근로·휴게시간, 일급·
+지급 방법, 법정 고지, 체결 문구와 양측 서명란 순서입니다. 모든 값은 이미지가 아닌 검색·복사
+가능한 텍스트이고 Markup 문자는 Escape해 입력 문자열 그대로 표시합니다.
+
+- 당사자 연락처는 현재 `users.phone`이 있을 때만 이름 뒤에 표시합니다.
+- 사업주 서명란은 대표자명과 `work_cases.created_at`, WORKER 서명란은 ORIGINAL에서 빈 상태,
+  SIGNED에서 `document_signatures.typed_name`과 `signed_at`을 표시합니다. 두 Version의 다른
+  내용은 이 WORKER 서명란뿐입니다.
+- 근로일은 하루, 사업장명·주소와 업무, 시작·종료·총 근로시간, 휴게시간·유급 여부, 일급을
+  표시합니다. 연차·주휴 발생 요건, 사회보험 적용 가능성, 최저임금 준수 의무와 계약서 교부를
+  고지하되 개별 근무의 법적 준수 사실을 단정하지 않습니다.
+- 문서 Metadata 생성·수정 시각은 렌더링 시각이 아니라 계약 수락 시각입니다. 기존 Storage
+  Key, MIME, Checksum, ORIGINAL v1·SIGNED v2 규칙은 바꾸지 않습니다.
+
 ### 근로계약서 보존·폐기
 
 근로계약서 보존 기준일은 `work_cases.ends_at`의 서울 날짜이고 만료 시각은 그 날짜에 3년을
@@ -1785,7 +1921,8 @@ MVP 알림은 아래 6종뿐이며 다른 유형을 만들지 않습니다. 알�
 
 - 인증 사용자 본인의 알림만 최신순(`createdAt` 내림차순, 동률은 `notificationId` 내림차순)으로
   반환합니다. 수신자를 Query·Path·Body로 받지 않습니다.
-- Query는 `page?`, `size?`만 받고 공통 페이지네이션 기본값을 따릅니다.
+- Query는 `page?`, `size?`, `unreadOnly?`를 받습니다. `unreadOnly` 기본값은 false이고 true면
+  안읽음 항목만 반환하며 `page.totalElements`도 안읽음 기준입니다.
 - 응답은 공통 `{data:{content,page}}` 목록 Envelope입니다.
 
 | 필드             | 설명                                            |
@@ -1810,7 +1947,13 @@ MVP 알림은 아래 6종뿐이며 다른 유형을 만들지 않습니다. 알�
 
 본인 알림 한 건을 읽음으로 바꾸고 `readAt`을 그때의 시각으로 확정합니다. 성공은
 `204 No Content`입니다. 이미 읽은 알림에 다시 요청해도 성공이며 `readAt`은 최초 값을
-유지합니다. **전체 읽음 처리는 이 계약에 두지 않습니다.**
+유지합니다.
+
+### `PATCH /api/notifications/read-all`
+
+본인의 안읽음 알림 전부를 읽음으로 바꾸고 `204 No Content`를 반환합니다. 수신자나 처리
+건수는 요청·응답에 포함하지 않습니다. 안읽음이 0건이어도 성공하며 이미 읽은 알림의
+`readAt`과 다른 사용자의 알림은 바꾸지 않습니다.
 
 ### `GET /api/notifications/stream`
 
@@ -1837,7 +1980,7 @@ Query·Path·Body로 받지 않습니다.
 | ----------------------------------- | ---: | -------------------- |
 | 인증 없음                           |  401 | `AUTH_REQUIRED`      |
 | 타인의 알림 또는 존재하지 않는 알림 |  404 | `RESOURCE_NOT_FOUND` |
-| `page`·`size` 허용 범위 밖          |  400 | `VALIDATION_ERROR`   |
+| `page`·`size` 허용 범위 밖 또는 잘못된 `unreadOnly` |  400 | `VALIDATION_ERROR` |
 
 타인 알림은 존재를 드러내지 않도록 403이 아니라 404로 응답합니다.
 

@@ -1,6 +1,6 @@
 ---
 patch_id: SPEC-472-01
-status: draft
+status: accepted
 issue: 472
 base_spec_version: 8.1.0
 targets:

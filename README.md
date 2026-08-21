@@ -29,12 +29,12 @@ KB IT's Your Life 7기 · 24-2팀
 
 ### 🏪 사장님
 
-- **사업장 관리** — 사업장 등록과 목록 조회, 매장에 붙이는 고정 QR 발급·재발급
+- **사업장 관리** — 도로명주소 서버 좌표 변환 기반 등록·수정과 목록 조회, 매장에 붙이는 고정 QR 발급·재발급
 - **근무 등록** — 날짜·시간·약정 일급·휴게시간을 정해 근무를 만들고, 수락 전까지 수정·삭제
 - **초대 링크** — 근무별로 링크를 발급해 알바생에게 전달, 필요하면 재발급
 - **전자지갑** — 충전과 출금, 거래내역 조회
 - **자동 예치** — 알바생이 근무를 확정하면 약정 일급이 지갑에서 예치금으로 잡힘
-- **정산** — 근무 완료 후 일당 지급 승인, 노쇼 발생 시 예치금 전액 환불 승인
+- **정산** — 정상·지각·조퇴 근무의 저장 Snapshot 지급·차액 환불, 노쇼·퇴근 누락의 예치금 전액 환불 승인
 - **문서함** — 근로계약서와 공유받은 보건증 열람
 - **신뢰 뱃지** — 이용 이력 기반 등급 확인
 
@@ -53,12 +53,12 @@ KB IT's Your Life 7기 · 24-2팀
 
 - **세션 인증 + CSRF** — 토큰을 브라우저에 저장하지 않고 `JSESSIONID` 세션만 사용, 상태 변경 요청에 CSRF 헤더 자동 첨부
 - **멱등 요청** — 충전·출금·수락·정산에 `Idempotency-Key`를 실어 더블클릭이나 네트워크 재시도로 인한 이중 반영 차단
-- **노쇼 자동 판정** — 근무 시작 후 1시간이 지나도 출근 기록이 없으면 스케줄러가 상태를 전환
+- **노쇼 자동 판정** — `min(근무 시작+1시간, 근무 종료)`까지 출근 기록이 없으면 스케줄러가 상태를 전환
 - **계약서 자동 파기** — 보존 기간 3년이 지난 근로계약서를 매일 새벽 정리
-- **실시간 알림** — SSE 스트림으로 근무 확정·서류 제출 등을 즉시 전달
+- **인앱 알림** — 최신·안읽음 목록과 단건·전체 읽음 처리, SSE 재조회 신호로 새 이벤트 안내
 - **문서 접근 감사** — 누가 어떤 문서를 열었는지 기록
 
-> 지각은 **기록만 하고 임의로 차감하지 않습니다.** 정상 근무와 지각 모두 약정 일급 전액을 지급하고, 노쇼만 전액 환불합니다.
+> 정상 근무는 약정 일급 전액을 지급하고, 지각·조퇴는 저장된 근태 Snapshot으로 비례 지급·차액 환불합니다. 노쇼·퇴근 누락은 별도 승인 뒤 전액 환불합니다.
 
 ---
 
@@ -294,9 +294,10 @@ KB-PJT-24-2/
    ◀── 실시간 알림 ────────────────┴── 실시간 알림 ────────────────▶ │
 ```
 
-### 2. QR 출퇴근 → 정산 / 노쇼 환불
+### 2. QR 출퇴근 → 정산 / 노쇼·퇴근 누락 환불
 
-세 갈래로 끝납니다. 정상과 지각은 약정 일급 전액 지급, 노쇼는 전액 환불입니다.
+정상은 약정 일급 전액 지급, 지각·조퇴는 비례 지급과 차액 환불, 노쇼·퇴근 누락은 별도 승인
+뒤 전액 환불로 끝납니다. 모든 결과에서 지급액과 환불액의 합은 원 예치액과 같습니다.
 
 ```text
 [알바생]                          [서버]                          [사장님]
@@ -307,7 +308,7 @@ KB-PJT-24-2/
    ├─ 매장 QR 스캔 (퇴근) ───────▶ 상태: 근무 완료
    │                                │                                │
    │                                ◀── 일당 지급 승인 ──────────────┤
-   │                                ├─ 예치금 해제 → 정산 기록
+   │                                ├─ 저장 Snapshot 실행 → 지급·차액 환불
    ◀── 안심지갑 잔액 증가 ─────────┘                                │
    │                                                                 │
    ├─ 본인 계좌로 출금 ──────────▶ 출금 요청                        │
@@ -315,9 +316,17 @@ KB-PJT-24-2/
    ────────────────────────── 노쇼 경로 ──────────────────────────
 
    (출근 스캔 없음)                 │
-                                    ├─ 시작 +1시간 경과 → 상태: 노쇼 (자동)
+                                    ├─ min(시작+1시간, 종료) → 상태: 노쇼 (자동)
                                     │                                │
                                     ◀── 노쇼 환불 승인 ──────────────┤
+                                    └─ 예치금 전액 환불 · 가용 잔액 복구
+
+   ──────────────────────── 퇴근 누락 경로 ────────────────────────
+
+   (출근 후 퇴근 스캔 없음)          │
+                                    ├─ 종료 +2시간 → 상태: 퇴근 미확인 (자동)
+                                    │                                │
+                                    ◀── 퇴근 누락 환불 승인 ─────────┤
                                     └─ 예치금 전액 환불 · 가용 잔액 복구
 ```
 
@@ -345,15 +354,15 @@ KB-PJT-24-2/
 | 도메인 | 주요 경로 |
 | --- | --- |
 | 인증 | `POST /api/auth/signup` · `/login` · `/logout` <br/> `GET /api/auth/csrf` · `/session` · `/login-id-availability` · `/email-availability` |
-| 회원 · 뱃지 | `GET · PATCH /api/users/me` · `GET /api/users/me/badge` |
-| 사업장 | `POST · GET /api/workplaces` · `PUT /api/workplaces/{id}/coordinates` |
+| 회원 · 뱃지 | `GET · PATCH /api/users/me` · `PATCH /api/users/me/password` · `POST /api/users/me/withdrawal` · `GET /api/users/me/badge` |
+| 사업장 | `POST · GET /api/workplaces` · `PATCH /api/workplaces/{id}` · Legacy `PUT /api/workplaces/{id}/coordinates` |
 | QR | `GET /api/workplaces/{id}/qr` · `POST /api/workplaces/{id}/qr/reissue` |
 | 근무 | `POST · GET /api/workplaces/{id}/work-cases` · `GET /api/workplaces/{id}/work-cases/summary` <br/> `GET · PATCH · DELETE /api/work-cases/{id}` |
 | 초대 | `POST /api/work-cases/{id}/invitations` · `/invitations/reissue` <br/> `GET /api/invitations/{token}` · `POST /api/invitations/{token}/accept` |
 | 알바생 | `GET /api/worker/home` · `/work-cases` · `/workplaces` |
 | 출퇴근 | `POST /api/attendance/scans` |
 | 지갑 | `GET /api/wallet` · `/api/wallet/transactions` <br/> `POST /api/wallet/funding-orders` · `/api/wallet/withdrawal-requests` |
-| 정산 | `POST /api/work-cases/{id}/settlement/approve` · `/settlement/no-show-refund/approve` |
+| 정산 | `POST /api/work-cases/{id}/settlement/approve` · `/settlement/no-show-refund/approve` · `/settlement/check-out-missing-refund/approve` |
 | 이의 | `POST · GET /api/work-cases/{id}/disputes` |
 | 문서 | `GET · POST /api/documents` · `GET · PATCH · DELETE /api/documents/{id}` <br/> `GET /api/documents/{id}/file` · `POST · GET /api/documents/{id}/shares` · `DELETE /api/documents/{id}/shares/{workplaceId}` |
 | 알림 | `GET /api/notifications` · `/unread-count` <br/> `PATCH /api/notifications/{id}/read` · `/api/notifications/read-all` · `GET /api/notifications/stream` |

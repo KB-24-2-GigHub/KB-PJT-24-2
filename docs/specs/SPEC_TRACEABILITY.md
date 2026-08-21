@@ -2,8 +2,8 @@
 
 | 항목        | 값              |
 | ----------- | --------------- |
-| 명세 릴리스 | `8.1.0`         |
-| 승인일      | 2026-08-17      |
+| 명세 릴리스 | `9.0.0`         |
+| 승인일      | 2026-08-21      |
 | 소유자      | PM/Admin Master |
 
 이 표는 요구사항을 승인 REST Operation과 도메인에 연결합니다. 아래 MVP P0 감사만 PM의
@@ -11,6 +11,28 @@
 개발 진행률을 뜻하지 않습니다.
 
 ## MVP P0 구현·이슈 감사
+
+### `9.0.0` 최신 `dev` 감사
+
+감사 기준은 `dev@2f7eb3f91e03d4f2eefa5669ab8325d6cf26d4fe`와 2026-08-21 GitHub
+상태입니다. 아래 판정은 실행 코드, 설정, 집중 테스트, Flyway Head `202608201125`와 병합
+근거를 대조한 결과입니다. 이번 행정 릴리스는 애플리케이션을 바꾸거나 Browser E2E를 다시
+수행하지 않으며, 현재 구현 목록의 원본은 계속 코드와 테스트입니다.
+
+| 시나리오 묶음 | 판정 | 최신 구현 근거 |
+| ------------- | ---- | -------------- |
+| 1-2~1-6 로그인·사업장·지갑 | **Implemented** | Session·CSRF, 서버 주소 변환 등록·수정, 비귀속 Mock 계좌 PIN 충전, 지갑·원장 집중 테스트 |
+| 2-1~2-5 근무 등록·수정·초대 | **Implemented** | 일급·야간 16시간·10분 다이얼/캘린더, 조건 Version·초대 재발급·보건증 요구 계약 테스트 |
+| 3-1~3-6 로그인 복귀·수락·계약·문서 | **Implemented** | Bearer 초대 복귀, 멱등 수락 Aggregate, HTML/CSS 계약 PDF, 문서 권한·감사·Frontend 실연동 |
+| 4-2~4-6 OWNER 상태·예치·고정 QR | **Implemented** | 확정 조건 잠금, 예치 보존, 고정 QR 조회·재발급·출력 경로와 역할별 화면 테스트 |
+| 5A-1~5A-8 정상 근무·지급·출금 | **Implemented** | QR 출퇴근, CHECK_OUT Snapshot, OWNER·Scheduler 원자 실행, 양측 거래·출금 흐름 테스트 |
+| 5B-1~5B-7 지각·비례 정산 | **Implemented** | 분 단위 지각·조퇴, 10원 절사, 지급·차액 환불 보존식, 조회·원장·Frontend 계약 테스트 |
+| 5C-1~5C-3 노쇼·환불 | **Implemented** | 짧은 근무 `min(시작+1시간,종료)` 경계, 전액 환불 Snapshot, OWNER 멱등 승인·분쟁 보류 테스트 |
+
+현재 기준에서 소유자가 없는 MVP P0 기능 공백은 없습니다. 후속 제품 범위인 비밀번호 재설정
+전달 채널, 관리자 분쟁 처리와 실제 결제 Provider는 P0 구현 판정에 포함하지 않습니다.
+
+### `8.0.0` 이전 기준 감사 (역사)
 
 감사 기준은 `dev2@b0e34fec5604169e96ecc33df9d69428f81d48a4`와 2026-08-10 GitHub
 상태입니다. `Implemented`는 코드와 검증으로 확인, `Partial`은 일부 경로만 존재,
@@ -68,7 +90,7 @@ Overlay이며 Refactoring 이슈가 닫혀도 기능 상태가 자동으로 올�
 | 5C-2     | ATT-005, 자동 NO_SHOW                              | #163 Open, #168 Open, #169 Open                                                                                                                                                                                                                                                          | **Partial** — Backend 자동 전이 코드가 있으나 양측 제품 화면·통합 미완료                                         | #285, #286, #287, #291, #292, #293, #295       |
 | 5C-3     | SETTLE-005, 노쇼 환불                              | `SPEC-170-01` accepted, #171 Closed, [#174](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/174) Open, #173 Open, #176 Open, #177 Open                                                                                                                                              | **Planned** — Schema는 준비됐으나 OWNER 승인 API, 원자 환불·분쟁 보류와 양측 화면 구현 증거 없음                 | #282, #285, #287, #289, #290, #292, #293, #295 |
 
-### 소유자가 확정되지 않은 P0 공백
+### 이전 기준에서 식별된 P0 공백 (역사)
 
 사업장 현장 좌표 확정 UI/API 실구현, 다섯 하단 목적지, 업무 내용, 초대의 보건증 요구와 QR
 인쇄·저장은 기존 단일 기능 이슈가 확인되지 않았습니다. 시급 산정과 지각 공제·부분 지급·
@@ -111,7 +133,16 @@ Blocked/Partial을 유지합니다.
 | WALLET-003    | `POST /api/wallet/withdrawal-requests`, `GET /api/wallet`                              | `withdrawal_requests`, `mock_bank_accounts`, 양쪽 원장, `wallets`                                                               | DEC-BANK-INPUT, DEC-WITHDRAWAL-DESTINATION, DEC-BANK-INPUT-VALIDATION, DEC-BANK-ERROR-CATALOG, DEC-BALANCE-REFETCH, DEC-IDEMPOTENCY-STORAGE, DEC-IDEMPOTENCY-CLAIM-LIFECYCLE |
 | WALLET-004    | `GET /api/wallet/transactions`                                                         | `wallet_transactions`, `work_cases`, `workplaces`                                                                               | DEC-PAGE, DEC-TIME, DEC-TRANSACTION-DISPLAY                                                                                                                                  |
 | WALLET-005    | 지갑·계좌 금액 변경 Operation                                                          | `wallet_transactions`, `mock_bank_transactions`, Settlement ID 기반 원장 Key                                                   | DEC-IDEMPOTENCY, DEC-SETTLEMENT-IDEMPOTENCY                                                                                                                                  |
-| WALLET-006    | 충전·출금·초대 수락·정상 정산·NO_SHOW 환불 승인 Operation                              | `idempotency_requests`, 멱등 Key, 금융 Aggregate                                                                                | DEC-IDEMPOTENCY, DEC-IDEMPOTENCY-STORAGE, DEC-IDEMPOTENCY-CLAIM-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY                                                                        |
+| WALLET-006    | 충전·출금·초대 수락·정상 정산·NO_SHOW·CHECK_OUT_MISSING 환불 승인 Operation            | `idempotency_requests`, 멱등 Key, 금융 Aggregate                                                                                | DEC-IDEMPOTENCY, DEC-IDEMPOTENCY-STORAGE, DEC-IDEMPOTENCY-CLAIM-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY                                                                        |
+
+### `9.0.0` 최신 `dev` 통합 행정 추적
+
+| 구분             | 추적 대상 | 현재 상태·경계 |
+| ---------------- | --------- | ------------ |
+| 보호 명세 릴리스 | [Issue #488](https://github.com/KB-24-2-GigHub/KB-PJT-24-2/issues/488), `SPEC-168-01`, `SPEC-180-01`, `SPEC-187-01`, `SPEC-188-01`, `SPEC-343-01`, `SPEC-349-01`, `SPEC-359-01`, `SPEC-375-01`, `SPEC-387-01`, `SPEC-413-01`, `SPEC-414-01`, `SPEC-423-01`, `SPEC-424-01`, `SPEC-432-01~02`, `SPEC-461-01`, `SPEC-470-01`, `SPEC-472-01`, `SPEC-484-01` | 최신 `dev@2f7eb3f91e03d4f2eefa5669ab8325d6cf26d4fe`에서 구현·집중 테스트가 병합된 19개 draft를 정식 계약에 통합하고 모두 `accepted`로 보관 |
+| Runtime          | 각 Patch의 Git 이력과 연결 구현·집중 테스트 | 탈퇴·비밀번호 Session, 서버 주소 변환, 야간 근무, 계약 PDF, 알림, 문서 응답, 뱃지·화면 표시, LLM DEMO, 비례 정산과 퇴근 누락 환불을 현재 계약으로 판정 |
+| Schema           | 최소 호환 Flyway `202608201125`, 현재 Head `202608201125` | 기존 22개 immutable Migration과 파생 ERD를 감사했으며 이번 행정 릴리스에는 새 Migration·DDL·Backfill이 없음 |
+| 호환성           | 사업장 등록 좌표 입력 제거, 지각·조퇴 정산 금액·응답 변경 | 필수 요청과 금융 응답 의미가 바뀌므로 Major `9.0.0`으로 발행. 과거 `8.x` 전액 지급·단건 읽음 전용 계약은 역사로 보존 |
 
 ### `8.0.0` 약정 일급 계약 정정 추적
 
@@ -205,16 +236,16 @@ Blocked/Partial을 유지합니다.
 
 | 요구사항     | REST Operation                                                                 | 도메인·데이터                                                                                  | 연결 결정                                                                                         |
 | ------------ | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| DASH-001     | `GET /api/worker/home`                                                         | `work_cases.agreed_wage`, `attendance_records`, `lateMinutes`, `escrows`, `settlements`         | DEC-TIME, DEC-DAILY-WAGE-SNAPSHOT, DEC-NO-AUTOMATIC-LATE-DEDUCTION, DEC-ATTENDANCE-RESPONSE-SHAPES |
-| DASH-002     | 결정 후 정의 — 현재 MVP 시간 경과 확보 공식 없음                              | 활성 금액 데이터 계약 없음                                                                      | DEC-OPEN-DASHBOARD-BREAK                                                                          |
-| DASH-003     | `GET /api/worker/home`                                                         | 일용근로소득 예상 세액 계산                                                                    | DEC-DAILY-WORKER-TAX                                                                              |
+| DASH-001     | `GET /api/worker/home`                                                         | `work_cases.agreed_wage`, `attendance_records`, `escrows`, `settlements` 계산 Snapshot·`taxReference` | DEC-TIME, DEC-DAILY-WAGE-SNAPSHOT, DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-ATTENDANCE-RESPONSE-SHAPES |
+| DASH-002     | Frontend 비금융 경과 참고 표시                                                 | 현재 시각·저장 근무 시간으로 계산한 비권위 표시값                                                | DEC-OPEN-DASHBOARD-BREAK, DEC-ATTENDANCE-RESPONSE-SHAPES                                         |
+| DASH-003     | `GET /api/worker/home`                                                         | 실제 WORKER 지급액 기반 일용근로소득 세금 참고                                                  | DEC-DAILY-WORKER-TAX                                                                              |
 | WORK-001     | `GET /api/workplaces/{workplaceId}/work-cases/summary`                         | `work_cases.status`                                                                            | DEC-CHECK-OUT-MISSING, DEC-WORK-CASE-RESPONSE-SHAPES                                              |
 | WORK-002     | `GET /api/workplaces/{workplaceId}/work-cases`                                 | `work_cases`, `users`                                                                          | DEC-PAGE, DEC-TIME, DEC-WORK-CASE-RESPONSE-SHAPES                                                 |
-| WORK-003     | `POST /api/workplaces/{workplaceId}/work-cases`                                | `work_cases.agreed_wage`, 사업장 Snapshot                                                       | DEC-WORKPLACE-RADIUS, DEC-TIME, DEC-DAILY-WAGE-SNAPSHOT, DEC-WORK-CASE-RESPONSE-SHAPES            |
-| WORK-004     | `GET /api/work-cases/{workCaseId}`                                             | `work_cases`, 초대·계약·근태·에스크로·정산 Aggregate                                           | DEC-WORK-CASE-RESPONSE-SHAPES                                                                     |
-| WORK-005     | `PATCH /api/work-cases/{workCaseId}`                                           | `work_cases.terms_version`, `work_invitations.status`                                          | DEC-INVITE-LIFECYCLE, DEC-WORK-CASE-RESPONSE-SHAPES                                               |
+| WORK-003     | `POST /api/workplaces/{workplaceId}/work-cases`                                | `work_cases.agreed_wage`, 야간 근무 시간·사업장 Snapshot                                        | DEC-WORKPLACE-RADIUS, DEC-TIME, DEC-WORK-TIME-INTERPRETATION, DEC-DAILY-WAGE-SNAPSHOT, DEC-WORK-CASE-RESPONSE-SHAPES |
+| WORK-004     | `GET /api/work-cases/{workCaseId}`                                             | `work_cases`, WORKER 뱃지, 초대·계약·근태·에스크로·정산 계산 Snapshot Aggregate                 | DEC-WORK-CASE-RESPONSE-SHAPES, DEC-TRUST-BADGE-CRITERIA                                          |
+| WORK-005     | `PATCH /api/work-cases/{workCaseId}`                                           | `work_cases.terms_version`, 야간 근무 시간, `work_invitations.status`                           | DEC-INVITE-LIFECYCLE, DEC-WORK-TIME-INTERPRETATION, DEC-WORK-CASE-RESPONSE-SHAPES                 |
 | WORK-006     | `DELETE /api/work-cases/{workCaseId}`                                          | `work_cases.status`, `work_invitations.status`                                                 | DEC-INVITE-LIFECYCLE, DEC-WORK-CASE-RESPONSE-SHAPES                                               |
-| WORK-007     | `GET /api/worker/work-cases`                                                   | `work_cases`, `attendance_records`, `escrows`, `settlements`                                   | DEC-CHECK-OUT-MISSING, DEC-ATTENDANCE-RESPONSE-SHAPES                                             |
+| WORK-007     | `GET /api/worker/work-cases`                                                   | `work_cases`, `attendance_records`, `escrows`, `settlements` 계산 Snapshot                     | DEC-CHECK-OUT-MISSING, DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-ATTENDANCE-RESPONSE-SHAPES      |
 | WORK-008     | Work Case POST·PATCH·조회·초대·수락·정산                                       | `work_cases.agreed_wage`, 약정 일급 Snapshot                                                    | DEC-MVP-SCOPE-PRIORITY, DEC-DAILY-WAGE-SNAPSHOT                                                   |
 | INVITE-001   | `POST /api/work-cases/{workCaseId}/invitations`                                | `work_invitations`, Token Hash, HMAC Key, 조건 Version                                         | DEC-INVITE-LIFECYCLE, DEC-INVITE-ERROR-CATALOG                                                    |
 | INVITE-002   | `GET /api/invitations/{token}`                                                 | `work_invitations`, Session Redirect, Bearer Token                                             | DEC-INVITE-LOGIN-BADGE, DEC-INVITE-LIFECYCLE                                                      |
@@ -231,31 +262,31 @@ Blocked/Partial을 유지합니다.
 | ----------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | ATT-001     | `POST /api/workplaces`, `GET /api/workplaces/{workplaceId}/qr`, `POST /api/workplaces/{workplaceId}/qr/reissue` | `workplaces`, `qr_tokens`, HMAC Key                                              | DEC-QR-FIXED, DEC-QR-ERROR-CATALOG, DEC-QR-REISSUE-RECOVERY                                                                                 |
 | ATT-002     | `POST /api/attendance/scans`                                                                                    | `idempotency_requests`, `qr_tokens`, `work_cases`, `attendance_records`          | DEC-QR-FIXED, DEC-ATTENDANCE-LIFECYCLE, DEC-ATTENDANCE-IDEMPOTENCY, DEC-ATTENDANCE-ERROR-CATALOG, DEC-ATTENDANCE-BROWSER                    |
-| ATT-003     | `PUT /api/workplaces/{workplaceId}/coordinates`, `POST /api/attendance/scans`                                   | `workplaces.latitude/longitude`, 거리·정확도·시각 감사                           | DEC-WORKPLACE-RADIUS, DEC-WORKPLACE-ATTENDANCE-LOCATION, DEC-ATTENDANCE-LOCATION-AUDIT, DEC-ATTENDANCE-BROWSER                              |
+| ATT-003     | `POST /api/workplaces`, `PATCH /api/workplaces/{workplaceId}`, Legacy `PUT /api/workplaces/{workplaceId}/coordinates`, `POST /api/attendance/scans` | `workplaces.latitude/longitude`, 서버 주소 변환, 거리·정확도·시각 감사 | DEC-WORKPLACE-RADIUS, DEC-WORKPLACE-ATTENDANCE-LOCATION, DEC-ATTENDANCE-LOCATION-AUDIT, DEC-ATTENDANCE-BROWSER |
 | ATT-004     | `POST /api/attendance/scans`                                                                                    | `idempotency_requests`, `attendance_records`, `work_cases.status`, `settlements` | DEC-EARLY-CHECKOUT, DEC-ATTENDANCE-IDEMPOTENCY, DEC-ATTENDANCE-LOCATION-AUDIT, DEC-ATTENDANCE-ERROR-CATALOG, DEC-ATTENDANCE-RESPONSE-SHAPES |
 | ATT-005     | HTTP 없음 — READY·노쇼 자동 판정                                                                                | `work_cases.status`, 계약·문서·초대·에스크로·정산·좌표, `attendance_records`     | DEC-ATTENDANCE-LIFECYCLE, DEC-ATTENDANCE-SCHEMA, DEC-CHECK-OUT-MISSING                                                                      |
 | ATT-006     | HTTP 없음 — 퇴근 누락 자동 판정                                                                                 | `work_cases.status=CHECK_OUT_MISSING`, `attendance_records`, `settlements`       | DEC-ATTENDANCE-LIFECYCLE, DEC-ATTENDANCE-SCHEMA, DEC-CHECK-OUT-MISSING                                                                      |
 | SETTLE-001  | 수락 Aggregate, `POST /api/attendance/scans`                                                                    | `settlements.status`, `settlements.due_at`, `work_cases.status`                  | DEC-INVITATION-ACCEPTANCE-AGGREGATE, DEC-EARLY-CHECKOUT, DEC-ATTENDANCE-LIFECYCLE, DEC-ATTENDANCE-SCHEMA, DEC-SETTLEMENT-LIFECYCLE          |
-| SETTLE-002  | `POST /api/work-cases/{workCaseId}/settlement/approve`                                                          | `settlements`, `escrows`, `wallets`, 결정적 양측 원장 Key                        | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-NO-AUTOMATIC-LATE-DEDUCTION, DEC-SETTLEMENT-TIME, DEC-IDEMPOTENCY, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-ERROR-CATALOG |
-| SETTLE-003  | HTTP 없음 — 예정 정산 실행                                                                                      | `settlements`, due 후보 선점·재시도·실패 감사                                   | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-NO-AUTOMATIC-LATE-DEDUCTION, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-SETTLEMENT-SCHEDULER, DEC-DISPUTE-SETTLEMENT |
-| SETTLE-004  | 정산 승인·자동 정산 내부 처리                                                                                   | `escrows`, `wallets`, `wallet_transactions`                                      | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-NO-AUTOMATIC-LATE-DEDUCTION, DEC-IDEMPOTENCY, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-SETTLEMENT-SCHEDULER |
+| SETTLE-002  | `POST /api/work-cases/{workCaseId}/settlement/approve`                                                          | `settlements` 계산 Snapshot, `escrows`, `wallets`, 결정적 지급·환불 원장 Key      | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-SETTLEMENT-TIME, DEC-IDEMPOTENCY, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-ERROR-CATALOG |
+| SETTLE-003  | HTTP 없음 — 예정 정산 실행                                                                                      | `settlements` 계산 Snapshot, due 후보 선점·재시도·실패 감사                      | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-SETTLEMENT-SCHEDULER, DEC-DISPUTE-SETTLEMENT |
+| SETTLE-004  | 정산 승인·자동 정산 내부 처리                                                                                   | `escrows`, `wallets`, 지급·차액 환불 `wallet_transactions`                       | DEC-MVP-SETTLEMENT-CONSERVATION, DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-IDEMPOTENCY, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-IDEMPOTENCY, DEC-SETTLEMENT-SCHEDULER |
 | SETTLE-005  | `POST /api/work-cases/{workCaseId}/settlement/no-show-refund/approve`                                           | `escrows`, `wallet_transactions`, `settlements.status=REFUNDED`                  | DEC-NO-SHOW-OWNER-APPROVAL, DEC-NO-SHOW-SETTLEMENT, DEC-SETTLEMENT-IDEMPOTENCY, DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-ERROR-CATALOG        |
-| SETTLE-006  | 결정 후 정의 — 현재 MVP 자동 지각 공제·분할 정산 없음                                                          | 활성 분할 금액 데이터 계약 없음                                                  | DEC-NO-AUTOMATIC-LATE-DEDUCTION                                                                                                             |
+| SETTLE-006  | CHECK_OUT 계산 Snapshot, `POST /api/work-cases/{workCaseId}/settlement/check-out-missing-refund/approve`        | 비례 `P/R` 또는 저장된 `P=0/R=A` Snapshot, `escrows`, 양측 원장과 Settlement 종료   | DEC-PROPORTIONAL-ATTENDANCE-DEDUCTION, DEC-NO-SHOW-SETTLEMENT, DEC-CHECK-OUT-MISSING, DEC-SETTLEMENT-IDEMPOTENCY, DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-ERROR-CATALOG |
 | CONTACT-001 | `GET /api/work-cases/{workCaseId}/workplace-contact`                                                            | `work_cases`, `workplaces.phone`, OWNER                                          | DEC-AUTH-SESSION, DEC-PHONE-STORAGE                                                                                                         |
-| DISPUTE-001 | `POST /api/work-cases/{workCaseId}/disputes`                                                                    | `disputes.title/content/status`, `settlements.status=ON_HOLD`                    | DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-ERROR-CATALOG                                                              |
-| DISPUTE-002 | `GET /api/work-cases/{workCaseId}/disputes`                                                                     | `disputes`, 근무 당사자, 내부 ID 비노출 Page                                     | DEC-DISPUTE-SETTLEMENT                                                                                                                      |
-| DISPUTE-003 | 분쟁 조회·처리 Operation                                                                                        | `disputes.status`, 처리자·결과, `settlements.due_at` 보존                        | DEC-DISPUTE-SETTLEMENT, DEC-SETTLEMENT-LIFECYCLE, DEC-OPEN-ADMIN-DISPUTE                                                                    |
+| DISPUTE-001 | `POST /api/work-cases/{workCaseId}/disputes`                                                                    | `disputes.title/content/status`, `settlements.status=ON_HOLD`, `dispute_ai_reviews` | DEC-DISPUTE-SETTLEMENT, DEC-DISPUTE-DEMO-PROVIDER, DEC-SETTLEMENT-LIFECYCLE, DEC-SETTLEMENT-ERROR-CATALOG |
+| DISPUTE-002 | `GET /api/work-cases/{workCaseId}/disputes`                                                                     | `disputes`, `dispute_ai_reviews`, 근무 당사자, nullable `demoReview` Page         | DEC-DISPUTE-SETTLEMENT, DEC-DISPUTE-DEMO-PROVIDER                             |
+| DISPUTE-003 | DEMO 검토 내부 처리, 분쟁 조회                                                                                  | `dispute_ai_reviews`, `disputes.status`, `settlements.due_at` 보존               | DEC-DISPUTE-SETTLEMENT, DEC-DISPUTE-DEMO-PROVIDER, DEC-SETTLEMENT-LIFECYCLE, DEC-OPEN-ADMIN-DISPUTE |
 
 ## 문서
 
 | 요구사항 | REST Operation                                                                 | 도메인·데이터                                                                                 | 연결 결정                                                                    |
 | -------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| DOC-001  | `GET /api/documents`, `GET /api/documents/{documentId}`                        | 가시 문서·Work Case별 공유 Projection, 허용 `versions[]`                                      | DEC-DOCUMENT-STORAGE, DEC-DOCUMENT-RESPONSE-SHAPES, DEC-DOCUMENT-ERROR-CATALOG |
+| DOC-001  | `GET /api/documents`, `GET /api/documents/{documentId}`                        | 표시 파일명, 가시 문서·Work Case별 공유 Projection, 허용 `versions[]`                          | DEC-DOCUMENT-STORAGE, DEC-DOCUMENT-RESPONSE-SHAPES, DEC-DOCUMENT-ERROR-CATALOG |
 | DOC-002  | `POST /api/invitations/{token}/accept`, `GET /api/documents/{documentId}/file` | `work_contracts`, `documents`, `document_versions`                                            | DEC-CONTRACT-AUTO-GENERATION, DEC-CONTRACT-FILE-COMMIT                       |
 | DOC-003  | `GET /api/documents`, `GET /api/documents/{documentId}`, file                  | 동적 공유 유효성, `document_access_logs`                                                      | DEC-DOCUMENT-RESPONSE-SHAPES, DEC-DOCUMENT-SHARE-UNIT, DEC-DOCUMENT-ACCESS-AUDIT |
 | DOC-004  | `GET /api/documents/{documentId}`, file                                        | `work_contracts`, 최신 SIGNED `document_versions`, 서명 비노출                               | DEC-E-SIGN-EVIDENCE, DEC-DOCUMENT-RESPONSE-SHAPES, DEC-CONTRACT-FILE-COMMIT |
-| DOC-005  | `POST /api/documents`                                                          | 새 보건증 `documents`, ORIGINAL Version 1, 비공개 Object                                      | DEC-HEALTH-CERTIFICATE-LIFECYCLE, DEC-DOCUMENT-STORAGE                      |
-| DOC-006  | `PATCH /api/documents/{documentId}`, `DELETE /api/documents/{documentId}`      | 발급일 계산, 문서 DELETED, 모든 ACTIVE 공유 REVOKED                                           | DEC-HEALTH-CERTIFICATE-LIFECYCLE, DEC-DOCUMENT-SHARE-UNIT                   |
+| DOC-005  | `POST /api/documents`                                                          | 새 보건증 `documents`, ORIGINAL Version 1, 비공개 Object, 닫힌 생성 응답                       | DEC-HEALTH-CERTIFICATE-LIFECYCLE, DEC-DOCUMENT-STORAGE, DEC-DOCUMENT-RESPONSE-SHAPES |
+| DOC-006  | `PATCH /api/documents/{documentId}`, `DELETE /api/documents/{documentId}`      | 만료일 수정 응답, 문서 DELETED, 모든 ACTIVE 공유 REVOKED                                      | DEC-HEALTH-CERTIFICATE-LIFECYCLE, DEC-DOCUMENT-SHARE-UNIT, DEC-DOCUMENT-RESPONSE-SHAPES |
 | DOC-007  | `GET /api/worker/workplaces`, `POST /api/documents/{documentId}/shares`        | 서버 결정 Work Case·OWNER, `document_shares`, `workplaces`                                   | DEC-DOCUMENT-SHARE-UNIT, DEC-WORKPLACE-LIST                                 |
 | DOC-008  | `GET /api/documents/{documentId}/shares`, DELETE share                         | 계산 status/effectiveUntil, 모든 ACTIVE 공유 철회                                             | DEC-DOCUMENT-SHARE-UNIT, DEC-DOCUMENT-RESPONSE-SHAPES                       |
 | DOC-009  | `GET /api/documents/{documentId}`, file                                        | 허용 Version, 동적 관계, `document_access_logs`, Checksum Fallback                            | DEC-DOCUMENT-RESPONSE-SHAPES, DEC-DOCUMENT-ERROR-CATALOG, DEC-DOCUMENT-ACCESS-AUDIT, DEC-CONTRACT-FILE-COMMIT |
@@ -267,7 +298,7 @@ Blocked/Partial을 유지합니다.
 
 | 요구사항   | REST Operation                | 도메인·데이터                     | 연결 결정                                                                                               |
 | ---------- | ----------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| ALERT-001  | `GET /api/notifications`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/{notificationId}/read` | `notifications`, 수신자별 최신순·안읽음 개수, `read_at` | DEC-NOTIFICATION-CONTRACT, DEC-API-ENVELOPE, DEC-PAGE                                                   |
+| ALERT-001  | `GET /api/notifications?unreadOnly=...`, `GET /api/notifications/unread-count`, `PATCH /api/notifications/{notificationId}/read`, `PATCH /api/notifications/read-all` | `notifications`, 수신자별 최신순·안읽음 필터·개수, 단건·전체 `read_at` | DEC-NOTIFICATION-CONTRACT, DEC-API-ENVELOPE, DEC-PAGE |
 | ALERT-002  | HTTP 없음 — 도메인 이벤트 적재, `GET /api/notifications/stream` | 6종 유형·수신자, `(수신자, notiType, sourceType, sourceId)` 유일성, 이동 대상 `work_case_id` | DEC-NOTIFICATION-CONTRACT                                                                               |
 | COMMON-001 | 모든 Operation                | 성공·목록·오류 Envelope           | DEC-API-ENVELOPE, DEC-AUTH-ERRORS, DEC-COMMON-5XX, DEC-ATTENDANCE-ERROR-CATALOG, DEC-SETTLEMENT-ERROR-CATALOG, DEC-DOCUMENT-ERROR-CATALOG |
 | COMMON-002 | 모든 보호·상태 변경 Operation | 역할, 소유권, 당사자 불변식       | DEC-AUTH-SESSION                                                                                        |
