@@ -5,8 +5,6 @@
   <img src="frontend/src/assets/images/logo/logo-gighub.png" alt="GigHub" width="260" />
 </picture>
 
-# GigHub
-
 **단기 알바의 임금 체불을, 돈을 먼저 묶어 두는 방식으로 막습니다.**
 
 사장님이 근무를 등록하면 약정 일급이 전자지갑에서 예치되고,
