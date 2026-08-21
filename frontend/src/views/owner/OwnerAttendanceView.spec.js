@@ -28,7 +28,8 @@ const SUMMARY = {
   inProgress: 4,
   checkOutMissing: 5,
   completed: 6,
-  noShow: 7
+  noShow: 7,
+  canceled: 8
 }
 
 function mountView() {
@@ -53,24 +54,24 @@ describe('OwnerAttendanceView 요약 카드', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    const cards = wrapper.findAll('.stat')
+    const cards = wrapper.findAll('.stat-pill')
     const byLabel = Object.fromEntries(
       cards.map((card) => [card.find('.stat-label').text(), card.find('.stat-value').text().trim()])
     )
 
-    expect(byLabel['퇴근 확인 필요']).toBe('5')
+    expect(byLabel['퇴근 미확인']).toBe('5')
     expect(byLabel['근무완료']).toBe('6')
     expect(byLabel['노쇼']).toBe('7')
   })
 
-  it('퇴근 확인 필요 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
+  it('퇴근 미확인 카드를 누르면 CHECK_OUT_MISSING 상태로만 다시 조회한다', async () => {
     const wrapper = mountView()
     await flushPromises()
     listWorkCases.mockClear()
 
     const card = wrapper
-      .findAll('.stat')
-      .find((c) => c.find('.stat-label').text() === '퇴근 확인 필요')
+      .findAll('.stat-pill')
+      .find((c) => c.find('.stat-label').text() === '퇴근 미확인')
     await card.trigger('click')
     await flushPromises()
 
@@ -78,6 +79,35 @@ describe('OwnerAttendanceView 요약 카드', () => {
       1,
       expect.objectContaining({ status: 'CHECK_OUT_MISSING' })
     )
+  })
+
+  it('"전체" pill은 CANCELED 를 포함한 합계를 보여준다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const total = wrapper.findAll('.stat-pill').find((c) => c.find('.stat-label').text() === '전체')
+
+    // 7버킷 합(1+2+3+4+5+6+7=28) + canceled(8) = 36 — 카드에 없는 CANCELED 도 더한다.
+    expect(total.find('.stat-value').text().trim()).toBe('36')
+  })
+
+  it('"전체" pill을 누르면 status 필터 없이(취소 포함 전체) 다시 조회한다', async () => {
+    const wrapper = mountView()
+    await flushPromises()
+
+    const checkOutMissing = wrapper
+      .findAll('.stat-pill')
+      .find((c) => c.find('.stat-label').text() === '퇴근 미확인')
+    await checkOutMissing.trigger('click')
+    await flushPromises()
+    listWorkCases.mockClear()
+
+    const total = wrapper.findAll('.stat-pill').find((c) => c.find('.stat-label').text() === '전체')
+    await total.trigger('click')
+    await flushPromises()
+
+    const params = listWorkCases.mock.calls.at(-1)[1]
+    expect(params.status).toBeUndefined()
   })
 })
 
@@ -148,8 +178,8 @@ describe('OwnerAttendanceView 빈 결과', () => {
     await flushPromises()
 
     const card = wrapper
-      .findAll('.stat')
-      .find((c) => c.find('.stat-label').text() === '퇴근 확인 필요')
+      .findAll('.stat-pill')
+      .find((c) => c.find('.stat-label').text() === '퇴근 미확인')
     await card.trigger('click')
     await flushPromises()
 

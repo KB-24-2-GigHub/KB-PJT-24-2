@@ -5,12 +5,12 @@
  * 반드시 이 파일의 매핑·헬퍼만 사용한다(상태 표기의 단일 원본).
  *
  * 상태 전이(v1.0 확정):
- *   DRAFT(수락 전) → ACCEPTED(수락·계약) → READY(시작 대기)
+ *   DRAFT(미배정) → ACCEPTED(수락·계약) → READY(시작 대기)
  *   → IN_PROGRESS(근무중) → COMPLETED(근무완료)
  *   확정 계열에서 NO_SHOW(미출근) · DRAFT에서 CANCELED(취소).
  * 초대 발급·대기 상태는 work_case가 아니라 work_invitations가 담당한다.
  *
- * CHECK_OUT_MISSING(퇴근 확인 필요)은 성공 출근 뒤 성공 퇴근이 없는 근무이며 NO_SHOW와
+ * CHECK_OUT_MISSING(퇴근 미확인)은 성공 출근 뒤 성공 퇴근이 없는 근무이며 NO_SHOW와
  * 상호 배타적이다(REQUIREMENTS ATT-006 · WORK-007). 판정 시점·해소·정산 흐름은
  * DEC-OPEN-CHECK-OUT-MISSING-FLOW 미결이라 이 파일은 표기만 담당한다.
  *
@@ -18,11 +18,11 @@
  * - `color`: base.css 색 변수 문자열(그대로 style 바인딩). 아이콘 매핑은 StatusChip.vue.
  */
 export const WORK_CASE_STATUS = {
-  DRAFT: { label: '수락 전', color: 'var(--color-text-sub)' },
+  DRAFT: { label: '미배정', color: 'var(--color-text-sub)' },
   ACCEPTED: { label: '계약완료', color: 'var(--color-owner)' },
   READY: { label: '근무예정', color: 'var(--color-owner)' },
   IN_PROGRESS: { label: '근무중', color: 'var(--color-primary)' },
-  CHECK_OUT_MISSING: { label: '퇴근 확인 필요', color: 'var(--color-warning)' },
+  CHECK_OUT_MISSING: { label: '퇴근 미확인', color: 'var(--color-warning)' },
   COMPLETED: { label: '근무완료', color: 'var(--color-success)' },
   NO_SHOW: { label: '노쇼', color: 'var(--color-danger)' },
   CANCELED: { label: '취소', color: 'var(--color-text-sub)' }
@@ -123,7 +123,10 @@ export function isInvitationUsable(invitation, now = new Date()) {
 
 /**
  * 근태관리 요약 카운트(7종). `key` = 서버 요약 응답 필드, `status` = 매핑 enum.
- * CANCELED는 운영 현황 요약에 집계하지 않는다.
+ * CANCELED는 운영 현황 요약이라 개별 버킷 카드로는 집계하지 않는다 — 다만
+ * WorkCaseSummaryResponse가 `canceled` 필드를 따로 내려주므로, "전체" 합계(화면의
+ * totalCount)는 이 7종 합에 그 값을 더해 "전체" pill을 눌렀을 때 나오는 목록(상태
+ * 필터 없음 = 취소 포함 전체)과 카운트를 일치시킨다.
  *
  * CHECK_OUT_MISSING은 NO_SHOW·COMPLETED와 상호 배타적인 별도 상태라(위 문서 참고)
  * 두 버킷 중 하나로 합산하지 않고 독립 카드로 노출한다(WorkCaseSummaryResponse에도
@@ -139,9 +142,9 @@ export const WORK_CASE_SUMMARY = [
   { key: 'noShow', status: 'NO_SHOW' }
 ]
 
-/** 요약 카운트 초기값(모든 버킷 0). */
+/** 요약 카운트 초기값(카드 7버킷 + canceled, 모두 0). */
 export function emptyWorkCaseSummary() {
-  return Object.fromEntries(WORK_CASE_SUMMARY.map((b) => [b.key, 0]))
+  return { ...Object.fromEntries(WORK_CASE_SUMMARY.map((b) => [b.key, 0])), canceled: 0 }
 }
 
 /**
