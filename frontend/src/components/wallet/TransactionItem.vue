@@ -25,6 +25,13 @@ const STATUS_META = {
   REFUNDED: { label: '환불 완료', color: 'var(--color-text-sub)', icon: RotateCcw }
 }
 
+// FUNDING·WITHDRAWAL은 근무와 무관해 workTitle이 없다. 2행이 비어 보이지 않도록
+// 근무제목 자리에 거래 유형을 그대로 보여준다(#492).
+const NO_WORK_TITLE_LABELS = {
+  FUNDING: '안심지갑 충전',
+  WITHDRAWAL: '안심지갑 출금'
+}
+
 const statusMeta = computed(() => STATUS_META[props.tx.displayStatus] ?? STATUS_META.COMPLETED)
 
 // 거래 Type으로 부호를 추정하면 WORKER의 ESCROW_RELEASE와 ADJUSTMENT를 오표시한다.
@@ -54,8 +61,8 @@ const badgeTone = computed(() => {
   }
 })
 // 거래 유형은 왼쪽 pill(type-badge)로 이미 보여주므로 본문 1행은 근무명만 남긴다.
-// 근무와 무관한 거래(충전·출금 등)는 workTitle 이 없어 1행 자체를 비운다(v-if로 숨김).
-const topLine = computed(() => props.tx.workTitle ?? '')
+// 근무와 무관한 거래(충전·출금)는 workTitle 대신 거래 유형 자체를 표시한다(#492).
+const topLine = computed(() => props.tx.workTitle ?? NO_WORK_TITLE_LABELS[props.tx.type] ?? '')
 const bottomLine = computed(() => {
   const time = formatDateTime(props.tx.createdAt)
   return props.tx.workplaceName ? `${time} | ${props.tx.workplaceName}` : time
@@ -64,19 +71,19 @@ const bottomLine = computed(() => {
 
 <template>
   <li class="tx">
-    <span class="type-badge" :class="`type-badge--${badgeTone}`">{{ typeLabel }}</span>
+    <p class="date">{{ bottomLine }}</p>
 
-    <div class="body">
+    <div class="row-type">
+      <span class="type-badge" :class="`type-badge--${badgeTone}`">{{ typeLabel }}</span>
       <p v-if="topLine" class="desc">{{ topLine }}</p>
-      <p class="date">{{ bottomLine }}</p>
     </div>
 
-    <div class="right">
-      <p class="amount" :class="{ 'is-credit': isCredit }">{{ amountText }}</p>
+    <div class="row-amount">
       <span class="status" :style="{ color: statusMeta.color }">
         <component :is="statusMeta.icon" :size="12" />
         {{ statusMeta.label }}
       </span>
+      <p class="amount" :class="{ 'is-credit': isCredit }">{{ amountText }}</p>
     </div>
   </li>
 </template>
@@ -84,10 +91,16 @@ const bottomLine = computed(() => {
 <style scoped>
 .tx {
   display: flex;
-  align-items: center;
-  gap: var(--space-md);
+  flex-direction: column;
+  gap: var(--space-xs);
   padding: var(--space-lg) 0;
   border-bottom: 1px solid var(--color-border);
+}
+
+.row-type {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
 }
 
 /* 문서함 type-badge(WorkerDocumentsView:610)와 같은 pill 모양·기준. width를 고정하면
@@ -135,12 +148,9 @@ const bottomLine = computed(() => {
   color: var(--color-text-sub);
 }
 
-.body {
+.desc {
   flex: 1;
   min-width: 0;
-}
-
-.desc {
   font-size: var(--text-lg);
   font-weight: var(--weight-medium);
   color: var(--color-text);
@@ -148,14 +158,15 @@ const bottomLine = computed(() => {
 }
 
 .date {
-  margin-top: var(--space-xs);
   font-size: var(--text-sm);
   color: var(--color-text-sub);
 }
 
-.right {
-  flex-shrink: 0;
-  text-align: right;
+.row-amount {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-xs);
 }
 
 .amount {
@@ -172,7 +183,6 @@ const bottomLine = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  margin-top: var(--space-xs);
   font-size: var(--text-sm);
 }
 </style>

@@ -55,7 +55,7 @@ describe('TransactionItem', () => {
     expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
   })
 
-  it('근무와 무관한 거래(충전 등)는 workTitle이 없어 1행을 숨기고 시각만 표시한다', () => {
+  it('근무와 무관한 충전 거래는 workTitle이 없어도 2행에 "안심지갑 충전"을 표시하고 1행은 시각만 남는다', () => {
     const wrapper = mount(TransactionItem, {
       props: {
         tx: {
@@ -70,8 +70,33 @@ describe('TransactionItem', () => {
 
     expect(wrapper.get('.type-badge').text()).toBe('충전')
     expect(wrapper.get('.type-badge').classes()).toContain('type-badge--success')
-    expect(wrapper.find('.desc').exists()).toBe(false)
+    expect(wrapper.get('.desc').text()).toBe('안심지갑 충전')
     expect(wrapper.get('.date').text()).toBe(formatDateTime(baseTransaction.createdAt))
+  })
+
+  it('근무와 무관한 출금 거래는 workTitle이 없어도 2행에 "안심지갑 출금"을 표시한다', () => {
+    const wrapper = mount(TransactionItem, {
+      props: {
+        tx: {
+          ...baseTransaction,
+          type: 'WITHDRAWAL',
+          direction: 'DEBIT',
+          workTitle: null,
+          workplaceName: null
+        }
+      }
+    })
+
+    expect(wrapper.get('.desc').text()).toBe('안심지갑 출금')
+  })
+
+  it('1행은 거래 시각·사업장명, 2행은 배지·근무제목, 3행은 상태·금액 순으로 배치된다', () => {
+    const wrapper = mount(TransactionItem, { props: { tx: baseTransaction } })
+    const rows = wrapper.get('.tx').element.children
+
+    expect(rows[0].classList.contains('date')).toBe(true)
+    expect(rows[1].classList.contains('row-type')).toBe(true)
+    expect(rows[2].classList.contains('row-amount')).toBe(true)
   })
 
   it('예치는 알바생 지급(worker)과 혼동되지 않게 neutral, 출금은 danger 톤 배지로 표시한다', () => {
