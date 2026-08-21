@@ -43,6 +43,9 @@ export function setupKeyboardAvoidance() {
 
   function onFocusIn(e) {
     focused = isEditable(e.target) ? e.target : null
+    // 키보드가 이미 떠 있는 상태에서 다른 필드로 옮기면 뷰포트 높이가 그대로라
+    // resize 가 발생하지 않는다 — 그 경우를 위해 포커스 시점에도 직접 보정한다.
+    scrollFocusedIntoView()
   }
 
   function onFocusOut() {
