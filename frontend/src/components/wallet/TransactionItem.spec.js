@@ -29,7 +29,7 @@ describe('TransactionItem', () => {
     expect(wrapper.get('.type-badge').classes()).toContain('type-badge--owner')
     expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
     expect(wrapper.get('.date').text()).toBe(
-      `${formatDateTime(baseTransaction.createdAt)} | 기가 허브`
+      `${formatDateTime(baseTransaction.createdAt)} \u00A0|\u00A0 기가 허브`
     )
   })
 

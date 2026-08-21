@@ -65,7 +65,8 @@ const badgeTone = computed(() => {
 const topLine = computed(() => props.tx.workTitle ?? NO_WORK_TITLE_LABELS[props.tx.type] ?? '')
 const bottomLine = computed(() => {
   const time = formatDateTime(props.tx.createdAt)
-  return props.tx.workplaceName ? `${time} | ${props.tx.workplaceName}` : time
+  // 연속 공백은 브라우저가 한 칸으로 접으므로, 늘린 한 칸은 줄바꿈 없는 공백(\u00A0)으로 넣는다.
+  return props.tx.workplaceName ? `${time} \u00A0|\u00A0 ${props.tx.workplaceName}` : time
 })
 </script>
 
@@ -166,7 +167,7 @@ const bottomLine = computed(() => {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: var(--space-xs);
+  gap: var(--space-sm);
 }
 
 .amount {
