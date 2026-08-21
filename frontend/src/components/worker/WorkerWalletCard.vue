@@ -1,7 +1,7 @@
 <script setup>
 import { ArrowUpRight, Info } from 'lucide-vue-next'
-import { onMounted, onUnmounted, ref, useId } from 'vue'
 
+import { useClickTogglePopover } from '@/composables/useClickTogglePopover'
 import { formatKRW } from '@/utils/format'
 
 defineProps({
@@ -10,33 +10,7 @@ defineProps({
 
 defineEmits(['withdraw'])
 
-/* ---- 잔액 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
-const rootEl = ref(null)
-const infoOpen = ref(false)
-const infoId = useId()
-
-function toggleInfo() {
-  infoOpen.value = !infoOpen.value
-}
-
-function onDocumentClick(e) {
-  if (!infoOpen.value) return
-  if (!rootEl.value?.contains(e.target)) infoOpen.value = false
-}
-
-function onKeydown(e) {
-  if (e.key === 'Escape') infoOpen.value = false
-}
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onKeydown)
-})
+const { rootEl, open: infoOpen, id: infoId, toggle: toggleInfo } = useClickTogglePopover()
 </script>
 
 <template>

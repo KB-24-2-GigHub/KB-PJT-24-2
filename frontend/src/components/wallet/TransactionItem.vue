@@ -90,14 +90,15 @@ const bottomLine = computed(() => {
   border-bottom: 1px solid var(--color-border);
 }
 
-/* 문서함 type-badge(WorkerDocumentsView)와 같은 pill 모양. 너비는 가장 긴 라벨인
-   "예치 환불"/"출금 환불"/"잔액 조정" 기준으로 고정해 7종 라벨 크기를 통일한다. */
+/* 문서함 type-badge(WorkerDocumentsView:610)와 같은 pill 모양·기준. width를 고정하면
+   "출금 환불"/"예치 환불"/"잔액 조정" 같은 4글자 라벨이 nowrap과 함께 pill 밖으로
+   삐져나올 수 있어(#487 리뷰) min-width로 바꿔 내용에 따라 늘어나게 한다. */
 .type-badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 68px;
+  min-width: 76px;
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-pill);
   background: var(--color-bg);
@@ -125,6 +126,13 @@ const bottomLine = computed(() => {
 .type-badge--worker {
   background: var(--color-worker-weak);
   color: var(--color-worker);
+}
+
+/* .type-badge 기본값과 같은 값이지만, 'neutral'이 실제 셀렉터로 존재해야 나중에 이
+   톤만 따로 조정하거나 기본값이 다른 이유로 바뀌어도 서로 영향을 주지 않는다(#487 리뷰). */
+.type-badge--neutral {
+  background: var(--color-bg);
+  color: var(--color-text-sub);
 }
 
 .body {

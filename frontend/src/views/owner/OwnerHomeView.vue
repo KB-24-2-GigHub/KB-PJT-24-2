@@ -6,12 +6,13 @@
  */
 import { Info, Lock } from 'lucide-vue-next'
 import { storeToRefs } from 'pinia'
-import { onMounted, onUnmounted, ref, useId } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import TransactionFilterSheet from '@/components/wallet/TransactionFilterSheet.vue'
 import TransactionList from '@/components/wallet/TransactionList.vue'
 import WalletBalanceCard from '@/components/wallet/WalletBalanceCard.vue'
+import { useClickTogglePopover } from '@/composables/useClickTogglePopover'
 import { useWalletStore } from '@/stores/wallet'
 import { useWorkplaceStore } from '@/stores/workplace'
 import { formatKRW } from '@/utils/format'
@@ -48,33 +49,12 @@ function onApplyFilter(params) {
 
 const onLoadMore = () => walletStore.loadNextTransactions()
 
-/* ---- 예치중 안내 팝오버 (호버 아님 — 클릭 토글) ---- */
-const heldSummaryEl = ref(null)
-const heldInfoOpen = ref(false)
-const heldInfoId = useId()
-
-function toggleHeldInfo() {
-  heldInfoOpen.value = !heldInfoOpen.value
-}
-
-function onDocumentClick(e) {
-  if (!heldInfoOpen.value) return
-  if (!heldSummaryEl.value?.contains(e.target)) heldInfoOpen.value = false
-}
-
-function onKeydown(e) {
-  if (e.key === 'Escape') heldInfoOpen.value = false
-}
-
-onMounted(() => {
-  document.addEventListener('click', onDocumentClick)
-  document.addEventListener('keydown', onKeydown)
-})
-
-onUnmounted(() => {
-  document.removeEventListener('click', onDocumentClick)
-  document.removeEventListener('keydown', onKeydown)
-})
+const {
+  rootEl: heldSummaryEl,
+  open: heldInfoOpen,
+  id: heldInfoId,
+  toggle: toggleHeldInfo
+} = useClickTogglePopover()
 </script>
 
 <template>
