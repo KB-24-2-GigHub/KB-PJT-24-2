@@ -19,13 +19,13 @@ const baseTransaction = {
 }
 
 describe('TransactionItem', () => {
-  it('WORKER ESCROW_RELEASE는 direction=CREDIT에 따라 양수로 표시한다', () => {
+  it('WORKER ESCROW_RELEASE는 direction=CREDIT에 따라 양수로 표시하고 배지는 "지급"·owner 톤이다', () => {
     const wrapper = mount(TransactionItem, { props: { tx: baseTransaction } })
 
     expect(wrapper.get('.amount').text()).toBe('+120,000원')
     expect(wrapper.get('.amount').classes()).toContain('is-credit')
     expect(wrapper.get('.status').text()).toContain('완료')
-    expect(wrapper.get('.type-badge').text()).toBe('정산 지급')
+    expect(wrapper.get('.type-badge').text()).toBe('지급')
     expect(wrapper.get('.type-badge').classes()).toContain('type-badge--owner')
     expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
     expect(wrapper.get('.date').text()).toBe(
@@ -33,14 +33,14 @@ describe('TransactionItem', () => {
     )
   })
 
-  it('같은 Type이어도 direction=DEBIT이면 음수로 표시하고 배지 색을 다르게 한다', () => {
+  it('같은 Type이어도 direction=DEBIT이면 음수로 표시하고 배지 라벨은 같지만(지급) 톤은 다르다', () => {
     const wrapper = mount(TransactionItem, {
       props: { tx: { ...baseTransaction, direction: 'DEBIT' } }
     })
 
     expect(wrapper.get('.amount').text()).toBe('-120,000원')
     expect(wrapper.get('.amount').classes()).not.toContain('is-credit')
-    expect(wrapper.get('.type-badge').text()).toBe('알바생 지급')
+    expect(wrapper.get('.type-badge').text()).toBe('지급')
     expect(wrapper.get('.type-badge').classes()).toContain('type-badge--worker')
     expect(wrapper.get('.desc').text()).toBe('주말 홀 서빙')
   })

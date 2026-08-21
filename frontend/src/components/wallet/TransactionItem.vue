@@ -30,12 +30,11 @@ const statusMeta = computed(() => STATUS_META[props.tx.displayStatus] ?? STATUS_
 // 거래 Type으로 부호를 추정하면 WORKER의 ESCROW_RELEASE와 ADJUSTMENT를 오표시한다.
 const isCredit = computed(() => props.tx.direction === 'CREDIT')
 const amountText = computed(() => formatSignedKRW(props.tx.amount, props.tx.direction))
-const typeLabel = computed(() => {
-  if (props.tx.type === 'ESCROW_RELEASE') {
-    return props.tx.direction === 'DEBIT' ? '알바생 지급' : '정산 지급'
-  }
-  return TYPE_LABELS[props.tx.type] || '지갑 거래'
-})
+// ESCROW_RELEASE는 "정산 지급"(CREDIT)/"알바생 지급"(DEBIT)으로 갈렸었지만, 실제로는
+// 사장님 화면엔 알바생에게 나간 지급만, 알바생 화면엔 자신이 받은 지급만 보여 한 화면에
+// 두 라벨이 같이 나올 일이 없다. 라벨을 "지급" 하나로 통일하고, 배지 색(owner/worker)으로만
+// 구분한다.
+const typeLabel = computed(() => TYPE_LABELS[props.tx.type] || '지갑 거래')
 // 배지 색은 문서함 type-badge(계약서=owner, 보건증=worker)와 같은 은은한 배경+글자색 톤을
 // 거래 유형별 의미에 맞춰 고른다: 충전=success(잔액 증가), 지급 2종=owner/worker(각각
 // 정산·알바생 몫), 출금=danger(잔액 유출). 예치는 warning(주황)이 worker(앰버)와
@@ -92,13 +91,13 @@ const bottomLine = computed(() => {
 }
 
 /* 문서함 type-badge(WorkerDocumentsView)와 같은 pill 모양. 너비는 가장 긴 라벨인
-   "알바생 지급" 기준으로 고정해 8종 라벨 크기를 통일한다. */
+   "예치 환불"/"출금 환불"/"잔액 조정" 기준으로 고정해 7종 라벨 크기를 통일한다. */
 .type-badge {
   display: inline-flex;
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
-  width: 84px;
+  width: 68px;
   padding: var(--space-xs) var(--space-sm);
   border-radius: var(--radius-pill);
   background: var(--color-bg);
