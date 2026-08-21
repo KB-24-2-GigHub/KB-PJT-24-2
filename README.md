@@ -1,8 +1,11 @@
 <div align="center">
 
-<img src="frontend/src/assets/images/logo/logo-gighub.svg" alt="GigHub" width="140" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="frontend/src/assets/images/logo/logo-gighub-darkmode.png" />
+  <img src="frontend/src/assets/images/logo/logo-gighub.png" alt="GigHub" width="260" />
+</picture>
 
-# GigHub
+<br><br>
 
 **단기 알바의 임금 체불을, 돈을 먼저 묶어 두는 방식으로 막습니다.**
 

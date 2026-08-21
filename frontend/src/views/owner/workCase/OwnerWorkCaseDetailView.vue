@@ -20,6 +20,7 @@ import BaseModal from '@/components/common/BaseModal.vue'
 import DisputeTimeline from '@/components/dispute/DisputeTimeline.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import StatusChip from '@/components/common/StatusChip.vue'
+import TrustBadge from '@/components/common/TrustBadge.vue'
 import SettlementBreakdown from '@/components/settlement/SettlementBreakdown.vue'
 import {
   canIssueInvitation,
@@ -583,15 +584,21 @@ async function onApproveSettlement() {
           <dl class="detail">
             <!--
               매칭된 알바생 — 별도 섹션으로 하단에 두지 않고, 근무 정보 맨 위 행으로 올린다.
-              등급·뱃지 그림은 승인 계약에 타인(알바생) 뱃지를 읽을 수단이 없어(WorkCaseDetailResponse.
-              WorkerSummary 에 badge 필드 없음, #184 제외 범위) 자리표시자만 둔다 — 아는 척하지 않는다.
-              연동되면 <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="20" /> 로 바꾼다.
+              worker.badge(#472)는 초대의 ownerBadge 와 달리 0단계도 null 로 감추지 않는다
+              — OWNER가 매칭된 WORKER를 볼 때는 "이력 쌓는 중(0단계)"도 뱃지 그림으로 보여준다.
+              worker 가 있으면 badge 는 항상 채워진 객체라 자리표시자는 방어적 폴백일 뿐이다
+              (예상 응답을 못 받은 경우에만 탄다).
             -->
             <div v-if="workCase.worker" class="detail-row">
               <dt>알바생</dt>
               <dd class="worker-cell">
                 {{ workCase.worker.name }}
-                <span class="badge-placeholder">등급 정보 없음</span>
+                <span class="worker-cell-divider">|</span>
+                <template v-if="workCase.worker.badge">
+                  <span class="badge-level">Lv.{{ workCase.worker.badge.level }}</span>
+                  <TrustBadge role="worker" :level="workCase.worker.badge.level" :size="20" />
+                </template>
+                <span v-else class="badge-placeholder">등급 정보 없음</span>
               </dd>
             </div>
             <div class="detail-row">
@@ -1045,6 +1052,15 @@ async function onApproveSettlement() {
   display: inline-flex;
   align-items: center;
   gap: var(--space-sm);
+}
+.worker-cell-divider {
+  color: var(--color-border);
+}
+/* 뱃지 그림만으로는 등급 숫자가 바로 안 읽혀 "Lv.N" 글자를 함께 둔다(마이페이지와 같은 표기). */
+.badge-level {
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-sub);
 }
 /* 뱃지 자리표시자. 등급 그림과 혼동되지 않게 아이콘 없이 약한 텍스트로만 둔다. */
 .badge-placeholder {

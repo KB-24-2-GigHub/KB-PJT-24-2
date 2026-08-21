@@ -42,7 +42,8 @@ function goBack() {
   height: 52px;
   padding: 0 var(--space-sm);
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  /* Gig Hub 로고 상단바와 같은 하단 구분 스타일을 사용한다. */
+  box-shadow: var(--shadow-card);
 }
 .back-btn {
   display: inline-flex;

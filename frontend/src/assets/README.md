@@ -20,7 +20,7 @@ assets/
 ├── main.css       전역 스타일 진입점
 ├── fonts/         Git으로 추적하는 폰트 파일
 └── images/
-    ├── logo/      역할별(owner/worker) GigHub PNG 로고
+    ├── logo/      역할별(owner/worker) 앱 PNG 로고와 저장소 README용 라이트·다크 PNG 로고
     ├── badges/    역할·등급별(lv0~3) PNG 뱃지
     └── banks/     은행 선택 화면에서 사용하는 PNG 로고
 ```

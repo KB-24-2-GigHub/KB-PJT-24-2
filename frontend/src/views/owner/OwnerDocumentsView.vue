@@ -265,8 +265,8 @@ function openViewer(doc) {
   white-space: nowrap;
 }
 .type-badge--health {
-  color: var(--color-owner);
-  background: var(--color-owner-weak);
+  color: var(--color-worker);
+  background: var(--color-worker-weak);
 }
 .type-badge--contract {
   color: var(--color-owner);

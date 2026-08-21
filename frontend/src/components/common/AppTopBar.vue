@@ -137,7 +137,8 @@ const homePath = computed(() => auth.homeRoute())
   gap: var(--space-sm);
   padding: var(--space-md) var(--space-lg);
   background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
+  /* 하드 보더 대신 은은한 그림자로 아래 콘텐츠와 구분한다. */
+  box-shadow: var(--shadow-card);
 }
 .brand {
   display: inline-flex;
