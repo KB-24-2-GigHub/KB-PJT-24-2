@@ -259,6 +259,11 @@ function goHome() {
             <p class="workplace">{{ invite.workplaceName }}</p>
             <h1 class="title">{{ invite.title }}</h1>
           </div>
+          <!--
+            SPEC-484-01: ownerBadge는 0단계도 null로 감추지 않고 항상 채워진 객체로 온다
+            (worker.badge, #472와 같은 관례) — 아래 v-else는 예상 밖 응답을 받았을 때만
+            타는 방어적 폴백이다.
+          -->
           <TrustBadge
             v-if="invite.ownerBadge"
             role="owner"

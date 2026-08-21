@@ -42,7 +42,7 @@ const INVITE = {
   dailyWage: 120000,
   termsVersion: 3,
   expiresAt: '2026-08-20T01:00:00Z',
-  ownerBadge: null
+  ownerBadge: { badgeType: 'TRUST_OWNER', level: 0 }
 }
 
 const ACCEPTED_WORK_CASE = {
@@ -113,17 +113,27 @@ describe('InviteConfirmView', () => {
     expect(getInvite).toHaveBeenCalledWith('safe_token')
     expect(wrapper.text()).toContain('2026.08.20')
     expect(wrapper.text()).toContain('10:00 ~ 18:00')
-    expect(wrapper.text()).toContain('등록된 배지 없음')
+    expect(wrapper.find('img[alt="owner 뱃지 0단계"]').exists()).toBe(true)
     expect(wrapper.find('canvas').exists()).toBe(false)
+  })
+
+  it('ownerBadge 필드 자체가 없는 예상 밖 응답에서만 자리표시자로 폴백한다', async () => {
+    getInvite.mockResolvedValue({ ...INVITE, ownerBadge: null })
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('등록된 배지 없음')
   })
 
   /*
    * 초대의 OWNER 뱃지는 승인 Read Model(GET /api/invitations/{token})이 내려주는 값만 쓴다.
-   * 0단계는 계약상 ownerBadge=null 이고, 1~3단계만 객체로 온다(SPEC-178-06).
+   * SPEC-484-01부터 0단계도 null로 감추지 않고 채워진 객체로 온다(worker.badge, #472와
+   * 같은 관례) — 0~3단계 모두 객체로 온다.
    * 이 화면이 타인 ID 로 Badge Endpoint 를 따로 부르면 승인되지 않은 조회 경로가 된다.
    */
   describe('OWNER 뱃지', () => {
-    it.each([1, 2, 3])('Read Model 이 준 %i단계를 그대로 그린다', async (level) => {
+    it.each([0, 1, 2, 3])('Read Model 이 준 %i단계를 그대로 그린다', async (level) => {
       getInvite.mockResolvedValue({
         ...INVITE,
         ownerBadge: { badgeType: 'TRUST_OWNER', level }
