@@ -9,6 +9,8 @@ import java.util.Map;
 import java.util.Objects;
 
 import com.gighub.auth.security.AuthPrincipal;
+import com.gighub.badge.service.BadgeApplicationService;
+import com.gighub.badge.service.result.BadgeCalculationResult;
 import com.gighub.common.api.PageRequests;
 import com.gighub.common.api.PageResponse;
 import com.gighub.common.exception.ResourceNotFoundException;
@@ -53,6 +55,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
 
     private final WorkCaseMapper workCaseMapper;
     private final InvitationMapper invitationMapper;
+    private final BadgeApplicationService badgeApplicationService;
 
     @Override
     @Transactional
@@ -206,8 +209,16 @@ public class WorkCaseServiceImpl implements WorkCaseService {
         return PageResponse.of(content, page, size, totalElements);
     }
 
+    /**
+     * readOnly가 아니다. workerBadge(row.getWorkerId())가 참여하는
+     * BadgeApplicationService.recalculate는 사용자 행을 {@code SELECT ... FOR UPDATE}로
+     * 잠그고 필요하면 Upsert까지 하므로, 이 메서드도 실제로는 쓰기를 유발한다. readOnly로
+     * 두면 MySQL이 그 잠금 SELECT를 "Cannot execute statement in a READ ONLY transaction"
+     * 로 거부해 상세 조회 자체가 실패한다(초대 조회의 ownerBadge 호출도 같은 이유로
+     * findByToken이 readOnly를 쓰지 않는다).
+     */
     @Override
-    @Transactional(readOnly = true)
+    @Transactional
     public WorkCaseDetailResponse detail(AuthPrincipal principal, Long workCaseId) {
         WorkCaseDetailRow row = workCaseMapper.findDetailRow(workCaseId);
         if (row == null) {
@@ -259,7 +270,7 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                 row.getWorkerId() == null
                         ? null
                         : WorkCaseDetailResponse.WorkerSummary.of(
-                                row.getWorkerId(), row.getWorkerName()),
+                                row.getWorkerId(), row.getWorkerName(), workerBadge(row.getWorkerId())),
                 invitation == null
                         ? null
                         : WorkCaseDetailResponse.InvitationSummary.of(
@@ -295,6 +306,20 @@ public class WorkCaseServiceImpl implements WorkCaseService {
                                 settlement.getCalculatedAt(),
                                 settlement.getDueAt(),
                                 settlement.getCompletedAt()));
+    }
+
+    /**
+     * 매칭된 WORKER의 같은 산정 결과를 재사용합니다.
+     *
+     * <p>Badge Application 경계가 사용자 행을 잠그고 재계산·Upsert까지 마친 뒤 돌려준
+     * 결과를 그대로 담습니다. 초대 조회의 {@code ownerBadge(Long employerId)}는 0단계를
+     * {@code null}로 감추지만, 여기는 그러지 않습니다 — OWNER가 매칭된 WORKER를 볼 때는
+     * "아직 이력 쌓는 중(0단계)"도 뱃지 그림으로 보여주는 게 맞다는 화면 결정이라, worker가
+     * 있으면 badge는 항상 채워진 객체입니다(레벨만 0~3으로 다릅니다).</p>
+     */
+    private WorkCaseDetailResponse.WorkerBadge workerBadge(Long workerId) {
+        BadgeCalculationResult result = badgeApplicationService.recalculate(workerId);
+        return WorkCaseDetailResponse.WorkerBadge.of(result.getBadgeType(), result.getLevel());
     }
 
     /**
