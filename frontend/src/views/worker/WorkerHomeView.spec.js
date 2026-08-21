@@ -60,9 +60,13 @@ describe('WorkerHomeView', () => {
     expect(wrapper.text()).toContain('주말 홀 서빙') // 오늘의 알바
     expect(wrapper.text()).toContain('근무 경과 예상금액') // 참고값 카드(비금융 표시)
     expect(wrapper.text()).toContain('일급 90,000원') // dailyWage → agreedWage 로 매핑되는지 확인
-    expect(wrapper.text()).toContain('예상 세액(참고)')
-    expect(wrapper.text()).toContain('최종 지급액 85,710원 기준')
-    expect(wrapper.text()).toContain('실제 지급액에서 세금을 차감하지 않습니다')
+  })
+
+  it('taxReference가 있어도 예상 세액(참고) 박스는 화면에 표시하지 않는다(#476)', async () => {
+    const wrapper = mount(WorkerHomeView)
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('예상 세액(참고)')
   })
 
   it('근무중 상태와 지각 여부를 서로 다른 뱃지로 함께 보여준다', async () => {
@@ -79,19 +83,7 @@ describe('WorkerHomeView', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('근무 경과 예상금액')
-    expect(wrapper.text()).not.toContain('예상 세액(참고)')
     expect(wrapper.text()).toContain('오늘은 예정된 알바가 없어요.')
-  })
-
-  it('정산 Snapshot 전 taxReference가 null이면 세금 참고 카드를 표시하지 않는다', async () => {
-    const payload = structuredClone(homePayload)
-    payload.todayWorkCase.taxReference = null
-    getWorkerHome.mockResolvedValue(payload)
-
-    const wrapper = mount(WorkerHomeView)
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('예상 세액(참고)')
   })
 
   it.each(['NO_SHOW', 'CANCELED'])(
