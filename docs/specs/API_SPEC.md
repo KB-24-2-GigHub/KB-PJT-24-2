@@ -940,12 +940,12 @@ Target 요청은 `title`, `description`, `workDate`, `startTime`, `endTime`, `br
       "status": "COMPLETED",
       "amount": 120000,
       "originalEscrowAmount": 120000,
-      "workerPaidAmount": 90000,
-      "ownerRefundAmount": 30000,
-      "deductionAmount": 30000,
+      "workerPaidAmount": 120000,
+      "ownerRefundAmount": 0,
+      "deductionAmount": 0,
       "deductionBaseMinutes": 420,
-      "lateMinutes": 30,
-      "earlyLeaveMinutes": 60,
+      "lateMinutes": 0,
+      "earlyLeaveMinutes": 0,
       "calculationReason": "CHECKED_OUT",
       "calculationVersion": "ATTENDANCE_V1",
       "calculatedAt": "2026-08-20T09:00:00Z",
@@ -1378,6 +1378,8 @@ Scheduler가 먼저 완료한 정산은 새 성공으로 바꾸지 않고 `409 S
 
 - Work Case OWNER와 배정 WORKER만 호출하며 CSRF가 필수입니다. 서버는
   `dispute_type=WAGE`로 기록하고 Work Case당 `OPEN`·`UNDER_REVIEW` 분쟁을 하나만 허용합니다.
+- Work Case 상태가 `ACCEPTED`, `READY`, `IN_PROGRESS`, `CHECK_OUT_MISSING`, `COMPLETED`,
+  `NO_SHOW`일 때만 등록할 수 있으며 그 밖의 상태는 `409 CONFLICT`입니다.
 - Body의 `title`은 trim 후 1~100자, `content`는 trim 후 1~2000자입니다.
 
 ```json
@@ -1431,6 +1433,7 @@ Key로 제한 재시도합니다. 재시도 소진은 자동 보류를 풀지 �
 | 다른 Key 또는 Scheduler가 이미 처리함 | 409 | `SETTLEMENT_ALREADY_PROCESSED` |
 | 같은 Key가 같은 Fingerprint를 처리 중 | 409 | `CONFLICT` |
 | 같은 Key를 다른 Fingerprint에 재사용 | 409 | `IDEMPOTENCY_KEY_REUSED` |
+| 분쟁 등록이 허용되지 않는 Work Case 상태 | 409 | `CONFLICT` |
 | 열린 분쟁 중복 등록 | 409 | `DISPUTE_ALREADY_OPEN` |
 | 제한 재시도 뒤 일시 장애 지속 | 503 | `SETTLEMENT_TEMPORARILY_UNAVAILABLE` |
 | 상태·금액·원장 무결성 모순 | 500 | `INTERNAL_ERROR` |
