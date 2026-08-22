@@ -8,6 +8,7 @@ import com.gighub.common.api.PageResponse;
 import com.gighub.notification.dto.NotificationListItemResponse;
 import com.gighub.notification.dto.UnreadCountResponse;
 import com.gighub.notification.service.NotificationService;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -49,6 +50,8 @@ public class NotificationController {
                 new UnreadCountResponse(notificationService.countUnread(principal.getUserId())));
     }
 
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "알림 읽음 처리 완료"))
     @PatchMapping("/api/notifications/{notificationId}/read")
     public ResponseEntity<Void> markRead(
             @PathVariable Long notificationId,
@@ -65,6 +68,8 @@ public class NotificationController {
      * 않습니다. 처리 건수를 응답에 싣지 않습니다. 화면이 필요로 하는 것은 갱신된 안읽음 개수이고
      * 그것은 이미 별도 Operation이 소유합니다.</p>
      */
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "전체 알림 읽음 처리 완료"))
     @PatchMapping("/api/notifications/read-all")
     public ResponseEntity<Void> markAllRead(Authentication authentication) {
         AuthPrincipal principal = AuthPrincipals.resolve(authentication);

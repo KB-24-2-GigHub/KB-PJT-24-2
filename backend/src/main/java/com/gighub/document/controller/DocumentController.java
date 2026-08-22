@@ -19,6 +19,7 @@ import com.gighub.document.service.HealthCertificateShareRevokeService;
 import com.gighub.document.service.HealthCertificateShareService;
 import com.gighub.document.service.HealthCertificateUpdateService;
 import com.gighub.document.validation.UploadedFile;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
@@ -124,6 +125,8 @@ public class DocumentController {
     }
 
     // DOC-006: 보건증 논리 삭제(근로계약서는 409로 거부)
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "보건증 삭제 완료"))
     @DeleteMapping("/api/documents/{documentId}")
     public ResponseEntity<Void> deleteDocument(
             @PathVariable long documentId, Authentication authentication) {
@@ -159,6 +162,8 @@ public class DocumentController {
     }
 
     // DOC-008: 보건증 공유 철회. 해당 사업장의 ACTIVE 공유만 멱등하게 REVOKED로 바꾼다.
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "보건증 공유 철회 완료"))
     @DeleteMapping("/api/documents/{documentId}/shares/{workplaceId}")
     public ResponseEntity<Void> revokeHealthCertificateShare(
             @PathVariable long documentId,

@@ -16,6 +16,7 @@ import com.gighub.workplace.service.WorkplaceService;
 import com.gighub.workplace.service.command.WorkplaceCoordinateConfirmCommand;
 import com.gighub.workplace.service.command.WorkplaceCreateCommand;
 import com.gighub.workplace.service.command.WorkplaceUpdateCommand;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -75,6 +76,8 @@ public class WorkplaceController {
      * <p>성공은 본문 없는 204입니다. 새로 확정됐든 같은 좌표의 재시도든 호출자 입장에서는
      * 구분할 필요가 없는 같은 성공이므로 Service가 반환값으로 구분하지 않습니다.</p>
      */
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "사업장 좌표 확정 완료"))
     @PutMapping("/{workplaceId}/coordinates")
     public ResponseEntity<Void> confirmLocation(
             @PathVariable Long workplaceId,
@@ -92,6 +95,8 @@ public class WorkplaceController {
      * <p>도로명주소가 바뀌면 서버가 좌표를 다시 확정합니다(SPEC-349-01). 성공은 본문 없는
      * 204입니다 — 좌표는 응답에 싣지 않는 값이라 돌려줄 표현이 없습니다.</p>
      */
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "사업장 수정 완료"))
     @PatchMapping("/{workplaceId}")
     public ResponseEntity<Void> update(
             @PathVariable Long workplaceId,
