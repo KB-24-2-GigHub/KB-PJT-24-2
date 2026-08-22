@@ -89,6 +89,7 @@ class HealthCertificateShareServiceDatabaseIntegrationTest {
             } finally {
                 jdbc.update("DELETE FROM document_shares WHERE document_id = ?", documentId);
                 jdbc.update("DELETE FROM documents WHERE id = ?", documentId);
+                jdbc.update("DELETE FROM notifications WHERE work_case_id = ?", workCaseId);
                 jdbc.update("DELETE FROM work_cases WHERE id = ?", workCaseId);
                 jdbc.update("DELETE FROM workplaces WHERE id = ?", workplaceId);
                 jdbc.update("DELETE FROM users WHERE id IN (?, ?)", ownerId, workerId);

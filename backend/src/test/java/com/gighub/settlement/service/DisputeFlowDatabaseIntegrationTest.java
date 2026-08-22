@@ -52,7 +52,7 @@ class DisputeFlowDatabaseIntegrationTest {
     @Timeout(25)
     void concurrentReportsCreateOneOpenDisputeAndPreserveEveryMoneySnapshot() throws Exception {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+                     fakeApplicationContext(DisputeReviewDecision.NEEDS_MORE_INFO)) {
             JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
             DisputeService service = context.getBean(DisputeService.class);
             Fixture fixture = createFixture(jdbc);
@@ -115,7 +115,7 @@ class DisputeFlowDatabaseIntegrationTest {
     @Timeout(25)
     void payoutAndDisputeRaceEndsInExactlyOneSafeFinancialOutcome() throws Exception {
         try (AnnotationConfigApplicationContext context =
-                     new AnnotationConfigApplicationContext(RootConfig.class)) {
+                     fakeApplicationContext(DisputeReviewDecision.NEEDS_MORE_INFO)) {
             JdbcTemplate jdbc = new JdbcTemplate(context.getBean(DataSource.class));
             DisputeService disputeService = context.getBean(DisputeService.class);
             SettlementService settlementService = context.getBean(SettlementService.class);

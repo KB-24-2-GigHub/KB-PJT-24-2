@@ -97,6 +97,7 @@ class WorkCaseServiceDatabaseIntegrationTest {
                 // work_contracts·attendance_records가 이 WORKER를 참조하므로 위 cleanUp이
                 // 그 자식 행을 먼저 지운 뒤에만 안전하게 지울 수 있습니다.
                 if (detailWorkerUserId != null) {
+                    jdbc.update("DELETE FROM user_badges WHERE user_id = ?", detailWorkerUserId);
                     jdbc.update("DELETE FROM users WHERE id = ?", detailWorkerUserId);
                 }
             }
@@ -523,6 +524,7 @@ class WorkCaseServiceDatabaseIntegrationTest {
             // 참조 무결성 오류로 실패합니다.
             String childScope = " WHERE work_case_id IN"
                     + " (SELECT id FROM work_cases WHERE employer_id = ?)";
+            jdbc.update("DELETE FROM notifications" + childScope, ownerUserId);
             jdbc.update("DELETE FROM attendance_records" + childScope, ownerUserId);
             jdbc.update("DELETE FROM settlements" + childScope, ownerUserId);
             jdbc.update("DELETE FROM escrows" + childScope, ownerUserId);
@@ -531,6 +533,7 @@ class WorkCaseServiceDatabaseIntegrationTest {
             jdbc.update("DELETE FROM work_invitations" + childScope, ownerUserId);
             jdbc.update("DELETE FROM work_cases WHERE employer_id = ?", ownerUserId);
             jdbc.update("DELETE FROM workplaces WHERE owner_user_id = ?", ownerUserId);
+            jdbc.update("DELETE FROM user_badges WHERE user_id = ?", ownerUserId);
             jdbc.update("DELETE FROM users WHERE id = ?", ownerUserId);
         }
     }

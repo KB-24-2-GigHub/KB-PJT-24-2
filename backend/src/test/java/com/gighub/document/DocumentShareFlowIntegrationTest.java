@@ -144,6 +144,9 @@ class DocumentShareFlowIntegrationTest {
             jdbc.update(
                     "DELETE FROM documents WHERE id IN (?, ?, ?)",
                     healthCertAId, healthCertBId, expiredHealthCertAId);
+            jdbc.update(
+                    "DELETE FROM notifications WHERE work_case_id IN (?, ?)",
+                    workCaseAId, workCaseBId);
             jdbc.update("DELETE FROM work_cases WHERE id IN (?, ?)", workCaseAId, workCaseBId);
             jdbc.update(
                     "DELETE FROM workplaces WHERE id IN (?, ?, ?)",

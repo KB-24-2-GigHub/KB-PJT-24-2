@@ -465,7 +465,7 @@ class DocumentAccessMapperTest {
         byte[] checksum = new byte[32];
         Arrays.fill(checksum, (byte) 7);
         long contractDocumentId = insertDocument(
-                jdbc, ownerId, workCaseId, "EMPLOYMENT_CONTRACT", "2026-08-10", null);
+                jdbc, ownerId, workCaseId, "EMPLOYMENT_CONTRACT", "2099-08-10", null);
         long contractVersionId = insertVersion(
                 jdbc,
                 contractDocumentId,
@@ -476,7 +476,7 @@ class DocumentAccessMapperTest {
                 checksum);
 
         long healthDocumentId = insertDocument(
-                jdbc, workerId, null, "HEALTH_CERTIFICATE", "2026-08-01", "2027-08-11");
+                jdbc, workerId, null, "HEALTH_CERTIFICATE", "2099-08-01", "2099-08-11");
         long healthVersionId = insertVersion(
                 jdbc,
                 healthDocumentId,
@@ -535,8 +535,8 @@ class DocumentAccessMapperTest {
                         + " (employer_id, worker_id, workplace_id, title, starts_at, ends_at,"
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " allowed_radius_meters, agreed_wage, terms_version, status)"
-                        + " VALUES (?, ?, ?, '파일 접근 테스트', '2026-08-20 10:00:00',"
-                        + " '2026-08-20 18:00:00', 0, 0, '강남점', '서울 테스트로 1',"
+                        + " VALUES (?, ?, ?, '파일 접근 테스트', '2099-08-20 10:00:00',"
+                        + " '2099-08-20 18:00:00', 0, 0, '강남점', '서울 테스트로 1',"
                         + " 100, 90000, 1, 'ACCEPTED')",
                 ownerId, workerId, workplaceId);
         return jdbc.queryForObject("SELECT LAST_INSERT_ID()", Long.class);
@@ -550,9 +550,9 @@ class DocumentAccessMapperTest {
                         + " break_minutes, break_paid, workplace_name, workplace_address,"
                         + " allowed_radius_meters, agreed_wage, source_terms_version,"
                         + " terms_snapshot, accepted_at)"
-                        + " VALUES (?, ?, ?, '파일 접근 테스트', '2026-08-20 10:00:00',"
-                        + " '2026-08-20 18:00:00', 0, 0, '강남점', '서울 테스트로 1',"
-                        + " 100, 90000, 1, '{}', '2026-08-10 10:00:00')",
+                        + " VALUES (?, ?, ?, '파일 접근 테스트', '2099-08-20 10:00:00',"
+                        + " '2099-08-20 18:00:00', 0, 0, '강남점', '서울 테스트로 1',"
+                        + " 100, 90000, 1, '{}', '2099-08-10 10:00:00')",
                 workCaseId, ownerId, workerId);
     }
 
@@ -598,6 +598,7 @@ class DocumentAccessMapperTest {
         jdbc.update("DELETE FROM documents WHERE id IN (?, ?)",
                 fixture.contractDocumentId, fixture.healthDocumentId);
         jdbc.update("DELETE FROM work_contracts WHERE work_case_id = ?", fixture.workCaseId);
+        jdbc.update("DELETE FROM notifications WHERE work_case_id = ?", fixture.workCaseId);
         jdbc.update("DELETE FROM work_cases WHERE id = ?", fixture.workCaseId);
         jdbc.update("DELETE FROM workplaces WHERE id = ?", fixture.workplaceId);
         jdbc.update("DELETE FROM users WHERE id IN (?, ?)", fixture.ownerId, fixture.workerId);

@@ -26,7 +26,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 /**
@@ -85,8 +85,9 @@ class InvitationLifecycleDatabaseIntegrationTest {
         assertEquals(120_000L, detail.getDailyWage());
         assertEquals(1, detail.getTermsVersion());
         assertEquals(fixture.startsAt.atZone(SEOUL).toInstant(), detail.getExpiresAt());
-        // 배지 등급 산정(BADGE-001) 전까지는 활성 Badge 없음과 같은 null입니다.
-        assertNull(detail.getOwnerBadge());
+        assertNotNull(detail.getOwnerBadge());
+        assertEquals("TRUST_OWNER", detail.getOwnerBadge().getBadgeType());
+        assertEquals(0, detail.getOwnerBadge().getLevel());
     }
 
     /** 재발급 직후 이전 Link는 미존재가 아니라 철회로 보여야 합니다. */
@@ -252,6 +253,7 @@ class InvitationLifecycleDatabaseIntegrationTest {
     private void cleanUp(JdbcTemplate jdbcTemplate, Fixture fixture) {
         jdbcTemplate.update(
                 "DELETE FROM work_invitations WHERE work_case_id = ?", fixture.workCaseId);
+        jdbcTemplate.update("DELETE FROM notifications WHERE work_case_id = ?", fixture.workCaseId);
         jdbcTemplate.update("DELETE FROM work_cases WHERE id = ?", fixture.workCaseId);
         jdbcTemplate.update("DELETE FROM workplaces WHERE id = ?", fixture.workplaceId);
         // 초대 조회가 실제로 OWNER 배지를 재계산·Upsert하므로 users보다 먼저 지운다.
