@@ -47,4 +47,4 @@ SELECT
     'ilovesleep / 이수면' AS worker_b,
     'submarine / 박잠수' AS worker_c,
     'Demo1234!' AS demo_password,
-    100 AS radius_meters;
+    @demo_radius_meters AS radius_meters;

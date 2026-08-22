@@ -65,6 +65,8 @@ class AttendanceScanExecutorTest {
     private static final LocalDateTime ENDS_AT = LocalDateTime.of(2026, 8, 11, 18, 0);
     private static final BigDecimal SITE_LATITUDE = new BigDecimal("37.5665000");
     private static final BigDecimal SITE_LONGITUDE = new BigDecimal("126.9780000");
+    private static final BigDecimal DEFAULT_RADIUS_METERS = new BigDecimal("100.00");
+    private static final BigDecimal DEMO_RADIUS_METERS = new BigDecimal("999999.00");
     private static final byte[] NONCE = {
         1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16
     };
@@ -233,6 +235,29 @@ class AttendanceScanExecutorTest {
     }
 
     @Test
+    void demoWorkplaceUsesItsExpandedStoredRadius() {
+        Instant receivedAt = toInstant(STARTS_AT.plusMinutes(5));
+        givenActiveWorkplaceAndQr(DEMO_RADIUS_METERS);
+        givenCandidate(AttendanceType.CHECK_IN);
+        givenLock(WorkCaseStatus.READY);
+        when(workLifecycleCommandService.transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS))
+                .thenReturn(true);
+
+        // 일반 100m 사업장에서는 거절되는 약 1.1km 거리도 시연 Seed 사업장은 허용합니다.
+        AttendanceScanOutcome outcome = executor().execute(
+                principal,
+                request(receivedAt, new BigDecimal("37.5765000"), SITE_LONGITUDE, false),
+                payload(),
+                CLAIM_ID,
+                receivedAt);
+
+        assertFalse(outcome.isRejected());
+        verify(workLifecycleCommandService).transition(
+                WORK_CASE_ID, WorkCaseStatus.READY, WorkCaseStatus.IN_PROGRESS);
+    }
+
+    @Test
     void staleCaptureIsRejectedAfterCandidateIsResolvedSoItCanBeAudited() {
         Instant receivedAt = toInstant(STARTS_AT.plusMinutes(5));
         givenActiveWorkplaceAndQr();
@@ -337,9 +362,13 @@ class AttendanceScanExecutorTest {
     }
 
     private void givenActiveWorkplaceAndQr() {
+        givenActiveWorkplaceAndQr(DEFAULT_RADIUS_METERS);
+    }
+
+    private void givenActiveWorkplaceAndQr(BigDecimal radiusMeters) {
         when(workplaceOwnershipService.lockActiveWorkplaceLocation(WORKPLACE_ID))
                 .thenReturn(new WorkplaceLocationSnapshot(
-                        WORKPLACE_ID, SITE_LATITUDE, SITE_LONGITUDE));
+                        WORKPLACE_ID, SITE_LATITUDE, SITE_LONGITUDE, radiusMeters));
         when(qrTokenMapper.findActiveByWorkplaceIdForUpdate(WORKPLACE_ID)).thenReturn(activeQr());
     }
 

@@ -28,6 +28,29 @@ const SEED_SERVICE = "seed-demo";
 const PASSWORD = "Demo1234!";
 const OWNER_LOGIN_ID = "gigsajang";
 const PRIMARY_WORKPLACE_NAME = "냠냠과자점 1호점";
+const VIDEO_04_CONTRACT_FIXTURES = Object.freeze([
+  {
+    workplaceName: "냠냠과자점 1호점",
+    workerLoginId: "hardworker",
+    title: "구움과자 선물세트 포장",
+    startTime: "09:00",
+    endTime: "13:00",
+  },
+  {
+    workplaceName: "냠냠과자점 2호점",
+    workerLoginId: "ilovesleep",
+    title: "쿠키 생산 및 진열 준비",
+    startTime: "10:00",
+    endTime: "14:00",
+  },
+  {
+    workplaceName: "냠냠과자점 3호점",
+    workerLoginId: "submarine",
+    title: "온라인 주문 포장 지원",
+    startTime: "13:00",
+    endTime: "17:00",
+  },
+]);
 const HEALTH_CERTIFICATE_PATH = path.join(
   "output",
   "pdf",
@@ -38,7 +61,7 @@ const SCENARIOS = Object.freeze({
   functional: {
     file: "demo-functional.sql",
     description: "기능 통합 점검",
-    apiSetup: true,
+    apiSetup: "functional",
   },
   "video-01-onboarding": {
     file: "demo-video-01-onboarding.sql",
@@ -55,6 +78,7 @@ const SCENARIOS = Object.freeze({
   "video-04-three-years": {
     file: "demo-video-04-three-years.sql",
     description: "영상 04 · 3년 후 3개 사업장",
+    apiSetup: "video-04",
   },
 });
 
@@ -153,7 +177,9 @@ function runSeedService(rootDir, seedFile) {
   );
 
   if (result.error) {
-    throw new DemoSeedError(`Docker를 실행하지 못했습니다: ${result.error.message}`);
+    throw new DemoSeedError(
+      `Docker를 실행하지 못했습니다: ${result.error.message}`,
+    );
   }
   if (result.status !== 0) {
     throw new DemoSeedError(
@@ -170,14 +196,17 @@ function runSeedService(rootDir, seedFile) {
 function clearLocalDocumentStorage({ rootDir, configPath } = {}) {
   const expected = path.resolve(rootDir, "local-data", "documents");
   const propertiesPath =
-    configPath || path.join(rootDir, "backend", "config", "database-local.properties");
+    configPath ||
+    path.join(rootDir, "backend", "config", "database-local.properties");
   if (!fs.existsSync(propertiesPath)) {
-    throw new DemoSeedError(`문서 저장소 설정 파일이 없습니다: ${propertiesPath}`);
+    throw new DemoSeedError(
+      `문서 저장소 설정 파일이 없습니다: ${propertiesPath}`,
+    );
   }
 
-  const configuredValue = parseEnvFile(
-    fs.readFileSync(propertiesPath, "utf8"),
-  )["document.storage.base-path"];
+  const configuredValue = parseEnvFile(fs.readFileSync(propertiesPath, "utf8"))[
+    "document.storage.base-path"
+  ];
   if (!configuredValue) {
     throw new DemoSeedError("document.storage.base-path 설정이 없습니다.");
   }
@@ -196,9 +225,53 @@ function clearLocalDocumentStorage({ rootDir, configPath } = {}) {
   return expected;
 }
 
+/** 운영 계약서 Renderer로 Video 4의 과거 계약 PDF와 실제 Checksum을 일괄 생성합니다. */
+function materializeVideo04Contracts(rootDir) {
+  const backendDir = path.join(rootDir, "backend");
+  const wrapper = path.join(
+    backendDir,
+    process.platform === "win32" ? "gradlew.bat" : "gradlew",
+  );
+  const configPath = path.join(
+    rootDir,
+    "backend",
+    "config",
+    "database-local.properties",
+  );
+  const slash = (value) => value.replace(/\\/g, "/");
+  const gradleArgs = [
+    "materializeDemoContracts",
+    `-PdemoConfig=${slash(configPath)}`,
+    `-PdemoRoot=${slash(rootDir)}`,
+  ];
+  const executable =
+    process.platform === "win32" ? process.env.ComSpec || "cmd.exe" : wrapper;
+  const executableArgs =
+    process.platform === "win32"
+      ? ["/d", "/c", path.basename(wrapper), ...gradleArgs]
+      : gradleArgs;
+  const result = spawnSync(executable, executableArgs, {
+    cwd: backendDir,
+    encoding: "utf8",
+  });
+
+  if (result.error) {
+    throw new DemoSeedError(
+      `Video 4 계약서 PDF 생성기를 실행하지 못했습니다: ${result.error.message}`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new DemoSeedError(
+      `Video 4 과거 계약서 PDF 생성이 실패했습니다.\n${result.stderr || result.stdout}`,
+    );
+  }
+  return result.stdout;
+}
+
 function assertProductionReset({ argv, processEnv = process.env }) {
   const reasons = [];
-  if (!argv.includes(SKIP_SQL_FLAG)) reasons.push(`${SKIP_SQL_FLAG} 옵션이 없습니다.`);
+  if (!argv.includes(SKIP_SQL_FLAG))
+    reasons.push(`${SKIP_SQL_FLAG} 옵션이 없습니다.`);
   if (!argv.includes(PRODUCTION_CONFIRM_FLAG)) {
     reasons.push(`${PRODUCTION_CONFIRM_FLAG} 옵션이 없습니다.`);
   }
@@ -210,7 +283,10 @@ function assertProductionReset({ argv, processEnv = process.env }) {
   }
   if (reasons.length) {
     throw new DemoSeedError(
-      ["운영 전체 초기화 후속 실행임을 확인하지 못했습니다.", ...reasons.map((r) => `- ${r}`)].join("\n"),
+      [
+        "운영 전체 초기화 후속 실행임을 확인하지 못했습니다.",
+        ...reasons.map((r) => `- ${r}`),
+      ].join("\n"),
     );
   }
 }
@@ -225,7 +301,10 @@ function collectCookies(jar, response) {
     const [pair] = cookie.split(";");
     const separator = pair.indexOf("=");
     if (separator > 0) {
-      jar.set(pair.slice(0, separator).trim(), pair.slice(separator + 1).trim());
+      jar.set(
+        pair.slice(0, separator).trim(),
+        pair.slice(separator + 1).trim(),
+      );
     }
   }
 }
@@ -268,7 +347,9 @@ async function callApi(
   collectCookies(jar, response);
   if (!response.ok) {
     const text = await response.text();
-    throw new DemoSeedError(`${method} ${apiPath} 응답이 ${response.status}입니다.\n${text}`);
+    throw new DemoSeedError(
+      `${method} ${apiPath} 응답이 ${response.status}입니다.\n${text}`,
+    );
   }
   if (response.status === 204) return null;
   const text = await response.text();
@@ -298,7 +379,9 @@ function seoulDate(offsetDays = 0, now = new Date()) {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(adjusted);
-  const value = Object.fromEntries(parts.map(({ type, value: part }) => [type, part]));
+  const value = Object.fromEntries(
+    parts.map(({ type, value: part }) => [type, part]),
+  );
   return `${value.year}-${value.month}-${value.day}`;
 }
 
@@ -339,11 +422,16 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
   const initialWallet = await callApi(baseUrl, jar, "/api/wallet");
 
-  const workplaces = await callApi(baseUrl, jar, "/api/workplaces?page=0&size=100");
+  const workplaces = await callApi(
+    baseUrl,
+    jar,
+    "/api/workplaces?page=0&size=100",
+  );
   const workplace = pageContent(workplaces).find(
     ({ name }) => name === PRIMARY_WORKPLACE_NAME,
   );
-  if (!workplace) throw new DemoSeedError(`${PRIMARY_WORKPLACE_NAME}을 찾지 못했습니다.`);
+  if (!workplace)
+    throw new DemoSeedError(`${PRIMARY_WORKPLACE_NAME}을 찾지 못했습니다.`);
 
   const acceptedWage = 100000;
   const accepted = await createInvitation(baseUrl, jar, workplace.workplaceId, {
@@ -369,10 +457,15 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   await login(baseUrl, jar, "hardworker", "WORKER");
   const token = invitationToken(accepted.invitation.inviteUrl);
   await callApi(baseUrl, jar, `/api/invitations/${token}`);
-  const acceptance = await callApi(baseUrl, jar, `/api/invitations/${token}/accept`, {
-    method: "POST",
-    headers: { "Idempotency-Key": `demo-accept-${accepted.workCaseId}` },
-  });
+  const acceptance = await callApi(
+    baseUrl,
+    jar,
+    `/api/invitations/${token}/accept`,
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": `demo-accept-${accepted.workCaseId}` },
+    },
+  );
   if (acceptance.escrowStatus !== "HELD") {
     throw new DemoSeedError("김성실 초대 수락 뒤 임금이 예치되지 않았습니다.");
   }
@@ -393,10 +486,15 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
     `/api/documents?docType=HEALTH_CERTIFICATE&issuedDate=${seoulDate()}`,
     { method: "POST", rawBody: form },
   );
-  await callApi(baseUrl, jar, `/api/documents/${registered.documentId}/shares`, {
-    method: "POST",
-    body: { workplaceId: workplace.workplaceId },
-  });
+  await callApi(
+    baseUrl,
+    jar,
+    `/api/documents/${registered.documentId}/shares`,
+    {
+      method: "POST",
+      body: { workplaceId: workplace.workplaceId },
+    },
+  );
   await logout(baseUrl, jar);
 
   await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
@@ -406,18 +504,30 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
     jar,
     "/api/notifications?page=0&size=100",
   );
-  const documents = await callApi(baseUrl, jar, "/api/documents?page=0&size=100");
+  const documents = await callApi(
+    baseUrl,
+    jar,
+    "/api/documents?page=0&size=100",
+  );
   const wallet = await callApi(baseUrl, jar, "/api/wallet");
-  const notificationTypes = new Set(pageContent(notifications).map(({ notiType }) => notiType));
+  const notificationTypes = new Set(
+    pageContent(notifications).map(({ notiType }) => notiType),
+  );
   for (const required of ["WORK_CASE_CONFIRMED", "ESCROW_HELD", "DOC_SHARED"]) {
     if (!notificationTypes.has(required)) {
-      throw new DemoSeedError(`OWNER 알림에서 ${required}를 확인하지 못했습니다.`);
+      throw new DemoSeedError(
+        `OWNER 알림에서 ${required}를 확인하지 못했습니다.`,
+      );
     }
   }
-  const documentTypes = new Set(pageContent(documents).map(({ docType }) => docType));
+  const documentTypes = new Set(
+    pageContent(documents).map(({ docType }) => docType),
+  );
   for (const required of ["EMPLOYMENT_CONTRACT", "HEALTH_CERTIFICATE"]) {
     if (!documentTypes.has(required)) {
-      throw new DemoSeedError(`OWNER 문서함에서 ${required}를 확인하지 못했습니다.`);
+      throw new DemoSeedError(
+        `OWNER 문서함에서 ${required}를 확인하지 못했습니다.`,
+      );
     }
   }
   const expectedAvailable = initialWallet.availableBalance - acceptedWage;
@@ -441,6 +551,110 @@ async function completeFunctionalApiSetup({ rootDir, baseUrl }) {
   };
 }
 
+/**
+ * Video 4 문서함에 지점별 최신 계약서를 실제 수락 API로 만듭니다.
+ *
+ * SQL만으로 ACTIVE 문서 Metadata를 넣으면 PDF 저장소가 비어 미리보기에서 오류가 납니다.
+ * 실제 수락 흐름을 사용하면 계약 Snapshot·서명·ORIGINAL/SIGNED PDF·예치가 함께 생성되므로,
+ * 3년 초과 계약의 파기 결과와 보존기간 안의 정상 계약을 같은 화면에서 안전하게 비교할 수 있습니다.
+ */
+async function completeVideo04ApiSetup({ baseUrl }) {
+  const jar = new Map();
+  await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
+  const initialWallet = await callApi(baseUrl, jar, "/api/wallet");
+  const workplaces = pageContent(
+    await callApi(baseUrl, jar, "/api/workplaces?page=0&size=100"),
+  );
+
+  const acceptedTargets = [];
+  for (const fixture of VIDEO_04_CONTRACT_FIXTURES) {
+    const workplace = workplaces.find(
+      ({ name }) => name === fixture.workplaceName,
+    );
+    if (!workplace) {
+      throw new DemoSeedError(`${fixture.workplaceName}을 찾지 못했습니다.`);
+    }
+    const created = await createInvitation(
+      baseUrl,
+      jar,
+      workplace.workplaceId,
+      {
+        title: fixture.title,
+        workDate: seoulDate(1),
+        startTime: fixture.startTime,
+        endTime: fixture.endTime,
+        breakMinutes: 30,
+        breakPaid: false,
+        dailyWage: 100000,
+      },
+    );
+    acceptedTargets.push({ ...fixture, ...created });
+  }
+  await logout(baseUrl, jar);
+
+  for (const target of acceptedTargets) {
+    await login(baseUrl, jar, target.workerLoginId, "WORKER");
+    const token = invitationToken(target.invitation.inviteUrl);
+    await callApi(baseUrl, jar, `/api/invitations/${token}`);
+    const acceptance = await callApi(
+      baseUrl,
+      jar,
+      `/api/invitations/${token}/accept`,
+      {
+        method: "POST",
+        headers: {
+          "Idempotency-Key": `demo-video-04-accept-${target.workCaseId}`,
+        },
+      },
+    );
+    if (acceptance.escrowStatus !== "HELD") {
+      throw new DemoSeedError(
+        `${target.title} 수락 뒤 임금이 예치되지 않았습니다.`,
+      );
+    }
+    await logout(baseUrl, jar);
+  }
+
+  await login(baseUrl, jar, OWNER_LOGIN_ID, "OWNER");
+  const documents = pageContent(
+    await callApi(
+      baseUrl,
+      jar,
+      "/api/documents?docType=EMPLOYMENT_CONTRACT&page=0&size=100",
+    ),
+  );
+  const expectedWorkCaseIds = new Set(
+    acceptedTargets.map(({ workCaseId }) => workCaseId),
+  );
+  const activeContracts = documents.filter(
+    ({ docType, workCaseId }) =>
+      docType === "EMPLOYMENT_CONTRACT" && expectedWorkCaseIds.has(workCaseId),
+  );
+  if (activeContracts.length !== VIDEO_04_CONTRACT_FIXTURES.length) {
+    throw new DemoSeedError(
+      `Video 4 문서함의 최신 근로계약서가 ${activeContracts.length}건입니다. 3건이어야 합니다.`,
+    );
+  }
+
+  const wallet = await callApi(baseUrl, jar, "/api/wallet");
+  const expectedAvailable = initialWallet.availableBalance - 300000;
+  const expectedLocked = initialWallet.lockedBalance + 300000;
+  if (
+    wallet.availableBalance !== expectedAvailable ||
+    wallet.lockedBalance !== expectedLocked
+  ) {
+    throw new DemoSeedError(
+      `Video 4 계약 생성 뒤 OWNER 지갑이 예상과 다릅니다: 가용 ${wallet.availableBalance}, 예치 ${wallet.lockedBalance}`,
+    );
+  }
+  await logout(baseUrl, jar);
+
+  return {
+    activeContractCount: activeContracts.length,
+    acceptedWorkCaseIds: acceptedTargets.map(({ workCaseId }) => workCaseId),
+  };
+}
+
 async function prepare({ rootDir, baseUrl, argv, processEnv = process.env }) {
   const options = parseOptions(argv);
   let summary = null;
@@ -460,15 +674,24 @@ async function prepare({ rootDir, baseUrl, argv, processEnv = process.env }) {
     });
     summary = parseSeedSummary(runSeedService(rootDir, options.scenario.file));
     if (summary.scenario_key !== options.scenarioKey) {
-      throw new DemoSeedError("요청한 시나리오와 SQL 결과가 일치하지 않습니다.");
+      throw new DemoSeedError(
+        "요청한 시나리오와 SQL 결과가 일치하지 않습니다.",
+      );
     }
     const cleared = clearLocalDocumentStorage({ rootDir });
     log(`로컬 문서 저장소를 비웠습니다: ${cleared}`);
+    if (options.scenarioKey === "video-04-three-years") {
+      const materialized = materializeVideo04Contracts(rootDir);
+      process.stdout.write(materialized);
+    }
   }
 
-  const apiResult = options.scenario.apiSetup
-    ? await completeFunctionalApiSetup({ rootDir, baseUrl })
-    : null;
+  let apiResult = null;
+  if (options.scenario.apiSetup === "functional") {
+    apiResult = await completeFunctionalApiSetup({ rootDir, baseUrl });
+  } else if (options.scenario.apiSetup === "video-04") {
+    apiResult = await completeVideo04ApiSetup({ baseUrl });
+  }
   return { options, summary, apiResult };
 }
 
@@ -476,28 +699,48 @@ function shouldPrintPendingInvitation(processEnv = process.env) {
   return processEnv.GITHUB_ACTIONS !== "true";
 }
 
-function printResult({ options, summary, apiResult }, processEnv = process.env) {
+function printResult(
+  { options, summary, apiResult },
+  processEnv = process.env,
+) {
   console.log(`\n${options.scenario.description} SEED 준비가 끝났습니다.`);
   if (summary) console.log(`  기준 시각       ${summary.seed_now}`);
   console.log(`  OWNER 긱사장     ${OWNER_LOGIN_ID} / ${PASSWORD}`);
   console.log(`  A 김성실         hardworker / ${PASSWORD}`);
   console.log(`  B 이수면         ilovesleep / ${PASSWORD}`);
   console.log(`  C 박잠수         submarine / ${PASSWORD}`);
-  if (apiResult) {
+  if (apiResult && options.scenarioKey === "functional") {
     console.log(`  사업장 ID        ${apiResult.workplaceId}`);
     console.log(`  김성실 근무 ID   ${apiResult.acceptedWorkCaseId}`);
     console.log(`  보건증 문서 ID   ${apiResult.healthCertificateDocumentId}`);
     if (shouldPrintPendingInvitation(processEnv)) {
-      console.log(`  이수면 초대 URL  ${apiResult.pendingInvitation.inviteUrl}`);
+      console.log(
+        `  이수면 초대 URL  ${apiResult.pendingInvitation.inviteUrl}`,
+      );
       console.log("  초대 URL은 이 출력 외 파일이나 이슈에 저장하지 마세요.");
     } else {
       console.log("  이수면 초대 URL은 Actions 로그에 출력하지 않았습니다.");
     }
   }
-  if (options.scenarioKey === "video-02-check-in" || options.scenarioKey === "functional") {
-    console.log("  박잠수 근무는 앱 실행 후 다음 60초 Scheduler 주기에서 NO_SHOW가 됩니다.");
+  if (apiResult && options.scenarioKey === "video-04-three-years") {
+    console.log(
+      `  최신 근로계약서 ${apiResult.activeContractCount}건 (지점별 1건, 실제 PDF 포함)`,
+    );
+    console.log(
+      `  3년 초과 계약   ${summary?.deleted_contract_count || 1}건 (자동 파기 상태)`,
+    );
+  }
+  if (
+    options.scenarioKey === "video-02-check-in" ||
+    options.scenarioKey === "functional"
+  ) {
+    console.log(
+      "  박잠수 근무는 앱 실행 후 다음 60초 Scheduler 주기에서 NO_SHOW가 됩니다.",
+    );
     if (summary?.late_no_show_at) {
-      console.log(`  이수면 출근 마감 ${summary.late_no_show_at} (KST, 이후에는 SEED 재실행)`);
+      console.log(
+        `  이수면 출근 마감 ${summary.late_no_show_at} (KST, 이후에는 SEED 재실행)`,
+      );
     }
   }
   if (options.scenarioKey === "video-03-check-out") {
@@ -516,7 +759,10 @@ async function main(argv = process.argv.slice(2)) {
     printResult(result);
     return 0;
   } catch (error) {
-    if (error instanceof DisposableDatabaseError || error instanceof DemoSeedError) {
+    if (
+      error instanceof DisposableDatabaseError ||
+      error instanceof DemoSeedError
+    ) {
       console.error(`[demo-seed] ${error.message}`);
       return 1;
     }
@@ -548,8 +794,10 @@ module.exports = {
   assertLocalResetConfirmation,
   assertProductionReset,
   clearLocalDocumentStorage,
+  completeVideo04ApiSetup,
   invitationToken,
   main,
+  materializeVideo04Contracts,
   parseOptions,
   parseSeedSummary,
   resolveLocalConfirmation,

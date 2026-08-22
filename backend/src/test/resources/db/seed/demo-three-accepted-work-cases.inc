@@ -11,7 +11,7 @@ INSERT INTO work_cases (
     @owner_id, @worker_a_id, @workplace_id, '[DEMO] 김성실 정상 근무',
     @a_start, @a_end, 30, 0,
     '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-    37.5481384, 127.0733972, 100.00,
+    37.5481384, 127.0733972, @demo_radius_meters,
     @demo_wage, 1, @a_status, @accepted_at, @seed_now
 );
 SET @work_case_a_id = LAST_INSERT_ID();
@@ -26,7 +26,7 @@ INSERT INTO work_cases (
     @owner_id, @worker_b_id, @workplace_id, '[DEMO] 이수면 30분 지각 근무',
     @b_start, @b_end, 30, 0,
     '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-    37.5481384, 127.0733972, 100.00,
+    37.5481384, 127.0733972, @demo_radius_meters,
     @demo_wage, 1, @b_status, @accepted_at, @seed_now
 );
 SET @work_case_b_id = LAST_INSERT_ID();
@@ -41,7 +41,7 @@ INSERT INTO work_cases (
     @owner_id, @worker_c_id, @workplace_id, '[DEMO] 박잠수 노쇼 근무',
     @c_start, @c_end, 30, 0,
     '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-    37.5481384, 127.0733972, 100.00,
+    37.5481384, 127.0733972, @demo_radius_meters,
     @demo_wage, 1, @c_status, @accepted_at, @seed_now
 );
 SET @work_case_c_id = LAST_INSERT_ID();
@@ -74,7 +74,7 @@ INSERT INTO work_contracts (
         @work_case_a_id, @owner_id, @worker_a_id, '김성실 일일 근로계약서',
         @a_start, @a_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1,
         JSON_OBJECT('demo', TRUE, 'persona', 'A', 'healthCertificateRequired', TRUE),
         @accepted_at, @accepted_at
@@ -83,7 +83,7 @@ INSERT INTO work_contracts (
         @work_case_b_id, @owner_id, @worker_b_id, '이수면 일일 근로계약서',
         @b_start, @b_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1,
         JSON_OBJECT('demo', TRUE, 'persona', 'B', 'plannedLateMinutes', 30),
         @accepted_at, @accepted_at
@@ -92,7 +92,7 @@ INSERT INTO work_contracts (
         @work_case_c_id, @owner_id, @worker_c_id, '박잠수 일일 근로계약서',
         @c_start, @c_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1,
         JSON_OBJECT('demo', TRUE, 'persona', 'C', 'plannedOutcome', 'NO_SHOW'),
         @accepted_at, @accepted_at

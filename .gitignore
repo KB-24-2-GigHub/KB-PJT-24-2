@@ -62,6 +62,10 @@ replay_pid*.log
 /temp/
 /local-runtime/
 
+# Generated local artifacts
+/output/
+/outputs/
+
 # Local uploaded document data
 /local-data/
 

@@ -57,6 +57,7 @@ class WorkplaceServiceImplTest {
 
     private static final BigDecimal GEOCODED_LATITUDE = new BigDecimal("37.1234567");
     private static final BigDecimal GEOCODED_LONGITUDE = new BigDecimal("127.1234567");
+    private static final BigDecimal DEFAULT_RADIUS_METERS = new BigDecimal("100.00");
     private static final GeocodedCoordinates GEOCODED =
             new GeocodedCoordinates(GEOCODED_LATITUDE, GEOCODED_LONGITUDE);
 
@@ -343,7 +344,8 @@ class WorkplaceServiceImplTest {
     @Test
     void confirmsLocationOnFirstRequestForOwnedActiveWorkplaceWithoutCoordinates() {
         when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
-                .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+                .thenReturn(new WorkplaceLocationSnapshot(
+                        11L, null, null, DEFAULT_RADIUS_METERS));
         when(workplaceMapper.confirmCoordinates(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE))
                 .thenReturn(1);
 
@@ -361,7 +363,8 @@ class WorkplaceServiceImplTest {
     @Test
     void failsLoudlyWhenConfirmUpdatesNoRow() {
         when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
-                .thenReturn(new WorkplaceLocationSnapshot(11L, null, null));
+                .thenReturn(new WorkplaceLocationSnapshot(
+                        11L, null, null, DEFAULT_RADIUS_METERS));
         when(workplaceMapper.confirmCoordinates(anyLong(), any(BigDecimal.class), any(BigDecimal.class)))
                 .thenReturn(0);
 
@@ -380,7 +383,8 @@ class WorkplaceServiceImplTest {
     @Test
     void treatsSameNormalizedCoordinatesAsIdempotentReplay() {
         when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
-                .thenReturn(new WorkplaceLocationSnapshot(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
+                .thenReturn(new WorkplaceLocationSnapshot(
+                        11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE, DEFAULT_RADIUS_METERS));
 
         service.confirmLocation(
                 owner(7L),
@@ -395,7 +399,8 @@ class WorkplaceServiceImplTest {
     @Test
     void rejectsDifferentCoordinatesWhenAlreadyConfirmed() {
         when(workplaceMapper.findOwnedActiveLocationForUpdate(11L, 7L))
-                .thenReturn(new WorkplaceLocationSnapshot(11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE));
+                .thenReturn(new WorkplaceLocationSnapshot(
+                        11L, GEOCODED_LATITUDE, GEOCODED_LONGITUDE, DEFAULT_RADIUS_METERS));
 
         WorkplaceCoordinateConfirmCommand differentValue =
                 confirmCommand(new BigDecimal("1.0000000"), new BigDecimal("2.0000000"));
