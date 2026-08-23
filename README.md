@@ -5,7 +5,7 @@
   <img src="frontend/src/assets/images/logo/logo-gighub.png" alt="GigHub" width="260" />
 </picture>
 
-<br><br>
+<br>
 
 **단기 알바의 임금 체불을, 돈을 먼저 묶어 두는 방식으로 막습니다.**
 
@@ -64,77 +64,35 @@ KB IT's Your Life 7기 · 24-2팀
 
 ## 🛠 기술 스택
 
-### Frontend
-
-| 항목 | 버전 | 용도 |
-| --- | --- | --- |
-| Vue | 3.5.35 | Composition API |
-| Vue Router | 5.0.6 | `createWebHistory` — 초대 딥링크 대응 |
-| Pinia | 3.0.4 | 클라이언트 상태 |
-| Axios | 1.18 | 세션 쿠키·CSRF 헤더 자동 처리 |
-| Vite | 8.0 | 개발 서버·번들러 |
-| Vitest | 4.1 | 단위 테스트 (jsdom) |
-| qrcode | 1.5.4 | 사업장 고정 QR 렌더 |
-| lucide-vue-next | 1.0 | 아이콘 |
-| vite-svg-loader | 5.1 | SVG를 컴포넌트로 import |
-
-### Backend
-
-| 항목 | 버전 | 용도 |
-| --- | --- | --- |
-| Java | 17 | Gradle toolchain |
-| Spring Framework | 5.3.39 | **Spring Boot 미사용** — 애노테이션 기반 WAR |
-| Spring Security | 5.8.16 | HttpSession 인증 |
-| MyBatis | 3.5.19 | SQL은 Mapper XML에 분리 |
-| HikariCP | 7.0.2 | 커넥션 풀 |
-| MySQL Connector/J | 9.7.0 | JDBC 드라이버 |
-| Hibernate Validator | 6.2.5 | 요청 DTO 검증 |
-| Jackson | 2.17.3 | JSON 직렬화 · `Instant` 처리 |
-| Lombok | 1.18.46 | 보일러플레이트 축소 |
-| PDFBox · openhtmltopdf | 3.0.8 · 1.1.4 | 근로계약서 PDF 렌더 |
-| ZXing | 3.5.4 | QR 생성 |
-| springfox | 3.0.0 | Swagger UI · OpenAPI 문서 |
-| Tomcat | 9 (외부) | WAR 배포 대상 |
-
-### Database
-
-| 항목 | 값 |
+| 영역 | 스택 |
 | --- | --- |
-| MySQL | 8.4 (로컬 Docker · 운영 RDS) |
-| Flyway | 12.9 — 마이그레이션이 스키마의 단일 원본 |
-| 문자셋 · 타임존 | `utf8mb4_0900_ai_ci` · `Asia/Seoul` |
+| Frontend | Vue 3 · Vue Router · Pinia · Axios · Vite · Vitest |
+| Backend | Java 17 · Spring Framework 5 · Spring Security · MyBatis · Tomcat 9 |
+| Database | MySQL 8.4 · Flyway |
+| 인프라 | Vercel · nginx · Docker Compose on EC2 · GHCR · GitHub Actions |
+| 운영 알림 | CloudWatch → SNS → Lambda → Slack |
+| 개발 도구 | ESLint · Prettier · Checkstyle · Husky · lint-staged |
 
-### 인프라 · CI/CD
+선택을 좌우한 제약은 세 가지입니다.
 
-| 항목 | 값 |
-| --- | --- |
-| 웹 호스팅 | Vercel — `gighub.store` |
-| API | nginx(TLS 종단) → Tomcat 9 컨테이너 → RDS |
-| 컨테이너 | Docker Compose on EC2 |
-| 이미지 | GitHub Container Registry |
-| CI | GitHub Actions — 가드레일·테스트·빌드·WAR 아티팩트 |
-| 배포 | GitHub Actions — 이미지 push 후 SSH 배포, 스모크 테스트 |
-| 운영 알림 | CloudWatch Alarm → SNS → Lambda → Slack |
+- **Spring Boot를 쓰지 않습니다.** 애노테이션 기반 Spring Framework 5 설정으로 WAR를 만들어 외부 Tomcat 9에 배포합니다.
+- **SQL은 MyBatis Mapper XML에 둡니다.** 자바 코드에 쿼리를 섞지 않습니다.
+- **스키마의 단일 원본은 Flyway 마이그레이션입니다.** 애플리케이션은 마이그레이션을 자동 실행하지 않습니다.
 
-### 개발 도구
-
-| 항목 | 용도 |
-| --- | --- |
-| ESLint · Prettier | 프론트 정적 검사와 포매팅 |
-| Checkstyle | 백엔드 정적 검사 |
-| Husky · lint-staged | 커밋 훅 — 메시지 형식 검사와 자동 포매팅 |
+각 의존성의 정확한 버전은 [`frontend/package.json`](frontend/package.json)과 [`backend/build.gradle`](backend/build.gradle)에서 확인합니다.
 
 ---
 
 ## 🏗 시스템 아키텍처
 
-성격이 다른 세 경로를 나눠서 봅니다. 사용자 요청, 코드가 서버에 도달하는 길, 문제가 사람에게 알려지는 길은 각각 다른 문제를 만듭니다.
+요청이 오가는 길, 코드가 서버에 도달하는 길, 문제가 사람에게 알려지는 길을 한 장에 담았습니다. 선 색이 그 경로를 구분합니다.
 
 ![GigHub 시스템 아키텍처](docs/assets/architecture.png)
 
 - **TLS는 nginx에서 끝납니다.** Tomcat은 루프백에만 바인딩되어 외부에서 직접 도달할 수 없습니다.
-- **DB는 프라이빗 서브넷에 있습니다.** 애플리케이션 컨테이너만 접근합니다.
-- **배포 워크플로는 SSH 22번을 상시 열어두는 것에 의존하지 않습니다.** 배포·마이그레이션·시드는 실행할 때마다 러너 IP `/32` 규칙을 보안그룹에 추가했다가 `if: always()`로 회수합니다. 다이어그램의 "SSH · 배포 중에만 22 개방"은 이 `/32` 규칙을 가리킵니다. 상시 22번 규칙이 따로 있는지는 아직 확인되지 않았습니다([`deploy/SETUP.md`](deploy/SETUP.md) 2절).
+- **DB는 프라이빗 서브넷에 있고 Multi-AZ로 이중화되어 있습니다.** 애플리케이션 컨테이너만 접근하고, Primary는 다른 AZ의 Standby에 동기 복제됩니다.
+- **배포 권한은 OIDC로 받습니다.** GitHub Actions가 `AssumeRole`로 임시 자격증명을 발급받으므로 장기 IAM 액세스 키를 저장소에 두지 않습니다.
+- **배포 워크플로는 SSH 22번을 상시 열어두는 것에 의존하지 않습니다.** 배포·마이그레이션·시드는 실행할 때마다 러너 IP `/32` 규칙을 보안그룹에 추가했다가 `if: always()`로 회수합니다. 다이어그램의 `Deploy via SSH (Port:22)`가 이 `/32` 규칙 구간입니다. 상시 22번 규칙이 따로 있는지는 아직 확인되지 않았습니다([`deploy/SETUP.md`](deploy/SETUP.md) 2절).
 - **스키마 변경은 배포와 다른 경로입니다.** 애플리케이션은 이전 이미지로 즉시 롤백되지만 적용된 DDL은 돌아오지 않기 때문에, 마이그레이션은 사람이 눌러야만 실행됩니다.
 - **Lambda 알림 함수는 자동 배포되지 않습니다.** 코드 원본은 `deploy/lambda/slack-alert/`에 있고 반영은 수동입니다.
 
@@ -234,37 +192,46 @@ npm run test:fe    # 프론트 단위 테스트만
 
 ```text
 KB-PJT-24-2/
-├── frontend/                    Vue 3 SPA
+├── frontend/
 │   └── src/
-│       ├── components/          재사용 UI
-│       ├── composables/         뱃지·수익 틱·문서 미리보기
-│       ├── layouts/             역할별 탭 레이아웃
-│       ├── router/              화면 경로와 가드
-│       ├── services/            Axios 클라이언트와 도메인 API
-│       ├── stores/              Pinia 상태
-│       └── views/               화면 (auth · owner · worker · invite · error)
-│
-├── backend/                     Spring Framework 5 WAR
+│       ├── components/
+│       ├── composables/
+│       ├── layouts/
+│       ├── router/
+│       ├── services/
+│       ├── stores/
+│       └── views/
+├── backend/
 │   └── src/main/
 │       ├── java/com/gighub/
-│       │   ├── config/          Root · MVC · DB 초기화
-│       │   ├── auth/ member/ badge/
-│       │   ├── workplace/ work/ invitation/ contract/
-│       │   ├── attendance/      QR · 위치 기반 출퇴근
-│       │   ├── wallet/ settlement/ bank/
-│       │   ├── document/ notification/
-│       │   ├── idempotency/     금융성 요청 중복 차단
-│       │   └── (계층) controller → service → mapper → dto
 │       └── resources/
-│           ├── mappers/         MyBatis Mapper XML
-│           └── db/migration/    Flyway 마이그레이션
-│
-├── deploy/                      운영 배치 파일 (compose · nginx · lambda)
-├── docs/                        명세 · 런북 · 스키마 스냅샷
-├── scripts/                     저장소 자동화 (가드레일 · 시드 준비 · 훅)
-├── .github/workflows/           CI · 배포 · 마이그레이션 · 시드
-└── compose.yaml                 로컬 MySQL · Flyway
+│           ├── mappers/
+│           └── db/migration/
+├── deploy/
+├── docs/
+├── scripts/
+├── .github/workflows/
+└── compose.yaml
 ```
+
+| `frontend/src/` | 내용 |
+| --- | --- |
+| `components/` | 재사용 UI |
+| `composables/` | 뱃지 · 수익 틱 · 문서 미리보기 |
+| `layouts/` | 역할별 탭 레이아웃 |
+| `router/` | 화면 경로와 가드 |
+| `services/` | Axios 클라이언트와 도메인 API |
+| `stores/` | Pinia 상태 |
+| `views/` | 화면 — `auth` · `owner` · `worker` · `invite` · `error` |
+
+| `backend/src/main/` | 내용 |
+| --- | --- |
+| `java/com/gighub/config/` | Root · MVC · DB 초기화 |
+| `java/com/gighub/<도메인>/` | `auth` · `member` · `badge` · `workplace` · `work` · `invitation` · `contract` · `attendance` · `wallet` · `settlement` · `bank` · `document` · `notification` · `idempotency` |
+| `resources/mappers/` | MyBatis Mapper XML |
+| `resources/db/migration/` | Flyway 마이그레이션 |
+
+도메인 패키지는 `controller` → `service` → `mapper` → `dto` 계층을 따릅니다. `attendance`는 QR·위치 기반 출퇴근을, `idempotency`는 금융성 요청 중복 차단을 맡습니다.
 
 ---
 
@@ -274,24 +241,22 @@ KB-PJT-24-2/
 
 돈이 묶이는 지점입니다. 계약 성립과 예치가 함께 끝나야 "계약은 됐는데 돈은 안 묶인" 상태가 생기지 않습니다.
 
-```text
-[사장님]                          [서버]                          [알바생]
-   │                                │                                │
-   ├─ 근무 등록 ─────────────────▶ work_cases 생성 (수락 전)
-   │  날짜·시간·약정 일급·휴게      │
-   │                                │
-   ├─ 초대 링크 발급 ────────────▶ work_invitations 토큰 발급
-   │                                │
-   │  링크 전달 ──────────────────────────────────────────────────▶ │
-   │                                │                                │
-   │                                ◀── 조건 확인 ───────────────────┤
-   │                                ◀── 동의(전자서명) · 근무 확정 ──┤
-   │                                │                                │
-   │                                ├─ 계약 성립 · 서명 기록
-   │                                ├─ 근로계약서 PDF 자동 생성
-   │                                └─ 사장님 지갑에서 약정 일급 예치
-   │                                │
-   ◀── 실시간 알림 ────────────────┴── 실시간 알림 ────────────────▶ │
+```mermaid
+sequenceDiagram
+    actor O as 사장님
+    participant S as 서버
+    actor W as 알바생
+
+    O->>S: 근무 등록 (날짜 · 시간 · 약정 일급 · 휴게)
+    Note over S: work_cases 생성 (수락 전)
+    O->>S: 초대 링크 발급
+    S-->>O: work_invitations 토큰
+    O-->>W: 링크 전달
+    W->>S: 조건 확인
+    W->>S: 동의 (전자서명) · 근무 확정
+    Note over S: 계약 성립 · 서명 기록<br/>근로계약서 PDF 자동 생성<br/>사장님 지갑 → 예치금
+    S-->>O: 실시간 알림
+    S-->>W: 실시간 알림
 ```
 
 ### 2. QR 출퇴근 → 정산 / 노쇼·퇴근 누락 환불
@@ -299,35 +264,32 @@ KB-PJT-24-2/
 정상은 약정 일급 전액 지급, 지각·조퇴는 비례 지급과 차액 환불, 노쇼·퇴근 누락은 별도 승인
 뒤 전액 환불로 끝납니다. 모든 결과에서 지급액과 환불액의 합은 원 예치액과 같습니다.
 
-```text
-[알바생]                          [서버]                          [사장님]
-   │                                │                                │
-   ├─ 매장 QR 스캔 (출근) ───────▶ 출근 기록 · 상태: 근무중
-   │                                ├── 실시간 알림 ────────────────▶ │
-   │                                │                                │
-   ├─ 매장 QR 스캔 (퇴근) ───────▶ 상태: 근무 완료
-   │                                │                                │
-   │                                ◀── 일당 지급 승인 ──────────────┤
-   │                                ├─ 저장 Snapshot 실행 → 지급·차액 환불
-   ◀── 안심지갑 잔액 증가 ─────────┘                                │
-   │                                                                 │
-   ├─ 본인 계좌로 출금 ──────────▶ 출금 요청                        │
+```mermaid
+sequenceDiagram
+    actor W as 알바생
+    participant S as 서버
+    actor O as 사장님
 
-   ────────────────────────── 노쇼 경로 ──────────────────────────
-
-   (출근 스캔 없음)                 │
-                                    ├─ min(시작+1시간, 종료) → 상태: 노쇼 (자동)
-                                    │                                │
-                                    ◀── 노쇼 환불 승인 ──────────────┤
-                                    └─ 예치금 전액 환불 · 가용 잔액 복구
-
-   ──────────────────────── 퇴근 누락 경로 ────────────────────────
-
-   (출근 후 퇴근 스캔 없음)          │
-                                    ├─ 종료 +2시간 → 상태: 퇴근 미확인 (자동)
-                                    │                                │
-                                    ◀── 퇴근 누락 환불 승인 ─────────┤
-                                    └─ 예치금 전액 환불 · 가용 잔액 복구
+    alt 정상 · 지각 · 조퇴
+        W->>S: 매장 QR 스캔 (출근)
+        Note over S: 상태: 근무중
+        S-->>O: 실시간 알림
+        W->>S: 매장 QR 스캔 (퇴근)
+        Note over S: 상태: 근무 완료
+        O->>S: 일당 지급 승인
+        Note over S: 저장 Snapshot 실행<br/>지급 · 차액 환불
+        S-->>W: 안심지갑 잔액 증가
+        W->>S: 본인 계좌로 출금 요청
+    else 노쇼 (출근 스캔 없음)
+        Note over S: min(근무 시작 +1시간, 근무 종료) 경과<br/>상태: 노쇼 — 스케줄러 자동 전환
+        O->>S: 노쇼 환불 승인
+        Note over S: 예치금 전액 환불 · 가용 잔액 복구
+    else 퇴근 누락 (출근 후 퇴근 스캔 없음)
+        W->>S: 매장 QR 스캔 (출근)
+        Note over S: 근무 종료 +2시간 경과<br/>상태: 퇴근 미확인 — 스케줄러 자동 전환
+        O->>S: 퇴근 누락 환불 승인
+        Note over S: 예치금 전액 환불 · 가용 잔액 복구
+    end
 ```
 
 ---
