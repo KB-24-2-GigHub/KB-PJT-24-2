@@ -1,5 +1,6 @@
 package com.gighub.config;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,8 +19,19 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import springfox.documentation.service.ApiInfo;
 
 class SwaggerRuntimeContractTest {
+
+    @Test
+    void runtimeSwaggerUsesTheApprovedSpecVersion() throws ReflectiveOperationException {
+        Method apiInfoFactory = SwaggerConfig.class.getDeclaredMethod("apiInfo");
+        apiInfoFactory.setAccessible(true);
+
+        ApiInfo apiInfo = (ApiInfo) apiInfoFactory.invoke(new SwaggerConfig());
+
+        assertEquals("9.0.0", apiInfo.getVersion());
+    }
 
     @Test
     void everyVoidResponseEntityDocumentsNoContentInRuntimeSwagger() throws ClassNotFoundException {

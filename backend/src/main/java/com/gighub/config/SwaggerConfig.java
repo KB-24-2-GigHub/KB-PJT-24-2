@@ -53,7 +53,7 @@ public class SwaggerConfig {
         return new ApiInfoBuilder()
                 .title("GigHub API 명세서")
                 .description("GigHub API 문서입니다.")
-                .version("7.0.0")
+                .version("9.0.0")
                 .build();
     }
 }

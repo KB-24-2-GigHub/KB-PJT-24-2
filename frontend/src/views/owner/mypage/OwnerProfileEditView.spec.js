@@ -40,4 +40,18 @@ describe('OwnerProfileEditView 실시간 검증(#238)', () => {
     await phone.setValue('010-9999-8888')
     expect(wrapper.text()).not.toContain('올바른 전화번호 형식이 아닙니다.')
   })
+
+  it('서버 전화번호를 편집 형식으로 표시한다', async () => {
+    getMe.mockResolvedValue({
+      loginId: 'owner01',
+      email: 'owner@test.com',
+      name: '김사장',
+      phone: '01098765432'
+    })
+
+    const wrapper = mount(OwnerProfileEditView)
+    await flushPromises()
+
+    expect(wrapper.find('input[placeholder="010-0000-0000"]').element.value).toBe('010-9876-5432')
+  })
 })
