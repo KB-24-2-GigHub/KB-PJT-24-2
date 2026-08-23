@@ -10,6 +10,8 @@ const SPEC_MANIFEST_PATH = `${SPEC_ROOT}/SPEC_LOCK.json`;
 const SPEC_MANIFEST_VERSION = 1;
 const SPEC_HASH_ALGORITHM = "sha256";
 const SPEC_NORMALIZATION = "crlf-to-lf";
+const SWAGGER_CONFIG_PATH =
+  "backend/src/main/java/com/gighub/config/SwaggerConfig.java";
 const CANONICAL_SPEC_MARKDOWN_PATHS = [
   `${SPEC_ROOT}/README.md`,
   `${SPEC_ROOT}/REQUIREMENTS.md`,
@@ -2020,6 +2022,76 @@ function extractSpecReleaseVersion(content) {
   return releaseRow.exec(header)?.[1] ?? null;
 }
 
+function extractSwaggerSpecReleaseVersion(content) {
+  if (content === null) return null;
+  const normalized = normalizeSpecContent(content);
+  const releaseConstant =
+    /^\s*static\s+final\s+String\s+SPEC_RELEASE_VERSION\s*=\s*"((?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*))"\s*;/m;
+  return releaseConstant.exec(normalized)?.[1] ?? null;
+}
+
+function verifyRuntimeSwaggerSpecVersion({
+  specReadmeContent,
+  swaggerConfigContent,
+}) {
+  const errors = [];
+  const canonicalVersion =
+    specReadmeContent === null
+      ? null
+      : extractSpecReleaseVersion(specReadmeContent);
+  const runtimeVersion = extractSwaggerSpecReleaseVersion(swaggerConfigContent);
+
+  if (!canonicalVersion) {
+    errors.push(
+      `${SPEC_ROOT}/README.md must declare a complete SemVer release for Runtime Swagger.`,
+    );
+  }
+  if (!runtimeVersion) {
+    errors.push(
+      `${SWAGGER_CONFIG_PATH} must declare SPEC_RELEASE_VERSION as a complete SemVer.`,
+    );
+  }
+  if (
+    canonicalVersion &&
+    runtimeVersion &&
+    canonicalVersion !== runtimeVersion
+  ) {
+    errors.push(
+      `Runtime Swagger release (${runtimeVersion}) must match canonical spec release (${canonicalVersion}).`,
+    );
+  }
+
+  return errors;
+}
+
+function readCandidateFile(mode, file) {
+  if (mode === "staged") {
+    return gitOptional(["show", `:${file}`]);
+  }
+
+  const absoluteFile = path.join(process.cwd(), ...file.split("/"));
+  return fs.existsSync(absoluteFile)
+    ? fs.readFileSync(absoluteFile, "utf8")
+    : null;
+}
+
+function validateRuntimeSwaggerSpecVersion(mode) {
+  const swaggerConfigContent = readCandidateFile(mode, SWAGGER_CONFIG_PATH);
+  // 축소형 Guardrail fixture에는 백엔드 프로젝트가 없을 수 있다. 실제 백엔드가 있으면
+  // SwaggerConfig 삭제까지 반드시 오류로 처리한다.
+  if (
+    swaggerConfigContent === null &&
+    readCandidateFile(mode, "backend/build.gradle") === null
+  ) {
+    return [];
+  }
+
+  return verifyRuntimeSwaggerSpecVersion({
+    specReadmeContent: readCandidateFile(mode, `${SPEC_ROOT}/README.md`),
+    swaggerConfigContent,
+  });
+}
+
 function extractReadmeReleaseRows(content) {
   const normalized = normalizeSpecContent(content);
   const releaseHistory =
@@ -3080,6 +3152,16 @@ function printMigrationImmutabilityErrors(errors) {
   );
 }
 
+function printRuntimeSwaggerSpecErrors(errors) {
+  console.error("\nRuntime Swagger specification alignment check failed.\n");
+  for (const error of errors) {
+    console.error(`- ${error}`);
+  }
+  console.error(
+    "\nRuntime Swagger must publish the canonical protected-spec release version.\n",
+  );
+}
+
 function runGuardrails(mode) {
   const entries =
     mode === "staged" ? readStagedEntries() : readWorkingTreeEntries();
@@ -3089,6 +3171,7 @@ function runGuardrails(mode) {
   const architectureGovernance = validateArchitectureGovernance(mode);
   const governanceTemplateErrors = validateGovernanceTemplates(mode);
   const migrationImmutabilityErrors = validateMigrationImmutability(mode);
+  const runtimeSwaggerSpecErrors = validateRuntimeSwaggerSpecVersion(mode);
   const reviewScopeWarnings = collectReviewScopeWarnings(mode);
 
   if (violations.length > 0) {
@@ -3112,6 +3195,9 @@ function runGuardrails(mode) {
   if (migrationImmutabilityErrors.length > 0) {
     printMigrationImmutabilityErrors(migrationImmutabilityErrors);
   }
+  if (runtimeSwaggerSpecErrors.length > 0) {
+    printRuntimeSwaggerSpecErrors(runtimeSwaggerSpecErrors);
+  }
   if (reviewScopeWarnings.length > 0) {
     printReviewScopeWarnings(reviewScopeWarnings);
   }
@@ -3121,7 +3207,8 @@ function runGuardrails(mode) {
     patchGovernance.errors.length > 0 ||
     architectureGovernance.errors.length > 0 ||
     governanceTemplateErrors.length > 0 ||
-    migrationImmutabilityErrors.length > 0
+    migrationImmutabilityErrors.length > 0 ||
+    runtimeSwaggerSpecErrors.length > 0
   ) {
     return 1;
   }
@@ -3167,6 +3254,7 @@ module.exports = {
   collectWorkingTreeSpecSnapshot,
   extractReadmeReleaseRows,
   extractSpecReleaseVersion,
+  extractSwaggerSpecReleaseVersion,
   findArchitectureViolations,
   findViolations,
   hashNormalizedSpecContent,
@@ -3190,6 +3278,7 @@ module.exports = {
   verifyGovernanceTemplateSnapshot,
   verifyArchitectureManifestEvolution,
   verifyMigrationImmutability,
+  verifyRuntimeSwaggerSpecVersion,
   verifySpecReleaseMetadata,
   verifySpecSnapshot,
 };
