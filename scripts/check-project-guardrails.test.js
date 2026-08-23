@@ -10,6 +10,7 @@ const {
   compareArchitectureViolations,
   extractReadmeReleaseRows,
   extractSpecReleaseVersion,
+  extractSwaggerSpecReleaseVersion,
   findArchitectureViolations,
   findViolations,
   hashNormalizedSpecContent,
@@ -26,6 +27,7 @@ const {
   verifyArchitectureManifestEvolution,
   verifyGovernanceTemplateSnapshot,
   verifyMigrationImmutability,
+  verifyRuntimeSwaggerSpecVersion,
   verifySpecReleaseMetadata,
 } = require("./check-project-guardrails");
 
@@ -1249,6 +1251,39 @@ test("requires canonical spec Markdown release metadata to stay aligned", () => 
   assert.match(
     verifySpecReleaseMetadata(files).join("\n"),
     /latest release row \(3\.0\.0\).*header \(3\.0\.1\)/,
+  );
+});
+
+test("validates Runtime Swagger release against the canonical spec parser", () => {
+  const specReadmeContent = "# Spec\n\n| Release | `3.0.1` |\n";
+  const swaggerConfigContent = [
+    "class SwaggerConfig {",
+    '  static final String SPEC_RELEASE_VERSION = "3.0.1";',
+    "}",
+  ].join("\n");
+
+  assert.equal(extractSwaggerSpecReleaseVersion(swaggerConfigContent), "3.0.1");
+  assert.deepEqual(
+    verifyRuntimeSwaggerSpecVersion({
+      specReadmeContent,
+      swaggerConfigContent,
+    }),
+    [],
+  );
+
+  assert.match(
+    verifyRuntimeSwaggerSpecVersion({
+      specReadmeContent,
+      swaggerConfigContent: swaggerConfigContent.replace("3.0.1", "3.0.0"),
+    }).join("\n"),
+    /Runtime Swagger release \(3\.0\.0\).*canonical spec release \(3\.0\.1\)/,
+  );
+  assert.match(
+    verifyRuntimeSwaggerSpecVersion({
+      specReadmeContent,
+      swaggerConfigContent: "class SwaggerConfig {}",
+    }).join("\n"),
+    /must declare SPEC_RELEASE_VERSION/,
   );
 });
 

@@ -24,6 +24,9 @@ import javax.servlet.http.HttpSession;
 @EnableOpenApi
 public class SwaggerConfig {
 
+    // 정본 명세 릴리스와의 일치는 저장소 Guardrail에서 함께 검증한다.
+    static final String SPEC_RELEASE_VERSION = "9.0.0";
+
     private final TypeResolver typeResolver = new TypeResolver();
 
     @Bean
@@ -53,7 +56,7 @@ public class SwaggerConfig {
         return new ApiInfoBuilder()
                 .title("GigHub API 명세서")
                 .description("GigHub API 문서입니다.")
-                .version("7.0.0")
+                .version(SPEC_RELEASE_VERSION)
                 .build();
     }
 }

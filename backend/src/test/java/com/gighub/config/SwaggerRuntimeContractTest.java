@@ -1,5 +1,6 @@
 package com.gighub.config;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,8 +19,23 @@ import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import springfox.documentation.spi.DocumentationType;
+import springfox.documentation.spi.service.contexts.DocumentationContext;
+import springfox.documentation.spi.service.contexts.DocumentationContextBuilder;
+import springfox.documentation.spring.web.plugins.Docket;
 
 class SwaggerRuntimeContractTest {
+
+    @Test
+    void runtimeSwaggerUsesTheApprovedSpecVersion() {
+        Docket docket = new SwaggerConfig().api();
+        DocumentationContext runtimeDocumentation = docket.configure(
+                new DocumentationContextBuilder(DocumentationType.OAS_30));
+
+        assertEquals(SwaggerConfig.SPEC_RELEASE_VERSION,
+                runtimeDocumentation.getApiInfo().getVersion(),
+                "Docket이 실제 제공하는 Swagger 버전은 정본 명세 릴리스와 같아야 합니다.");
+    }
 
     @Test
     void everyVoidResponseEntityDocumentsNoContentInRuntimeSwagger() throws ClassNotFoundException {
