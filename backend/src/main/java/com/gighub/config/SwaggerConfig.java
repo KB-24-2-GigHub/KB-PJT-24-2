@@ -44,11 +44,16 @@ public class SwaggerConfig {
                 .apiInfo(apiInfo());
     }
 
+    @Bean
+    public SwaggerPageParameterContractFilter swaggerPageParameterContractFilter() {
+        return new SwaggerPageParameterContractFilter();
+    }
+
     private ApiInfo apiInfo(){
         return new ApiInfoBuilder()
                 .title("GigHub API 명세서")
                 .description("GigHub API 문서입니다.")
-                .version("1.0.0")
+                .version("7.0.0")
                 .build();
     }
 }

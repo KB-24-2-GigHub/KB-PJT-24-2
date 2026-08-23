@@ -18,6 +18,7 @@ import com.gighub.work.dto.WorkCaseSummaryResponse;
 import com.gighub.work.service.WorkCaseService;
 import com.gighub.work.service.command.WorkCaseCreateCommand;
 import com.gighub.work.service.command.WorkCaseUpdateCommand;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -59,6 +60,8 @@ public class WorkCaseController {
                 .body(ApiResponse.of(new WorkCaseCreateResponse(workCaseId)));
     }
 
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "근무 조건 수정 완료"))
     @PatchMapping("/api/work-cases/{workCaseId}")
     public ResponseEntity<Void> update(
             @PathVariable Long workCaseId,
@@ -70,6 +73,8 @@ public class WorkCaseController {
         return ResponseEntity.noContent().build();
     }
 
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "204", description = "근무 삭제 완료"))
     @DeleteMapping("/api/work-cases/{workCaseId}")
     public ResponseEntity<Void> delete(
             @PathVariable Long workCaseId,

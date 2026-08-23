@@ -341,6 +341,9 @@ class LongLivedWorkLifecycleDatabaseIntegrationTest {
                 jdbc.update(
                         "DELETE FROM work_invitations WHERE work_case_id = ?",
                         fixture.workCaseId);
+                jdbc.update(
+                        "DELETE FROM notifications WHERE work_case_id = ?",
+                        fixture.workCaseId);
                 jdbc.update("DELETE FROM work_cases WHERE id = ?", fixture.workCaseId);
             }
             if (fixture.workerUserId != null) {

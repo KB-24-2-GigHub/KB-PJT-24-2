@@ -987,11 +987,17 @@ class InvitationAcceptDatabaseIntegrationTest {
             jdbcTemplate.update("DELETE FROM escrows WHERE work_case_id = ?", workCaseId);
             jdbcTemplate.update("DELETE FROM work_contracts WHERE work_case_id = ?", workCaseId);
             jdbcTemplate.update("DELETE FROM work_invitations WHERE work_case_id = ?", workCaseId);
+            jdbcTemplate.update("DELETE FROM notifications WHERE work_case_id = ?", workCaseId);
             jdbcTemplate.update("DELETE FROM work_cases WHERE id = ?", workCaseId);
             deleteStorageFixture(storageBasePath, workCaseId);
         }
         jdbcTemplate.update(
                 "DELETE FROM idempotency_requests WHERE user_id IN (?, ?, ?)",
+                fixture.ownerUserId,
+                fixture.workerUserId,
+                fixture.otherWorkerId);
+        jdbcTemplate.update(
+                "DELETE FROM user_badges WHERE user_id IN (?, ?, ?)",
                 fixture.ownerUserId,
                 fixture.workerUserId,
                 fixture.otherWorkerId);
