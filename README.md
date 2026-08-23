@@ -64,14 +64,14 @@ KB IT's Your Life 7기 · 24-2팀
 
 ## 🛠 기술 스택
 
-| 영역 | 스택 |
-| --- | --- |
-| Frontend | Vue 3 · Vue Router · Pinia · Axios · Vite · Vitest |
-| Backend | Java 17 · Spring Framework 5 · Spring Security · MyBatis · Tomcat 9 |
-| Database | MySQL 8.4 · Flyway |
-| 인프라 | Vercel · nginx · Docker Compose on EC2 · GHCR · GitHub Actions |
-| 운영 알림 | CloudWatch → SNS → Lambda → Slack |
-| 개발 도구 | ESLint · Prettier · Checkstyle · Husky · lint-staged |
+| 영역      | 스택                                                                |
+| --------- | ------------------------------------------------------------------- |
+| Frontend  | Vue 3 · Vue Router · Pinia · Axios · Vite · Vitest                  |
+| Backend   | Java 17 · Spring Framework 5 · Spring Security · MyBatis · Tomcat 9 |
+| Database  | MySQL 8.4 · Flyway                                                  |
+| 인프라    | Vercel · nginx · Docker Compose on EC2 · GHCR · GitHub Actions      |
+| 운영 알림 | CloudWatch → SNS → Lambda → Slack                                   |
+| 개발 도구 | ESLint · Prettier · Checkstyle · Husky · lint-staged                |
 
 설명이 필요한 부분만 덧붙입니다.
 
@@ -129,17 +129,17 @@ cp .env.example .env
 cp frontend/.env.example frontend/.env
 ```
 
-| 파일 | 키 | 기본값 | 설명 |
-| --- | --- | --- | --- |
-| `.env` | `MYSQL_PORT` | `3307` | 로컬 MySQL 노출 포트 |
-| `.env` | `MYSQL_DATABASE` | `kb_pjt` | 데이터베이스 이름 |
-| `.env` | `MYSQL_USER` · `MYSQL_PASSWORD` | — | 애플리케이션 계정 |
-| `.env` | `MYSQL_ROOT_PASSWORD` | — | root 비밀번호 |
-| `frontend/.env` | `VITE_API_BASE_URL` | `/api` | Axios base URL |
-| `frontend/.env` | `DEV_PROXY_TARGET` | `http://localhost:8080` | Vite `/api` 프록시 대상 |
-| `frontend/.env` | `DEV_ALLOWED_HOSTS` | (비움) | HTTPS 터널 접속 시에만 사용 — 실기기 카메라·위치는 보안 컨텍스트 필요 |
-| `frontend/.env` | `VITE_USE_MOCK` | `false` | 레거시 Auth·User 데모 어댑터 전용 |
-| `frontend/.env` | `VITE_MOCK_OPERATIONS` | (비움) | 개발 환경에서 Operation 단위 mock 선택 (예: `wallet.fetchWallet`) |
+| 파일            | 키                              | 기본값                  | 설명                                                                  |
+| --------------- | ------------------------------- | ----------------------- | --------------------------------------------------------------------- |
+| `.env`          | `MYSQL_PORT`                    | `3307`                  | 로컬 MySQL 노출 포트                                                  |
+| `.env`          | `MYSQL_DATABASE`                | `kb_pjt`                | 데이터베이스 이름                                                     |
+| `.env`          | `MYSQL_USER` · `MYSQL_PASSWORD` | —                       | 애플리케이션 계정                                                     |
+| `.env`          | `MYSQL_ROOT_PASSWORD`           | —                       | root 비밀번호                                                         |
+| `frontend/.env` | `VITE_API_BASE_URL`             | `/api`                  | Axios base URL                                                        |
+| `frontend/.env` | `DEV_PROXY_TARGET`              | `http://localhost:8080` | Vite `/api` 프록시 대상                                               |
+| `frontend/.env` | `DEV_ALLOWED_HOSTS`             | (비움)                  | HTTPS 터널 접속 시에만 사용 — 실기기 카메라·위치는 보안 컨텍스트 필요 |
+| `frontend/.env` | `VITE_USE_MOCK`                 | `false`                 | 레거시 Auth·User 데모 어댑터 전용                                     |
+| `frontend/.env` | `VITE_MOCK_OPERATIONS`          | (비움)                  | 개발 환경에서 Operation 단위 mock 선택 (예: `wallet.fetchWallet`)     |
 
 ### 데이터베이스
 
@@ -178,13 +178,13 @@ npm run test:fe    # 프론트 단위 테스트만
 
 ### 기타 스크립트
 
-| 명령 | 설명 |
-| --- | --- |
-| `npm run db:migrate` | Flyway 마이그레이션 적용 |
-| `npm run db:seed:contract` | 계약·예치 테스트 시드 |
-| `npm run db:seed:demo` | 전체 초기화 후 시연 상태 재생성 (확인값 필요) |
-| `npm run db:fixture:invite` | 초대 수락 E2E 사전 데이터 |
-| `npm run build:fe` | 프론트 프로덕션 빌드 |
+| 명령                        | 설명                                          |
+| --------------------------- | --------------------------------------------- |
+| `npm run db:migrate`        | Flyway 마이그레이션 적용                      |
+| `npm run db:seed:contract`  | 계약·예치 테스트 시드                         |
+| `npm run db:seed:demo`      | 전체 초기화 후 시연 상태 재생성 (확인값 필요) |
+| `npm run db:fixture:invite` | 초대 수락 E2E 사전 데이터                     |
+| `npm run build:fe`          | 프론트 프로덕션 빌드                          |
 
 ---
 
@@ -214,22 +214,22 @@ KB-PJT-24-2/
 └── compose.yaml
 ```
 
-| `frontend/src/` | 내용 |
-| --- | --- |
-| `components/` | 재사용 UI |
-| `composables/` | 뱃지 · 수익 틱 · 문서 미리보기 |
-| `layouts/` | 역할별 탭 레이아웃 |
-| `router/` | 화면 경로와 가드 |
-| `services/` | Axios 클라이언트와 도메인 API |
-| `stores/` | Pinia 상태 |
-| `views/` | 화면 — `auth` · `owner` · `worker` · `invite` · `error` |
+| `frontend/src/` | 내용                                                    |
+| --------------- | ------------------------------------------------------- |
+| `components/`   | 재사용 UI                                               |
+| `composables/`  | 뱃지 · 수익 틱 · 문서 미리보기                          |
+| `layouts/`      | 역할별 탭 레이아웃                                      |
+| `router/`       | 화면 경로와 가드                                        |
+| `services/`     | Axios 클라이언트와 도메인 API                           |
+| `stores/`       | Pinia 상태                                              |
+| `views/`        | 화면 — `auth` · `owner` · `worker` · `invite` · `error` |
 
-| `backend/src/main/` | 내용 |
-| --- | --- |
-| `java/com/gighub/config/` | Root · MVC · DB 초기화 |
+| `backend/src/main/`         | 내용                                                                                                                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `java/com/gighub/config/`   | Root · MVC · DB 초기화                                                                                                                                                         |
 | `java/com/gighub/<도메인>/` | `auth` · `member` · `badge` · `workplace` · `work` · `invitation` · `contract` · `attendance` · `wallet` · `settlement` · `bank` · `document` · `notification` · `idempotency` |
-| `resources/mappers/` | MyBatis Mapper XML |
-| `resources/db/migration/` | Flyway 마이그레이션 |
+| `resources/mappers/`        | MyBatis Mapper XML                                                                                                                                                             |
+| `resources/db/migration/`   | Flyway 마이그레이션                                                                                                                                                            |
 
 도메인 패키지는 `controller` → `service` → `mapper` → `dto` 계층을 따릅니다. `attendance`는 QR·위치 기반 출퇴근을, `idempotency`는 금융성 요청 중복 차단을 맡습니다.
 
@@ -300,35 +300,35 @@ sequenceDiagram
 
 ### 연동 규약
 
-| 항목 | 내용 |
-| --- | --- |
-| Base URL | `VITE_API_BASE_URL` (기본 `/api`) · 로컬은 Vite 프록시로 Tomcat에 전달 |
-| 인증 | **세션 전용** — `JSESSIONID` 쿠키. accessToken을 저장하거나 전송하지 않음 |
-| CSRF | `XSRF-TOKEN` 쿠키를 읽어 모든 상태 변경 요청에 `X-XSRF-TOKEN` 자동 첨부 |
-| 성공 응답 | `{ data }` 를 벗겨 본문만 전달 |
-| 오류 응답 | `{ code, message, traceId, fieldErrors }` — 폼 필드 매핑에 사용 |
-| 401 처리 | 세션을 버리고 온보딩으로 이동. 초대 딥링크는 알바생 로그인으로 복귀 경로 보존 |
-| 멱등성 | 금융성 요청에 `Idempotency-Key` 헤더. 서버가 응답한 4xx는 재시도하지 않음 |
-| 시각 표현 | API는 UTC `Instant` 문자열, DB는 `Asia/Seoul` 벽시계 값 |
+| 항목      | 내용                                                                          |
+| --------- | ----------------------------------------------------------------------------- |
+| Base URL  | `VITE_API_BASE_URL` (기본 `/api`) · 로컬은 Vite 프록시로 Tomcat에 전달        |
+| 인증      | **세션 전용** — `JSESSIONID` 쿠키. accessToken을 저장하거나 전송하지 않음     |
+| CSRF      | `XSRF-TOKEN` 쿠키를 읽어 모든 상태 변경 요청에 `X-XSRF-TOKEN` 자동 첨부       |
+| 성공 응답 | `{ data }` 를 벗겨 본문만 전달                                                |
+| 오류 응답 | `{ code, message, traceId, fieldErrors }` — 폼 필드 매핑에 사용               |
+| 401 처리  | 세션을 버리고 온보딩으로 이동. 초대 딥링크는 알바생 로그인으로 복귀 경로 보존 |
+| 멱등성    | 금융성 요청에 `Idempotency-Key` 헤더. 서버가 응답한 4xx는 재시도하지 않음     |
+| 시각 표현 | API는 UTC `Instant` 문자열, DB는 `Asia/Seoul` 벽시계 값                       |
 
 ### 도메인별 엔드포인트
 
-| 도메인 | 주요 경로 |
-| --- | --- |
-| 인증 | `POST /api/auth/signup` · `/login` · `/logout` <br/> `GET /api/auth/csrf` · `/session` · `/login-id-availability` · `/email-availability` |
-| 회원 · 뱃지 | `GET · PATCH /api/users/me` · `PATCH /api/users/me/password` · `POST /api/users/me/withdrawal` · `GET /api/users/me/badge` |
-| 사업장 | `POST · GET /api/workplaces` · `PATCH /api/workplaces/{id}` · Legacy `PUT /api/workplaces/{id}/coordinates` |
-| QR | `GET /api/workplaces/{id}/qr` · `POST /api/workplaces/{id}/qr/reissue` |
-| 근무 | `POST · GET /api/workplaces/{id}/work-cases` · `GET /api/workplaces/{id}/work-cases/summary` <br/> `GET · PATCH · DELETE /api/work-cases/{id}` |
-| 초대 | `POST /api/work-cases/{id}/invitations` · `/invitations/reissue` <br/> `GET /api/invitations/{token}` · `POST /api/invitations/{token}/accept` |
-| 알바생 | `GET /api/worker/home` · `/work-cases` · `/workplaces` |
-| 출퇴근 | `POST /api/attendance/scans` |
-| 지갑 | `GET /api/wallet` · `/api/wallet/transactions` <br/> `POST /api/wallet/funding-orders` · `/api/wallet/withdrawal-requests` |
-| 정산 | `POST /api/work-cases/{id}/settlement/approve` · `/settlement/no-show-refund/approve` · `/settlement/check-out-missing-refund/approve` |
-| 이의 | `POST · GET /api/work-cases/{id}/disputes` |
-| 문서 | `GET · POST /api/documents` · `GET · PATCH · DELETE /api/documents/{id}` <br/> `GET /api/documents/{id}/file` · `POST · GET /api/documents/{id}/shares` · `DELETE /api/documents/{id}/shares/{workplaceId}` |
-| 알림 | `GET /api/notifications` · `/unread-count` <br/> `PATCH /api/notifications/{id}/read` · `/api/notifications/read-all` · `GET /api/notifications/stream` |
-| 헬스 | `GET /api/health` |
+| 도메인      | 주요 경로                                                                                                                                                                                                   |
+| ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 인증        | `POST /api/auth/signup` · `/login` · `/logout` <br/> `GET /api/auth/csrf` · `/session` · `/login-id-availability` · `/email-availability`                                                                   |
+| 회원 · 뱃지 | `GET · PATCH /api/users/me` · `PATCH /api/users/me/password` · `POST /api/users/me/withdrawal` · `GET /api/users/me/badge`                                                                                  |
+| 사업장      | `POST · GET /api/workplaces` · `PATCH /api/workplaces/{id}` · Legacy `PUT /api/workplaces/{id}/coordinates`                                                                                                 |
+| QR          | `GET /api/workplaces/{id}/qr` · `POST /api/workplaces/{id}/qr/reissue`                                                                                                                                      |
+| 근무        | `POST · GET /api/workplaces/{id}/work-cases` · `GET /api/workplaces/{id}/work-cases/summary` <br/> `GET · PATCH · DELETE /api/work-cases/{id}`                                                              |
+| 초대        | `POST /api/work-cases/{id}/invitations` · `/invitations/reissue` <br/> `GET /api/invitations/{token}` · `POST /api/invitations/{token}/accept`                                                              |
+| 알바생      | `GET /api/worker/home` · `/work-cases` · `/workplaces`                                                                                                                                                      |
+| 출퇴근      | `POST /api/attendance/scans`                                                                                                                                                                                |
+| 지갑        | `GET /api/wallet` · `/api/wallet/transactions` <br/> `POST /api/wallet/funding-orders` · `/api/wallet/withdrawal-requests`                                                                                  |
+| 정산        | `POST /api/work-cases/{id}/settlement/approve` · `/settlement/no-show-refund/approve` · `/settlement/check-out-missing-refund/approve`                                                                      |
+| 이의        | `POST · GET /api/work-cases/{id}/disputes`                                                                                                                                                                  |
+| 문서        | `GET · POST /api/documents` · `GET · PATCH · DELETE /api/documents/{id}` <br/> `GET /api/documents/{id}/file` · `POST · GET /api/documents/{id}/shares` · `DELETE /api/documents/{id}/shares/{workplaceId}` |
+| 알림        | `GET /api/notifications` · `/unread-count` <br/> `PATCH /api/notifications/{id}/read` · `/api/notifications/read-all` · `GET /api/notifications/stream`                                                     |
+| 헬스        | `GET /api/health`                                                                                                                                                                                           |
 
 요청·응답 필드의 확정 계약은 `docs/specs/API_SPEC.md`에 있습니다.
 
@@ -356,13 +356,13 @@ sequenceDiagram
 
 KB IT's Your Life 7기 · 24-2팀
 
-| 이름 | GitHub | 담당 |
-| --- | --- | --- |
-| 김인범 | [@Flamingo7562](https://github.com/Flamingo7562) | |
-| 이돈녕 | [@donnyeonglee](https://github.com/donnyeonglee) | |
-| 이현서 | [@hyunseo2503](https://github.com/hyunseo2503) | |
-| 최정원 | [@dkgkrltlfgek](https://github.com/dkgkrltlfgek) | |
-| 하성민 | [@hsm9411](https://github.com/hsm9411) | |
+| 이름   | GitHub                                           | 담당 |
+| ------ | ------------------------------------------------ | ---- |
+| 김인범 | [@Flamingo7562](https://github.com/Flamingo7562) |      |
+| 이돈녕 | [@donnyeonglee](https://github.com/donnyeonglee) |      |
+| 이현서 | [@hyunseo2503](https://github.com/hyunseo2503)   |      |
+| 최정원 | [@dkgkrltlfgek](https://github.com/dkgkrltlfgek) |      |
+| 하성민 | [@hsm9411](https://github.com/hsm9411)           |      |
 
 <div align="center">
 
