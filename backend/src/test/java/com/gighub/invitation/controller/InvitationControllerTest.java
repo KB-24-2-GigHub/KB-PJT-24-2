@@ -81,7 +81,7 @@ class InvitationControllerTest {
                 .andExpect(jsonPath("$.data.breakMinutes").value(60))
                 .andExpect(jsonPath("$.data.breakPaid").value(false))
                 .andExpect(jsonPath("$.data.dailyWage").value(120000))
-                .andExpect(jsonPath("$.data.termsVersion").value(3))
+                .andExpect(jsonPath("$.data.termsVersion").doesNotExist())
                 .andExpect(jsonPath("$.data.expiresAt").value("2026-08-20T01:00:00Z"))
                 .andExpect(jsonPath("$.data.ownerBadge.badgeType").value("TRUST_OWNER"))
                 .andExpect(jsonPath("$.data.ownerBadge.level").value(2))
@@ -194,7 +194,6 @@ class InvitationControllerTest {
                 60,
                 false,
                 120_000L,
-                3,
                 Instant.parse("2026-08-20T01:00:00Z"),
                 ownerBadge
         );

@@ -116,7 +116,6 @@ public class InvitationQueryServiceImpl implements InvitationQueryService {
                 workCase.getBreakMinutes(),
                 workCase.getBreakPaid(),
                 workCase.getDailyWage(),
-                workCase.getTermsVersion(),
                 ApiTimes.toInstant(invitation.getExpiresAt()),
                 ownerBadge(workCase.getEmployerId())
         );

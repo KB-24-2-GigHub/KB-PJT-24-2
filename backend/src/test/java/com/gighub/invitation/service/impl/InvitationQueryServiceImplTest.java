@@ -78,7 +78,6 @@ class InvitationQueryServiceImplTest {
         assertEquals(60, response.getBreakMinutes());
         assertFalse(response.isBreakPaid());
         assertEquals(120_000L, response.getDailyWage());
-        assertEquals(1, response.getTermsVersion());
         assertEquals(STARTS_AT.atZone(SEOUL).toInstant(), response.getExpiresAt());
         // SPEC-484-01: 0단계도 null로 감추지 않고 채워진 객체(level 0)로 노출합니다.
         OwnerBadgeResponse ownerBadge = response.getOwnerBadge();

@@ -163,8 +163,8 @@ describe('InviteConfirmView', () => {
   })
 
   /*
-   * termsVersion 은 서버가 조건 변경을 감지하는 내부 값이라 화면에 내보내지 않는다.
-   * 수락 직전 화면이라 의미 없는 값이 오히려 오해를 준다. 픽스처의 termsVersion 은 3 이다.
+   * termsVersion 은 API 응답에도 없어야 하는 내부 값이다. 구버전·비정상 응답에 값이
+   * 섞여도 화면에 내보내지 않는 방어 경계를 확인하려 픽스처에는 의도적으로 3을 둔다.
    */
   it('내부 값인 조건 버전을 화면에 노출하지 않는다', async () => {
     const wrapper = mountView()
