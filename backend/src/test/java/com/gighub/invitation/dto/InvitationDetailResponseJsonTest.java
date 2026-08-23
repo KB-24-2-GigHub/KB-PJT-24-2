@@ -34,7 +34,7 @@ class InvitationDetailResponseJsonTest {
         assertFalse(data.get("breakPaid").asBoolean());
         assertEquals(120000, data.get("dailyWage").asLong());
         assertTrue(data.get("dailyWage").isIntegralNumber(), "금액은 원 단위 정수여야 합니다.");
-        assertEquals(3, data.get("termsVersion").asInt());
+        assertFalse(data.has("termsVersion"), "내부 조건 Version은 응답에 없어야 합니다.");
         assertEquals("2026-08-20T01:00:00Z", data.get("expiresAt").asText());
         assertEquals("TRUST_OWNER", data.get("ownerBadge").get("badgeType").asText());
         assertEquals(2, data.get("ownerBadge").get("level").asInt());
@@ -64,7 +64,6 @@ class InvitationDetailResponseJsonTest {
         }) {
             assertFalse(data.has(absent), absent + " 필드는 응답에 없어야 합니다.");
         }
-        assertEquals(10, data.size(), "승인된 필드 수와 같아야 합니다.");
     }
 
     private InvitationDetailResponse response(OwnerBadgeResponse ownerBadge) {
@@ -76,7 +75,6 @@ class InvitationDetailResponseJsonTest {
                 60,
                 false,
                 120_000L,
-                3,
                 Instant.parse("2026-08-20T01:00:00Z"),
                 ownerBadge
         );

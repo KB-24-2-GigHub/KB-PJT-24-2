@@ -24,7 +24,6 @@ public final class InvitationDetailResponse {
     private final int breakMinutes;
     private final boolean breakPaid;
     private final long dailyWage;
-    private final int termsVersion;
     private final Instant expiresAt;
     private final OwnerBadgeResponse ownerBadge;
 
@@ -36,7 +35,6 @@ public final class InvitationDetailResponse {
             int breakMinutes,
             boolean breakPaid,
             long dailyWage,
-            int termsVersion,
             Instant expiresAt,
             OwnerBadgeResponse ownerBadge) {
         this.title = title;
@@ -46,7 +44,6 @@ public final class InvitationDetailResponse {
         this.breakMinutes = breakMinutes;
         this.breakPaid = breakPaid;
         this.dailyWage = dailyWage;
-        this.termsVersion = termsVersion;
         this.expiresAt = expiresAt;
         this.ownerBadge = ownerBadge;
     }
@@ -62,7 +59,6 @@ public final class InvitationDetailResponse {
             int breakMinutes,
             boolean breakPaid,
             long dailyWage,
-            int termsVersion,
             Instant expiresAt,
             OwnerBadgeResponse ownerBadge) {
         return new InvitationDetailResponse(
@@ -73,7 +69,6 @@ public final class InvitationDetailResponse {
                 breakMinutes,
                 breakPaid,
                 dailyWage,
-                termsVersion,
                 expiresAt,
                 ownerBadge
         );

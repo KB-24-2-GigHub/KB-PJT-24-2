@@ -83,7 +83,6 @@ class InvitationLifecycleDatabaseIntegrationTest {
         assertEquals(60, detail.getBreakMinutes());
         assertFalse(detail.isBreakPaid());
         assertEquals(120_000L, detail.getDailyWage());
-        assertEquals(1, detail.getTermsVersion());
         assertEquals(fixture.startsAt.atZone(SEOUL).toInstant(), detail.getExpiresAt());
         // BADGE-003: 이력이 없는 OWNER도 TRUST_OWNER 0단계 객체로 노출합니다.
         assertNotNull(detail.getOwnerBadge());
