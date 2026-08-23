@@ -18,6 +18,7 @@ import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
 import io.swagger.v3.oas.models.Paths;
 import io.swagger.v3.oas.models.media.IntegerSchema;
+import io.swagger.v3.oas.models.media.StringSchema;
 import io.swagger.v3.oas.models.parameters.Parameter;
 import org.junit.jupiter.api.Test;
 import springfox.documentation.oas.web.OpenApiTransformationContext;
@@ -60,6 +61,23 @@ class SwaggerPageParameterContractFilterTest {
         assertSame(openApi, filter.transform(context(openApi)));
         assertTrue(filter.supports(DocumentationType.OAS_30));
         assertFalse(filter.supports(DocumentationType.SWAGGER_2));
+    }
+
+    @Test
+    void ignoresMatchingNamesWhenTheQueryParameterIsNotAnInteger() {
+        Parameter size = new Parameter()
+                .name("size")
+                .in("query")
+                .schema(new StringSchema());
+        OpenAPI openApi = new OpenAPI().paths(new Paths().addPathItem(
+                "/api/files",
+                new PathItem().get(new Operation().addParametersItem(size))));
+
+        filter.transform(context(openApi));
+
+        assertNull(size.getSchema().getDefault());
+        assertNull(size.getSchema().getMinimum());
+        assertNull(size.getSchema().getMaximum());
     }
 
     private Parameter queryParameter(String name) {

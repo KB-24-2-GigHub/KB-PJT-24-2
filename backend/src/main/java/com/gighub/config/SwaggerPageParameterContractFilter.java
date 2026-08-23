@@ -49,7 +49,7 @@ public class SwaggerPageParameterContractFilter implements WebMvcOpenApiTransfor
 
     private void applyPageContract(Parameter parameter) {
         Schema<?> schema = parameter.getSchema();
-        if (schema == null) {
+        if (schema == null || !"integer".equals(schema.getType())) {
             return;
         }
 

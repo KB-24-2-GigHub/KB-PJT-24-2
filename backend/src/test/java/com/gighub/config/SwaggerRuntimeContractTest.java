@@ -1,8 +1,10 @@
 package com.gighub.config;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -11,18 +13,26 @@ import java.util.List;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;
+import org.springframework.core.annotation.AnnotatedElementUtils;
 import org.springframework.core.type.filter.AnnotationTypeFilter;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 class SwaggerRuntimeContractTest {
 
     @Test
     void everyVoidResponseEntityDocumentsNoContentInRuntimeSwagger() throws ClassNotFoundException {
+        List<Class<?>> controllers = productionControllers();
+        assertFalse(controllers.isEmpty(),
+                "운영 Controller를 찾지 못했습니다. Runtime Swagger 검사 경로를 확인하세요.");
+
         List<String> missingOperations = new ArrayList<>();
-        for (Class<?> controller : productionControllers()) {
+        for (Class<?> controller : controllers) {
             for (Method method : controller.getDeclaredMethods()) {
-                if (returnsVoidResponseEntity(method) && !documentsNoContent(method)) {
+                if (isRequestHandler(method)
+                        && returnsVoidResponseEntity(method)
+                        && !documentsNoContent(method)) {
                     missingOperations.add(controller.getSimpleName() + "." + method.getName());
                 }
             }
@@ -49,8 +59,17 @@ class SwaggerRuntimeContractTest {
     }
 
     private boolean isProductionClass(Class<?> type) {
+        if (type.getProtectionDomain() == null
+                || type.getProtectionDomain().getCodeSource() == null) {
+            return false;
+        }
         String location = type.getProtectionDomain().getCodeSource().getLocation().getPath();
         return location.replace('\\', '/').endsWith("/classes/java/main/");
+    }
+
+    private boolean isRequestHandler(Method method) {
+        return Modifier.isPublic(method.getModifiers())
+                && AnnotatedElementUtils.hasAnnotation(method, RequestMapping.class);
     }
 
     private boolean returnsVoidResponseEntity(Method method) {
