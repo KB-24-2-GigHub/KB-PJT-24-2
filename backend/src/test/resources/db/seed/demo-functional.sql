@@ -32,14 +32,14 @@ INSERT INTO work_cases (
         @owner_id, @worker_b_id, @workplace_id, '[FUNCTION] 이수면 지각 출석체크',
         @b_start, @b_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1, 'READY', @accepted_at, @seed_now
     ),
     (
         @owner_id, @worker_c_id, @workplace_id, '[FUNCTION] 박잠수 자동 노쇼',
         @c_start, @c_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1, 'READY', @accepted_at, @seed_now
     );
 
@@ -74,7 +74,7 @@ INSERT INTO work_contracts (
         @functional_b_id, @owner_id, @worker_b_id, '이수면 기능 점검 근로계약서',
         @b_start, @b_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1, JSON_OBJECT('demo', TRUE, 'plannedLateMinutes', 30),
         @accepted_at, @accepted_at
     ),
@@ -82,7 +82,7 @@ INSERT INTO work_contracts (
         @functional_c_id, @owner_id, @worker_c_id, '박잠수 기능 점검 근로계약서',
         @c_start, @c_end, 30, 0,
         '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00,
+        37.5481384, 127.0733972, @demo_radius_meters,
         @demo_wage, 1, JSON_OBJECT('demo', TRUE, 'plannedOutcome', 'NO_SHOW'),
         @accepted_at, @accepted_at
     );
@@ -215,19 +215,19 @@ INSERT INTO work_cases (
         @owner_id, NULL, @workplace_id, '[FUNCTION] 오늘 저녁 포장 지원',
         DATE_ADD(@seed_now, INTERVAL 5 HOUR), DATE_ADD(@seed_now, INTERVAL 9 HOUR),
         30, 0, '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
+        37.5481384, 127.0733972, @demo_radius_meters, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
     ),
     (
         @owner_id, NULL, @workplace_id, '[FUNCTION] 내일 오픈 지원',
         DATE_ADD(@seed_now, INTERVAL 1 DAY), DATE_ADD(DATE_ADD(@seed_now, INTERVAL 1 DAY), INTERVAL 4 HOUR),
         30, 0, '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
+        37.5481384, 127.0733972, @demo_radius_meters, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
     ),
     (
         @owner_id, NULL, @workplace_id, '[FUNCTION] 다음 주 팝업 지원',
         DATE_ADD(@seed_now, INTERVAL 7 DAY), DATE_ADD(DATE_ADD(@seed_now, INTERVAL 7 DAY), INTERVAL 4 HOUR),
         30, 0, '냠냠과자점 1호점', '서울 광진구 능동로 195-16',
-        37.5481384, 127.0733972, 100.00, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
+        37.5481384, 127.0733972, @demo_radius_meters, @demo_wage, 1, 'DRAFT', @seed_now, @seed_now
     );
 
 COMMIT;

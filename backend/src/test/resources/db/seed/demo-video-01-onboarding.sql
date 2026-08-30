@@ -20,8 +20,8 @@ SELECT
     'gigsajang' AS owner_login_id,
     'Demo1234!' AS demo_password,
     '004' AS bank_code,
-    '110000001001' AS owner_account_number,
-    '0000' AS bank_pin,
+    '27890104563218' AS owner_account_number,
+    '4827' AS bank_pin,
     (SELECT COUNT(*) FROM workplaces) AS workplace_count,
     (SELECT available_balance FROM wallets WHERE id = @owner_wallet_id) AS owner_available_balance,
     (SELECT locked_balance FROM wallets WHERE id = @owner_wallet_id) AS owner_locked_balance;

@@ -99,6 +99,7 @@
             <idArg column="id" javaType="java.lang.Long"/>
             <arg column="latitude" javaType="java.math.BigDecimal"/>
             <arg column="longitude" javaType="java.math.BigDecimal"/>
+            <arg column="radius_meters" javaType="java.math.BigDecimal"/>
         </constructor>
     </resultMap>
 
@@ -109,7 +110,8 @@
     <select id="findActiveLocationForUpdate" resultMap="workplaceLocationSnapshot">
         SELECT id,
                latitude,
-               longitude
+               longitude,
+               radius_meters
         FROM workplaces
         WHERE id = #{workplaceId}
           AND status = 'ACTIVE'
@@ -123,7 +125,8 @@
     <select id="findOwnedActiveLocationForUpdate" resultMap="workplaceLocationSnapshot">
         SELECT id,
                latitude,
-               longitude
+               longitude,
+               radius_meters
         FROM workplaces
         WHERE id = #{workplaceId}
           AND owner_user_id = #{ownerUserId}

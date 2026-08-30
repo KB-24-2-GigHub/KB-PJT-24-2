@@ -243,6 +243,25 @@ tasks.register('databaseTest', Test) {
     }
 }
 
+tasks.register('materializeDemoContracts', JavaExec) {
+    group = 'verification'
+    description = 'Renders Video 4 demo contract PDFs and reconciles their metadata.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.gighub.document.contract.DemoContractArtifactGenerator'
+
+    doFirst {
+        String configPath = project.findProperty('demoConfig')
+        String repositoryRoot = project.findProperty('demoRoot')
+        if (configPath == null || configPath.isBlank()
+                || repositoryRoot == null || repositoryRoot.isBlank()) {
+            throw new GradleException(
+                    'Pass -PdemoConfig=<database-local.properties> and -PdemoRoot=<repository-root>.'
+            )
+        }
+        args configPath, repositoryRoot
+    }
+}
+
 war {
     archiveFileName = 'gig-hub.war'
 }

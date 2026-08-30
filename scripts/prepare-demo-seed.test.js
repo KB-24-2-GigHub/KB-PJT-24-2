@@ -23,10 +23,17 @@ const {
 } = require("./prepare-demo-seed");
 
 test("다섯 시나리오를 고정된 SQL 파일에 연결한다", () => {
-  assert.equal(parseOptions(["functional"]).scenario.file, "demo-functional.sql");
+  assert.equal(
+    parseOptions(["functional"]).scenario.file,
+    "demo-functional.sql",
+  );
   assert.equal(
     parseOptions(["video-04-three-years"]).scenario.file,
     "demo-video-04-three-years.sql",
+  );
+  assert.equal(
+    parseOptions(["video-04-three-years"]).scenario.apiSetup,
+    "video-04",
   );
   assert.throws(() => parseOptions(["unknown"]), DemoSeedError);
   assert.throws(
@@ -120,7 +127,10 @@ test("상대 문서 경로는 저장소 루트를 기준으로 해석한다", ()
   const configPath = path.join(rootDir, "database-local.properties");
   fs.mkdirSync(storage, { recursive: true });
   fs.writeFileSync(path.join(storage, "old.pdf"), "old");
-  fs.writeFileSync(configPath, "document.storage.base-path=local-data/documents\n");
+  fs.writeFileSync(
+    configPath,
+    "document.storage.base-path=local-data/documents\n",
+  );
 
   assert.equal(clearLocalDocumentStorage({ rootDir, configPath }), storage);
   assert.deepEqual(fs.readdirSync(storage), []);
@@ -193,22 +203,40 @@ test("전체 초기화 목록은 현재 Flyway 애플리케이션 Table과 정�
     "migration",
   );
   const effectiveTables = new Set();
-  for (const file of fs.readdirSync(migrationDir).filter((name) => name.endsWith(".sql")).sort()) {
+  for (const file of fs
+    .readdirSync(migrationDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort()) {
     const sql = fs.readFileSync(path.join(migrationDir, file), "utf8");
-    for (const match of sql.matchAll(/^CREATE TABLE(?: IF NOT EXISTS)?\s+`?([a-z0-9_]+)`?/gim)) {
+    for (const match of sql.matchAll(
+      /^CREATE TABLE(?: IF NOT EXISTS)?\s+`?([a-z0-9_]+)`?/gim,
+    )) {
       effectiveTables.add(match[1]);
     }
-    for (const match of sql.matchAll(/^DROP TABLE(?: IF EXISTS)?\s+`?([a-z0-9_]+)`?/gim)) {
+    for (const match of sql.matchAll(
+      /^DROP TABLE(?: IF EXISTS)?\s+`?([a-z0-9_]+)`?/gim,
+    )) {
       effectiveTables.delete(match[1]);
     }
   }
 
   const reset = fs.readFileSync(
-    path.join(rootDir, "backend", "src", "test", "resources", "db", "seed", "demo-reset.inc"),
+    path.join(
+      rootDir,
+      "backend",
+      "src",
+      "test",
+      "resources",
+      "db",
+      "seed",
+      "demo-reset.inc",
+    ),
     "utf8",
   );
   const resetTables = new Set(
-    [...reset.matchAll(/^DELETE FROM\s+`?([a-z0-9_]+)`?;/gim)].map((match) => match[1]),
+    [...reset.matchAll(/^DELETE FROM\s+`?([a-z0-9_]+)`?;/gim)].map(
+      (match) => match[1],
+    ),
   );
   assert.deepEqual([...resetTables].sort(), [...effectiveTables].sort());
 });
@@ -224,7 +252,10 @@ test("Compose와 운영 Workflow가 전체 초기화 확인값을 함께 요구�
   assert.match(compose, /DEMO_RESET_CONFIRM/);
   assert.match(compose, /reset-all-data/);
   assert.match(workflow, /Stop application for full demo reset/);
-  assert.match(workflow, /Clear production document storage for full demo reset/);
+  assert.match(
+    workflow,
+    /Clear production document storage for full demo reset/,
+  );
   assert.match(workflow, /Restart application after full demo reset/);
   assert.match(workflow, /DEMO_SEED_CONFIRM: \$\{\{ inputs\.confirm \}\}/);
   assert.match(workflow, /DEMO_RESET_CONFIRM=/);
@@ -310,9 +341,231 @@ function splitSqlColumns(tuple) {
   return columns;
 }
 
+const CANONICAL_BANK_CODES = [
+  "004",
+  "088",
+  "020",
+  "081",
+  "011",
+  "003",
+  "090",
+  "092",
+  "089",
+  "032",
+  "031",
+  "131",
+  "034",
+  "023",
+  "027",
+  "002",
+  "007",
+  "045",
+  "048",
+  "071",
+];
+
+test("Demo Seed는 지원 은행 20종, 역할별 KB 계좌와 충분한 잔액을 고정한다", () => {
+  const seedDir = path.join(
+    __dirname,
+    "..",
+    "backend",
+    "src",
+    "test",
+    "resources",
+    "db",
+    "seed",
+  );
+  const sql = fs.readFileSync(path.join(seedDir, "demo-users.inc"), "utf8");
+  const statement = sql.match(
+    /INSERT\s+INTO\s+mock_bank_accounts\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/i,
+  );
+  assert.ok(
+    statement,
+    "demo-users.inc의 Mock 은행계좌 INSERT를 찾지 못했습니다.",
+  );
+
+  const columns = statement[1].split(",").map((name) => name.trim());
+  const literal = (value) => value.replace(/^'|'$/g, "");
+  const accounts = splitSqlTuples(statement[2]).map((tuple) => {
+    const values = splitSqlColumns(tuple);
+    return {
+      bankCode: literal(values[columns.indexOf("bank_code")]),
+      accountNo: literal(values[columns.indexOf("mock_account_number")]),
+      pin: literal(values[columns.indexOf("pin")]),
+      fintechUseNum: literal(values[columns.indexOf("mock_fintech_use_num")]),
+      balance: values[columns.indexOf("balance")],
+      availableAmount: values[columns.indexOf("available_amount")],
+    };
+  });
+
+  assert.equal(accounts.length, 23);
+  assert.deepEqual(
+    [...new Set(accounts.map((account) => account.bankCode))].sort(),
+    [...CANONICAL_BANK_CODES].sort(),
+  );
+  assert.equal(
+    accounts.filter((account) => account.bankCode === "004").length,
+    4,
+  );
+  assert.equal(
+    new Set(accounts.map((account) => account.accountNo)).size,
+    accounts.length,
+  );
+  assert.equal(
+    new Set(accounts.map((account) => account.fintechUseNum)).size,
+    accounts.length,
+  );
+  assert.match(sql, /SET\s+@demo_other_bank_balance\s*=\s*5000000;/i);
+  assert.equal(accounts[0].balance, "@owner_bank_balance");
+  assert.equal(accounts[0].availableAmount, "@owner_bank_balance");
+
+  for (const account of accounts.slice(1)) {
+    assert.equal(account.balance, "@demo_other_bank_balance");
+    assert.equal(account.availableAmount, "@demo_other_bank_balance");
+  }
+
+  for (const account of accounts) {
+    assert.match(account.accountNo, /^\d{10,14}$/);
+    assert.match(account.pin, /^\d{4}$/);
+    assert.doesNotMatch(account.pin, /^(\d)\1{3}$/);
+  }
+});
+
+test("video-03의 직접 생성 NO_SHOW는 전액 환불 계산 Snapshot을 함께 저장한다", () => {
+  const seedDir = path.join(
+    __dirname,
+    "..",
+    "backend",
+    "src",
+    "test",
+    "resources",
+    "db",
+    "seed",
+  );
+  const sql = inlineSeedIncludes(seedDir, "demo-video-03-check-out.sql");
+  const update = sql.match(
+    /UPDATE\s+settlements\s+SET([\s\S]*?)WHERE\s+work_case_id\s*=\s*@work_case_c_id;/i,
+  );
+  assert.ok(update, "video-03 NO_SHOW Snapshot UPDATE를 찾지 못했습니다.");
+
+  const assignments = update[1];
+  assert.match(assignments, /worker_paid_amount\s*=\s*0/i);
+  assert.match(assignments, /owner_refund_amount\s*=\s*amount/i);
+  assert.match(
+    assignments,
+    /deduction_base_minutes\s*=\s*TIMESTAMPDIFF\(MINUTE,\s*@c_start,\s*@c_end\)\s*-\s*30/i,
+  );
+  assert.match(assignments, /late_minutes\s*=\s*0/i);
+  assert.match(assignments, /early_leave_minutes\s*=\s*0/i);
+  assert.match(assignments, /calculation_reason\s*=\s*'NO_SHOW'/i);
+  assert.match(assignments, /calculation_version\s*=\s*'ATTENDANCE_V1'/i);
+  assert.match(
+    assignments,
+    /calculated_at\s*=\s*DATE_ADD\(@c_start,\s*INTERVAL\s+1\s+HOUR\)/i,
+  );
+});
+
+test("Demo Seed 사업장은 자연스러운 합성 식별값과 시연 전용 반경을 사용한다", () => {
+  const seedDir = path.join(
+    __dirname,
+    "..",
+    "backend",
+    "src",
+    "test",
+    "resources",
+    "db",
+    "seed",
+  );
+  const primary = fs.readFileSync(
+    path.join(seedDir, "demo-primary-workplace.inc"),
+    "utf8",
+  );
+  const history = fs.readFileSync(
+    path.join(seedDir, "demo-video-04-three-years.sql"),
+    "utf8",
+  );
+
+  assert.match(primary, /SET\s+@demo_radius_meters\s*=\s*999999\.00;/i);
+  for (const businessNumber of ["2418157398", "3128694759", "4172861534"]) {
+    assert.match(`${primary}\n${history}`, new RegExp(businessNumber));
+  }
+  for (const phone of ["0215782468", "0234681357", "0257294186"]) {
+    assert.match(`${primary}\n${history}`, new RegExp(phone));
+  }
+  assert.doesNotMatch(
+    `${primary}\n${history}`,
+    /000000100[1-3]|020000100[1-3]/,
+  );
+});
+
+test("video-04의 화면 노출 근무명은 냠냠과자점 업무명만 사용한다", () => {
+  const sql = fs.readFileSync(
+    path.join(
+      __dirname,
+      "..",
+      "backend",
+      "src",
+      "test",
+      "resources",
+      "db",
+      "seed",
+      "demo-video-04-three-years.sql",
+    ),
+    "utf8",
+  );
+
+  assert.doesNotMatch(sql, /\[(?:3YEAR|3-year|오늘 3호점 일정)/i);
+  assert.doesNotMatch(sql, /SUBSTRING\s*\(\s*title/i);
+  for (const title of [
+    "구움과자 포장 및 판매",
+    "쿠키 포장 및 재고 정리",
+    "오픈 준비 및 제과 보조",
+    "오픈 진열 준비",
+    "디저트 선물세트 포장",
+    "매장 마감 및 청소",
+  ]) {
+    assert.match(sql, new RegExp(`'${title}'`));
+  }
+});
+
+test("video-04는 보존기간 안의 과거 근무 전체에 계약 문서 구조를 만든다", () => {
+  const sql = fs.readFileSync(
+    path.join(
+      __dirname,
+      "..",
+      "backend",
+      "src",
+      "test",
+      "resources",
+      "db",
+      "seed",
+      "demo-video-04-three-years.sql",
+    ),
+    "utf8",
+  );
+
+  assert.match(sql, /SET\s+@history_work_count\s*=\s*65;/i);
+  assert.match(
+    sql,
+    /INSERT\s+INTO\s+work_contracts[\s\S]*?'demoScenario',\s*'video-04-three-years'/i,
+  );
+  assert.match(
+    sql,
+    /INSERT\s+INTO\s+documents[\s\S]*?'EMPLOYMENT_CONTRACT',\s*'ACTIVE'/i,
+  );
+  assert.match(
+    sql,
+    /INSERT\s+INTO\s+document_versions[\s\S]*?'ORIGINAL'[\s\S]*?'SIGNED'/i,
+  );
+  assert.match(sql, /INSERT\s+INTO\s+document_signatures/i);
+  assert.match(sql, /INSERT\s+INTO\s+document_shares[\s\S]*?'CONTRACT_PARTY'/i);
+  assert.match(sql, /'EMPLOYMENT_CONTRACT',\s*'DELETED'/i);
+});
+
 /** Table 별 INSERT ... VALUES 문 전체를 잡는다. */
 const SEED_INSERT_STATEMENTS = {
-  work_contracts: /INSERT\s+INTO\s+work_contracts\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
+  work_contracts:
+    /INSERT\s+INTO\s+work_contracts\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
   documents: /INSERT\s+INTO\s+documents\s*\(([^)]*)\)\s*VALUES([\s\S]*?);/gi,
 };
 

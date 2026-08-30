@@ -3,6 +3,7 @@
 -- @worker_a_available, @worker_b_available, @worker_c_available
 
 SET @demo_password_hash = '$2b$12$swzyk8RjBYPEQbfBnnXATuCWSILA9USCTXllUZNbwMV6JP1vEZ1VS';
+SET @demo_other_bank_balance = 5000000;
 
 INSERT INTO users (
     login_id, email, password_hash, name, phone, role, status,
@@ -56,18 +57,94 @@ INSERT INTO mock_bank_accounts (
     created_at, updated_at
 ) VALUES
     (
-        '004', '110000001001', '0000', 'DEMO-FINTECH-OWNER',
+        '004', '27890104563218', '4827', 'DEMO-FINTECH-OWNER',
         'KRW', @owner_bank_balance, @owner_bank_balance, 'ACTIVE', @seed_now, @seed_now
     ),
     (
-        '004', '110000001002', '0000', 'DEMO-FINTECH-WORKER-A',
-        'KRW', 0, 0, 'ACTIVE', @seed_now, @seed_now
+        '004', '48721504938621', '6153', 'DEMO-FINTECH-WORKER-A',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
     ),
     (
-        '004', '110000001003', '0000', 'DEMO-FINTECH-WORKER-B',
-        'KRW', 0, 0, 'ACTIVE', @seed_now, @seed_now
+        '004', '63190404275183', '2948', 'DEMO-FINTECH-WORKER-B',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
     ),
     (
-        '004', '110000001004', '0000', 'DEMO-FINTECH-WORKER-C',
-        'KRW', 0, 0, 'ACTIVE', @seed_now, @seed_now
+        '004', '85432704619742', '7306', 'DEMO-FINTECH-WORKER-C',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '088', '110542893761', '8514', 'DEMO-FINTECH-SHINHAN',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '020', '1002845731926', '4062', 'DEMO-FINTECH-WOORI',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '081', '39191048273654', '9731', 'DEMO-FINTECH-HANA',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '011', '3021847629153', '5286', 'DEMO-FINTECH-NH',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '003', '21409753104826', '1479', 'DEMO-FINTECH-IBK',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '090', '3333184729561', '6832', 'DEMO-FINTECH-KAKAO',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '092', '100078429516', '9057', 'DEMO-FINTECH-TOSS',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '089', '100287453619', '3641', 'DEMO-FINTECH-KBANK',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '032', '1132458739104', '7925', 'DEMO-FINTECH-BUSAN',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '031', '50814729365', '2186', 'DEMO-FINTECH-DGB',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '131', '50821846397', '6749', 'DEMO-FINTECH-IM',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '034', '110753842691', '4318', 'DEMO-FINTECH-GWANGJU',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '023', '2213864592', '5863', 'DEMO-FINTECH-SC',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '027', '2875639104', '9274', 'DEMO-FINTECH-CITI',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '002', '0137584269104', '3058', 'DEMO-FINTECH-KDB',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '007', '101028467395', '8642', 'DEMO-FINTECH-SUHYUP',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '045', '9002184736295', '1597', 'DEMO-FINTECH-MG',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '048', '1310294758612', '7483', 'DEMO-FINTECH-CREDIT-UNION',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
+    ),
+    (
+        '071', '01234502847396', '2369', 'DEMO-FINTECH-POST',
+        'KRW', @demo_other_bank_balance, @demo_other_bank_balance, 'ACTIVE', @seed_now, @seed_now
     );

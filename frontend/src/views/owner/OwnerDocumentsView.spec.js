@@ -127,6 +127,15 @@ describe('OwnerDocumentsView 읽기 전용 정책', () => {
     expect(wrapper.find('input').exists()).toBe(false)
   })
 
+  it('근로계약서의 3년 보관 후 자동 파기 정책을 안내한다', async () => {
+    listDocuments.mockResolvedValue(pageOf([EMPLOYMENT_CONTRACT]))
+
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.find('.notice').text()).toContain('근무 종료일로부터 3년간 보관된 뒤 자동 파기')
+  })
+
   it('공유받은 보건증 상세는 목록이 준 workCaseId 와 함께 연다', async () => {
     listDocuments.mockResolvedValue(pageOf([SHARED_HEALTH_CERTIFICATE]))
 

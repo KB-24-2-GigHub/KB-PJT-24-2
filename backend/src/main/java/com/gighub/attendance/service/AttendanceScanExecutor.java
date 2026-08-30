@@ -66,9 +66,6 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class AttendanceScanExecutor {
 
-    /** ATT-003이 고정한 인증 반경입니다. 반올림 전 값이 이 값을 포함합니다. */
-    private static final BigDecimal ALLOWED_RADIUS_METERS = BigDecimal.valueOf(100);
-
     /** 지급 예정 시각은 성공 판정 시각으로부터 이만큼 뒤입니다. */
     private static final int SETTLEMENT_DUE_HOURS = 24;
 
@@ -121,7 +118,7 @@ public class AttendanceScanExecutor {
         }
 
         BigDecimal distance = distanceMeters(workplace, request);
-        if (distance.compareTo(ALLOWED_RADIUS_METERS) > 0) {
+        if (distance.compareTo(workplace.radiusMeters()) > 0) {
             return reject(
                     principal, candidate, activeQr, request, claimId,
                     AttendanceFailureReason.OUTSIDE_RADIUS, distance, attemptedAt);
@@ -400,7 +397,7 @@ public class AttendanceScanExecutor {
      * 현재 사업장 좌표를 기준으로 거리를 계산합니다.
      *
      * <p>판정은 반올림하지 않은 Double 값으로 하고, 저장할 때만 소수 2자리로 줄인다.
-     * 반올림한 값으로 판정하면 100m를 아주 조금 넘은 요청이 통과합니다.</p>
+     * 반올림한 값으로 판정하면 저장된 사업장 반경을 아주 조금 넘은 요청이 통과합니다.</p>
      */
     private BigDecimal distanceMeters(
             WorkplaceLocationSnapshot workplace, AttendanceScanRequest request) {

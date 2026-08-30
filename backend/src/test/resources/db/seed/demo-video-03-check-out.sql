@@ -29,6 +29,19 @@ SET @c_status = 'NO_SHOW';
 SOURCE /seed/demo-three-accepted-work-cases.inc
 SOURCE /seed/demo-three-hold-ledger.inc
 
+-- 이 시나리오는 Scheduler를 거치지 않고 C를 바로 NO_SHOW로 만들므로 실제 전이와 같은
+-- 전액 환불 Snapshot을 함께 저장해야 분쟁 해결 뒤 환불 승인이 가능합니다.
+UPDATE settlements
+SET worker_paid_amount = 0,
+    owner_refund_amount = amount,
+    deduction_base_minutes = TIMESTAMPDIFF(MINUTE, @c_start, @c_end) - 30,
+    late_minutes = 0,
+    early_leave_minutes = 0,
+    calculation_reason = 'NO_SHOW',
+    calculation_version = 'ATTENDANCE_V1',
+    calculated_at = DATE_ADD(@c_start, INTERVAL 1 HOUR)
+WHERE work_case_id = @work_case_c_id;
+
 SET @qr_token_id = (
     SELECT id FROM qr_tokens
     WHERE workplace_id = @workplace_id AND status = 'ACTIVE'
@@ -63,5 +76,5 @@ SELECT
     30 AS late_minutes,
     @work_case_c_id AS no_show_work_case_id,
     'NO_SHOW' AS no_show_status,
-    '지각 차감 실제 지급은 #424 구현 후 검증' AS late_settlement_note,
+    '지각 정산 Snapshot은 퇴근 성공 시 저장' AS late_settlement_note,
     'Demo1234!' AS demo_password;

@@ -1,12 +1,15 @@
+-- 이 반경은 로컬·폐기 가능한 시연 Seed에서만 사용합니다. 일반 사업장 생성은 100m입니다.
+SET @demo_radius_meters = 999999.00;
+
 INSERT INTO workplaces (
     owner_user_id, business_registration_number, name,
     representative_name, road_address, detail_address, phone,
     latitude, longitude, radius_meters, status,
     created_at, updated_at
 ) VALUES (
-    @owner_id, '0000001001', '냠냠과자점 1호점',
-    '긱사장', '서울 광진구 능동로 195-16', NULL, '0200001001',
-    37.5481384, 127.0733972, 100.00, 'ACTIVE',
+    @owner_id, '2418157398', '냠냠과자점 1호점',
+    '긱사장', '서울 광진구 능동로 195-16', NULL, '0215782468',
+    37.5481384, 127.0733972, @demo_radius_meters, 'ACTIVE',
     @seed_now, @seed_now
 );
 
